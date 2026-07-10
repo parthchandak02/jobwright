@@ -94,6 +94,7 @@ case "${CMD}" in
     done
     extra=()
     $dry_run && extra+=(--dry-run)
+    $dry_run || extra+=(--live)
     if [[ "${sub}" == "next" ]]; then
       url=$(sqlite3 "${APPLYPILOT_DIR}/applypilot.db" \
         "SELECT url FROM jobs WHERE tailored_resume_path IS NOT NULL AND applied_at IS NULL AND fit_score>=7 ORDER BY fit_score DESC LIMIT 1;")

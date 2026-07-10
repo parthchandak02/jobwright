@@ -214,6 +214,7 @@ def run_cover_letters(min_score: int = 7, limit: int = 20,
         "AND full_description IS NOT NULL "
         "AND (cover_letter_path IS NULL OR cover_letter_path = '') "
         "AND COALESCE(cover_attempts, 0) < ? "
+        "AND LOWER(site) NOT LIKE '%linkedin%' AND url NOT LIKE '%linkedin.com%' "
         "ORDER BY fit_score DESC LIMIT ?",
         (min_score, MAX_ATTEMPTS, limit),
     ).fetchall()

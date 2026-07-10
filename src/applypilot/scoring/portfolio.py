@@ -118,6 +118,8 @@ def run_portfolio_selection(min_score: int = 7, limit: int = 0) -> dict:
         WHERE fit_score >= ?
           AND full_description IS NOT NULL
           AND portfolio_project_ids IS NULL
+          AND LOWER(site) NOT LIKE '%linkedin%'
+          AND url NOT LIKE '%linkedin.com%'
         ORDER BY fit_score DESC
         """,
         (min_score,),

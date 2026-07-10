@@ -190,8 +190,16 @@ class LLMClient:
         messages: list[dict],
         temperature: float = 0.0,
         max_tokens: int = 4096,
+        json_mode: bool = False,
     ) -> str:
-        """Send a chat completion request and return the assistant message text."""
+        """Send a chat completion request and return the assistant message text.
+
+        When json_mode=True and the provider is Gemini, uses the native
+        generateContent API with responseMimeType=application/json so
+        structured outputs are complete and parseable.
+        """
+        if json_mode and self._is_gemini:
+            self._use_native_gemini = True
         # Qwen3 optimization: prepend /no_think to skip chain-of-thought
         # reasoning, saving tokens on structured extraction tasks.
         if "qwen" in self.model.lower() and messages:

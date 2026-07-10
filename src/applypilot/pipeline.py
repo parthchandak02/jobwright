@@ -13,6 +13,7 @@ Usage (via CLI):
 from __future__ import annotations
 
 import logging
+import os
 import threading
 import time
 from datetime import datetime
@@ -123,11 +124,17 @@ def _run_score() -> dict:
         return {"status": f"error: {e}"}
 
 
+def _prep_limit() -> int:
+    """Cap portfolio/tailor/cover batch size for daily prep (default: 2x APPLY_LIMIT)."""
+    apply_limit = int(os.environ.get("APPLY_LIMIT", "5"))
+    return int(os.environ.get("APPLY_PREP_LIMIT", str(max(apply_limit * 2, 10))))
+
+
 def _run_portfolio(min_score: int = 7) -> dict:
     """Stage: Portfolio project selection for high-fit jobs."""
     try:
         from applypilot.scoring.portfolio import run_portfolio_selection
-        return run_portfolio_selection(min_score=min_score)
+        return run_portfolio_selection(min_score=min_score, limit=_prep_limit())
     except Exception as e:
         log.error("Portfolio selection failed: %s", e)
         return {"status": f"error: {e}"}
@@ -137,7 +144,7 @@ def _run_tailor(min_score: int = 7, validation_mode: str = "normal") -> dict:
     """Stage: Resume tailoring — generate tailored resumes for high-fit jobs."""
     try:
         from applypilot.scoring.tailor import run_tailoring
-        run_tailoring(min_score=min_score, validation_mode=validation_mode)
+        run_tailoring(min_score=min_score, limit=_prep_limit(), validation_mode=validation_mode)
         return {"status": "ok"}
     except Exception as e:
         log.error("Tailoring failed: %s", e)
@@ -148,7 +155,7 @@ def _run_cover(min_score: int = 7, validation_mode: str = "normal") -> dict:
     """Stage: Cover letter generation."""
     try:
         from applypilot.scoring.cover_letter import run_cover_letters
-        run_cover_letters(min_score=min_score, validation_mode=validation_mode)
+        run_cover_letters(min_score=min_score, limit=_prep_limit(), validation_mode=validation_mode)
         return {"status": "ok"}
     except Exception as e:
         log.error("Cover letter generation failed: %s", e)

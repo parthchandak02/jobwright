@@ -394,7 +394,8 @@ def get_jobs_by_stage(conn: sqlite3.Connection | None = None,
         "scored": "fit_score IS NOT NULL",
         "pending_tailor": (
             "fit_score >= ? AND full_description IS NOT NULL "
-            "AND tailored_resume_path IS NULL AND COALESCE(tailor_attempts, 0) < 5"
+            "AND tailored_resume_path IS NULL AND COALESCE(tailor_attempts, 0) < 5 "
+            "AND LOWER(site) NOT LIKE '%linkedin%' AND url NOT LIKE '%linkedin.com%'"
         ),
         "tailored": "tailored_resume_path IS NOT NULL",
         "pending_apply": (

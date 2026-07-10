@@ -154,6 +154,7 @@ def apply(
     ),
     continuous: bool = typer.Option(False, "--continuous", "-c", help="Run forever, polling for new jobs."),
     dry_run: bool = typer.Option(False, "--dry-run", help="Preview actions without submitting."),
+    live: bool = typer.Option(False, "--live", help="Submit applications (overrides APPLY_DRY_RUN)."),
     headless: bool = typer.Option(False, "--headless", help="Run browsers in headless mode."),
     url: Optional[str] = typer.Option(None, "--url", help="Apply to a specific job URL."),
     gen: bool = typer.Option(False, "--gen", help="Generate prompt file for manual debugging instead of running."),
@@ -169,7 +170,9 @@ def apply(
     if agent_provider:
         os.environ["AGENT_PROVIDER"] = agent_provider
 
-    if os.environ.get("APPLY_DRY_RUN", "").lower() in ("1", "true", "yes"):
+    if live:
+        dry_run = False
+    elif os.environ.get("APPLY_DRY_RUN", "").lower() in ("1", "true", "yes"):
         dry_run = True
 
     from applypilot.config import check_tier, PROFILE_PATH as _profile_path, get_agent_provider
