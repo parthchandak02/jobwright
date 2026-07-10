@@ -2,25 +2,82 @@
 
 > **⚠️ ApplyPilot** is the original open-source project, created by [Pickle-Pixel](https://github.com/Pickle-Pixel) and first published on GitHub on **February 17, 2026**. We are **not affiliated** with applypilot.app, useapplypilot.com, or any other product using the "ApplyPilot" name. These sites are **not associated with this project** and may misrepresent what they offer. If you're looking for the autonomous, open-source job application agent — you're in the right place.
 
-# ApplyPilot
+# ApplyPilot-Cursor
 
-**Applied to 1,000 jobs in 2 days. Fully autonomous. Open source.**
+**Fork of [Pickle-Pixel/ApplyPilot](https://github.com/Pickle-Pixel/ApplyPilot)** with Cursor Agent / Hermes support, portfolio-aware tailoring, and Printing Press CLI wrapper.
 
-[![PyPI version](https://img.shields.io/pypi/v/applypilot?color=blue)](https://pypi.org/project/applypilot/)
-[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
-[![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-green.svg)](LICENSE)
-[![GitHub stars](https://img.shields.io/github/stars/Pickle-Pixel/ApplyPilot?style=social)](https://github.com/Pickle-Pixel/ApplyPilot)
-[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/S6S01UL5IO)
+Upstream: AGPL-3.0. See [docs/ADR-001-fork.md](docs/ADR-001-fork.md).
 
+## Quick Start
 
+```bash
+pip install -e .
+pip install --no-deps python-jobspy && pip install pydantic tls-client requests markdownify regex
+playwright install chromium
 
+applypilot init
+applypilot doctor
 
-https://github.com/user-attachments/assets/7ee3417f-43d4-4245-9952-35df1e77f2df
+# Stages 1-5 (Gemini API)
+applypilot run discover enrich score portfolio tailor cover -w 4 --min-score 7
 
+# Stage 6 (Cursor SDK + Playwright MCP)
+export CURSOR_API_KEY=...
+applypilot apply --dry-run --limit 1
+
+# Agent-native wrapper
+chmod +x bin/job-apply-pp-cli
+./bin/job-apply-pp-cli status --agent
+```
+
+## What Changed vs Upstream
+
+| Feature | Upstream | This fork |
+|---------|----------|-----------|
+| Stage 6 agent | Claude Code CLI only | `cursor-sdk` (default), `cursor-cli`, `claude` |
+| Portfolio matching | No | `portfolio` stage — 4-5 projects per JD |
+| Scheduling | `--continuous` | Hermes cron scripts |
+| Agent CLI | No | `job-apply-pp-cli` + `pp-job-apply` skill |
+| Safety | Partial | PR #59 fixes + `RESULT:DRYRUN` |
+
+## Requirements
+
+### Full Pipeline
+- Python 3.11+
+- Node.js 18+ (Playwright MCP)
+- `GEMINI_API_KEY` (stages 1-5)
+- `CURSOR_API_KEY` (stage 6, default provider)
+- Chrome/Chromium
+
+### Agent Providers
+
+```bash
+export AGENT_PROVIDER=cursor-sdk   # default — uses cursor-sdk Python package
+export AGENT_PROVIDER=cursor-cli   # fallback — uses `agent` CLI
+export AGENT_PROVIDER=claude       # legacy upstream behavior
+```
+
+## Hermes Cron
+
+```bash
+chmod +x scripts/*.sh bin/job-apply-pp-cli
+./scripts/setup_hermes_cron.sh
+```
+
+## Printing Press Wrapper
+
+```bash
+job-apply-pp-cli pipeline run --stages discover,score,portfolio,tailor,cover
+job-apply-pp-cli queue ready --agent --min-score 7
+job-apply-pp-cli apply next --dry-run
+```
+
+Skill: [skills/pp-job-apply/SKILL.md](skills/pp-job-apply/SKILL.md)
 
 ---
 
-## What It Does
+## Original ApplyPilot README (below)
+
 
 ApplyPilot is a 6-stage autonomous job application pipeline. It discovers jobs across 5+ boards, scores them against your resume with AI, tailors your resume per job, writes cover letters, and **submits applications for you**. It navigates forms, uploads documents, answers screening questions, all hands-free.
 

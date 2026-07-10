@@ -89,6 +89,39 @@ def ensure_dirs():
     """Create all required directories."""
     for d in [APP_DIR, TAILORED_DIR, COVER_LETTER_DIR, LOG_DIR, CHROME_WORKER_DIR, APPLY_WORKER_DIR]:
         d.mkdir(parents=True, exist_ok=True)
+    try:
+        APP_DIR.chmod(0o700)
+    except OSError:
+        pass
+
+
+def write_private_text(path: Path, content: str) -> None:
+    """Write a file with owner-only permissions (secrets, MCP configs)."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
+    try:
+        path.chmod(0o600)
+    except OSError:
+        pass
+
+
+def get_agent_provider() -> str:
+    """Return configured stage-6 agent provider name."""
+    load_env()
+    return os.environ.get("AGENT_PROVIDER", "cursor-sdk").lower()
+
+
+def has_apply_agent() -> bool:
+    """Check if stage-6 agent backend is available."""
+    load_env()
+    provider = get_agent_provider()
+    if provider == "cursor-sdk":
+        return bool(os.environ.get("CURSOR_API_KEY"))
+    if provider == "cursor-cli":
+        return shutil.which("agent") is not None
+    if provider == "claude":
+        return shutil.which("claude") is not None
+    return False
 
 
 def load_profile() -> dict:
@@ -176,7 +209,7 @@ def load_env():
     from dotenv import load_dotenv
     if ENV_PATH.exists():
         load_dotenv(ENV_PATH)
-    # Also try CWD .env as fallback
+    # Also try CWD env file as fallback
     load_dotenv()
 
 
@@ -187,7 +220,7 @@ def load_env():
 TIER_LABELS = {
     1: "Discovery",
     2: "AI Scoring & Tailoring",
-    3: "Full Auto-Apply",
+    3: "Full Auto-Apply (Cursor/Hermes)",
 }
 
 TIER_COMMANDS: dict[int, list[str]] = {
@@ -202,7 +235,7 @@ def get_tier() -> int:
 
     Tier 1 (Discovery):            Python + pip
     Tier 2 (AI Scoring & Tailoring): + LLM API key
-    Tier 3 (Full Auto-Apply):       + Claude Code CLI + Chrome
+    Tier 3 (Full Auto-Apply):       + Agent provider (Cursor SDK/CLI or Claude) + Chrome
     """
     load_env()
 
@@ -210,14 +243,13 @@ def get_tier() -> int:
     if not has_llm:
         return 1
 
-    has_claude = shutil.which("claude") is not None
     try:
         get_chrome_path()
         has_chrome = True
     except FileNotFoundError:
         has_chrome = False
 
-    if has_claude and has_chrome:
+    if has_apply_agent() and has_chrome:
         return 3
 
     return 2
@@ -241,12 +273,20 @@ def check_tier(required: int, feature: str) -> None:
     if required >= 2 and not any(os.environ.get(k) for k in ("GEMINI_API_KEY", "OPENAI_API_KEY", "LLM_URL")):
         missing.append("LLM API key — run [bold]applypilot init[/bold] or set GEMINI_API_KEY")
     if required >= 3:
-        if not shutil.which("claude"):
-            missing.append("Claude Code CLI — install from [bold]https://claude.ai/code[/bold]")
+        provider = get_agent_provider()
+        if not has_apply_agent():
+            if provider == "cursor-sdk":
+                missing.append("CURSOR_API_KEY — set in ~/.applypilot/.env (Cursor Dashboard → Integrations)")
+            elif provider == "cursor-cli":
+                missing.append("Cursor Agent CLI — install: curl https://cursor.com/install -fsSL | bash")
+            else:
+                missing.append("Claude Code CLI — install from [bold]https://claude.ai/code[/bold]")
         try:
             get_chrome_path()
         except FileNotFoundError:
             missing.append("Chrome/Chromium — install or set CHROME_PATH")
+        if not shutil.which("npx"):
+            missing.append("Node.js (npx) — needed for Playwright MCP")
 
     _console.print(
         f"\n[red]'{feature}' requires {TIER_LABELS.get(required, f'Tier {required}')} (Tier {required}).[/red]\n"

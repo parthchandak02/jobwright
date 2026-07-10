@@ -32,12 +32,13 @@ console = Console()
 # Stage definitions
 # ---------------------------------------------------------------------------
 
-STAGE_ORDER = ("discover", "enrich", "score", "tailor", "cover", "pdf")
+STAGE_ORDER = ("discover", "enrich", "score", "portfolio", "tailor", "cover", "pdf")
 
 STAGE_META: dict[str, dict] = {
     "discover": {"desc": "Job discovery (JobSpy + Workday + smart extract)"},
     "enrich":   {"desc": "Detail enrichment (full descriptions + apply URLs)"},
     "score":    {"desc": "LLM scoring (fit 1-10)"},
+    "portfolio": {"desc": "Portfolio project selection per job"},
     "tailor":   {"desc": "Resume tailoring (LLM + validation)"},
     "cover":    {"desc": "Cover letter generation"},
     "pdf":      {"desc": "PDF conversion (tailored resumes + cover letters)"},
@@ -49,7 +50,8 @@ _UPSTREAM: dict[str, str | None] = {
     "discover": None,
     "enrich":   "discover",
     "score":    "enrich",
-    "tailor":   "score",
+    "portfolio": "score",
+    "tailor":   "portfolio",
     "cover":    "tailor",
     "pdf":      "cover",
 }
@@ -121,6 +123,16 @@ def _run_score() -> dict:
         return {"status": f"error: {e}"}
 
 
+def _run_portfolio(min_score: int = 7) -> dict:
+    """Stage: Portfolio project selection for high-fit jobs."""
+    try:
+        from applypilot.scoring.portfolio import run_portfolio_selection
+        return run_portfolio_selection(min_score=min_score)
+    except Exception as e:
+        log.error("Portfolio selection failed: %s", e)
+        return {"status": f"error: {e}"}
+
+
 def _run_tailor(min_score: int = 7, validation_mode: str = "normal") -> dict:
     """Stage: Resume tailoring — generate tailored resumes for high-fit jobs."""
     try:
@@ -159,6 +171,7 @@ _STAGE_RUNNERS: dict[str, callable] = {
     "discover": _run_discover,
     "enrich":   _run_enrich,
     "score":    _run_score,
+    "portfolio": _run_portfolio,
     "tailor":   _run_tailor,
     "cover":    _run_cover,
     "pdf":      _run_pdf,
@@ -223,6 +236,10 @@ class _StageTracker:
 _PENDING_SQL: dict[str, str] = {
     "enrich": "SELECT COUNT(*) FROM jobs WHERE detail_scraped_at IS NULL",
     "score":  "SELECT COUNT(*) FROM jobs WHERE full_description IS NOT NULL AND fit_score IS NULL",
+    "portfolio": (
+        "SELECT COUNT(*) FROM jobs WHERE fit_score >= ? "
+        "AND full_description IS NOT NULL AND portfolio_project_ids IS NULL"
+    ),
     "tailor": (
         "SELECT COUNT(*) FROM jobs WHERE fit_score >= ? "
         "AND full_description IS NOT NULL "
@@ -271,9 +288,10 @@ def _run_stage_streaming(
     """
     runner = _STAGE_RUNNERS[stage]
     kwargs: dict = {}
-    if stage in ("tailor", "cover"):
+    if stage in ("tailor", "cover", "portfolio"):
         kwargs["min_score"] = min_score
-        kwargs["validation_mode"] = validation_mode
+        if stage in ("tailor", "cover"):
+            kwargs["validation_mode"] = validation_mode
     if stage in ("discover", "enrich"):
         kwargs["workers"] = workers
 
@@ -342,8 +360,9 @@ def _run_sequential(ordered: list[str], min_score: int, workers: int = 1,
 
         try:
             kwargs: dict = {}
-            if name in ("tailor", "cover"):
+            if name in ("tailor", "cover", "portfolio"):
                 kwargs["min_score"] = min_score
+            if name in ("tailor", "cover"):
                 kwargs["validation_mode"] = validation_mode
             if name in ("discover", "enrich"):
                 kwargs["workers"] = workers

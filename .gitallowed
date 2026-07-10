@@ -1,0 +1,14 @@
+# git-secrets false positives for applypilot-agent (no secret values)
+os\.environ
+env=env
+CLAUDECODE
+CLAUDE_CODE_ENTRYPOINT
+GEMINI_API_KEY
+CURSOR_API_KEY
+CAPSOLVER_API_KEY
+\.env
+applypilot/\.env
+~/.applypilot/
+ENV_PATH
+\*\.env
+\.env\.\*

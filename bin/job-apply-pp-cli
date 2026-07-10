@@ -1,0 +1,119 @@
+#!/usr/bin/env bash
+# Printing Press-style thin wrapper over applypilot-cursor.
+set -euo pipefail
+
+AGENT_JSON=false
+COMPACT=false
+NO_INPUT=false
+CMD=""
+ARGS=()
+
+usage() {
+  cat <<'EOF'
+job-apply-pp-cli — agent-native job apply pipeline wrapper
+
+Usage:
+  job-apply-pp-cli pipeline run [--stages STAGES] [--min-score N]
+  job-apply-pp-cli queue ready [--min-score N] [--agent]
+  job-apply-pp-cli apply next|batch [--dry-run] [--limit N] [--workers N]
+  job-apply-pp-cli status [--agent]
+  job-apply-pp-cli doctor
+
+Flags:
+  --agent       JSON output for agents
+  --json        Alias for --agent
+  --compact     Terse output
+  --no-input    Non-interactive
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --agent|--json) AGENT_JSON=true; shift ;;
+    --compact) COMPACT=true; shift ;;
+    --no-input) NO_INPUT=true; shift ;;
+    -h|--help) usage; exit 0 ;;
+    pipeline|queue|apply|status|doctor)
+      if [[ -z "${CMD}" ]]; then CMD="$1"; shift; else ARGS+=("$1"); shift; fi ;;
+    *) ARGS+=("$1"); shift ;;
+  esac
+done
+
+CMD="${CMD:-status}"
+export APPLYPILOT_DIR="${APPLYPILOT_DIR:-$HOME/.applypilot}"
+export PATH="${HOME}/.local/bin:${PATH}"
+
+json_line() { echo "$1"; }
+human() { echo "$1"; }
+out() { if $AGENT_JSON; then json_line "$1"; else human "$1"; fi; }
+
+case "${CMD}" in
+  pipeline)
+    sub="${ARGS[0]:-run}"
+    if [[ "${sub}" != "run" ]]; then usage; exit 1; fi
+    stages="discover enrich score portfolio tailor cover"
+    min_score=7
+    for ((i=1; i<${#ARGS[@]}; i++)); do
+      case "${ARGS[$i]}" in
+        --stages) stages="${ARGS[$((i+1))]//,/ }"; ((i++)) ;;
+        --min-score) min_score="${ARGS[$((i+1))]}"; ((i++)) ;;
+      esac
+    done
+    applypilot run ${stages} --min-score "${min_score}"
+    out '{"status":"ok","command":"pipeline run"}'
+    ;;
+  queue)
+    sub="${ARGS[0]:-ready}"
+    min_score=7
+    for ((i=1; i<${#ARGS[@]}; i++)); do
+      case "${ARGS[$i]}" in
+        --min-score) min_score="${ARGS[$((i+1))]}"; ((i++)) ;;
+      esac
+    done
+    if $AGENT_JSON; then
+      applypilot status 2>/dev/null | tail -5 || true
+      sqlite3 "${APPLYPILOT_DIR}/applypilot.db" \
+        "SELECT url,title,fit_score FROM jobs WHERE tailored_resume_path IS NOT NULL AND applied_at IS NULL AND fit_score>=${min_score} ORDER BY fit_score DESC LIMIT 10;" \
+        | awk -F'|' 'BEGIN{print "["} {printf "%s{\"url\":\"%s\",\"title\":\"%s\",\"fit_score\":%s}", (NR>1?",":""), $1, $2, $3} END{print "]"}'
+    else
+      echo "Ready to apply (score >= ${min_score}):"
+      sqlite3 -header -column "${APPLYPILOT_DIR}/applypilot.db" \
+        "SELECT title, site, fit_score, url FROM jobs WHERE tailored_resume_path IS NOT NULL AND applied_at IS NULL AND fit_score>=${min_score} ORDER BY fit_score DESC LIMIT 10;"
+    fi
+    ;;
+  apply)
+    sub="${ARGS[0]:-next}"
+    limit=1; workers=1; dry_run=true
+    for ((i=1; i<${#ARGS[@]}; i++)); do
+      case "${ARGS[$i]}" in
+        --limit) limit="${ARGS[$((i+1))]}"; ((i++)) ;;
+        --workers) workers="${ARGS[$((i+1))]}"; ((i++)) ;;
+        --dry-run) dry_run=true ;;
+        --live) dry_run=false ;;
+      esac
+    done
+    extra=()
+    $dry_run && extra+=(--dry-run)
+    if [[ "${sub}" == "next" ]]; then
+      url=$(sqlite3 "${APPLYPILOT_DIR}/applypilot.db" \
+        "SELECT url FROM jobs WHERE tailored_resume_path IS NOT NULL AND applied_at IS NULL AND fit_score>=7 ORDER BY fit_score DESC LIMIT 1;")
+      [[ -z "${url}" ]] && { out '{"status":"empty","message":"no jobs ready"}'; exit 0; }
+      applypilot apply --url "${url}" "${extra[@]}"
+    else
+      applypilot apply --limit "${limit}" --workers "${workers}" "${extra[@]}"
+    fi
+    out "{\"status\":\"ok\",\"command\":\"apply ${sub}\"}"
+    ;;
+  status)
+    if $AGENT_JSON; then
+      applypilot status
+    else
+      applypilot status
+    fi
+    ;;
+  doctor)
+    applypilot doctor
+    out '{"status":"ok","command":"doctor"}'
+    ;;
+  *) usage; exit 1 ;;
+esac

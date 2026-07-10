@@ -39,3 +39,12 @@ Thumbs.db
 
 # Claude Code
 .claude/
+
+# Playwright MCP session dumps (tokens, browsing artifacts)
+.playwright-mcp/
+
+# User data dir copies (canonical: ~/.applypilot/)
+searches.yaml
+dashboard.html
+.applypilot/
+.hermes/

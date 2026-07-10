@@ -52,6 +52,36 @@
     "preserved_school": "Your University",
     "real_metrics": ["50% improvement", "10x faster"]
   },
+  "portfolio": [
+    {
+      "id": "proj-1",
+      "name": "Project X",
+      "stack": ["Python", "FastAPI", "PostgreSQL"],
+      "bullets": [
+        "Built API serving 10K requests/day with 99.9% uptime",
+        "Reduced latency 40% via query optimization"
+      ],
+      "url": "https://github.com/yourusername/project-x"
+    },
+    {
+      "id": "proj-2",
+      "name": "Project Y",
+      "stack": ["React", "TypeScript", "Node.js"],
+      "bullets": [
+        "Shipped dashboard used by 500+ internal users",
+        "Integrated real-time WebSocket updates"
+      ],
+      "url": ""
+    }
+  ],
+  "screening": {
+    "age_18_plus": "Yes",
+    "background_check": "Yes",
+    "felony": "No",
+    "previously_worked_here": "No",
+    "how_heard": "Online Job Board",
+    "needs_human_answer": ""
+  },
   "eeo_voluntary": {
     "gender": "Decline to self-identify",
     "race_ethnicity": "Decline to self-identify",

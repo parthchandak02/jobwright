@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 from applypilot.config import COVER_LETTER_DIR, RESUME_PATH, load_profile
 from applypilot.database import get_connection, get_jobs_by_stage
 from applypilot.llm import get_client
+from applypilot.scoring.portfolio import get_selected_projects
 from applypilot.scoring.validator import (
     BANNED_WORDS,
     LLM_LEAK_PHRASES,
@@ -142,6 +143,11 @@ def generate_cover_letter(
         f"LOCATION: {job.get('location', 'N/A')}\n\n"
         f"DESCRIPTION:\n{(job.get('full_description') or '')[:6000]}"
     )
+
+    selected_projects = get_selected_projects(profile, job)
+    if selected_projects:
+        names = ", ".join(p.get("name", p.get("id", "")) for p in selected_projects)
+        job_text += f"\n\nREFERENCE THESE PORTFOLIO PROJECTS BY NAME: {names}"
 
     avoid_notes: list[str] = []
     letter = ""

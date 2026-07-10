@@ -109,6 +109,7 @@ def init_db(db_path: Path | str | None = None) -> sqlite3.Connection:
             fit_score             INTEGER,
             score_reasoning       TEXT,
             scored_at             TEXT,
+            portfolio_project_ids TEXT,
 
             -- Tailoring stage (resume tailor)
             tailored_resume_path  TEXT,
@@ -162,6 +163,7 @@ _ALL_COLUMNS: dict[str, str] = {
     "fit_score": "INTEGER",
     "score_reasoning": "TEXT",
     "scored_at": "TEXT",
+    "portfolio_project_ids": "TEXT",
     # Tailoring
     "tailored_resume_path": "TEXT",
     "tailored_at": "TEXT",
@@ -321,6 +323,10 @@ def get_stats(conn: sqlite3.Connection | None = None) -> dict:
         "WHERE tailored_resume_path IS NOT NULL "
         "AND applied_at IS NULL "
         "AND application_url IS NOT NULL"
+    ).fetchone()[0]
+
+    stats["with_portfolio"] = conn.execute(
+        "SELECT COUNT(*) FROM jobs WHERE portfolio_project_ids IS NOT NULL"
     ).fetchone()[0]
 
     return stats

@@ -14,6 +14,7 @@ blocked:
   sites:
     - "glassdoor"
     - "google"
+    - "linkedin"
     - "accenture"
     - "AccentureCareers"
     - "Workopolis"
@@ -21,6 +22,9 @@ blocked:
     - "%glassdoor%"
     - "%google.com/about/careers%"
     - "%google.jobs%"
+    - "%linkedin.com/jobs%"
+    - "%linkedin.com%apply%"
+    - "%zoox%"
     - "%accenture%"
     - "%workopolis.com/out%"
 

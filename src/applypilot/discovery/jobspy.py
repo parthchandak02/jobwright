@@ -132,6 +132,21 @@ def store_jobspy_results(conn: sqlite3.Connection, df, source_label: str) -> tup
         company = str(row.get("company", "")) if str(row.get("company", "")) != "nan" else None
         location_str = str(row.get("location", "")) if str(row.get("location", "")) != "nan" else None
 
+        search_cfg = config.load_search_config()
+        excluded = False
+        for exc in search_cfg.get("exclude_companies", []):
+            if not exc:
+                continue
+            el = exc.lower()
+            if company and el in company.lower():
+                excluded = True
+                break
+            if title and el in title.lower():
+                excluded = True
+                break
+        if excluded:
+            continue
+
         # Build salary string from min/max
         salary = None
         min_amt = row.get("min_amount")

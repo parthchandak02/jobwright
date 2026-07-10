@@ -26,7 +26,7 @@ console = Console()
 log = logging.getLogger(__name__)
 
 # Valid pipeline stages (in execution order)
-VALID_STAGES = ("discover", "enrich", "score", "tailor", "cover", "pdf")
+VALID_STAGES = ("discover", "enrich", "score", "portfolio", "tailor", "cover", "pdf")
 
 
 # ---------------------------------------------------------------------------
@@ -147,7 +147,11 @@ def apply(
     limit: Optional[int] = typer.Option(None, "--limit", "-l", help="Max applications to submit."),
     workers: int = typer.Option(1, "--workers", "-w", help="Number of parallel browser workers."),
     min_score: int = typer.Option(7, "--min-score", help="Minimum fit score for job selection."),
-    model: str = typer.Option("haiku", "--model", "-m", help="Claude model name."),
+    model: str = typer.Option("composer-2.5", "--model", "-m", help="Agent model name."),
+    agent_provider: str = typer.Option(
+        None, "--agent-provider",
+        help="Stage-6 agent: cursor-sdk (default), cursor-cli, claude.",
+    ),
     continuous: bool = typer.Option(False, "--continuous", "-c", help="Run forever, polling for new jobs."),
     dry_run: bool = typer.Option(False, "--dry-run", help="Preview actions without submitting."),
     headless: bool = typer.Option(False, "--headless", help="Run browsers in headless mode."),
@@ -161,7 +165,14 @@ def apply(
     """Launch auto-apply to submit job applications."""
     _bootstrap()
 
-    from applypilot.config import check_tier, PROFILE_PATH as _profile_path
+    import os
+    if agent_provider:
+        os.environ["AGENT_PROVIDER"] = agent_provider
+
+    if os.environ.get("APPLY_DRY_RUN", "").lower() in ("1", "true", "yes"):
+        dry_run = True
+
+    from applypilot.config import check_tier, PROFILE_PATH as _profile_path, get_agent_provider
     from applypilot.database import get_connection
 
     # --- Utility modes (no Chrome/Claude needed) ---
@@ -186,7 +197,7 @@ def apply(
 
     # --- Full apply mode ---
 
-    # Check 1: Tier 3 required (Claude Code CLI + Chrome)
+    # Check 1: Tier 3 required (agent + Chrome)
     check_tier(3, "auto-apply")
 
     # Check 2: Profile exists
@@ -221,13 +232,22 @@ def apply(
             console.print("[red]No matching job found for that URL.[/red]")
             raise typer.Exit(code=1)
         mcp_path = _profile_path.parent / ".mcp-apply-0.json"
+        provider = get_agent_provider()
         console.print(f"[green]Wrote prompt to:[/green] {prompt_file}")
-        console.print(f"\n[bold]Run manually:[/bold]")
-        console.print(
-            f"  claude --model {model} -p "
-            f"--mcp-config {mcp_path} "
-            f"--permission-mode bypassPermissions < {prompt_file}"
-        )
+        console.print(f"\n[bold]Run manually ({provider}):[/bold]")
+        if provider == "cursor-cli":
+            console.print(
+                f"  agent -p --trust --force --approve-mcps --workspace ~/.applypilot/apply-workers/0 "
+                f"$(cat {prompt_file})"
+            )
+        elif provider == "claude":
+            console.print(
+                f"  claude --model {model} -p "
+                f"--mcp-config {mcp_path} "
+                f"--permission-mode bypassPermissions < {prompt_file}"
+            )
+        else:
+            console.print(f"  AGENT_PROVIDER=cursor-sdk applypilot apply --url {target}")
         return
 
     from applypilot.apply.launcher import main as apply_main
@@ -237,6 +257,7 @@ def apply(
     console.print("\n[bold blue]Launching Auto-Apply[/bold blue]")
     console.print(f"  Limit:    {'unlimited' if continuous else effective_limit}")
     console.print(f"  Workers:  {workers}")
+    console.print(f"  Provider: {get_agent_provider()}")
     console.print(f"  Model:    {model}")
     console.print(f"  Headless: {headless}")
     console.print(f"  Dry run:  {dry_run}")
@@ -396,13 +417,37 @@ def doctor() -> None:
                         "Set GEMINI_API_KEY in ~/.applypilot/.env (run 'applypilot init')"))
 
     # --- Tier 3 checks ---
-    # Claude Code CLI
-    claude_bin = shutil.which("claude")
-    if claude_bin:
-        results.append(("Claude Code CLI", ok_mark, claude_bin))
+    from applypilot.config import get_agent_provider, has_apply_agent
+
+    provider = get_agent_provider()
+    if provider == "cursor-sdk":
+        cursor_key = os.environ.get("CURSOR_API_KEY")
+        if cursor_key:
+            results.append(("CURSOR_API_KEY", ok_mark, f"cursor-sdk ({os.environ.get('APPLY_AGENT_MODEL', 'composer-2.5')})"))
+        else:
+            results.append(("CURSOR_API_KEY", fail_mark,
+                            "Set in ~/.applypilot/.env (Cursor Dashboard → Integrations)"))
+        try:
+            import cursor_sdk  # noqa: F401
+            results.append(("cursor-sdk package", ok_mark, "pip install cursor-sdk"))
+        except ImportError:
+            results.append(("cursor-sdk package", fail_mark, "pip install cursor-sdk"))
+    elif provider == "cursor-cli":
+        agent_bin = shutil.which("agent")
+        if agent_bin:
+            results.append(("Cursor Agent CLI", ok_mark, agent_bin))
+        else:
+            results.append(("Cursor Agent CLI", fail_mark,
+                            "curl https://cursor.com/install -fsSL | bash"))
     else:
-        results.append(("Claude Code CLI", fail_mark,
-                        "Install from https://claude.ai/code (needed for auto-apply)"))
+        claude_bin = shutil.which("claude")
+        if claude_bin:
+            results.append(("Claude Code CLI", ok_mark, claude_bin))
+        else:
+            results.append(("Claude Code CLI", fail_mark,
+                            "Install from https://claude.ai/code"))
+
+    results.append(("AGENT_PROVIDER", ok_mark if has_apply_agent() else fail_mark, provider))
 
     # Chrome
     try:
@@ -446,9 +491,9 @@ def doctor() -> None:
 
     if tier == 1:
         console.print("[dim]  → Tier 2 unlocks: scoring, tailoring, cover letters (needs LLM API key)[/dim]")
-        console.print("[dim]  → Tier 3 unlocks: auto-apply (needs Claude Code CLI + Chrome + Node.js)[/dim]")
+        console.print("[dim]  → Tier 3 unlocks: auto-apply (needs CURSOR_API_KEY or agent CLI + Chrome + Node.js)[/dim]")
     elif tier == 2:
-        console.print("[dim]  → Tier 3 unlocks: auto-apply (needs Claude Code CLI + Chrome + Node.js)[/dim]")
+        console.print("[dim]  → Tier 3 unlocks: auto-apply (needs CURSOR_API_KEY or agent CLI + Chrome + Node.js)[/dim]")
 
     console.print()
 

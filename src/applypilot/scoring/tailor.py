@@ -19,6 +19,7 @@ from pathlib import Path
 from applypilot.config import RESUME_PATH, TAILORED_DIR, load_profile
 from applypilot.database import get_connection, get_jobs_by_stage
 from applypilot.llm import get_client
+from applypilot.scoring.portfolio import get_selected_projects
 from applypilot.scoring.validator import (
     BANNED_WORDS,
     FABRICATION_WATCHLIST,
@@ -375,6 +376,16 @@ def tailor_resume(
         f"LOCATION: {job.get('location', 'N/A')}\n\n"
         f"DESCRIPTION:\n{(job.get('full_description') or '')[:6000]}"
     )
+
+    selected_projects = get_selected_projects(profile, job)
+    if selected_projects:
+        proj_lines = []
+        for p in selected_projects:
+            proj_lines.append(
+                f"- {p.get('name', p.get('id', ''))}: {', '.join(p.get('stack', []))}\n"
+                + "\n".join(f"  * {b}" for b in p.get("bullets", [])[:4])
+            )
+        job_text += "\n\nPRIORITY PORTFOLIO PROJECTS (emphasize these in PROJECTS section):\n" + "\n".join(proj_lines)
 
     report: dict = {
         "attempts": 0, "validator": None, "judge": None,
