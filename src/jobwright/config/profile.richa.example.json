@@ -89,5 +89,9 @@
     "background_check": "Yes",
     "felony": "No"
   },
-  "eeo_voluntary": {}
+  "eeo_voluntary": {},
+  "tailor_mode": "keyword_swap",
+  "cover_letter_mode": "template",
+  "cover_letter_template": "cover-letter/template.txt",
+  "cover_letter_examples_dir": "cover-letter/examples"
 }

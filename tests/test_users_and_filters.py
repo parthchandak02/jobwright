@@ -81,6 +81,18 @@ def test_users_registry_roundtrip(tmp_path, monkeypatch):
     assert users.get_user("richa") is None
 
 
+def test_find_user_by_whatsapp(tmp_path, monkeypatch):
+    import jobwright.users as users
+
+    monkeypatch.setattr(users, "USERS_ROOT", tmp_path)
+    monkeypatch.setattr(users, "REGISTRY_PATH", tmp_path / "users.yaml")
+
+    users.add_user("richa", whatsapp_target="whatsapp:120363@g.us")
+    assert users.find_user_by_whatsapp("whatsapp:120363@g.us") is not None
+    assert users.find_user_by_whatsapp("120363@g.us").user_id == "richa"
+    assert users.find_user_by_whatsapp("whatsapp:unknown") is None
+
+
 def test_set_active_user_updates_paths(tmp_path, monkeypatch):
     import jobwright.users as users
     import jobwright.config as config

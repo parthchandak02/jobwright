@@ -1,19 +1,29 @@
 """Multi-profile user registry.
 
-Registry file: ~/.jobwright-users/users.yaml
-Per-user data: ~/.jobwright-users/<user_id>/  (full JOBWRIGHT_DIR)
+Registry file: <repo>/users/users.yaml
+Per-user data: <repo>/users/<user_id>/  (full JOBWRIGHT_DIR)
+Override: JOBWRIGHT_USERS_ROOT
 """
 
 from __future__ import annotations
 
+import os
 import re
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
 import yaml
 
-USERS_ROOT = Path.home() / ".jobwright-users"
+
+def _default_users_root() -> Path:
+    override = os.environ.get("JOBWRIGHT_USERS_ROOT")
+    if override:
+        return Path(override).expanduser().resolve()
+    return Path(__file__).resolve().parents[2] / "users"
+
+
+USERS_ROOT = _default_users_root()
 REGISTRY_PATH = USERS_ROOT / "users.yaml"
 
 _USER_ID_RE = re.compile(r"^[a-z][a-z0-9_-]{1,31}$")
@@ -84,6 +94,31 @@ def get_user(user_id: str) -> UserRecord | None:
     return None
 
 
+def _normalize_whatsapp_target(target: str) -> str:
+    """Normalize whatsapp deliver targets for comparison."""
+    t = (target or "").strip().lower()
+    if not t:
+        return ""
+    if not t.startswith("whatsapp:"):
+        t = f"whatsapp:{t}"
+    return t
+
+
+def find_user_by_whatsapp(target: str) -> UserRecord | None:
+    """Match a Hermes/WhatsApp deliver target to a registry user."""
+    needle = _normalize_whatsapp_target(target)
+    if not needle:
+        return None
+    bare = needle.removeprefix("whatsapp:")
+    for u in list_users():
+        wt = _normalize_whatsapp_target(u.whatsapp_target)
+        if not wt:
+            continue
+        if wt == needle or wt.removeprefix("whatsapp:") == bare:
+            return u
+    return None
+
+
 def _from_dict(raw: dict[str, Any]) -> UserRecord:
     return UserRecord(
         user_id=str(raw["user_id"]),
@@ -145,8 +180,9 @@ def add_user(
     except OSError:
         pass
 
-    for sub in ("tailored_resumes", "cover_letters", "logs", "chrome-workers", "apply-workers"):
-        (data_dir / sub).mkdir(exist_ok=True)
+    for sub in ("tailored_resumes", "cover_letters", "logs", "chrome-workers", "apply-workers",
+                "resume", "cover-letter", "cover-letter/examples", "references", "references/inbox"):
+        (data_dir / sub).mkdir(parents=True, exist_ok=True)
 
     # No per-user .env: API keys are global (see config.global_env_path).
     # Per-user data dirs hold only profile/resume/searches/db and generated output.

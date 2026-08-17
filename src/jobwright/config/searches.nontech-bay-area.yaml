@@ -1,6 +1,6 @@
 # Non-technical Bay Area search template (Chief of Staff / strategy / CSR / VC platform)
 # Seed with: jobwright users add <id> --template nontech-bay-area
-# Or copy to ~/.jobwright-users/<id>/searches.yaml
+# Or copy to users/<id>/searches.yaml
 
 queries:
   - query: "chief of staff"
