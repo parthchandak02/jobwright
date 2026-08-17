@@ -11,7 +11,7 @@ Hermes loads skills from `~/.hermes/skills/`. Install via:
 Or symlink manually:
 
 ```bash
-ln -sfn /path/to/applypilot-cursor/skills/pp-job-apply \
+ln -sfn /path/to/jobwright/skills/pp-job-apply \
   ~/.hermes/skills/autonomous-ai-agents/pp-job-apply
 ```
 
@@ -29,7 +29,7 @@ hermes cron create "0 7 * * 1-5" \
   --script job_apply_stages_1_5.sh \
   --no-agent \
   --deliver local \
-  --workdir /path/to/applypilot-cursor
+  --workdir /path/to/jobwright
 ```
 
 Scripts must live in `~/.hermes/scripts/` (setup script copies them).

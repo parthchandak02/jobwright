@@ -7,7 +7,7 @@ and exports to PDF using headless Chromium via Playwright.
 import logging
 from pathlib import Path
 
-from applypilot.config import TAILORED_DIR
+import applypilot.config as config
 
 log = logging.getLogger(__name__)
 
@@ -391,7 +391,7 @@ def convert_to_pdf(
 
 
 def batch_convert(limit: int = 50) -> int:
-    """Convert .txt files in TAILORED_DIR that don't have corresponding PDFs.
+    """Convert .txt files in config.TAILORED_DIR that don't have corresponding PDFs.
 
     Scans for .txt files (excluding _JOB.txt and _REPORT.json), checks if a
     .pdf with the same stem already exists, and converts any that are missing.
@@ -402,11 +402,11 @@ def batch_convert(limit: int = 50) -> int:
     Returns:
         Number of PDFs generated.
     """
-    if not TAILORED_DIR.exists():
-        log.warning("Tailored directory does not exist: %s", TAILORED_DIR)
+    if not config.TAILORED_DIR.exists():
+        log.warning("Tailored directory does not exist: %s", config.TAILORED_DIR)
         return 0
 
-    txt_files = sorted(TAILORED_DIR.glob("*.txt"))
+    txt_files = sorted(config.TAILORED_DIR.glob("*.txt"))
     # Exclude _JOB.txt and _CL.txt files from resume conversion
     # (they get their own conversion calls)
     candidates = [
@@ -436,5 +436,5 @@ def batch_convert(limit: int = 50) -> int:
         except Exception as e:
             log.error("Failed to convert %s: %s", f.name, e)
 
-    log.info("Done: %d/%d PDFs generated in %s", converted, len(to_convert), TAILORED_DIR)
+    log.info("Done: %d/%d PDFs generated in %s", converted, len(to_convert), config.TAILORED_DIR)
     return converted

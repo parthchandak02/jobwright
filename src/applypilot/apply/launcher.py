@@ -17,7 +17,7 @@ import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from rich.console import Console
@@ -40,9 +40,161 @@ from applypilot.apply.dashboard import (
 logger = logging.getLogger(__name__)
 
 # Blocked sites loaded from config/sites.yaml
+def _load_manifest_urls() -> list[str] | None:
+    """Load optional URL allowlist from APPLYPILOT_APPLY_MANIFEST env path."""
+    manifest_path = os.environ.get("APPLYPILOT_APPLY_MANIFEST")
+    if not manifest_path:
+        return None
+    path = Path(manifest_path)
+    if not path.exists():
+        return None
+    urls = [line.strip() for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    return urls if urls else None
+
+
+_STALE_LOCK_MINUTES = 60
+
+
+def _build_ats_context(job: dict) -> str:
+    """Fetch ATS-specific schema hints (Greenhouse boards-api) for the apply prompt."""
+    apply_url = job.get("application_url") or job.get("url") or ""
+    secondary_url = job.get("url") or ""
+
+    from applypilot.apply.ats import (
+        detect_ats,
+        fetch_greenhouse_schema,
+        parse_greenhouse_url,
+        summarize_schema_for_prompt,
+        validate_schema_against_profile,
+    )
+
+    ats = detect_ats(apply_url) or detect_ats(secondary_url)
+    if ats != "greenhouse":
+        if ats:
+            return f"== ATS DETECTED: {ats} (use browser; no schema API wired yet) =="
+        return ""
+
+    parsed = parse_greenhouse_url(apply_url) or parse_greenhouse_url(secondary_url)
+    if not parsed:
+        return "== ATS: greenhouse (could not parse board/job id from URL) =="
+
+    board_token, job_id = parsed
+    try:
+        schema = fetch_greenhouse_schema(board_token, job_id)
+        profile = config.load_profile()
+        for warning in validate_schema_against_profile(schema, profile):
+            logger.warning("Schema validation: %s", warning)
+        return summarize_schema_for_prompt(schema)
+    except Exception as e:
+        logger.warning("Greenhouse schema fetch failed: %s", e)
+        return "== ATS: greenhouse (schema fetch failed - discover form in browser) =="
+
+
 def _load_blocked():
     from applypilot.config import load_blocked_sites
     return load_blocked_sites()
+
+
+def _ready_jobs_query(min_score: int, max_attempts: int) -> tuple[str, list]:
+    """SQL WHERE clause + params matching acquire_job queue filters (no manifest)."""
+    blocked_sites, blocked_patterns = _load_blocked()
+    params: list = [max_attempts, min_score]
+    site_clause = ""
+    if blocked_sites:
+        placeholders = ",".join("?" * len(blocked_sites))
+        site_clause = f"AND site NOT IN ({placeholders})"
+        params.extend(blocked_sites)
+    url_clauses = ""
+    if blocked_patterns:
+        url_clauses = " ".join("AND url NOT LIKE ?" for _ in blocked_patterns)
+        params.extend(blocked_patterns)
+    where = (
+        "tailored_resume_path IS NOT NULL"
+        " AND applied_at IS NULL"
+        " AND (apply_status IS NULL OR apply_status = 'failed')"
+        " AND (apply_attempts IS NULL OR apply_attempts < ?)"
+        " AND fit_score >= ?"
+        f" {site_clause} {url_clauses}"
+    )
+    return where, params
+
+
+def list_ready_jobs(
+    min_score: int = 7,
+    limit: int = 5,
+    max_attempts: int | None = None,
+) -> list[dict]:
+    """Jobs matching acquire_job filters, excluding manual ATS (for digest/manifest)."""
+    from applypilot.config import is_manual_ats
+
+    max_attempts = max_attempts or config.DEFAULTS["max_apply_attempts"]
+    where, params = _ready_jobs_query(min_score, max_attempts)
+    conn = get_connection()
+    rows = conn.execute(
+        f"""
+        SELECT url, title, site, application_url, tailored_resume_path,
+               fit_score, location, full_description, cover_letter_path
+        FROM jobs
+        WHERE {where}
+        ORDER BY fit_score DESC, url
+        LIMIT ?
+        """,
+        params + [max(limit * 3, limit)],
+    ).fetchall()
+
+    ready: list[dict] = []
+    for row in rows:
+        job = dict(row)
+        apply_url = job.get("application_url") or job.get("url")
+        if is_manual_ats(apply_url):
+            continue
+        ready.append(job)
+        if len(ready) >= limit:
+            break
+    return ready
+
+
+def write_morning_digest_and_manifest(
+    digest_path: Path,
+    manifest_path: Path,
+    min_score: int = 5,
+    limit: int = 5,
+    max_attempts: int | None = None,
+    apply_enabled: bool = True,
+    user_label: str | None = None,
+) -> int:
+    """Write digest text and URL manifest using the same queue filters as acquire_job.
+
+    If apply_enabled is False, omit the CONFIRM APPLY line (find-only mode).
+    """
+    jobs = list_ready_jobs(min_score=min_score, limit=limit, max_attempts=max_attempts)
+    manifest_path.write_text(
+        "\n".join(job["url"] for job in jobs) + ("\n" if jobs else ""),
+        encoding="utf-8",
+    )
+
+    who = f" ({user_label})" if user_label else ""
+    lines = [
+        f"=== Job Digest{who} ===",
+        f"Date: {datetime.now().strftime('%Y-%m-%d %H:%M %Z')}",
+        "",
+        "Matched jobs (links + tailored materials when ready):",
+        "",
+    ]
+    for idx, job in enumerate(jobs, start=1):
+        desc = (job.get("full_description") or job.get("title") or "").replace("\n", " ").replace("\r", " ")
+        desc = (desc[:70] or job["title"][:50]).strip()
+        lines.append(f"{idx}. *{job['title']}* @ {job.get('site', '')} (score {job.get('fit_score', '')})")
+        lines.append(f"   {desc}")
+        lines.append(f"   {job['url']}")
+        lines.append("")
+    lines.append("")
+    if apply_enabled:
+        lines.append(f"Reply *CONFIRM APPLY* to submit up to {limit} jobs (live).")
+    else:
+        lines.append("Find-only mode: applying is off for this profile. Reply if you want apply enabled.")
+    digest_path.write_text("\n".join(lines), encoding="utf-8")
+    return len(jobs)
 
 # How often to poll the DB when the queue is empty (seconds)
 POLL_INTERVAL = config.DEFAULTS["poll_interval"]
@@ -104,6 +256,16 @@ def acquire_job(target_url: str | None = None, min_score: int = 7,
     try:
         conn.execute("BEGIN IMMEDIATE")
 
+        stale_cutoff = (
+            datetime.now(timezone.utc) - timedelta(minutes=_STALE_LOCK_MINUTES)
+        ).isoformat()
+        conn.execute("""
+            UPDATE jobs SET apply_status = NULL, agent_id = NULL,
+                           apply_error = 'stale_lock_reclaimed'
+            WHERE apply_status = 'in_progress'
+              AND (last_attempted_at IS NULL OR last_attempted_at < ?)
+        """, (stale_cutoff,))
+
         if target_url:
             like = f"%{target_url.split('?')[0].rstrip('/')}%"
             row = conn.execute("""
@@ -117,31 +279,34 @@ def acquire_job(target_url: str | None = None, min_score: int = 7,
                 LIMIT 1
             """, (target_url, target_url, like, like)).fetchone()
         else:
-            blocked_sites, blocked_patterns = _load_blocked()
-            # Build parameterized filters to avoid SQL injection
-            params: list = [min_score]
-            site_clause = ""
-            if blocked_sites:
-                placeholders = ",".join("?" * len(blocked_sites))
-                site_clause = f"AND site NOT IN ({placeholders})"
-                params.extend(blocked_sites)
-            url_clauses = ""
-            if blocked_patterns:
-                url_clauses = " ".join(f"AND url NOT LIKE ?" for _ in blocked_patterns)
-                params.extend(blocked_patterns)
+            manifest_env = os.environ.get("APPLYPILOT_APPLY_MANIFEST")
+            manifest_urls = _load_manifest_urls() if manifest_env else None
+            if manifest_env and not manifest_urls:
+                conn.rollback()
+                logger.warning("Manifest required but empty or missing: %s", manifest_env)
+                return None
+
+            where, params = _ready_jobs_query(
+                min_score, config.DEFAULTS["max_apply_attempts"]
+            )
+            manifest_clause = ""
+            if manifest_urls:
+                placeholders = ",".join("?" * len(manifest_urls))
+                manifest_clause = (
+                    f" AND (url IN ({placeholders}) OR application_url IN ({placeholders}))"
+                )
+                params = list(params)
+                params.extend(manifest_urls)
+                params.extend(manifest_urls)
             row = conn.execute(f"""
                 SELECT url, title, site, application_url, tailored_resume_path,
                        fit_score, location, full_description, cover_letter_path
                 FROM jobs
-                WHERE tailored_resume_path IS NOT NULL
-                  AND (apply_status IS NULL OR apply_status = 'failed')
-                  AND (apply_attempts IS NULL OR apply_attempts < ?)
-                  AND fit_score >= ?
-                  {site_clause}
-                  {url_clauses}
+                WHERE {where}
+                  {manifest_clause}
                 ORDER BY fit_score DESC, url
                 LIMIT 1
-            """, [config.DEFAULTS["max_apply_attempts"]] + params).fetchone()
+            """, params).fetchone()
 
         if not row:
             conn.rollback()
@@ -230,7 +395,12 @@ def gen_prompt(target_url: str, min_score: int = 7,
     if txt_path and txt_path.exists():
         resume_text = txt_path.read_text(encoding="utf-8")
 
-    prompt = prompt_mod.build_prompt(job=job, tailored_resume=resume_text)
+    prompt = prompt_mod.build_prompt(
+        job=job,
+        tailored_resume=resume_text,
+        worker_id=worker_id,
+        ats_context=_build_ats_context(job),
+    )
 
     # Release the lock so the job stays available
     release_lock(job["url"])
@@ -316,14 +486,21 @@ def run_job(job: dict, port: int, worker_id: int = 0,
     if txt_path and txt_path.exists():
         resume_text = txt_path.read_text(encoding="utf-8")
 
-    agent_prompt = prompt_mod.build_prompt(
-        job=job,
-        tailored_resume=resume_text,
-        dry_run=dry_run,
-    )
-
     mcp_config = _make_mcp_config(port)
     worker_dir = reset_worker_dir(worker_id)
+
+    ats_context = _build_ats_context(job)
+    try:
+        agent_prompt = prompt_mod.build_prompt(
+            job=job,
+            tailored_resume=resume_text,
+            dry_run=dry_run,
+            worker_id=worker_id,
+            ats_context=ats_context,
+        )
+    except ValueError as exc:
+        logger.error("Prompt build failed: %s", exc)
+        return f"failed:{str(exc).replace(' ', '_')[:80]}", 0
 
     update_state(worker_id, status="applying", job_title=job["title"],
                  company=job.get("site", ""), score=job.get("fit_score", 0),
@@ -544,6 +721,26 @@ def main(limit: int = 1, target_url: str | None = None,
 
     config.ensure_dirs()
     console = Console()
+
+    if not dry_run and not target_url:
+        apply_dir = Path(os.environ.get("APPLYPILOT_DIR", config.APP_DIR))
+        confirm_file = apply_dir / "APPLY_CONFIRMED"
+        if not confirm_file.exists():
+            console.print(
+                "[red]Live apply blocked:[/red] missing confirmation file "
+                f"({confirm_file}). Reply CONFIRM APPLY after the morning digest."
+            )
+            raise SystemExit(1)
+        manifest_env = os.environ.get("APPLYPILOT_APPLY_MANIFEST")
+        if not manifest_env or not Path(manifest_env).exists():
+            console.print(
+                "[red]Live apply blocked:[/red] APPLYPILOT_APPLY_MANIFEST must point "
+                "to a non-empty manifest file."
+            )
+            raise SystemExit(1)
+        if not Path(manifest_env).read_text(encoding="utf-8").strip():
+            console.print("[red]Live apply blocked:[/red] manifest file is empty.")
+            raise SystemExit(1)
 
     if continuous:
         effective_limit = 0

@@ -5,21 +5,27 @@ import platform
 import shutil
 from pathlib import Path
 
+# Active multi-profile user id (None = legacy single-user ~/.applypilot)
+ACTIVE_USER_ID: str | None = None
+
 # User data directory — all user-specific files live here
 APP_DIR = Path(os.environ.get("APPLYPILOT_DIR", Path.home() / ".applypilot"))
 
-# Core paths
+# Core paths (reassigned by set_app_dir / set_active_user)
 DB_PATH = APP_DIR / "applypilot.db"
 PROFILE_PATH = APP_DIR / "profile.json"
 RESUME_PATH = APP_DIR / "resume.txt"
 RESUME_PDF_PATH = APP_DIR / "resume.pdf"
 SEARCH_CONFIG_PATH = APP_DIR / "searches.yaml"
 ENV_PATH = APP_DIR / ".env"
+CONNECTIONS_PATH = APP_DIR / "connections.csv"
+TARGETS_PATH = APP_DIR / "target_companies.yaml"
 
 # Generated output
 TAILORED_DIR = APP_DIR / "tailored_resumes"
 COVER_LETTER_DIR = APP_DIR / "cover_letters"
 LOG_DIR = APP_DIR / "logs"
+NETWORK_DIR = APP_DIR / "network"
 
 # Chrome worker isolation
 CHROME_WORKER_DIR = APP_DIR / "chrome-workers"
@@ -28,6 +34,57 @@ APPLY_WORKER_DIR = APP_DIR / "apply-workers"
 # Package-shipped config (YAML registries)
 PACKAGE_DIR = Path(__file__).parent
 CONFIG_DIR = PACKAGE_DIR / "config"
+
+
+def set_app_dir(path: Path | str) -> Path:
+    """Point all path constants at a new APPLYPILOT_DIR.
+
+    Call before bootstrap so DB/profile/env resolve to the right user.
+    Always read paths via `applypilot.config.DB_PATH` (not a stale import alias).
+    """
+    global APP_DIR, DB_PATH, PROFILE_PATH, RESUME_PATH, RESUME_PDF_PATH
+    global SEARCH_CONFIG_PATH, ENV_PATH, CONNECTIONS_PATH, TARGETS_PATH
+    global TAILORED_DIR, COVER_LETTER_DIR, LOG_DIR, NETWORK_DIR
+    global CHROME_WORKER_DIR, APPLY_WORKER_DIR
+
+    app_dir = Path(path).expanduser().resolve()
+    os.environ["APPLYPILOT_DIR"] = str(app_dir)
+
+    APP_DIR = app_dir
+    DB_PATH = APP_DIR / "applypilot.db"
+    PROFILE_PATH = APP_DIR / "profile.json"
+    RESUME_PATH = APP_DIR / "resume.txt"
+    RESUME_PDF_PATH = APP_DIR / "resume.pdf"
+    SEARCH_CONFIG_PATH = APP_DIR / "searches.yaml"
+    ENV_PATH = APP_DIR / ".env"
+    CONNECTIONS_PATH = APP_DIR / "connections.csv"
+    TARGETS_PATH = APP_DIR / "target_companies.yaml"
+    TAILORED_DIR = APP_DIR / "tailored_resumes"
+    COVER_LETTER_DIR = APP_DIR / "cover_letters"
+    LOG_DIR = APP_DIR / "logs"
+    NETWORK_DIR = APP_DIR / "network"
+    CHROME_WORKER_DIR = APP_DIR / "chrome-workers"
+    APPLY_WORKER_DIR = APP_DIR / "apply-workers"
+    return APP_DIR
+
+
+def set_active_user(user_id: str) -> Path:
+    """Resolve a registry user and switch APP_DIR to their data directory."""
+    global ACTIVE_USER_ID
+    from applypilot.users import get_user
+
+    user = get_user(user_id)
+    if user is None:
+        raise SystemExit(
+            f"Unknown user '{user_id}'. Run: applypilot users list\n"
+            f"Or add one: applypilot users add {user_id}"
+        )
+    ACTIVE_USER_ID = user.user_id
+    return set_app_dir(user.resolve_data_dir())
+
+
+def get_active_user_id() -> str | None:
+    return ACTIVE_USER_ID
 
 
 def get_chrome_path() -> str:
@@ -87,7 +144,10 @@ def get_chrome_user_data() -> Path:
 
 def ensure_dirs():
     """Create all required directories."""
-    for d in [APP_DIR, TAILORED_DIR, COVER_LETTER_DIR, LOG_DIR, CHROME_WORKER_DIR, APPLY_WORKER_DIR]:
+    for d in [
+        APP_DIR, TAILORED_DIR, COVER_LETTER_DIR, LOG_DIR, NETWORK_DIR,
+        CHROME_WORKER_DIR, APPLY_WORKER_DIR,
+    ]:
         d.mkdir(parents=True, exist_ok=True)
     try:
         APP_DIR.chmod(0o700)
@@ -144,6 +204,20 @@ def load_search_config() -> dict:
             return yaml.safe_load(example.read_text(encoding="utf-8"))
         return {}
     return yaml.safe_load(SEARCH_CONFIG_PATH.read_text(encoding="utf-8"))
+
+
+def load_location_filters(search_cfg: dict | None = None) -> tuple[list[str], list[str]]:
+    """Return (accept_patterns, reject_patterns) from search config.
+
+    Supports both legacy root keys (location_accept, location_reject_non_remote)
+    and nested location.accept_patterns / location.reject_patterns.
+    """
+    if search_cfg is None:
+        search_cfg = load_search_config()
+    location_cfg = search_cfg.get("location", {}) or {}
+    accept = search_cfg.get("location_accept") or location_cfg.get("accept_patterns") or []
+    reject = search_cfg.get("location_reject_non_remote") or location_cfg.get("reject_patterns") or []
+    return accept, reject
 
 
 def load_sites_config() -> dict:
@@ -205,12 +279,17 @@ DEFAULTS = {
 
 
 def load_env():
-    """Load environment variables from ~/.applypilot/.env if it exists."""
+    """Load environment variables from the active user's .env.
+
+    When a multi-profile user is active, only their .env is loaded (override=True)
+    so leftover shell/CWD keys cannot bleed across users.
+    """
     from dotenv import load_dotenv
     if ENV_PATH.exists():
-        load_dotenv(ENV_PATH)
-    # Also try CWD env file as fallback
-    load_dotenv()
+        load_dotenv(ENV_PATH, override=True)
+    elif ACTIVE_USER_ID is None:
+        # Legacy single-user: allow CWD .env as fallback
+        load_dotenv()
 
 
 # ---------------------------------------------------------------------------

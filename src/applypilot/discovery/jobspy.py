@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 from jobspy import scrape_jobs
 
 from applypilot import config
+from applypilot.config import load_location_filters
 from applypilot.database import get_connection, init_db, store_jobs
 
 log = logging.getLogger(__name__)
@@ -77,13 +78,8 @@ def _scrape_with_retry(kwargs: dict, max_retries: int = 2, backoff: float = 5.0)
 # -- Location filtering ------------------------------------------------------
 
 def _load_location_config(search_cfg: dict) -> tuple[list[str], list[str]]:
-    """Extract accept/reject location lists from search config.
-
-    Falls back to sensible defaults if not defined in the YAML.
-    """
-    accept = search_cfg.get("location_accept", [])
-    reject = search_cfg.get("location_reject_non_remote", [])
-    return accept, reject
+    """Extract accept/reject location lists from search config."""
+    return load_location_filters(search_cfg)
 
 
 def _location_ok(location: str | None, accept: list[str], reject: list[str]) -> bool:
@@ -162,6 +158,15 @@ def store_jobspy_results(conn: sqlite3.Connection, df, source_label: str) -> tup
                 salary += f"/{interval}"
 
         description = str(row.get("description", "")) if str(row.get("description", "")) != "nan" else None
+
+        from applypilot.discovery.filters import passes_discovery_filters
+        if not passes_discovery_filters(
+            title=title,
+            salary=salary,
+            description=description,
+            search_cfg=search_cfg,
+        ):
+            continue
         site_name = str(row.get("site", source_label))
         is_remote = row.get("is_remote", False)
 

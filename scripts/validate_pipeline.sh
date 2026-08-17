@@ -18,6 +18,7 @@ from applypilot.apply.providers.base import parse_result_output, get_provider
 from applypilot.scoring.portfolio import _keyword_score
 
 assert parse_result_output("x\nRESULT:DRYRUN\n", dry_run=True) == "dryrun"
+assert parse_result_output("RESULT:APPLIED", dry_run=True) == "failed:dryrun_protocol_violation"
 assert parse_result_output("RESULT:APPLIED") == "applied"
 assert parse_result_output("RESULT:FAILED:timeout") == "failed:timeout"
 assert parse_result_output("no result") == "failed:no_result_line"
@@ -40,6 +41,7 @@ from applypilot.apply.providers.base import parse_result_output
 cases = [
     ("RESULT:DRYRUN", True, "dryrun"),
     ("filled form\nRESULT:DRYRUN\n", True, "dryrun"),
+    ("RESULT:APPLIED", True, "failed:dryrun_protocol_violation"),
     ("RESULT:APPLIED", False, "applied"),
     ("RESULT:EXPIRED", False, "expired"),
     ("RESULT:CAPTCHA", False, "captcha"),
@@ -90,6 +92,14 @@ if [[ -n "${CURSOR_API_KEY:-}" ]]; then
 else
   echo ""
   echo "SKIP apply dry-run: CURSOR_API_KEY not set"
+fi
+
+echo ""
+echo "=== pytest (ATS + parser) ==="
+if python3 -c "import pytest" 2>/dev/null; then
+  python3 -m pytest tests/test_ats.py -q 2>&1 || true
+else
+  echo "SKIP pytest: pip install pytest"
 fi
 
 echo ""

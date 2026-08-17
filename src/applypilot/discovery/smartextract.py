@@ -52,9 +52,7 @@ def _load_location_filter(search_cfg: dict | None = None):
     """Load location accept/reject lists from search config."""
     if search_cfg is None:
         search_cfg = config.load_search_config()
-    accept = search_cfg.get("location_accept", [])
-    reject = search_cfg.get("location_reject_non_remote", [])
-    return accept, reject
+    return config.load_location_filters(search_cfg)
 
 
 def _location_ok(location: str | None, accept: list[str], reject: list[str]) -> bool:
@@ -93,17 +91,29 @@ def _store_jobs_filtered(
     accept_locs: list[str],
     reject_locs: list[str],
 ) -> tuple[int, int]:
-    """Store jobs with location filtering. Returns (new, existing)."""
+    """Store jobs with location + title/salary filtering. Returns (new, existing)."""
+    from applypilot.config import load_search_config
+    from applypilot.discovery.filters import passes_discovery_filters
+
     now = datetime.now(timezone.utc).isoformat()
     new = 0
     existing = 0
     filtered = 0
+    search_cfg = load_search_config()
 
     for job in jobs:
         url = job.get("url")
         if not url:
             continue
         if not _location_ok(job.get("location"), accept_locs, reject_locs):
+            filtered += 1
+            continue
+        if not passes_discovery_filters(
+            title=job.get("title"),
+            salary=job.get("salary"),
+            description=job.get("description") or job.get("full_description"),
+            search_cfg=search_cfg,
+        ):
             filtered += 1
             continue
         try:
@@ -118,7 +128,7 @@ def _store_jobs_filtered(
             existing += 1
 
     if filtered:
-        log.info("Filtered %d jobs (wrong location)", filtered)
+        log.info("Filtered %d jobs (location/title/salary)", filtered)
     conn.commit()
     return new, existing
 

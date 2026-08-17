@@ -420,7 +420,9 @@ If CapSolver genuinely failed (errorId > 0):
 
 def build_prompt(job: dict, tailored_resume: str,
                  cover_letter: str | None = None,
-                 dry_run: bool = False) -> str:
+                 dry_run: bool = False,
+                 worker_id: int = 0,
+                 ats_context: str = "") -> str:
     """Build the full instruction prompt for the apply agent.
 
     Loads the user profile and search config internally. All personal data
@@ -447,12 +449,20 @@ def build_prompt(job: dict, tailored_resume: str,
 
     src_pdf = Path(resume_path).with_suffix(".pdf").resolve()
     if not src_pdf.exists():
-        raise ValueError(f"Resume PDF not found: {src_pdf}")
+        txt_path = Path(resume_path)
+        if txt_path.suffix.lower() != ".txt":
+            txt_path = txt_path.with_suffix(".txt")
+        if txt_path.exists():
+            from applypilot.scoring.pdf import convert_to_pdf
+
+            convert_to_pdf(txt_path, src_pdf)
+        if not src_pdf.exists() or not src_pdf.is_file() or src_pdf.stat().st_size < 64:
+            raise ValueError(f"Resume PDF not found or invalid: {src_pdf}")
 
     # Copy to a clean filename for upload (recruiters see the filename)
     full_name = personal["full_name"]
     name_slug = full_name.replace(" ", "_")
-    dest_dir = config.APPLY_WORKER_DIR / "current"
+    dest_dir = config.APPLY_WORKER_DIR / f"worker-{worker_id}"
     dest_dir.mkdir(parents=True, exist_ok=True)
     upload_pdf = dest_dir / f"{name_slug}_Resume.pdf"
     shutil.copy(str(src_pdf), str(upload_pdf))
@@ -524,6 +534,8 @@ URL: {job.get('application_url') or job['url']}
 Title: {job['title']}
 Company: {job.get('site', 'Unknown')}
 Fit Score: {job.get('fit_score', 'N/A')}/10
+
+{ats_context}
 
 == FILES ==
 Resume PDF (upload this): {pdf_path}

@@ -44,30 +44,50 @@ class ApplyResult:
     run_id: str | None = None
 
 
+_RESULT_RE = re.compile(
+    r"(?m)^\*{0,2}RESULT:(DRYRUN|APPLIED|EXPIRED|CAPTCHA|LOGIN_ISSUE|FAILED(?::[^\r\n]*)?)\*{0,2}\s*$"
+)
+
+
 def parse_result_output(output: str, dry_run: bool = False) -> str:
     """Parse agent output for RESULT:* protocol line.
 
     Returns status string compatible with launcher.mark_result.
     """
-    if dry_run and "RESULT:DRYRUN" in output:
-        return "dryrun"
+    matches = list(_RESULT_RE.finditer(output))
+    if dry_run:
+        for match in matches:
+            token = match.group(1)
+            if token == "DRYRUN":
+                return "dryrun"
+            if token == "APPLIED":
+                return "failed:dryrun_protocol_violation"
+        if matches:
+            return matches[-1].group(1).lower().split(":")[0]
+        return "failed:no_result_line"
 
-    for result_status in ["APPLIED", "EXPIRED", "CAPTCHA", "LOGIN_ISSUE"]:
-        if f"RESULT:{result_status}" in output:
-            return result_status.lower()
+    for match in matches:
+        token = match.group(1)
+        if token in ("APPLIED", "EXPIRED", "CAPTCHA", "LOGIN_ISSUE"):
+            return token.lower()
+
+    if matches:
+        failed_line = matches[-1].group(0)
+        if "RESULT:FAILED" in failed_line:
+            for out_line in output.split("\n"):
+                if out_line.strip().startswith("RESULT:FAILED"):
+                    reason = (
+                        out_line.split("RESULT:FAILED:")[-1].strip()
+                        if ":" in out_line[out_line.index("FAILED") + 6 :]
+                        else "unknown"
+                    )
+                    reason = re.sub(r'[*`"]+$', "", reason).strip()
+                    if reason in PROMOTE_TO_STATUS:
+                        return reason
+                    return f"failed:{reason}"
+            return "failed:unknown"
 
     if "RESULT:FAILED" in output:
-        for out_line in output.split("\n"):
-            if "RESULT:FAILED" in out_line:
-                reason = (
-                    out_line.split("RESULT:FAILED:")[-1].strip()
-                    if ":" in out_line[out_line.index("FAILED") + 6 :]
-                    else "unknown"
-                )
-                reason = re.sub(r'[*`"]+$', "", reason).strip()
-                if reason in PROMOTE_TO_STATUS:
-                    return reason
-                return f"failed:{reason}"
         return "failed:unknown"
 
     return "failed:no_result_line"

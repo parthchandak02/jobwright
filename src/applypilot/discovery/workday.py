@@ -44,10 +44,7 @@ def _load_location_filter(search_cfg: dict | None = None):
     """Load location accept/reject lists from search config."""
     if search_cfg is None:
         search_cfg = config.load_search_config()
-
-    accept = search_cfg.get("location_accept", [])
-    reject = search_cfg.get("location_reject_non_remote", [])
-    return accept, reject
+    return config.load_location_filters(search_cfg)
 
 
 def _location_ok(location: str | None, accept: list[str], reject: list[str]) -> bool:
@@ -302,9 +299,13 @@ def fetch_details(employer: dict, jobs: list[dict]) -> list[dict]:
 
 def store_results(conn: sqlite3.Connection, jobs: list[dict], employers: dict) -> tuple[int, int]:
     """Store corporate jobs in DB. Returns (new, existing)."""
+    from applypilot.config import load_search_config
+    from applypilot.discovery.filters import passes_discovery_filters
+
     now = datetime.now(timezone.utc).isoformat()
     new = 0
     existing = 0
+    search_cfg = load_search_config()
 
     for job in jobs:
         url = job.get("apply_url", "")
@@ -323,6 +324,14 @@ def store_results(conn: sqlite3.Connection, jobs: list[dict], employers: dict) -
 
         site = job.get("employer_name", "Corporate")
         strategy = "workday_api"
+
+        if not passes_discovery_filters(
+            title=job.get("title"),
+            salary=job.get("salary"),
+            description=description or short_desc,
+            search_cfg=search_cfg,
+        ):
+            continue
 
         try:
             conn.execute(
