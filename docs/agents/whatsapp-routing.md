@@ -51,7 +51,7 @@ Before running confirm scripts:
 1. Collect name, resume, role prefs, WhatsApp chat JID, apply preference (default: find-only).
 2. `jobwright users add <id> --name "..." --whatsapp "whatsapp:..." --template nontech-bay-area`
 3. Write `resume.txt`, tune `profile.json` and `searches.yaml` in `users/<id>/`.
-4. `./scripts/setup_hermes_cron.sh` (re-register per-user crons).
+4. Ask Hermes to register crons per [docs/agents/hermes-setup.md](docs/agents/hermes-setup.md).
 5. `./scripts/install_hermes_scripts.sh` + `./scripts/install_skills.sh` after repo updates.
 6. Test: `jobwright --user <id> doctor` then manual morning script.
 
