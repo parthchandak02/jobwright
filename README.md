@@ -2,7 +2,7 @@
 
 An autonomous, multi-stage job application pipeline. It discovers jobs across many boards, scores them against your resume with an LLM, tailors your resume and cover letter per job, and can optionally submit applications for you through a browser agent.
 
-> **Fork.** jobwright is a fork of [Pickle-Pixel/ApplyPilot](https://github.com/Pickle-Pixel/ApplyPilot), licensed under [AGPL-3.0](LICENSE). It adds pluggable Cursor Agent providers, portfolio-aware tailoring, multi-profile support, and Hermes cron scheduling. See [docs/UPSTREAM.md](docs/UPSTREAM.md) and the [ADRs](docs/adr/). The console command is still `applypilot` (upstream lineage).
+The console command is `applypilot`.
 
 ---
 
@@ -151,8 +151,10 @@ jobwright/
 
 ## Documentation
 
-Everything else lives in [`docs/`](docs/): [contributing](docs/CONTRIBUTING.md), [changelog](docs/CHANGELOG.md), [glossary](docs/GLOSSARY.md), [upstream attribution](docs/UPSTREAM.md), and [architecture decision records](docs/adr/).
+Everything else lives in [`docs/`](docs/): [contributing](docs/CONTRIBUTING.md), [changelog](docs/CHANGELOG.md), [glossary](docs/GLOSSARY.md), [attribution](docs/UPSTREAM.md), and [architecture decision records](docs/adr/).
 
-## License
+## License and attribution
 
 jobwright is licensed under the [GNU Affero General Public License v3.0](LICENSE). If you deploy a modified version as a service, you must release your source under the same license.
+
+Portions of the pipeline originate from an earlier AGPL-3.0 codebase; that attribution is retained in [docs/UPSTREAM.md](docs/UPSTREAM.md) as required by the license.
