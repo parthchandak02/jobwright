@@ -22,8 +22,7 @@ from urllib.parse import urljoin
 from bs4 import BeautifulSoup
 from playwright.sync_api import sync_playwright
 
-from jobwright import config
-from jobwright.database import get_connection, init_db, ensure_columns
+from jobwright.database import init_db
 from jobwright.llm import get_client
 
 log = logging.getLogger(__name__)

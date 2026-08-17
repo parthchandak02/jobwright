@@ -8,7 +8,6 @@ import os
 import shutil
 import subprocess
 import time
-from pathlib import Path
 
 from jobwright.apply.chrome import _kill_process_tree
 from jobwright.apply.providers.base import (

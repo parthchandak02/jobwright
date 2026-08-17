@@ -10,9 +10,7 @@ import json
 import logging
 import os
 import platform
-import re
 import signal
-import subprocess
 import sys
 import threading
 import time
@@ -26,11 +24,10 @@ from rich.live import Live
 from jobwright import config
 from jobwright.database import get_connection
 from jobwright.apply.providers import WorkerContext, get_provider
-from jobwright.apply import chrome, dashboard, prompt as prompt_mod
+from jobwright.apply import prompt as prompt_mod
 from jobwright.apply.chrome import (
     launch_chrome, cleanup_worker, kill_all_chrome,
-    reset_worker_dir, cleanup_on_exit, _kill_process_tree,
-    BASE_CDP_PORT,
+    reset_worker_dir, cleanup_on_exit, BASE_CDP_PORT,
 )
 from jobwright.apply.dashboard import (
     init_worker, update_state, add_event, get_state,

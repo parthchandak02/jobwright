@@ -10,7 +10,6 @@ Generates a self-contained HTML dashboard with:
 
 from __future__ import annotations
 
-import os
 import webbrowser
 from html import escape
 from pathlib import Path
