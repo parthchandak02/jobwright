@@ -1,6 +1,6 @@
 # Contributing to jobwright
 
-Thank you for your interest in contributing to jobwright (a fork of [Pickle-Pixel/ApplyPilot](https://github.com/Pickle-Pixel/ApplyPilot)). This guide covers everything you need to get started.
+Thank you for your interest in contributing to jobwright. This guide covers everything you need to get started.
 
 ## Development Setup
 
@@ -18,7 +18,7 @@ pip install -e ".[dev]"
 playwright install chromium
 ```
 
-This installs jobwright in editable mode with all development dependencies (pytest, ruff, etc.) and downloads the Chromium browser binary for Playwright. The console command stays `applypilot` (upstream lineage).
+This installs jobwright in editable mode with all development dependencies (pytest, ruff, etc.) and downloads the Chromium browser binary for Playwright. The console command is `applypilot`.
 
 ### Verify Installation
 
@@ -71,7 +71,7 @@ Direct career site scrapers are configured in `src/applypilot/config/sites.yaml`
 
 ### Bug Fixes and Features
 
-1. Check existing [issues](https://github.com/Pickle-Pixel/ApplyPilot/issues) to avoid duplicating work
+1. Check existing [issues](https://github.com/parthchandak02/jobwright/issues) to avoid duplicating work
 2. For new features, open an issue first to discuss the approach
 3. Fork the repo and create a feature branch from `main`
 4. Write your code with type hints and docstrings
@@ -94,7 +94,7 @@ pytest tests/ --cov=src/applypilot --cov-report=term-missing
 
 ## Linting and Code Style
 
-ApplyPilot uses [Ruff](https://docs.astral.sh/ruff/) for linting and formatting.
+jobwright uses [Ruff](https://docs.astral.sh/ruff/) for linting and formatting.
 
 ```bash
 # Check for issues
@@ -132,7 +132,7 @@ jobwright/
 ├── LICENSE                   # AGPL-3.0
 ├── pyproject.toml            # Package + tooling config
 ├── profile.example.json      # Onboarding profile template
-├── src/applypilot/           # Main package (import name kept from upstream)
+├── src/applypilot/           # Main package (import name kept from the original codebase)
 │   ├── cli.py                # Typer CLI: init/run/apply/status/doctor/...
 │   ├── pipeline.py           # Stages 1-5 orchestrator
 │   ├── config.py             # Paths, environment, packaged-config loader

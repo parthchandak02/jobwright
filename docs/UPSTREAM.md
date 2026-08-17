@@ -8,7 +8,7 @@ This project is a fork of [Pickle-Pixel/ApplyPilot](https://github.com/Pickle-Pi
 
 Modifications are documented in:
 
-- [adr/ADR-001-fork.md](adr/ADR-001-fork.md)
+- [adr/ADR-001-origins.md](adr/ADR-001-origins.md)
 - [adr/ADR-002-agent-provider.md](adr/ADR-002-agent-provider.md)
 - [adr/ADR-003-portfolio-matching.md](adr/ADR-003-portfolio-matching.md)
 
