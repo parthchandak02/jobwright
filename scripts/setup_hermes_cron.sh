@@ -15,8 +15,15 @@ chmod +x "${UPSERT}"
 pause_legacy_job() {
   local name="$1"
   local job_id
-  job_id="$(hermes cron list 2>/dev/null | awk -v n="${name}" '
-    $0 ~ n { id=$1; sub(/[^a-f0-9].*$/, "", id); if (length(id) >= 8) { print id; exit } }
+  job_id="$(hermes cron list 2>/dev/null | awk -v name="${name}" '
+    /^[[:space:]]+[a-f0-9]{8,}/ {
+      id = $1
+      gsub(/^[[:space:]]+/, "", id)
+      sub(/ .*/, "", id)
+    }
+    $0 ~ "Name:[[:space:]]+" name "[[:space:]]*$" {
+      if (id != "") { print id; exit }
+    }
   ')"
   if [[ -n "${job_id}" ]]; then
     hermes cron pause "${job_id}" 2>/dev/null || true

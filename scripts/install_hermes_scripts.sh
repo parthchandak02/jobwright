@@ -10,6 +10,7 @@ mkdir -p "${HERMES_SCRIPTS}"
 
 for src in "${REPO_ROOT}"/scripts/job_apply_*.sh \
            "${REPO_ROOT}"/scripts/run_morning_pipeline.sh \
+           "${REPO_ROOT}"/scripts/resolve_user_from_whatsapp.sh \
            "${REPO_ROOT}"/scripts/_upsert_one_cron.sh \
            "${REPO_ROOT}"/scripts/_jobwright_repo.sh; do
   [[ -f "${src}" ]] || continue

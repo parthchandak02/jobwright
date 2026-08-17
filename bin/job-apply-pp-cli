@@ -2,9 +2,14 @@
 # Printing Press-style thin wrapper over jobwright.
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=/dev/null
+source "${SCRIPT_DIR}/../scripts/_jobwright_repo.sh"
+
 AGENT_JSON=false
 COMPACT=false
 NO_INPUT=false
+USER_ID=""
 CMD=""
 ARGS=()
 
@@ -13,13 +18,16 @@ usage() {
 job-apply-pp-cli — agent-native job apply pipeline wrapper
 
 Usage:
-  job-apply-pp-cli pipeline run [--stages STAGES] [--min-score N]
-  job-apply-pp-cli queue ready [--min-score N] [--agent]
-  job-apply-pp-cli apply next|batch [--dry-run] [--limit N] [--workers N]
-  job-apply-pp-cli status [--agent]
-  job-apply-pp-cli doctor
+  job-apply-pp-cli [--user ID] pipeline run [--stages STAGES] [--min-score N]
+  job-apply-pp-cli [--user ID] network [--top N] [--agent]
+  job-apply-pp-cli [--user ID] targets [--limit N] [--agent]
+  job-apply-pp-cli [--user ID] queue ready [--min-score N] [--agent]
+  job-apply-pp-cli [--user ID] apply next|batch [--dry-run] [--limit N] [--workers N]
+  job-apply-pp-cli [--user ID] status [--agent]
+  job-apply-pp-cli [--user ID] doctor
 
 Flags:
+  --user ID     Multi-profile user (sets JOBWRIGHT_DIR)
   --agent       JSON output for agents
   --json        Alias for --agent
   --compact     Terse output
@@ -32,15 +40,26 @@ while [[ $# -gt 0 ]]; do
     --agent|--json) AGENT_JSON=true; shift ;;
     --compact) COMPACT=true; shift ;;
     --no-input) NO_INPUT=true; shift ;;
+    --user|-u) USER_ID="${2:?--user requires an id}"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
-    pipeline|queue|apply|status|doctor)
+    pipeline|queue|apply|status|doctor|network|targets)
       if [[ -z "${CMD}" ]]; then CMD="$1"; shift; else ARGS+=("$1"); shift; fi ;;
     *) ARGS+=("$1"); shift ;;
   esac
 done
 
 CMD="${CMD:-status}"
-export JOBWRIGHT_DIR="${JOBWRIGHT_DIR:-$HOME/.jobwright}"
+if [[ -n "${USER_ID}" ]]; then
+  export JOBWRIGHT_USER="${USER_ID}"
+  export JOBWRIGHT_DIR="${JOBWRIGHT_DIR:-$(_jobwright_default_user_dir "${USER_ID}")}"
+  JW_USER=(--user "${USER_ID}")
+elif [[ -n "${JOBWRIGHT_USER:-}" ]]; then
+  export JOBWRIGHT_DIR="${JOBWRIGHT_DIR:-$(_jobwright_default_user_dir "${JOBWRIGHT_USER}")}"
+  JW_USER=(--user "${JOBWRIGHT_USER}")
+else
+  export JOBWRIGHT_DIR="${JOBWRIGHT_DIR:-$HOME/.jobwright}"
+  JW_USER=()
+fi
 export PATH="${HOME}/.local/bin:${PATH}"
 
 json_line() { echo "$1"; }
@@ -59,7 +78,7 @@ case "${CMD}" in
         --min-score) min_score="${ARGS[$((i+1))]}"; ((i++)) ;;
       esac
     done
-    jobwright run ${stages} --min-score "${min_score}"
+    jobwright "${JW_USER[@]}" run ${stages} --min-score "${min_score}"
     out '{"status":"ok","command":"pipeline run"}'
     ;;
   queue)
@@ -71,7 +90,7 @@ case "${CMD}" in
       esac
     done
     if $AGENT_JSON; then
-      jobwright status 2>/dev/null | tail -5 || true
+      jobwright "${JW_USER[@]}" status 2>/dev/null | tail -5 || true
       sqlite3 "${JOBWRIGHT_DIR}/jobwright.db" \
         "SELECT url,title,fit_score FROM jobs WHERE tailored_resume_path IS NOT NULL AND applied_at IS NULL AND fit_score>=${min_score} ORDER BY fit_score DESC LIMIT 10;" \
         | awk -F'|' 'BEGIN{print "["} {printf "%s{\"url\":\"%s\",\"title\":\"%s\",\"fit_score\":%s}", (NR>1?",":""), $1, $2, $3} END{print "]"}'
@@ -94,27 +113,91 @@ case "${CMD}" in
     done
     extra=()
     $dry_run && extra+=(--dry-run)
-    $dry_run || extra+=(--live)
+    $dry_run || { echo "Live apply blocked: use CONFIRM APPLY + job_apply_on_confirm.sh" >&2; exit 1; }
     if [[ "${sub}" == "next" ]]; then
       url=$(sqlite3 "${JOBWRIGHT_DIR}/jobwright.db" \
         "SELECT url FROM jobs WHERE tailored_resume_path IS NOT NULL AND applied_at IS NULL AND fit_score>=7 ORDER BY fit_score DESC LIMIT 1;")
       [[ -z "${url}" ]] && { out '{"status":"empty","message":"no jobs ready"}'; exit 0; }
-      jobwright apply --url "${url}" "${extra[@]}"
+      jobwright "${JW_USER[@]}" apply --url "${url}" "${extra[@]}"
     else
-      jobwright apply --limit "${limit}" --workers "${workers}" "${extra[@]}"
+      jobwright "${JW_USER[@]}" apply --limit "${limit}" --workers "${workers}" "${extra[@]}"
     fi
     out "{\"status\":\"ok\",\"command\":\"apply ${sub}\"}"
     ;;
   status)
     if $AGENT_JSON; then
-      jobwright status
+      jobwright "${JW_USER[@]}" status
     else
-      jobwright status
+      jobwright "${JW_USER[@]}" status
     fi
     ;;
   doctor)
-    jobwright doctor
+    jobwright "${JW_USER[@]}" doctor
     out '{"status":"ok","command":"doctor"}'
+    ;;
+  network)
+    top=25
+    for ((i=0; i<${#ARGS[@]}; i++)); do
+      case "${ARGS[$i]}" in
+        --top|-n) top="${ARGS[$((i+1))]}"; ((i++)) ;;
+      esac
+    done
+    if $AGENT_JSON; then
+      JOBWRIGHT_USER="${JOBWRIGHT_USER:-${USER_ID}}" \
+      JOBWRIGHT_DIR="${JOBWRIGHT_DIR}" \
+      uv run python3 - <<PY
+import json
+import jobwright.config as config
+from jobwright.network.rank import run_network_rank
+
+config.load_env()
+result = run_network_rank(top_n=${top})
+print(json.dumps({
+    "status": "ok",
+    "command": "network",
+    "contacts": result["contacts"],
+    "ranked": result["ranked"],
+    "txt_path": result["txt_path"],
+    "json_path": result["json_path"],
+    "digest": result["digest"],
+}))
+PY
+    else
+      jobwright "${JW_USER[@]}" network --top "${top}"
+      out '{"status":"ok","command":"network"}'
+    fi
+    ;;
+  targets)
+    limit=30
+    for ((i=0; i<${#ARGS[@]}; i++)); do
+      case "${ARGS[$i]}" in
+        --limit|-n) limit="${ARGS[$((i+1))]}"; ((i++)) ;;
+      esac
+    done
+    if $AGENT_JSON; then
+      JOBWRIGHT_USER="${JOBWRIGHT_USER:-${USER_ID}}" \
+      JOBWRIGHT_DIR="${JOBWRIGHT_DIR}" \
+      uv run python3 - <<PY
+import json
+import jobwright.config as config
+from jobwright.targets.build import run_targets
+
+config.load_env()
+result = run_targets(limit=${limit})
+print(json.dumps({
+    "status": "ok",
+    "command": "targets",
+    "count": result["count"],
+    "parse_error": result.get("parse_error", False),
+    "yaml_path": result["yaml_path"],
+    "txt_path": result["txt_path"],
+    "digest": result["digest"],
+}))
+PY
+    else
+      jobwright "${JW_USER[@]}" targets --limit "${limit}"
+      out '{"status":"ok","command":"targets"}'
+    fi
     ;;
   *) usage; exit 1 ;;
 esac
