@@ -52,12 +52,12 @@ Thumbs.db
 apply-form-snapshot.yml
 job-page-snapshot.yml
 
-# User data dir copies (canonical: ~/.applypilot/)
+# User data dir copies (canonical: ~/.jobwright/)
 searches.yaml
 dashboard.html
-.applypilot/
+.jobwright/
 .hermes/
 
 reference/
-# Multi-profile user data (canonical: ~/.applypilot-users/)
-.applypilot-users/
+# Multi-profile user data (canonical: ~/.jobwright-users/)
+.jobwright-users/

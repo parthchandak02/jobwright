@@ -2,14 +2,14 @@
 
 from unittest.mock import MagicMock, patch
 
-from applypilot.apply.ats.detect import detect_ats
-from applypilot.apply.ats.greenhouse import (
+from jobwright.apply.ats.detect import detect_ats
+from jobwright.apply.ats.greenhouse import (
     parse_greenhouse_url,
     summarize_schema_for_prompt,
     validate_schema_against_profile,
 )
-from applypilot.apply.providers.base import parse_result_output
-from applypilot.config import load_location_filters
+from jobwright.apply.providers.base import parse_result_output
+from jobwright.config import load_location_filters
 
 
 def test_detect_ats_platforms():
@@ -75,7 +75,7 @@ def test_fetch_greenhouse_schema_mock():
         mock_resp.json.return_value = {"title": "Test Role", "questions": []}
         mock_client_cls.return_value.__enter__.return_value.get.return_value = mock_resp
 
-        from applypilot.apply.ats.greenhouse import fetch_greenhouse_schema
+        from jobwright.apply.ats.greenhouse import fetch_greenhouse_schema
 
         schema = fetch_greenhouse_schema("stripe", "12345")
         assert schema["title"] == "Test Role"

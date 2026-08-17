@@ -2,7 +2,7 @@
 # Run stage-6 browser apply via Cursor agent.
 set -euo pipefail
 
-export APPLYPILOT_DIR="${APPLYPILOT_DIR:-$HOME/.applypilot}"
+export JOBWRIGHT_DIR="${JOBWRIGHT_DIR:-$HOME/.jobwright}"
 export PATH="${HOME}/.local/bin:${PATH}"
 export AGENT_PROVIDER="${AGENT_PROVIDER:-cursor-sdk}"
 export APPLY_AGENT_MODEL="${APPLY_AGENT_MODEL:-composer-2.5}"
@@ -18,5 +18,5 @@ if [[ "${DRY_RUN}" == "true" || "${DRY_RUN}" == "1" ]]; then
   ARGS+=(--dry-run)
 fi
 
-applypilot "${ARGS[@]}"
-applypilot status
+jobwright "${ARGS[@]}"
+jobwright status

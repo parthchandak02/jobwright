@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
 # Watchdog: alert if morning pipeline finished without delivering digest.
-# Multi-profile: APPLYPILOT_USER / APPLYPILOT_DIR. Uses per-user PID only (no global pgrep).
+# Multi-profile: JOBWRIGHT_USER / JOBWRIGHT_DIR. Uses per-user PID only (no global pgrep).
 set -euo pipefail
 
-if [[ -n "${APPLYPILOT_USER:-}" ]]; then
-  export APPLYPILOT_DIR="${APPLYPILOT_DIR:-$HOME/.applypilot-users/${APPLYPILOT_USER}}"
+if [[ -n "${JOBWRIGHT_USER:-}" ]]; then
+  export JOBWRIGHT_DIR="${JOBWRIGHT_DIR:-$HOME/.jobwright-users/${JOBWRIGHT_USER}}"
 else
-  export APPLYPILOT_DIR="${APPLYPILOT_DIR:-$HOME/.applypilot}"
+  export JOBWRIGHT_DIR="${JOBWRIGHT_DIR:-$HOME/.jobwright}"
 fi
 
 TODAY="$(date +%Y%m%d)"
-STATUS_FILE="${APPLYPILOT_DIR}/MORNING_STATUS_${TODAY}"
-DELIVERED_MARKER="${APPLYPILOT_DIR}/DIGEST_DELIVERED_${TODAY}"
-DIGEST_FILE="${APPLYPILOT_DIR}/DIGEST_${TODAY}"
-MORNING_PID_FILE="${APPLYPILOT_DIR}/MORNING_PID_${TODAY}"
+STATUS_FILE="${JOBWRIGHT_DIR}/MORNING_STATUS_${TODAY}"
+DELIVERED_MARKER="${JOBWRIGHT_DIR}/DIGEST_DELIVERED_${TODAY}"
+DIGEST_FILE="${JOBWRIGHT_DIR}/DIGEST_${TODAY}"
+MORNING_PID_FILE="${JOBWRIGHT_DIR}/MORNING_PID_${TODAY}"
 
 [ -f "${STATUS_FILE}" ] || exit 0
 [ -f "${DELIVERED_MARKER}" ] && exit 0
@@ -39,14 +39,14 @@ if grep -q "done" "${STATUS_FILE}" 2>/dev/null; then
     exit 0
   fi
   echo "Job digest unavailable. Morning pipeline finished with an error."
-  echo "Check: ${APPLYPILOT_DIR}/logs/morning_${TODAY}.log"
+  echo "Check: ${JOBWRIGHT_DIR}/logs/morning_${TODAY}.log"
   touch "${DELIVERED_MARKER}"
   exit 0
 fi
 
 if pipeline_running; then
-  echo "Morning pipeline still running for ${APPLYPILOT_USER:-legacy}."
-  echo "Check: ${APPLYPILOT_DIR}/logs/morning_${TODAY}.log"
+  echo "Morning pipeline still running for ${JOBWRIGHT_USER:-legacy}."
+  echo "Check: ${JOBWRIGHT_DIR}/logs/morning_${TODAY}.log"
   # Do not mark delivered while still running
   exit 0
 fi

@@ -3,33 +3,36 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-if [[ -f "${SCRIPT_DIR}/_applypilot_repo.sh" ]]; then
+if [[ -f "${SCRIPT_DIR}/_jobwright_repo.sh" ]]; then
   # shellcheck source=/dev/null
-  source "${SCRIPT_DIR}/_applypilot_repo.sh"
-elif [[ -f "${SCRIPT_DIR}/../scripts/_applypilot_repo.sh" ]]; then
+  source "${SCRIPT_DIR}/_jobwright_repo.sh"
+elif [[ -f "${SCRIPT_DIR}/../scripts/_jobwright_repo.sh" ]]; then
   # shellcheck source=/dev/null
-  source "${SCRIPT_DIR}/../scripts/_applypilot_repo.sh"
+  source "${SCRIPT_DIR}/../scripts/_jobwright_repo.sh"
 fi
-if declare -F _applypilot_resolve_repo >/dev/null 2>&1; then
-  REPO_ROOT="$(_applypilot_resolve_repo)"
+if declare -F _jobwright_resolve_repo >/dev/null 2>&1; then
+  REPO_ROOT="$(_jobwright_resolve_repo)"
 elif [[ -f "$(pwd)/pyproject.toml" ]]; then
   REPO_ROOT="$(pwd)"
 else
   REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 fi
 
-if [[ -n "${APPLYPILOT_USER:-}" ]]; then
-  export APPLYPILOT_DIR="${APPLYPILOT_DIR:-$HOME/.applypilot-users/${APPLYPILOT_USER}}"
-  USER_FLAG=(--user "${APPLYPILOT_USER}")
+if [[ -n "${JOBWRIGHT_USER:-}" ]]; then
+  export JOBWRIGHT_DIR="${JOBWRIGHT_DIR:-$HOME/.jobwright-users/${JOBWRIGHT_USER}}"
+  USER_FLAG=(--user "${JOBWRIGHT_USER}")
 else
-  export APPLYPILOT_DIR="${APPLYPILOT_DIR:-$HOME/.applypilot}"
+  export JOBWRIGHT_DIR="${JOBWRIGHT_DIR:-$HOME/.jobwright}"
   USER_FLAG=()
 fi
-export APPLYPILOT_REPO="${REPO_ROOT}"
+export JOBWRIGHT_REPO="${REPO_ROOT}"
 
 export PATH="${HOME}/.local/bin:${PATH}"
 DOTENV="$(printf '\x2eenv')"
-[[ -f "${APPLYPILOT_DIR}/${DOTENV}" ]] && set -a && source "${APPLYPILOT_DIR}/${DOTENV}" && set +a
+# API keys live in one global .env (repo root); per-user dir may add non-secret overrides.
+GLOBAL_ENV="${JOBWRIGHT_ENV:-${JOBWRIGHT_REPO:-${REPO_ROOT:-}}/${DOTENV}}"
+[[ -f "${GLOBAL_ENV}" ]] && set -a && source "${GLOBAL_ENV}" && set +a
+[[ -f "${JOBWRIGHT_DIR}/${DOTENV}" ]] && set -a && source "${JOBWRIGHT_DIR}/${DOTENV}" && set +a
 
 export LLM_MODEL="${LLM_MODEL:-gemini-2.5-flash}"
 export APPLY_DRY_RUN=true
@@ -40,11 +43,11 @@ MAX_ATTEMPTS="${APPLY_MAX_ATTEMPTS:-3}"
 WORKERS="${APPLY_WORKERS:-4}"
 APPLY_LIMIT="${APPLY_LIMIT:-5}"
 TODAY="$(date +%Y%m%d)"
-LOG="${APPLYPILOT_DIR}/logs/morning_${TODAY}.log"
-DIGEST_FILE="${APPLYPILOT_DIR}/DIGEST_${TODAY}"
-MANIFEST_FILE="${APPLYPILOT_DIR}/APPLY_MANIFEST_${TODAY}"
-STATUS_FILE="${APPLYPILOT_DIR}/MORNING_STATUS_${TODAY}"
-mkdir -p "${APPLYPILOT_DIR}/logs"
+LOG="${JOBWRIGHT_DIR}/logs/morning_${TODAY}.log"
+DIGEST_FILE="${JOBWRIGHT_DIR}/DIGEST_${TODAY}"
+MANIFEST_FILE="${JOBWRIGHT_DIR}/APPLY_MANIFEST_${TODAY}"
+STATUS_FILE="${JOBWRIGHT_DIR}/MORNING_STATUS_${TODAY}"
+mkdir -p "${JOBWRIGHT_DIR}/logs"
 
 cd "${REPO_ROOT}"
 
@@ -54,25 +57,25 @@ finish_status() {
 }
 trap finish_status EXIT
 
-applypilot "${USER_FLAG[@]}" run discover enrich score portfolio tailor cover \
+jobwright "${USER_FLAG[@]}" run discover enrich score portfolio tailor cover \
   -w "${WORKERS}" --min-score "${MIN_SCORE}" --validation lenient >> "${LOG}" 2>&1 || RC=$?
 
 if [ "${RC}" -eq 0 ]; then
   export DIGEST_FILE MANIFEST_FILE MIN_SCORE APPLY_LIMIT MAX_ATTEMPTS
-  APPLYPILOT_USER="${APPLYPILOT_USER:-}" APPLYPILOT_DIR="${APPLYPILOT_DIR}" \
+  JOBWRIGHT_USER="${JOBWRIGHT_USER:-}" JOBWRIGHT_DIR="${JOBWRIGHT_DIR}" \
   PYTHONPATH="${REPO_ROOT}/src${PYTHONPATH:+:$PYTHONPATH}" python3 -c "
 import os
 from pathlib import Path
-from applypilot.config import load_env, ensure_dirs, set_active_user, set_app_dir
-from applypilot.database import init_db
-from applypilot.apply.launcher import write_morning_digest_and_manifest
-from applypilot.users import is_apply_enabled, get_user
+from jobwright.config import load_env, ensure_dirs, set_active_user, set_app_dir
+from jobwright.database import init_db
+from jobwright.apply.launcher import write_morning_digest_and_manifest
+from jobwright.users import is_apply_enabled, get_user
 
-user_id = os.environ.get('APPLYPILOT_USER') or None
+user_id = os.environ.get('JOBWRIGHT_USER') or None
 if user_id:
     set_active_user(user_id)
 else:
-    set_app_dir(os.environ.get('APPLYPILOT_DIR', str(Path.home() / '.applypilot')))
+    set_app_dir(os.environ.get('JOBWRIGHT_DIR', str(Path.home() / '.jobwright')))
 
 load_env()
 ensure_dirs()

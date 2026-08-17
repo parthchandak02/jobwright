@@ -2,7 +2,7 @@
 
 An autonomous, multi-stage job application pipeline. It discovers jobs across many boards, scores them against your resume with an LLM, tailors your resume and cover letter per job, and can optionally submit applications for you through a browser agent.
 
-The console command is `applypilot`.
+The console command is `jobwright`.
 
 ---
 
@@ -52,19 +52,22 @@ playwright install chromium   # only needed for stage 6 apply
 Then run the one-time setup wizard and verify your environment:
 
 ```bash
-applypilot init      # collects resume, profile, preferences, and API keys
-applypilot doctor    # shows what is installed and what is missing
+jobwright init      # collects resume, profile, preferences, and API keys
+jobwright doctor    # shows what is installed and what is missing
 ```
 
-### Configuration files (created by `applypilot init`)
+### Configuration files (created by `jobwright init`)
 
-Your data lives under `~/.applypilot/` (single user) or `~/.applypilot-users/<id>/` (multi-profile), never in the repo:
+API keys live in a **single gitignored `.env` at the repo root**, shared across all profiles (never committed):
+
+- **`.env`** (repo root) - `GEMINI_API_KEY`, `LLM_MODEL`, optional `CURSOR_API_KEY` and `CAPSOLVER_API_KEY`.
+
+Your per-profile data lives under `~/.jobwright/` (single user) or `~/.jobwright-users/<id>/` (multi-profile), and holds only user-specific files:
 
 - **`profile.json`** - contact info, work authorization, compensation, experience, skills, and your `portfolio` projects. Start from [`profile.example.json`](profile.example.json).
 - **`searches.yaml`** - your search queries, target titles, locations, and boards.
-- **`.env`** - `GEMINI_API_KEY`, `LLM_MODEL`, and optional `CURSOR_API_KEY`.
 
-Board and site definitions ship inside the package at `src/applypilot/config/` (`employers.yaml`, `sites.yaml`, `searches.example.yaml`).
+Board and site definitions ship inside the package at `src/jobwright/config/` (`employers.yaml`, `sites.yaml`, `searches.example.yaml`).
 
 ---
 
@@ -72,10 +75,10 @@ Board and site definitions ship inside the package at `src/applypilot/config/` (
 
 ```bash
 # Run the full prep pipeline in parallel, keeping only strong matches
-applypilot run discover enrich score portfolio tailor cover -w 4 --min-score 7
+jobwright run discover enrich score portfolio tailor cover -w 4 --min-score 7
 
-applypilot status      # pipeline statistics
-applypilot dashboard   # open the HTML results dashboard
+jobwright status      # pipeline statistics
+jobwright dashboard   # open the HTML results dashboard
 ```
 
 If tailoring is flaky on the Gemini free tier, add `--validation lenient`.
@@ -92,10 +95,10 @@ Stage 6 launches a browser agent that navigates the application form, fills your
 export CURSOR_API_KEY=...
 
 # Fill forms WITHOUT submitting (recommended first pass)
-applypilot apply --dry-run --limit 1
+jobwright apply --dry-run --limit 1
 
 # Submit for real, one job at a time
-applypilot apply --url "https://boards.greenhouse.io/example/jobs/123"
+jobwright apply --url "https://boards.greenhouse.io/example/jobs/123"
 ```
 
 Agent provider is selectable via `AGENT_PROVIDER`:
@@ -139,7 +142,7 @@ jobwright/
 ├── LICENSE                   # AGPL-3.0
 ├── pyproject.toml
 ├── profile.example.json      # onboarding template
-├── src/applypilot/           # the package (discovery, enrichment, scoring, apply, ...)
+├── src/jobwright/           # the package (discovery, enrichment, scoring, apply, ...)
 ├── bin/job-apply-pp-cli      # agent-native CLI wrapper
 ├── scripts/                  # Hermes cron + install helpers
 ├── config/live.env.example   # live-apply env template

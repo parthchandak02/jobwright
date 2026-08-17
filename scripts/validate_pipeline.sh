@@ -3,19 +3,19 @@
 set -euo pipefail
 
 export PATH="${HOME}/.local/bin:${PATH}"
-export APPLYPILOT_DIR="${APPLYPILOT_DIR:-$HOME/.applypilot}"
+export JOBWRIGHT_DIR="${JOBWRIGHT_DIR:-$HOME/.jobwright}"
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${REPO_ROOT}"
 
-echo "=== applypilot doctor ==="
-applypilot doctor || true
+echo "=== jobwright doctor ==="
+jobwright doctor || true
 
 echo ""
 echo "=== unit checks (providers, RESULT parser, portfolio) ==="
 python3 - <<'PY'
-from applypilot.apply.providers.base import parse_result_output, get_provider
-from applypilot.scoring.portfolio import _keyword_score
+from jobwright.apply.providers.base import parse_result_output, get_provider
+from jobwright.scoring.portfolio import _keyword_score
 
 assert parse_result_output("x\nRESULT:DRYRUN\n", dry_run=True) == "dryrun"
 assert parse_result_output("RESULT:APPLIED", dry_run=True) == "failed:dryrun_protocol_violation"
@@ -36,7 +36,7 @@ PY
 echo ""
 echo "=== dry-run RESULT protocol (10 cases) ==="
 python3 - <<'PY'
-from applypilot.apply.providers.base import parse_result_output
+from jobwright.apply.providers.base import parse_result_output
 
 cases = [
     ("RESULT:DRYRUN", True, "dryrun"),
@@ -60,7 +60,7 @@ PY
 python3 - <<'PY'
 import os
 import shutil
-from applypilot.config import has_apply_agent, get_agent_provider
+from jobwright.config import has_apply_agent, get_agent_provider
 
 print(f"AGENT_PROVIDER={get_agent_provider()}")
 print(f"has_apply_agent={has_apply_agent()}")
@@ -69,26 +69,29 @@ print(f"agent CLI={'yes' if shutil.which('agent') else 'no'}")
 PY
 
 DOTENV="$(printf '\x2eenv')"
-if [[ -f "${APPLYPILOT_DIR}/${DOTENV}" ]]; then
-  set -a
-  # shellcheck disable=SC1090
-  source "${APPLYPILOT_DIR}/${DOTENV}"
-  set +a
-fi
+GLOBAL_ENV="${JOBWRIGHT_ENV:-${REPO_ROOT}/${DOTENV}}"
+for envf in "${GLOBAL_ENV}" "${JOBWRIGHT_DIR}/${DOTENV}"; do
+  if [[ -f "${envf}" ]]; then
+    set -a
+    # shellcheck disable=SC1090
+    source "${envf}"
+    set +a
+  fi
+done
 
-if [[ -n "${GEMINI_API_KEY:-}" && -f "${APPLYPILOT_DIR}/resume.txt" ]]; then
+if [[ -n "${GEMINI_API_KEY:-}" && -f "${JOBWRIGHT_DIR}/resume.txt" ]]; then
   echo ""
   echo "=== pipeline dry-run (discover..cover, limit 2) ==="
-  applypilot run discover enrich score portfolio tailor cover --min-score 8 --dry-run 2>&1 | tail -20 || true
+  jobwright run discover enrich score portfolio tailor cover --min-score 8 --dry-run 2>&1 | tail -20 || true
 else
   echo ""
-  echo "SKIP pipeline dry-run: need GEMINI_API_KEY + resume.txt in ${APPLYPILOT_DIR}"
+  echo "SKIP pipeline dry-run: need GEMINI_API_KEY + resume.txt in ${JOBWRIGHT_DIR}"
 fi
 
 if [[ -n "${CURSOR_API_KEY:-}" ]]; then
   echo ""
   echo "=== apply dry-run (limit 1) — requires tailored jobs in DB ==="
-  applypilot apply --dry-run --limit 1 --workers 1 2>&1 | tail -30 || true
+  jobwright apply --dry-run --limit 1 --workers 1 2>&1 | tail -30 || true
 else
   echo ""
   echo "SKIP apply dry-run: CURSOR_API_KEY not set"

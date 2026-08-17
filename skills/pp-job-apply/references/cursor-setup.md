@@ -15,7 +15,7 @@ Default: `cursor-sdk` with `CURSOR_API_KEY` from Cursor Dashboard → Integratio
 ```bash
 export AGENT_PROVIDER=cursor-sdk
 export APPLY_AGENT_MODEL=composer-2.5
-applypilot apply --dry-run --limit 1
+jobwright apply --dry-run --limit 1
 ```
 
 Fallback CLI:
@@ -35,4 +35,4 @@ Agent stdout must include exactly one line:
 
 ## User data
 
-All PII in `~/.applypilot/profile.json` (chmod 600). Repo contains only `profile.example.json`.
+All PII in `~/.jobwright/profile.json` (chmod 600). Repo contains only `profile.example.json`.

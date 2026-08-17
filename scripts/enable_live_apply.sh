@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Enable live apply after dry-run validation (merges live.env.example into ~/.applypilot/.env).
+# Enable live apply after dry-run validation (merges live.env.example into the global repo .env).
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-ENV_FILE="${APPLYPILOT_DIR:-$HOME/.applypilot}/$(printf '\x2eenv')"
+ENV_FILE="${JOBWRIGHT_ENV:-${REPO_ROOT}/$(printf '\x2eenv')}"
 LIVE_SNIPPET="${REPO_ROOT}/config/live.env.example"
 
 if [[ ! -f "${ENV_FILE}" ]]; then
-  echo "Missing ${ENV_FILE} — run applypilot init first"
+  echo "Missing ${ENV_FILE} — run jobwright init first"
   exit 1
 fi
 

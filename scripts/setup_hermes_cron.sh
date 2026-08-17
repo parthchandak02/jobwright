@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Register Hermes cron jobs for multi-profile job pipeline.
 # Creates morning + digest + watchdog cron per registry user.
-# Legacy single-user (~/.applypilot) kept if no registry users exist.
+# Legacy single-user (~/.jobwright) kept if no registry users exist.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -30,7 +30,7 @@ pause_legacy_job "job-apply-submit"
 USERS_JSON="$(
   cd "${REPO_ROOT}" && PYTHONPATH="${REPO_ROOT}/src${PYTHONPATH:+:$PYTHONPATH}" python3 -c "
 import json
-from applypilot.users import list_users
+from jobwright.users import list_users
 users = [
     {
         'user_id': u.user_id,
@@ -52,7 +52,7 @@ if [[ "${USER_COUNT}" -eq 0 ]]; then
   bash "${UPSERT}" "job-apply-digest" "0 6-10 * * 1-5" "job_apply_digest.sh" "${DEFAULT_DELIVER}" ""
   bash "${UPSERT}" "job-apply-watchdog" "0 11 * * 1-5" "job_apply_watchdog.sh" "${DEFAULT_DELIVER}" ""
 else
-  # Keep legacy crons running unless explicitly paused (Parth's ~/.applypilot).
+  # Keep legacy crons running unless explicitly paused (Parth's ~/.jobwright).
   # Multi-user crons are namespaced: job-apply-morning-<id>, etc.
   if [[ "${PAUSE_LEGACY:-0}" == "1" ]]; then
     pause_legacy_job "job-apply-morning"
@@ -75,7 +75,7 @@ for u in users:
         continue
     sched = u.get("schedule") or "0 */3 * * 1-5"
     dig = u.get("digest_schedule") or "15 */3 * * 1-5"
-    env = f"APPLYPILOT_USER={uid}"
+    env = f"JOBWRIGHT_USER={uid}"
     for name, schedule, script in [
         (f"job-apply-morning-{uid}", sched, "job_apply_morning.sh"),
         (f"job-apply-digest-{uid}", dig, "job_apply_digest.sh"),

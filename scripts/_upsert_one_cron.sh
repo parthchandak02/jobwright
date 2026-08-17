@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # Helper invoked by setup_hermes_cron.sh: upsert_job name schedule script deliver env_kv
-# env_kv example: APPLYPILOT_USER=richa
+# env_kv example: JOBWRIGHT_USER=richa
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=/dev/null
-source "${SCRIPT_DIR}/_applypilot_repo.sh"
-REPO_ROOT="$(_applypilot_resolve_repo)"
+source "${SCRIPT_DIR}/_jobwright_repo.sh"
+REPO_ROOT="$(_jobwright_resolve_repo)"
 
 name="$1"
 schedule="$2"
@@ -23,15 +23,15 @@ find_job_id() {
 
 script_arg="${script}"
 if [[ -n "${env_kv}" ]]; then
-  # env_kv is APPLYPILOT_USER=uid — also pin APPLYPILOT_DIR + APPLYPILOT_REPO
-  uid="${env_kv#APPLYPILOT_USER=}"
+  # env_kv is JOBWRIGHT_USER=uid — also pin JOBWRIGHT_DIR + JOBWRIGHT_REPO
+  uid="${env_kv#JOBWRIGHT_USER=}"
   wrap="${HOME}/.hermes/scripts/wrap_${name}.sh"
   cat > "${wrap}" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
-export APPLYPILOT_USER="${uid}"
-export APPLYPILOT_DIR="\${HOME}/.applypilot-users/${uid}"
-export APPLYPILOT_REPO="${REPO_ROOT}"
+export JOBWRIGHT_USER="${uid}"
+export JOBWRIGHT_DIR="\${HOME}/.jobwright-users/${uid}"
+export JOBWRIGHT_REPO="${REPO_ROOT}"
 export PATH="\${HOME}/.local/bin:\${PATH}"
 exec bash "\${HOME}/.hermes/scripts/${script}"
 EOF
