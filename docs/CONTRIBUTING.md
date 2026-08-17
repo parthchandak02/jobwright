@@ -18,12 +18,12 @@ pip install -e ".[dev]"
 playwright install chromium
 ```
 
-This installs jobwright in editable mode with all development dependencies (pytest, ruff, etc.) and downloads the Chromium browser binary for Playwright. The console command is `applypilot`.
+This installs jobwright in editable mode with all development dependencies (pytest, ruff, etc.) and downloads the Chromium browser binary for Playwright. The console command is `jobwright`.
 
 ### Verify Installation
 
 ```bash
-applypilot --version
+jobwright --version
 pytest tests/ -v
 ruff check src/
 ```
@@ -32,11 +32,11 @@ ruff check src/
 
 ### Adding New Workday Employers
 
-Workday employer portals are configured in `src/applypilot/config/employers.yaml`. To add a new employer:
+Workday employer portals are configured in `src/jobwright/config/employers.yaml`. To add a new employer:
 
 1. Find the company's Workday career portal URL (usually `https://company.wd5.myworkdaysite.com/`)
 2. Identify the Workday instance number (wd1, wd3, wd5, etc.) and the tenant ID
-3. Add an entry to `src/applypilot/config/employers.yaml`:
+3. Add an entry to `src/jobwright/config/employers.yaml`:
 
 ```yaml
 - name: "Company Name"
@@ -45,15 +45,15 @@ Workday employer portals are configured in `src/applypilot/config/employers.yaml
   url: "https://company.wd5.myworkdaysite.com/en-US/recruiting"
 ```
 
-4. Test discovery: `applypilot discover --employer "Company Name"`
+4. Test discovery: `jobwright discover --employer "Company Name"`
 5. Submit a PR with the new entry
 
 ### Adding New Career Sites
 
-Direct career site scrapers are configured in `src/applypilot/config/sites.yaml`. To add a new site:
+Direct career site scrapers are configured in `src/jobwright/config/sites.yaml`. To add a new site:
 
 1. Inspect the company's careers page and identify the job listing structure
-2. Add an entry to `src/applypilot/config/sites.yaml` with CSS selectors:
+2. Add an entry to `src/jobwright/config/sites.yaml` with CSS selectors:
 
 ```yaml
 - name: "Company Name"
@@ -66,7 +66,7 @@ Direct career site scrapers are configured in `src/applypilot/config/sites.yaml`
     description: ".job-description"
 ```
 
-3. Test: `applypilot discover --site "Company Name"`
+3. Test: `jobwright discover --site "Company Name"`
 4. Submit a PR
 
 ### Bug Fixes and Features
@@ -89,7 +89,7 @@ pytest tests/ -v
 pytest tests/test_scoring.py -v
 
 # Run with coverage
-pytest tests/ --cov=src/applypilot --cov-report=term-missing
+pytest tests/ --cov=src/jobwright --cov-report=term-missing
 ```
 
 ## Linting and Code Style
@@ -132,7 +132,7 @@ jobwright/
 ├── LICENSE                   # AGPL-3.0
 ├── pyproject.toml            # Package + tooling config
 ├── profile.example.json      # Onboarding profile template
-├── src/applypilot/           # Main package (import name kept from the original codebase)
+├── src/jobwright/           # Main package (import name kept from the original codebase)
 │   ├── cli.py                # Typer CLI: init/run/apply/status/doctor/...
 │   ├── pipeline.py           # Stages 1-5 orchestrator
 │   ├── config.py             # Paths, environment, packaged-config loader

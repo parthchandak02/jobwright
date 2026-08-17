@@ -1,0 +1,134 @@
+# Non-technical Bay Area search template (Chief of Staff / strategy / CSR / VC platform)
+# Seed with: jobwright users add <id> --template nontech-bay-area
+# Or copy to ~/.jobwright-users/<id>/searches.yaml
+
+queries:
+  - query: "chief of staff"
+    tier: 1
+  - query: "chief of staff startup"
+    tier: 1
+  - query: "strategy partnerships"
+    tier: 1
+  - query: "strategic partnerships"
+    tier: 1
+  - query: "corporate social responsibility"
+    tier: 1
+  - query: "CSR manager"
+    tier: 1
+  - query: "CSR strategy"
+    tier: 1
+  - query: "employee engagement CSR"
+    tier: 2
+  - query: "venture platform"
+    tier: 1
+  - query: "platform associate venture"
+    tier: 1
+  - query: "impact investing platform"
+    tier: 2
+  - query: "foundation program officer"
+    tier: 2
+  - query: "foundation partnerships"
+    tier: 2
+  - query: "social impact strategy"
+    tier: 2
+  - query: "startup chief of staff Bay Area"
+    tier: 1
+  - query: "business operations chief of staff"
+    tier: 2
+  - query: "community partnerships"
+    tier: 2
+  - query: "nonprofit strategy consultant"
+    tier: 3
+
+locations:
+  - location: "San Francisco, CA"
+    remote: false
+  - location: "San Jose, CA"
+    remote: false
+  - location: "Oakland, CA"
+    remote: false
+  - location: "Palo Alto, CA"
+    remote: false
+  - location: "Bay Area, CA"
+    remote: false
+  - location: "Remote"
+    remote: true
+
+location:
+  accept_patterns:
+    - "San Francisco"
+    - "Bay Area"
+    - "SF"
+    - "San Jose"
+    - "Oakland"
+    - "Palo Alto"
+    - "Mountain View"
+    - "Berkeley"
+    - "California"
+    - "CA"
+    - "Remote"
+    - "Anywhere"
+    - "United States"
+    - "US"
+    - "USA"
+  reject_patterns:
+    - "New York only"
+    - "NYC only"
+    - "Seattle only"
+    - "onsite only"
+    - "London, UK"
+    - "India"
+    - "Philippines"
+    - "Bangalore"
+    - "Hyderabad"
+
+country: "USA"
+
+boards:
+  - indeed
+  - glassdoor
+  - zip_recruiter
+  - google
+
+defaults:
+  results_per_site: 50
+  hours_old: 24          # tighter freshness for near-real-time digests
+
+# Drop technical / deep-specialist titles (case-insensitive substring)
+exclude_titles:
+  - "software engineer"
+  - "software developer"
+  - "backend engineer"
+  - "frontend engineer"
+  - "full stack"
+  - "fullstack"
+  - "devops"
+  - "sre"
+  - "site reliability"
+  - "data engineer"
+  - "data scientist"
+  - "machine learning"
+  - "ml engineer"
+  - "ai engineer"
+  - "security engineer"
+  - "platform engineer"
+  - "cloud engineer"
+  - "infrastructure engineer"
+  - "qa engineer"
+  - "test engineer"
+  - "embedded"
+  - "firmware"
+  - "hardware engineer"
+  - "intern"
+  - "internship"
+  - "co-op"
+  - "ESG analyst"
+  - "climate scientist"
+  - "quantitative analyst"
+  - "investment banking"
+  - "private equity associate"
+
+# Annual USD floor — jobs clearly below this are dropped at discovery when salary is known
+min_salary: 115000
+
+exclude_companies: []

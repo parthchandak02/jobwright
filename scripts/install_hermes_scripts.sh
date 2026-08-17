@@ -11,7 +11,7 @@ mkdir -p "${HERMES_SCRIPTS}"
 for src in "${REPO_ROOT}"/scripts/job_apply_*.sh \
            "${REPO_ROOT}"/scripts/run_morning_pipeline.sh \
            "${REPO_ROOT}"/scripts/_upsert_one_cron.sh \
-           "${REPO_ROOT}"/scripts/_applypilot_repo.sh; do
+           "${REPO_ROOT}"/scripts/_jobwright_repo.sh; do
   [[ -f "${src}" ]] || continue
   chmod +x "${src}"
   install -m 755 "${src}" "${HERMES_SCRIPTS}/$(basename "${src}")"

@@ -1,24 +1,27 @@
 #!/usr/bin/env bash
 # Digest delivery: reads the digest file written by the background morning
 # pipeline and delivers it. Runs as a no_agent cron later.
-# Multi-profile: APPLYPILOT_USER / APPLYPILOT_DIR.
+# Multi-profile: JOBWRIGHT_USER / JOBWRIGHT_DIR.
 set -euo pipefail
 
-if [[ -n "${APPLYPILOT_USER:-}" ]]; then
-  export APPLYPILOT_DIR="${APPLYPILOT_DIR:-$HOME/.applypilot-users/${APPLYPILOT_USER}}"
+if [[ -n "${JOBWRIGHT_USER:-}" ]]; then
+  export JOBWRIGHT_DIR="${JOBWRIGHT_DIR:-$HOME/.jobwright-users/${JOBWRIGHT_USER}}"
 else
-  export APPLYPILOT_DIR="${APPLYPILOT_DIR:-$HOME/.applypilot}"
+  export JOBWRIGHT_DIR="${JOBWRIGHT_DIR:-$HOME/.jobwright}"
 fi
 
 export PATH="${HOME}/.local/bin:${PATH}"
 DOTENV="$(printf '\x2eenv')"
-[[ -f "${APPLYPILOT_DIR}/${DOTENV}" ]] && set -a && source "${APPLYPILOT_DIR}/${DOTENV}" && set +a
+# API keys live in one global .env (repo root); per-user dir may add non-secret overrides.
+GLOBAL_ENV="${JOBWRIGHT_ENV:-${JOBWRIGHT_REPO:-${REPO_ROOT:-}}/${DOTENV}}"
+[[ -f "${GLOBAL_ENV}" ]] && set -a && source "${GLOBAL_ENV}" && set +a
+[[ -f "${JOBWRIGHT_DIR}/${DOTENV}" ]] && set -a && source "${JOBWRIGHT_DIR}/${DOTENV}" && set +a
 
 TODAY="$(date +%Y%m%d)"
-DIGEST_FILE="${APPLYPILOT_DIR}/DIGEST_${TODAY}"
-STATUS_FILE="${APPLYPILOT_DIR}/MORNING_STATUS_${TODAY}"
-DELIVERED_MARKER="${APPLYPILOT_DIR}/DIGEST_DELIVERED_${TODAY}"
-MORNING_PID_FILE="${APPLYPILOT_DIR}/MORNING_PID_${TODAY}"
+DIGEST_FILE="${JOBWRIGHT_DIR}/DIGEST_${TODAY}"
+STATUS_FILE="${JOBWRIGHT_DIR}/MORNING_STATUS_${TODAY}"
+DELIVERED_MARKER="${JOBWRIGHT_DIR}/DIGEST_DELIVERED_${TODAY}"
+MORNING_PID_FILE="${JOBWRIGHT_DIR}/MORNING_PID_${TODAY}"
 
 # If no run today or already delivered → silent
 [ -f "${STATUS_FILE}" ] || exit 0
@@ -48,7 +51,7 @@ if grep -q "done" "${STATUS_FILE}" 2>/dev/null; then
   fi
   if [ ! -f "${DIGEST_FILE}" ]; then
     echo "Job digest unavailable. The morning pipeline finished with an error."
-    echo "Check: ${APPLYPILOT_DIR}/logs/morning_${TODAY}.log"
+    echo "Check: ${JOBWRIGHT_DIR}/logs/morning_${TODAY}.log"
     touch "${DELIVERED_MARKER}"
     exit 0
   fi

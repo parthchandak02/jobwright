@@ -41,10 +41,12 @@ Scripts must live in `~/.hermes/scripts/` (setup script copies them).
 
 ## Env for cron
 
-Cron inherits Hermes host env. Ensure `~/.applypilot/.env` exists or export keys in the shell scripts:
+API keys live in a single gitignored `.env` at the repo root. The cron wrappers pin `JOBWRIGHT_REPO` and the pipeline scripts source `${JOBWRIGHT_REPO}/.env` automatically, so cron picks up keys without per-user copies.
+
+To load them manually in a shell:
 
 ```bash
-set -a && source "$HOME/.applypilot/.env" && set +a
+set -a && source "${JOBWRIGHT_REPO:-$HOME/projects/jobwright}/.env" && set +a
 ```
 
-Do not put API keys in the git repo.
+The repo `.env` is gitignored (`*.env`); it is never committed.

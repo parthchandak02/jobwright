@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from applypilot.discovery.filters import (
+from jobwright.discovery.filters import (
     parse_salary_to_annual,
     passes_discovery_filters,
     salary_below_floor,
@@ -63,7 +63,7 @@ def test_passes_discovery_filters():
 
 
 def test_users_registry_roundtrip(tmp_path, monkeypatch):
-    import applypilot.users as users
+    import jobwright.users as users
 
     monkeypatch.setattr(users, "USERS_ROOT", tmp_path)
     monkeypatch.setattr(users, "REGISTRY_PATH", tmp_path / "users.yaml")
@@ -71,10 +71,8 @@ def test_users_registry_roundtrip(tmp_path, monkeypatch):
     u = users.add_user("richa", name="Richa", whatsapp_target="whatsapp:123", apply_enabled=False)
     assert u.user_id == "richa"
     assert (tmp_path / "richa").is_dir()
-    # Default .env is a stub, not a silent copy of secrets
-    env_text = (tmp_path / "richa" / ".env").read_text(encoding="utf-8")
-    assert "APPLY_DRY_RUN=true" in env_text
-    assert "GEMINI_API_KEY=" not in env_text or "Copy GEMINI" in env_text
+    # No per-user .env: API keys are global; per-user dirs hold only data.
+    assert not (tmp_path / "richa" / ".env").exists()
     assert users.get_user("richa") is not None
     assert users.is_apply_enabled("richa") is False
     users.update_user("richa", apply_enabled=True)
@@ -84,8 +82,8 @@ def test_users_registry_roundtrip(tmp_path, monkeypatch):
 
 
 def test_set_active_user_updates_paths(tmp_path, monkeypatch):
-    import applypilot.users as users
-    import applypilot.config as config
+    import jobwright.users as users
+    import jobwright.config as config
 
     monkeypatch.setattr(users, "USERS_ROOT", tmp_path)
     monkeypatch.setattr(users, "REGISTRY_PATH", tmp_path / "users.yaml")
@@ -93,6 +91,6 @@ def test_set_active_user_updates_paths(tmp_path, monkeypatch):
     path = config.set_active_user("alice")
     assert path == (tmp_path / "alice").resolve()
     assert config.APP_DIR == path
-    assert config.DB_PATH == path / "applypilot.db"
+    assert config.DB_PATH == path / "jobwright.db"
     assert config.ACTIVE_USER_ID == "alice"
     assert users.is_apply_enabled(None) is True

@@ -1,4 +1,4 @@
-# git-secrets false positives for applypilot-agent (no secret values)
+# git-secrets false positives for jobwright (no secret values)
 os\.environ
 env=env
 CLAUDECODE
@@ -7,8 +7,8 @@ GEMINI_API_KEY
 CURSOR_API_KEY
 CAPSOLVER_API_KEY
 \.env
-applypilot/\.env
-~/.applypilot/
+jobwright/\.env
+~/.jobwright/
 ENV_PATH
 \*\.env
 \.env\.\*
@@ -17,5 +17,5 @@ env-specific
 env names
 \.venv
 Interpreter / venv
-env = f"APPLYPILOT_USER
+env = f"JOBWRIGHT_USER
 deliver, env]

@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
 # User confirmation gate — run when user says CONFIRM APPLY (Hermes or manual).
-# Supports multi-profile via APPLYPILOT_USER.
+# Supports multi-profile via JOBWRIGHT_USER.
 set -euo pipefail
 
-if [[ -n "${APPLYPILOT_USER:-}" ]]; then
-  export APPLYPILOT_DIR="${APPLYPILOT_DIR:-$HOME/.applypilot-users/${APPLYPILOT_USER}}"
+if [[ -n "${JOBWRIGHT_USER:-}" ]]; then
+  export JOBWRIGHT_DIR="${JOBWRIGHT_DIR:-$HOME/.jobwright-users/${JOBWRIGHT_USER}}"
 else
-  export APPLYPILOT_DIR="${APPLYPILOT_DIR:-$HOME/.applypilot}"
+  export JOBWRIGHT_DIR="${JOBWRIGHT_DIR:-$HOME/.jobwright}"
 fi
 
-CONFIRM_FILE="${APPLYPILOT_DIR}/APPLY_CONFIRMED"
-mkdir -p "${APPLYPILOT_DIR}"
+CONFIRM_FILE="${JOBWRIGHT_DIR}/APPLY_CONFIRMED"
+mkdir -p "${JOBWRIGHT_DIR}"
 date -u +"%Y-%m-%dT%H:%M:%SZ" > "${CONFIRM_FILE}"
 chmod 600 "${CONFIRM_FILE}"
-echo "Confirmed for ${APPLYPILOT_DIR}."
-echo "Run: APPLYPILOT_USER=${APPLYPILOT_USER:-} scripts/job_apply_on_confirm.sh"
+echo "Confirmed for ${JOBWRIGHT_DIR}."
+echo "Run: JOBWRIGHT_USER=${JOBWRIGHT_USER:-} scripts/job_apply_on_confirm.sh"
