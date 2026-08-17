@@ -16,7 +16,7 @@ from jobspy import scrape_jobs
 
 from jobwright import config
 from jobwright.config import load_location_filters
-from jobwright.database import get_connection, init_db, store_jobs
+from jobwright.database import get_connection, init_db
 
 log = logging.getLogger(__name__)
 
