@@ -4,6 +4,8 @@ An autonomous, multi-stage job application pipeline. It discovers jobs across ma
 
 The console command is `jobwright`.
 
+**Agents (Cursor, Claude, Hermes):** read [AGENTS.md](AGENTS.md) first for end-to-end flow, paths, and pointers to operational playbooks.
+
 ---
 
 ## What it does
@@ -62,7 +64,7 @@ API keys live in a **single gitignored `.env` at the repo root**, shared across 
 
 - **`.env`** (repo root) - `GEMINI_API_KEY`, `LLM_MODEL`, optional `CURSOR_API_KEY` and `CAPSOLVER_API_KEY`.
 
-Your per-profile data lives under `~/.jobwright/` (single user) or `~/.jobwright-users/<id>/` (multi-profile), and holds only user-specific files:
+Your per-profile data lives under `~/.jobwright/` (single user) or `users/<id>/` under the repo (multi-profile), and holds only user-specific files:
 
 - **`profile.json`** - contact info, work authorization, compensation, experience, skills, and your `portfolio` projects. Start from [`profile.example.json`](profile.example.json).
 - **`searches.yaml`** - your search queries, target titles, locations, and boards.
@@ -109,7 +111,7 @@ export AGENT_PROVIDER=cursor-cli   # fallback: the `agent` CLI
 export AGENT_PROVIDER=claude       # legacy upstream behavior
 ```
 
-Safety: dry-run is the default, LinkedIn apply is blocked, live workers are capped at 1, and multi-profile users must be explicitly opted in (`apply_enabled`). See the [pp-job-apply skill](skills/pp-job-apply/SKILL.md) for the full confirmation-gated workflow.
+Safety: dry-run is the default, LinkedIn apply is blocked, live workers are capped at 1, and multi-profile users must be explicitly opted in (`apply_enabled`). See [docs/agents/whatsapp-routing.md](docs/agents/whatsapp-routing.md) and [docs/agents/install-hermes-skill.md](docs/agents/install-hermes-skill.md).
 
 ---
 
@@ -122,7 +124,7 @@ jobwright can run per-profile prep on a Hermes cron and deliver a digest to each
 ./scripts/setup_hermes_cron.sh   # register per-profile prep + digest crons
 ```
 
-Full workflow, onboarding, and safety rules: [skills/pp-job-apply/SKILL.md](skills/pp-job-apply/SKILL.md).
+Full workflow, onboarding, and safety rules: [AGENTS.md](AGENTS.md) and [docs/agents/](docs/agents/). Hermes users: run `./scripts/install_skills.sh` after clone.
 
 There is also an agent-native CLI wrapper:
 
@@ -139,6 +141,11 @@ chmod +x bin/job-apply-pp-cli
 ```
 jobwright/
 ├── README.md                 # you are here
+├── AGENTS.md                 # agent entry point (Cursor, Claude, Hermes)
+├── CLAUDE.md                 # pointer to AGENTS.md
+├── docs/agents/              # Hermes/WhatsApp ops (canonical, in repo)
+├── templates/hermes-skill/   # thin loader copied to ~/.hermes/skills/
+├── skills/README.md          # how to install Hermes skill (not a skill itself)
 ├── LICENSE                   # AGPL-3.0
 ├── pyproject.toml
 ├── profile.example.json      # onboarding template
@@ -154,7 +161,7 @@ jobwright/
 
 ## Documentation
 
-Everything else lives in [`docs/`](docs/): [contributing](docs/CONTRIBUTING.md), [changelog](docs/CHANGELOG.md), [glossary](docs/GLOSSARY.md), [attribution](docs/UPSTREAM.md), and [architecture decision records](docs/adr/).
+Everything else lives in [`docs/`](docs/): [contributing](docs/CONTRIBUTING.md), [changelog](docs/CHANGELOG.md), [glossary](docs/GLOSSARY.md), [attribution](docs/UPSTREAM.md), and [architecture decision records](docs/adr/). **Agent map:** [AGENTS.md](AGENTS.md). **Hermes install:** [docs/agents/install-hermes-skill.md](docs/agents/install-hermes-skill.md).
 
 ## License and attribution
 

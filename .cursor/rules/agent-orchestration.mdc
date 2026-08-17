@@ -1,0 +1,81 @@
+---
+description: Agent workflow — finish tasks end-to-end, todos, parallel subagents, question-first alignment, skill routing
+alwaysApply: true
+---
+
+# Agent orchestration (jobwright)
+
+## Execution discipline
+
+- **Finish the full task.** Run every required step in the user's request and linked skills. Do not stop halfway or report partial progress as done.
+- **Return only on failure or blocker.** If steps succeed, complete the work and summarize. Come back mid-task only when something does not work or you need the user.
+- **Do not assume.** Probe code and docs first. If you are unsure and cannot verify, **stop and ask one question** (with why it matters and a recommended answer). Never guess on safety, apply gates, user data, or irreversible ops.
+- **Skip lightweight mode** for one-line fixes, typos, or when the user says go / just do it / no questions.
+
+## Understand before acting
+
+- Prefer repo reads over guesses.
+- Stop aligning when the user says go, implement, good enough, or stop grilling.
+
+## Track multi-step work
+
+- **TodoWrite** for 3+ distinct steps or a numbered list.
+- Mark in_progress / completed as you go. Do not end with open todos unless the user pivots.
+- Session end: [.cursor/skills/handoff/SKILL.md](.cursor/skills/handoff/SKILL.md).
+
+## Parallelize with subagents
+
+- Gates: no subagents for 1-2 steps; one if narrow; 2-3 only if scopes are independent.
+- Route: `explore`, `generalPurpose`, `shell`. Batch independent **Task** calls in one message.
+- Parent synthesizes; do not delegate context the parent already holds.
+
+## Skill routing (load on demand)
+
+### Build and debug
+
+| Trigger | Skill |
+|---------|-------|
+| Plan fuzzy, terms overloaded | [.cursor/skills/grill-with-docs/SKILL.md](.cursor/skills/grill-with-docs/SKILL.md) |
+| Version-sensitive facts, APIs | [.cursor/skills/research/SKILL.md](.cursor/skills/research/SKILL.md) |
+| One design question before build | [.cursor/skills/prototype/SKILL.md](.cursor/skills/prototype/SKILL.md) |
+| Build after plan locked | [.cursor/skills/implement/SKILL.md](.cursor/skills/implement/SKILL.md) |
+| Test-first / red-green-refactor | [.cursor/skills/tdd/SKILL.md](.cursor/skills/tdd/SKILL.md) |
+| Hard bug, regression, slowness | [.cursor/skills/diagnosing-bugs/SKILL.md](.cursor/skills/diagnosing-bugs/SKILL.md) |
+| Stuck, costly fork, repeated failure | [.cursor/skills/advisor/SKILL.md](.cursor/skills/advisor/SKILL.md) |
+| Default implementation bias | [.cursor/skills/ponytail/SKILL.md](.cursor/skills/ponytail/SKILL.md) |
+| Large refactor | [.cursor/skills/improve-codebase-architecture/SKILL.md](.cursor/skills/improve-codebase-architecture/SKILL.md) |
+| Stage 6 / browser apply debug | [.cursor/skills/playwright-cli/SKILL.md](.cursor/skills/playwright-cli/SKILL.md) |
+
+### Review, land, verify
+
+| Trigger | Skill |
+|---------|-------|
+| Before claiming done / commit / PR | [.cursor/skills/verification-before-completion/SKILL.md](.cursor/skills/verification-before-completion/SKILL.md) |
+| PR or change review | [.cursor/skills/code-review/SKILL.md](.cursor/skills/code-review/SKILL.md) |
+| Post-change bug review | [.cursor/skills/review-bugbot/SKILL.md](.cursor/skills/review-bugbot/SKILL.md) |
+| Post-change security review | [.cursor/skills/review-security/SKILL.md](.cursor/skills/review-security/SKILL.md) |
+| Split work into reviewable PRs | [.cursor/skills/split-to-prs/SKILL.md](.cursor/skills/split-to-prs/SKILL.md) |
+| Commit or push | [.cursor/skills/commit-and-push/SKILL.md](.cursor/skills/commit-and-push/SKILL.md) |
+| GitHub issue triage | [.cursor/skills/triage/SKILL.md](.cursor/skills/triage/SKILL.md) |
+
+### Ops and prose
+
+| Trigger | Skill |
+|---------|-------|
+| Hermes / WhatsApp / pipeline / CONFIRM APPLY | [.cursor/skills/pipeline-operator/SKILL.md](.cursor/skills/pipeline-operator/SKILL.md) |
+| User-facing prose | [.cursor/skills/humanizer/SKILL.md](.cursor/skills/humanizer/SKILL.md) |
+| Learn over many sessions (`/teach`) | `~/.cursor/skills/teach/SKILL.md` (dedicated workspace, not this repo) |
+
+## `/teach` (Matt Pocock)
+
+User-invoked only. Dedicated folder (`~/Documents/Research/<topic>/` or separate repo). Stateful: `MISSION.md`, `lessons/`, `reference/`, `learning-records/`, `assets/`. Name workspace path explicitly (skill path bug #377).
+
+## Adversarial review (hard forks only)
+
+2-3 readonly consultations in parallel when costly to reverse and still uncertain. [.cursor/skills/advisor/SKILL.md](.cursor/skills/advisor/SKILL.md).
+
+## Guardrails
+
+- Same command fails twice: stop, report cause, give exact local command.
+- Confirm before force-push, mass delete, schema drops, killing foreign tmux.
+- [AGENTS.md](AGENTS.md) safety rules. Doc sync: [.cursor/rules/agents-doc-sync.mdc](.cursor/rules/agents-doc-sync.mdc).

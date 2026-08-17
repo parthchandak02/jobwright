@@ -1,0 +1,75 @@
+# Repo map (jobwright)
+
+Detailed paths for agents. Summary: [../../AGENTS.md](../../AGENTS.md).
+
+## Source code
+
+| Path | Purpose |
+|------|---------|
+| `src/jobwright/cli.py` | Typer CLI: `run`, `apply`, `status`, `doctor`, `users`, `network`, `targets` |
+| `src/jobwright/pipeline.py` | Stage orchestration (`STAGE_ORDER`, streaming mode) |
+| `src/jobwright/config.py` | `JOBWRIGHT_DIR` paths, environment loading, `set_active_user` |
+| `src/jobwright/users.py` | Multi-profile registry (`users/users.yaml`) |
+| `src/jobwright/database.py` | SQLite `jobs` table and pipeline state |
+| `src/jobwright/discovery/` | JobSpy, Workday, smart extract |
+| `src/jobwright/enrichment/` | Full JD fetch (JSON-LD, CSS, LLM) |
+| `src/jobwright/scoring/` | Scorer, tailor, cover letter, portfolio, PDF, validator |
+| `src/jobwright/apply/` | Stage 6: launcher, Chrome workers, ATS helpers, providers |
+| `src/jobwright/apply/providers/` | `cursor-sdk` (default), `cursor-cli`, `claude` |
+| `src/jobwright/network/` | LinkedIn connections ranking (`connections.csv`) |
+| `src/jobwright/targets/` | Target company list builder |
+| `src/jobwright/config/*.yaml` | Shipped employers, sites, search templates |
+| `bin/job-apply-pp-cli` | Agent-native JSON wrapper over `jobwright` |
+| `scripts/` | Hermes cron installers, morning/digest/confirm, repo resolution |
+| `tests/` | pytest |
+
+**Legacy:** `src/applypilot/` is unmaintained; do not extend.
+
+Package-specific agent notes: [../../src/jobwright/AGENTS.md](../../src/jobwright/AGENTS.md).
+
+## User data (not in git)
+
+| Scope | Location |
+|-------|----------|
+| API keys | `<repo>/.env` (shared across profiles) |
+| Legacy single user | `~/.jobwright/` |
+| Registry | `<repo>/users/users.yaml` |
+| Per-user dir | `<repo>/users/<user_id>/` |
+
+Override: `JOBWRIGHT_USERS_ROOT`, `JOBWRIGHT_REPO`, `JOBWRIGHT_DIR`, `JOBWRIGHT_USER`.
+
+Always: `jobwright --user <id> status` (`--user` before subcommand).
+
+WhatsApp resolve: `scripts/resolve_user_from_whatsapp.sh 'whatsapp:…'`.
+
+## Scripts (Hermes / cron)
+
+| Script | Role |
+|--------|------|
+| `_jobwright_repo.sh` | Resolve repo root |
+| `install_skills.sh` | Install thin Hermes/Cursor skill pointer |
+| `install_hermes_scripts.sh` | Copy cron scripts to `~/.hermes/scripts/` |
+| `setup_hermes_cron.sh` | Register per-user crons |
+| `job_apply_morning.sh` | Prep stages 1-5 |
+| `job_apply_digest.sh` | WhatsApp digest |
+| `job_apply_confirm.sh` | CONFIRM APPLY gate |
+| `job_apply_on_confirm.sh` | Live apply batch |
+| `job_apply_watchdog.sh` | Stuck-pipeline checks |
+| `resolve_user_from_whatsapp.sh` | JID → `user_id` |
+| `validate_pipeline.sh` | Doctor + unit checks |
+
+Cron names: `job-apply-morning-<id>`, `job-apply-digest-<id>`, `job-apply-watchdog-<id>`.
+
+## Environment variables
+
+| Variable | Role |
+|----------|------|
+| `GEMINI_API_KEY` | Stages 3-5 |
+| `CURSOR_API_KEY` | Stage 6 (default provider) |
+| `AGENT_PROVIDER` | `cursor-sdk` \| `cursor-cli` \| `claude` |
+| `JOBWRIGHT_REPO` | Repo root for shell scripts |
+| `JOBWRIGHT_USERS_ROOT` | Registry root (default `<repo>/users`) |
+| `JOBWRIGHT_DIR` | Active user data directory |
+| `JOBWRIGHT_USER` | Set by Hermes wrappers after resolution |
+
+Templates: `.env.example`, `config/live.env.example`.

@@ -1,6 +1,11 @@
 # jobwright documentation
 
-Start with the top-level [README](../README.md) for setup and usage. This folder holds everything else.
+Start with the top-level [README](../README.md) for setup and usage. **Agents** should read [AGENTS.md](../AGENTS.md) first. This folder holds everything else.
+
+## Agent documentation
+
+- [docs/agents/README.md](agents/README.md) - agent doc index (Hermes, WhatsApp, repo map)
+- [docs/agents/install-hermes-skill.md](agents/install-hermes-skill.md) - install thin skill to `~/.hermes/skills/`
 
 ## Contents
 

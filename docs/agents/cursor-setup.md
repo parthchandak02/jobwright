@@ -2,11 +2,13 @@
 
 ## Skill location
 
-Cursor loads personal skills from `~/.cursor/skills/`. Install via:
+Cursor can read [AGENTS.md](../../AGENTS.md) directly when the repo is open. Optional thin loader:
 
 ```bash
 ./scripts/install_skills.sh
 ```
+
+Points to your clone via `JOBWRIGHT_REPO` in `~/.cursor/skills/pp-job-apply/`. Deep docs: [docs/agents/](../../docs/agents/).
 
 ## Stage 6 provider
 

@@ -1,0 +1,39 @@
+---
+description: Before commit or push, verify AGENTS.md matches the current repo state
+alwaysApply: true
+---
+
+# AGENTS.md sync on commit / push
+
+Before staging, committing, or pushing, check whether [AGENTS.md](AGENTS.md) is still accurate.
+
+## When to update AGENTS.md
+
+Update in the same change set if you touched:
+
+- CLI commands, subcommands, or flags (`src/jobwright/cli.py`)
+- Pipeline stages or order (`src/jobwright/pipeline.py`)
+- User registry, paths, or multi-profile behavior (`src/jobwright/users.py`, `src/jobwright/config.py`)
+- Hermes/cron scripts (`scripts/job_apply_*.sh`, installers)
+- Apply safety gates, providers, or CONFIRM APPLY flow
+- Agent doc locations (`docs/agents/`, `templates/hermes-skill/`)
+- Version in `pyproject.toml`
+
+Also update [docs/agents/repo-map.md](docs/agents/repo-map.md) when paths or scripts change materially.
+
+## Pre-commit / pre-push checklist
+
+1. Read `git diff` and list what moved.
+2. Open AGENTS.md: commands, Always/Ask/Never, and task table still match?
+3. If stale, update AGENTS.md and any linked `docs/agents/` file.
+4. Bump **Last verified** at the bottom of AGENTS.md.
+5. If `templates/hermes-skill/SKILL.md` changed, note that users should re-run `./scripts/install_skills.sh`.
+
+## Doc-sync matrix
+
+[.cursor/commit-overlay.md](.cursor/commit-overlay.md)
+
+## Do not
+
+- Commit secrets, `.env`, or `users/`.
+- Skip this check for small changes that alter agent entry points.
