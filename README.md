@@ -121,8 +121,10 @@ jobwright can run per-profile prep on a Hermes cron and deliver a digest to each
 
 ```bash
 ./scripts/install_skills.sh      # install the pp-job-apply skill for Cursor + Hermes
-./scripts/setup_hermes_cron.sh   # register per-profile prep + digest crons
+./scripts/install_hermes_scripts.sh
 ```
+
+Hermes cron setup: paste the block at the top of [docs/agents/hermes-setup.md](docs/agents/hermes-setup.md) to your WhatsApp Hermes agent (it registers crons via `hermes cron`).
 
 Full workflow, onboarding, and safety rules: [AGENTS.md](AGENTS.md) and [docs/agents/](docs/agents/). Hermes users: run `./scripts/install_skills.sh` after clone.
 
