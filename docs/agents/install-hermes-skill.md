@@ -49,7 +49,7 @@ Read order:
 ```
 
 4. Copy Hermes cron scripts: `./scripts/install_hermes_scripts.sh`
-5. Register crons: `./scripts/setup_hermes_cron.sh`
+5. Ask Hermes to register crons using [hermes-setup.md](hermes-setup.md) (agent playbook; do not rely on `setup_hermes_cron.sh` unless you want a non-agent shell shortcut)
 
 ## Multiple clones or machines
 

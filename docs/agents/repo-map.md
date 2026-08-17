@@ -49,7 +49,7 @@ WhatsApp resolve: `scripts/resolve_user_from_whatsapp.sh 'whatsapp:…'`.
 | `_jobwright_repo.sh` | Resolve repo root |
 | `install_skills.sh` | Install thin Hermes/Cursor skill pointer |
 | `install_hermes_scripts.sh` | Copy cron scripts to `~/.hermes/scripts/` |
-| `setup_hermes_cron.sh` | Register per-user crons |
+| `setup_hermes_cron.sh` | Optional shell shortcut; prefer Hermes agent per `docs/agents/hermes-setup.md` |
 | `job_apply_morning.sh` | Prep stages 1-5 |
 | `job_apply_digest.sh` | WhatsApp digest |
 | `job_apply_confirm.sh` | CONFIRM APPLY gate |

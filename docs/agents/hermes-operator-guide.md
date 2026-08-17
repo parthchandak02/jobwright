@@ -132,8 +132,8 @@ jobwright users add <id> --name "Full Name" --whatsapp "whatsapp:..." --template
 # Creates resume/, cover-letter/, references/inbox/ skeleton
 # Write resume/base.txt, profile.json, searches.yaml
 # Optional: connections.csv, cover-letter/template.txt, examples/
-./scripts/setup_hermes_cron.sh
 ./scripts/install_hermes_scripts.sh
+# Crons: Hermes agent registers via docs/agents/hermes-setup.md
 jobwright --user <id> doctor
 ```
 
@@ -206,7 +206,7 @@ Alternative: Hermes can edit files directly with `read_file` / `patch` terminal 
 cd "${JOBWRIGHT_REPO}"
 ./scripts/install_skills.sh          # if templates/hermes-skill/SKILL.md changed
 ./scripts/install_hermes_scripts.sh  # if scripts/*.sh changed
-./scripts/setup_hermes_cron.sh       # if cron definitions changed
+# Crons: Hermes agent — docs/agents/hermes-setup.md (edit existing, do not duplicate)
 ```
 
 ## Health checks

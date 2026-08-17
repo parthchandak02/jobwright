@@ -11,7 +11,7 @@ Canonical agent-facing docs live **in this repo**, not inside Hermes or Cursor s
 | Hermes install | [install-hermes-skill.md](install-hermes-skill.md) | Point Hermes at your clone |
 | Repo map | [repo-map.md](repo-map.md) | Paths, scripts, source layout |
 | WhatsApp routing | [whatsapp-routing.md](whatsapp-routing.md) | Inbound phrase → action |
-| Cron / scripts | [hermes-setup.md](hermes-setup.md) | `install_hermes_scripts.sh`, crons |
+| Cron / scripts | [hermes-setup.md](hermes-setup.md) (Hermes agent creates crons) | `install_hermes_scripts.sh`, crons |
 | Cursor apply | [cursor-setup.md](cursor-setup.md) | Stage 6, RESULT protocol |
 | Human UX | [whatsapp-user-guide.md](whatsapp-user-guide.md) | Share with WhatsApp users |
 

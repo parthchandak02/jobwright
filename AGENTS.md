@@ -66,7 +66,7 @@ jobwright users add <id> --name "Name" --whatsapp "whatsapp:..." --template nont
 # Hermes install (from clone)
 ./scripts/install_skills.sh
 ./scripts/install_hermes_scripts.sh
-./scripts/setup_hermes_cron.sh
+# Crons: ask Hermes agent — docs/agents/hermes-setup.md (paste block at top)
 ```
 
 Env: `FIREWORKS_API_KEY` (stages 3-5, preferred), `GEMINI_API_KEY` (fallback), `CURSOR_API_KEY` + `AGENT_PROVIDER=cursor-sdk` (stage 6). Templates: `.env.example`.
