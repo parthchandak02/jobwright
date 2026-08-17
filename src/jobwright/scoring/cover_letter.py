@@ -5,7 +5,6 @@ postings. All personal data (name, skills, achievements) comes from the user's
 profile at runtime. No hardcoded personal information.
 """
 
-import json
 import logging
 import re
 import time
@@ -13,7 +12,7 @@ from datetime import datetime, timezone
 
 from jobwright.config import load_profile
 import jobwright.config as config
-from jobwright.database import get_connection, get_jobs_by_stage
+from jobwright.database import get_connection
 from jobwright.llm import get_client
 from jobwright.scoring.portfolio import get_selected_projects
 from jobwright.scoring.validator import (
@@ -30,14 +29,16 @@ MAX_ATTEMPTS = 5  # max cross-run retries before giving up
 
 # ── Prompt Builder (profile-driven) ──────────────────────────────────────
 
-def _build_cover_letter_prompt(profile: dict) -> str:
+def _build_cover_letter_prompt(profile: dict, template: str = "", examples: list[str] | None = None) -> str:
     """Build the cover letter system prompt from the user's profile.
 
     All personal data, skills, and sign-off name come from the profile.
+    When template/examples are provided, steer away from resume copy-paste.
     """
     personal = profile.get("personal", {})
     boundary = profile.get("skills_boundary", {})
     resume_facts = profile.get("resume_facts", {})
+    mode = profile.get("cover_letter_mode", "default")
 
     # Preferred name for the sign-off (falls back to full name)
     sign_off_name = personal.get("preferred_name") or personal.get("full_name", "")
@@ -67,7 +68,38 @@ def _build_cover_letter_prompt(profile: dict) -> str:
     all_banned = ", ".join(f'"{w}"' for w in BANNED_WORDS)
     leak_banned = ", ".join(f'"{p}"' for p in LLM_LEAK_PHRASES)
 
-    return f"""Write a cover letter for {sign_off_name}. The goal is to get an interview.
+    voice_line = (
+        "Write like a seasoned strategy/impact operator emailing someone they respect. Not formal, not casual."
+        if mode == "template"
+        else "Write like a real engineer emailing someone they respect. Not formal, not casual."
+    )
+
+    template_block = ""
+    if template:
+        template_block = f"""
+
+COVER LETTER TEMPLATE (follow this structure and tone; adapt placeholders per job):
+---
+{template[:4000]}
+---"""
+
+    examples_block = ""
+    if examples:
+        joined = "\n---\n".join(ex[:2000] for ex in examples[:3])
+        examples_block = f"""
+
+EXAMPLE LETTERS THE CANDIDATE HAS ACTUALLY SENT (match this voice; use NEW stories, do NOT copy resume bullets verbatim):
+---
+{joined}
+---"""
+
+    resume_rule = ""
+    if mode == "template" or examples:
+        resume_rule = """
+RESUME RULE: The resume is background only. Cover letter must add NEW angles and examples.
+Do NOT restate resume bullets. Pick different stories or framing than the resume."""
+
+    return f"""Write a cover letter for {sign_off_name}. The goal is to get an interview.{template_block}{examples_block}{resume_rule}
 
 STRUCTURE: 3 short paragraphs. Under 250 words. Every sentence must earn its place.
 
@@ -86,7 +118,7 @@ ALSO BANNED (meta-commentary the validator catches):
 BANNED PUNCTUATION: No em dashes (—) or en dashes (–). Use commas or periods.
 
 VOICE:
-- Write like a real engineer emailing someone they respect. Not formal, not casual. Just direct.
+- {voice_line} Just direct.
 - NEVER narrate or explain what you're doing. BAD: "This demonstrates my commitment to X." GOOD: Just state the fact and move on.
 - NEVER hedge. BAD: "might address some of your challenges." GOOD: "solves the same problem your team is facing."
 - Every sentence should contain either a number, a tool name, or a specific outcome. If it doesn't, cut it.
@@ -153,7 +185,10 @@ def generate_cover_letter(
     avoid_notes: list[str] = []
     letter = ""
     client = get_client()
-    cl_prompt_base = _build_cover_letter_prompt(profile)
+    template_text, example_texts = config.load_cover_letter_materials(profile)
+    cl_prompt_base = _build_cover_letter_prompt(
+        profile, template=template_text, examples=example_texts or None,
+    )
 
     for attempt in range(max_retries + 1):
         # Fresh conversation every attempt

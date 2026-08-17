@@ -9,11 +9,11 @@ from __future__ import annotations
 import json
 import logging
 import re
-from datetime import datetime, timezone
 
 from jobwright.config import load_profile
-from jobwright.database import get_connection, get_jobs_by_stage
+from jobwright.database import get_connection
 from jobwright.llm import get_client
+from jobwright.llm_json import LLMJsonError, chat_json_object
 
 log = logging.getLogger(__name__)
 
@@ -86,19 +86,18 @@ def select_projects_for_job(profile: dict, job: dict) -> list[str]:
     client = get_client()
     prompt = _build_portfolio_prompt(profile, job, candidates)
     try:
-        response = client.chat(
+        data = chat_json_object(
+            client,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.2,
+            max_tokens=1024,
         )
-        text = response.strip()
-        if "```" in text:
-            text = text.split("```")[1]
-            if text.startswith("json"):
-                text = text[4:]
-        data = json.loads(text)
         selected = data.get("selected_ids", [])
         valid_ids = {p["id"] for p in portfolio if p.get("id")}
         return [sid for sid in selected if sid in valid_ids][:MAX_PROJECTS]
+    except LLMJsonError as e:
+        log.warning("Portfolio LLM JSON failed for %s: %s", job.get("url"), e)
+        return [p["id"] for p in candidates[:MAX_PROJECTS] if p.get("id")]
     except Exception as e:
         log.warning("Portfolio LLM selection failed for %s: %s", job.get("url"), e)
         return [p["id"] for p in candidates[:MAX_PROJECTS] if p.get("id")]
@@ -129,7 +128,6 @@ def run_portfolio_selection(min_score: int = 7, limit: int = 0) -> dict:
         rows = rows[:limit]
 
     processed = 0
-    now = datetime.now(timezone.utc).isoformat()
 
     for row in rows:
         job = dict(row)

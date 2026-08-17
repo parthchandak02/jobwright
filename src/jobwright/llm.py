@@ -1,12 +1,13 @@
 """
 Unified LLM client for jobwright.
 
-Auto-detects provider from environment:
-  GEMINI_API_KEY  -> Google Gemini (default: gemini-2.5-flash)
-  OPENAI_API_KEY  -> OpenAI (default: gpt-4o-mini)
-  LLM_URL         -> Local llama.cpp / Ollama compatible endpoint
+Auto-detects provider from environment (first match wins):
+  FIREWORKS_API_KEY -> Fireworks AI (default: deepseek-v4-flash-0731)
+  GEMINI_API_KEY    -> Google Gemini (default: gemini-2.5-flash)
+  OPENAI_API_KEY    -> OpenAI (default: gpt-4o-mini)
+  LLM_URL           -> Local llama.cpp / Ollama compatible endpoint
 
-LLM_MODEL env var overrides the model name for any provider.
+LLM_MODEL env var overrides the model name for the active provider.
 """
 
 import logging
@@ -17,9 +18,38 @@ import httpx
 
 log = logging.getLogger(__name__)
 
+_FIREWORKS_BASE = "https://api.fireworks.ai/inference/v1"
+_FIREWORKS_DEFAULT_MODEL = "accounts/fireworks/models/deepseek-v4-flash-0731"
+_FIREWORKS_SHORT_MODELS = {
+    "deepseek-v4-flash-0731": _FIREWORKS_DEFAULT_MODEL,
+    "deepseek-v4-flash": _FIREWORKS_DEFAULT_MODEL,
+    "deepseek-v4-pro-0813": "accounts/fireworks/models/deepseek-v4-pro-0813",
+    "deepseek-v4-pro": "accounts/fireworks/models/deepseek-v4-pro",
+    "gpt-oss-120b": "accounts/fireworks/models/gpt-oss-120b",
+    "minimax-m3": "accounts/fireworks/models/minimax-m3",
+}
+
 # ---------------------------------------------------------------------------
 # Provider detection
 # ---------------------------------------------------------------------------
+
+def _resolve_fireworks_model(model_override: str) -> str:
+    """Map LLM_MODEL to a Fireworks serverless model id."""
+    if not model_override:
+        return _FIREWORKS_DEFAULT_MODEL
+    if model_override.startswith("accounts/fireworks/models/"):
+        return model_override
+    if model_override in _FIREWORKS_SHORT_MODELS:
+        return _FIREWORKS_SHORT_MODELS[model_override]
+    if model_override.startswith(("gemini-", "gpt-4", "gpt-3")):
+        log.warning(
+            "LLM_MODEL=%s is not a Fireworks model; using %s",
+            model_override,
+            _FIREWORKS_DEFAULT_MODEL,
+        )
+        return _FIREWORKS_DEFAULT_MODEL
+    return model_override
+
 
 def _detect_provider() -> tuple[str, str, str]:
     """Return (base_url, model, api_key) based on environment variables.
@@ -27,10 +57,18 @@ def _detect_provider() -> tuple[str, str, str]:
     Reads env at call time (not module import time) so that load_env() called
     in _bootstrap() is always visible here.
     """
+    fireworks_key = os.environ.get("FIREWORKS_API_KEY", "")
     gemini_key = os.environ.get("GEMINI_API_KEY", "")
     openai_key = os.environ.get("OPENAI_API_KEY", "")
     local_url = os.environ.get("LLM_URL", "")
     model_override = os.environ.get("LLM_MODEL", "")
+
+    if fireworks_key and not local_url:
+        return (
+            _FIREWORKS_BASE,
+            _resolve_fireworks_model(model_override),
+            fireworks_key,
+        )
 
     if gemini_key and not local_url:
         return (
@@ -55,7 +93,7 @@ def _detect_provider() -> tuple[str, str, str]:
 
     raise RuntimeError(
         "No LLM provider configured. "
-        "Set GEMINI_API_KEY, OPENAI_API_KEY, or LLM_URL in your environment."
+        "Set FIREWORKS_API_KEY, GEMINI_API_KEY, OPENAI_API_KEY, or LLM_URL in your environment."
     )
 
 
@@ -100,6 +138,7 @@ class LLMClient:
         messages: list[dict],
         temperature: float,
         max_tokens: int,
+        json_mode: bool = False,
     ) -> str:
         """Call the native Gemini generateContent API.
 
@@ -123,13 +162,16 @@ class LLMClient:
                 # Gemini uses "model" instead of "assistant"
                 contents.append({"role": "model", "parts": [{"text": text}]})
 
+        generation_config: dict = {
+            "temperature": temperature,
+            "maxOutputTokens": max_tokens,
+        }
+        if json_mode:
+            generation_config["responseMimeType"] = "application/json"
+
         payload: dict = {
             "contents": contents,
-            "generationConfig": {
-                "temperature": temperature,
-                "maxOutputTokens": max_tokens,
-                "responseMimeType": "application/json",
-            },
+            "generationConfig": generation_config,
         }
         if system_parts:
             payload["systemInstruction"] = {"parts": system_parts}
@@ -152,6 +194,7 @@ class LLMClient:
         messages: list[dict],
         temperature: float,
         max_tokens: int,
+        json_mode: bool = False,
     ) -> str:
         """Call the OpenAI-compatible endpoint."""
         headers: dict[str, str] = {"Content-Type": "application/json"}
@@ -164,6 +207,8 @@ class LLMClient:
             "temperature": temperature,
             "max_tokens": max_tokens,
         }
+        if json_mode:
+            payload["response_format"] = {"type": "json_object"}
 
         resp = self._client.post(
             f"{self.base_url}/chat/completions",
@@ -211,11 +256,13 @@ class LLMClient:
             try:
                 # Route to native Gemini if we've already confirmed it's needed
                 if self._use_native_gemini:
-                    return self._chat_native_gemini(messages, temperature, max_tokens)
+                    return self._chat_native_gemini(
+                        messages, temperature, max_tokens, json_mode=json_mode
+                    )
 
-                return self._chat_compat(messages, temperature, max_tokens)
+                return self._chat_compat(messages, temperature, max_tokens, json_mode=json_mode)
 
-            except _GeminiCompatForbidden as exc:
+            except _GeminiCompatForbidden:
                 # Model not available on OpenAI-compat layer — switch to native.
                 log.warning(
                     "Gemini compat endpoint returned 403 for model '%s'. "
@@ -226,7 +273,9 @@ class LLMClient:
                 self._use_native_gemini = True
                 # Retry immediately with native — don't count as a rate-limit wait
                 try:
-                    return self._chat_native_gemini(messages, temperature, max_tokens)
+                    return self._chat_native_gemini(
+                        messages, temperature, max_tokens, json_mode=json_mode
+                    )
                 except httpx.HTTPStatusError as native_exc:
                     raise RuntimeError(
                         f"Both Gemini endpoints failed. Compat: 403 Forbidden. "

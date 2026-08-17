@@ -69,7 +69,7 @@ def main(
     user: Optional[str] = typer.Option(
         None,
         "--user", "-u",
-        help="Multi-profile user id (sets JOBWRIGHT_DIR to ~/.jobwright-users/<id>). "
+        help="Multi-profile user id (sets JOBWRIGHT_DIR to users/<id>). "
              "Put --user BEFORE the subcommand. Hermes wrappers should pass --user explicitly; "
              "do not rely on a leftover JOBWRIGHT_USER env for interactive CLI.",
     ),
@@ -86,7 +86,7 @@ def main(
         # (avoids accidental cross-user switches from a stale shell export).
         env_user = os.environ.get("JOBWRIGHT_USER")
         env_dir = os.environ.get("JOBWRIGHT_DIR", "")
-        if env_user and f"/.jobwright-users/{env_user}" in env_dir.replace("\\", "/"):
+        if env_user and f"/users/{env_user}" in env_dir.replace("\\", "/"):
             user = env_user
     _resolve_user_option(user)
 
@@ -216,12 +216,16 @@ def users_show(user_id: str = typer.Argument(...)) -> None:
     console.print(f"  digest_schedule: {user.digest_schedule}")
     console.print(f"  data_dir:        {data_dir}")
     for fname in (
-        "profile.json", "resume.txt", "searches.yaml", ".env",
-        "connections.csv", "target_companies.yaml", "jobwright.db",
+        "profile.json", "resume/base.txt", "resume/base.pdf", "searches.yaml",
+        "cover-letter/template.txt", "connections.csv", "target_companies.yaml",
+        "jobwright.db",
     ):
         exists = (data_dir / fname).exists()
         mark = "[green]OK[/green]" if exists else "[dim]missing[/dim]"
         console.print(f"  {fname:24} {mark}")
+    examples_dir = data_dir / "cover-letter" / "examples"
+    ex_count = len(list(examples_dir.glob("*.txt"))) if examples_dir.is_dir() else 0
+    console.print(f"  cover-letter/examples   {ex_count} file(s)")
 
 
 @users_app.command("remove")
@@ -229,7 +233,7 @@ def users_remove(
     user_id: str = typer.Argument(...),
     delete_data: bool = typer.Option(
         False, "--delete-data",
-        help="Also delete ~/.jobwright-users/<id>/ (destructive).",
+        help="Also delete users/<id>/ data directory (destructive).",
     ),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation."),
 ) -> None:
@@ -640,10 +644,16 @@ def doctor() -> None:
 
     # --- Tier 2 checks ---
     import os
+    has_fireworks = bool(os.environ.get("FIREWORKS_API_KEY"))
     has_gemini = bool(os.environ.get("GEMINI_API_KEY"))
     has_openai = bool(os.environ.get("OPENAI_API_KEY"))
     has_local = bool(os.environ.get("LLM_URL"))
-    if has_gemini:
+    if has_fireworks:
+        from jobwright.llm import _resolve_fireworks_model
+
+        model = _resolve_fireworks_model(os.environ.get("LLM_MODEL", ""))
+        results.append(("LLM API key", ok_mark, f"Fireworks ({model})"))
+    elif has_gemini:
         model = os.environ.get("LLM_MODEL", "gemini-2.0-flash")
         results.append(("LLM API key", ok_mark, f"Gemini ({model})"))
     elif has_openai:
@@ -653,7 +663,7 @@ def doctor() -> None:
         results.append(("LLM API key", ok_mark, f"Local: {os.environ.get('LLM_URL')}"))
     else:
         results.append(("LLM API key", fail_mark,
-                        f"Set GEMINI_API_KEY in {config.ENV_PATH} (run 'jobwright init')"))
+                        f"Set FIREWORKS_API_KEY in {config.ENV_PATH} (run 'jobwright init')"))
 
     # --- Tier 3 checks ---
     from jobwright.config import get_agent_provider, has_apply_agent

@@ -5,14 +5,14 @@ from __future__ import annotations
 import csv
 import json
 import logging
-import re
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 import jobwright.config as config
 from jobwright.config import load_profile
 from jobwright.llm import get_client
+from jobwright.llm_json import LLMJsonError, chat_json_object, get_list_field
 
 log = logging.getLogger(__name__)
 
@@ -101,41 +101,21 @@ def _chunk(items: list[Any], size: int) -> list[list[Any]]:
     return [items[i : i + size] for i in range(0, len(items), size)]
 
 
-def _parse_rank_json(text: str) -> list[dict]:
-    """Extract JSON array from LLM response."""
-    text = text.strip()
-    # fenced code
-    m = re.search(r"```(?:json)?\s*(\[.*?\])\s*```", text, re.DOTALL)
-    if m:
-        text = m.group(1)
-    else:
-        start = text.find("[")
-        end = text.rfind("]")
-        if start >= 0 and end > start:
-            text = text[start : end + 1]
-    try:
-        data = json.loads(text)
-        if isinstance(data, list):
-            return data
-    except json.JSONDecodeError:
-        log.warning("Failed to parse network rank JSON")
-    return []
-
-
 def rank_contacts(
     contacts: list[dict[str, str]],
     profile: dict,
     resume_text: str = "",
     top_n: int = 25,
     batch_size: int = 80,
-) -> list[dict]:
+) -> tuple[list[dict], int]:
     """LLM-rank 1st-degree contacts by helpfulness for the user's job search."""
     if not contacts:
-        return []
+        return [], 0
 
     guidance = _target_guidance(profile)
     client = get_client()
     scored: list[dict] = []
+    batch_errors = 0
 
     system = """You rank LinkedIn contacts for how helpful they would be for a candidate's job search.
 Score each contact 1-10 for intro / referral / advice value given the candidate's target roles.
@@ -143,8 +123,8 @@ Prefer: people in target industries (startups, impact VC, CSR, foundations), Bay
 strategy / partnerships / platform roles, hiring managers, founders, operators.
 Deprioritize: pure engineers, students, unrelated industries, very junior contacts with no overlap.
 
-Return ONLY a JSON array of objects:
-[{"i": <index>, "score": <1-10>, "why": "<one short sentence>"}]
+Return ONLY a JSON object with this shape:
+{"contacts": [{"i": <index>, "score": <1-10>, "why": "<one short sentence>"}]}
 Include only contacts scoring 6+. Max 15 per batch."""
 
     for batch in _chunk(list(enumerate(contacts)), batch_size):
@@ -160,19 +140,26 @@ Include only contacts scoring 6+. Max 15 per batch."""
             f"CONTACTS (index | name | title @ company):\n" + "\n".join(lines)
         )
         try:
-            raw = client.chat(
+            data = chat_json_object(
+                client,
                 [
                     {"role": "system", "content": system},
                     {"role": "user", "content": user_msg},
                 ],
-                max_tokens=2048,
+                max_tokens=8192,
                 temperature=0.2,
             )
+            items = get_list_field(data, "contacts", "ranked", "results", "items")
+        except LLMJsonError as exc:
+            batch_errors += 1
+            log.error("Network rank batch JSON error: %s", exc)
+            continue
         except Exception as e:
+            batch_errors += 1
             log.error("LLM network rank error: %s", e)
             continue
 
-        for item in _parse_rank_json(raw):
+        for item in items:
             try:
                 i = int(item["i"])
                 score = int(item["score"])
@@ -200,10 +187,12 @@ Include only contacts scoring 6+. Max 15 per batch."""
         if key not in best or s["rank_score"] > best[key]["rank_score"]:
             best[key] = s
     ranked = sorted(best.values(), key=lambda x: -x["rank_score"])
-    return ranked[:top_n]
+    if batch_errors:
+        log.warning("Network ranking: %d batch(es) failed JSON parse", batch_errors)
+    return ranked[:top_n], batch_errors
 
 
-def format_network_digest(ranked: list[dict], user_label: str = "") -> str:
+def format_network_digest(ranked: list[dict], user_label: str = "", *, batch_errors: int = 0) -> str:
     who = f" ({user_label})" if user_label else ""
     lines = [
         f"=== Network ranking{who} ===",
@@ -212,6 +201,9 @@ def format_network_digest(ranked: list[dict], user_label: str = "") -> str:
         "Top 1st-degree contacts to reach out to:",
         "",
     ]
+    if not ranked:
+        lines.append("No high-value contacts found in this run.")
+        lines.append("")
     for i, c in enumerate(ranked, 1):
         name = f"{c['first_name']} {c['last_name']}".strip()
         lines.append(
@@ -222,6 +214,12 @@ def format_network_digest(ranked: list[dict], user_label: str = "") -> str:
             lines.append(f"   {c['why']}")
         if c.get("url"):
             lines.append(f"   {c['url']}")
+        lines.append("")
+    if batch_errors:
+        lines.append(
+            f"Warning: {batch_errors} ranking batch(es) failed to parse. "
+            "Results may be incomplete — try again or check logs."
+        )
         lines.append("")
     lines.append(
         "Note: 2nd-degree ranking needs manual help - ask top contacts for intros, "
@@ -238,13 +236,13 @@ def run_network_rank(top_n: int = 25, csv_path: Path | None = None) -> dict:
         resume = config.RESUME_PATH.read_text(encoding="utf-8")
     contacts = load_connections_csv(csv_path)
     log.info("Loaded %d connections from CSV", len(contacts))
-    ranked = rank_contacts(contacts, profile, resume_text=resume, top_n=top_n)
+    ranked, batch_errors = rank_contacts(contacts, profile, resume_text=resume, top_n=top_n)
 
     config.NETWORK_DIR.mkdir(parents=True, exist_ok=True)
     out_json = config.NETWORK_DIR / "ranked_contacts.json"
     out_txt = config.NETWORK_DIR / "ranked_contacts.txt"
     label = (profile.get("personal") or {}).get("preferred_name") or ""
-    digest = format_network_digest(ranked, user_label=label)
+    digest = format_network_digest(ranked, user_label=label, batch_errors=batch_errors)
     out_json.write_text(json.dumps(ranked, indent=2), encoding="utf-8")
     out_txt.write_text(digest, encoding="utf-8")
     return {

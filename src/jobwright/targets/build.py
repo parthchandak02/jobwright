@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import json
 import logging
-import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -14,6 +12,7 @@ import yaml
 import jobwright.config as config
 from jobwright.config import load_profile, load_search_config
 from jobwright.llm import get_client
+from jobwright.llm_json import LLMJsonError, chat_json_object, get_list_field
 
 log = logging.getLogger(__name__)
 
@@ -47,34 +46,18 @@ def _guidance(profile: dict) -> str:
     return "\n".join(lines)
 
 
-def _parse_companies_json(text: str) -> list[dict]:
-    text = text.strip()
-    m = re.search(r"```(?:json)?\s*(\[.*?\])\s*```", text, re.DOTALL)
-    if m:
-        text = m.group(1)
-    else:
-        start, end = text.find("["), text.rfind("]")
-        if start >= 0 and end > start:
-            text = text[start : end + 1]
-    try:
-        data = json.loads(text)
-        if isinstance(data, list):
-            return [x for x in data if isinstance(x, dict)]
-    except json.JSONDecodeError:
-        log.warning("Failed to parse target companies JSON")
-    return []
-
-
 def build_target_list(
     profile: dict,
     resume_text: str = "",
     limit: int = 30,
     seed_companies: list[str] | None = None,
-) -> list[dict[str, Any]]:
-    """Ask the LLM for a ranked target company list."""
+) -> tuple[list[dict[str, Any]], bool]:
+    """Ask the LLM for a ranked target company list.
+
+    Returns (companies, parse_error).
+    """
     client = get_client()
     seeds = seed_companies or []
-    # Also pull from searches.yaml target_companies if present
     try:
         cfg = load_search_config()
         seeds = list(seeds) + list(cfg.get("target_companies") or [])
@@ -83,9 +66,9 @@ def build_target_list(
     seeds = sorted({s.strip() for s in seeds if s and str(s).strip()})
 
     system = """You are a career strategist building a target company list.
-Return ONLY a JSON array of objects:
-[{"name": "...", "category": "startup|impact_vc|csr|foundation|other",
-  "why": "one sentence fit", "priority": 1-10, "roles_to_watch": ["Chief of Staff", "..."]}]
+Return ONLY a JSON object with this shape:
+{"companies": [{"name": "...", "category": "startup|impact_vc|csr|foundation|other",
+  "why": "one sentence fit", "priority": 1-10, "roles_to_watch": ["Chief of Staff", "..."]}]}
 
 Rules:
 - Focus on Bay Area / remote-friendly orgs when location suggests it.
@@ -104,16 +87,23 @@ Rules:
         f"{', '.join(seeds) if seeds else '(none — invent a strong list)'}\n\n"
         f"Return up to {limit} companies."
     )
-    raw = client.chat(
-        [
-            {"role": "system", "content": system},
-            {"role": "user", "content": user_msg},
-        ],
-        max_tokens=4096,
-        temperature=0.4,
-    )
-    companies = _parse_companies_json(raw)
-    # Normalize + sort
+    parse_error = False
+    try:
+        data = chat_json_object(
+            client,
+            [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user_msg},
+            ],
+            max_tokens=4096,
+            temperature=0.4,
+        )
+        companies = [x for x in get_list_field(data, "companies") if isinstance(x, dict)]
+    except LLMJsonError as exc:
+        log.error("Target companies JSON error: %s", exc)
+        companies = []
+        parse_error = True
+
     out: list[dict[str, Any]] = []
     for c in companies:
         name = str(c.get("name") or "").strip()
@@ -131,16 +121,30 @@ Rules:
             "roles_to_watch": c.get("roles_to_watch") or [],
         })
     out.sort(key=lambda x: -x["priority"])
-    return out[:limit]
+    return out[:limit], parse_error
 
 
-def format_targets_digest(companies: list[dict], user_label: str = "") -> str:
+def format_targets_digest(
+    companies: list[dict],
+    user_label: str = "",
+    *,
+    parse_error: bool = False,
+) -> str:
     who = f" ({user_label})" if user_label else ""
     lines = [
         f"=== Target companies{who} ===",
         f"Date: {datetime.now().strftime('%Y-%m-%d')}",
         "",
     ]
+    if parse_error:
+        lines.append(
+            "Warning: could not parse the target company list from the LLM. "
+            "Try again or check logs."
+        )
+        lines.append("")
+    if not companies:
+        lines.append("No target companies generated in this run.")
+        lines.append("")
     for i, c in enumerate(companies, 1):
         roles = ", ".join(c.get("roles_to_watch") or []) or "strategy / CoS / partnerships"
         lines.append(
@@ -202,10 +206,10 @@ def run_targets(
     resume = ""
     if config.RESUME_PATH.exists():
         resume = config.RESUME_PATH.read_text(encoding="utf-8")
-    companies = build_target_list(profile, resume_text=resume, limit=limit)
+    companies, parse_error = build_target_list(profile, resume_text=resume, limit=limit)
     yaml_path = save_targets(companies)
     label = (profile.get("personal") or {}).get("preferred_name") or ""
-    digest = format_targets_digest(companies, user_label=label)
+    digest = format_targets_digest(companies, user_label=label, parse_error=parse_error)
     txt_path = config.APP_DIR / "target_companies.txt"
     txt_path.write_text(digest, encoding="utf-8")
     if merge_into_searches:
@@ -216,4 +220,5 @@ def run_targets(
         "txt_path": str(txt_path),
         "digest": digest,
         "companies": companies,
+        "parse_error": parse_error,
     }

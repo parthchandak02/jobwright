@@ -5,9 +5,7 @@ job description. All personal data is loaded at runtime from the user's
 profile and resume file.
 """
 
-import json
 import logging
-import re
 import time
 from datetime import datetime, timezone
 
@@ -15,6 +13,7 @@ from jobwright.config import load_profile
 import jobwright.config as config
 from jobwright.database import get_connection, get_jobs_by_stage
 from jobwright.llm import get_client
+from jobwright.llm_json import LLMJsonError, chat_json_object
 
 log = logging.getLogger(__name__)
 
@@ -38,10 +37,8 @@ IMPORTANT FACTORS:
 - Be realistic about experience level vs. job requirements (years of experience, seniority).
 - If salary is listed and clearly below the candidate's floor, score lower (max 4).
 
-RESPOND IN EXACTLY THIS FORMAT (no other text):
-SCORE: [1-10]
-KEYWORDS: [comma-separated ATS keywords from the job description that match or could match the candidate]
-REASONING: [2-3 sentences explaining the score]"""
+Return ONLY a JSON object with this exact shape:
+{"score": <integer 1-10>, "keywords": "<comma-separated ATS keywords>", "reasoning": "<2-3 sentences>"}"""
 
 
 def _build_score_prompt(profile: dict | None) -> str:
@@ -92,36 +89,21 @@ def _build_score_prompt(profile: dict | None) -> str:
 SCORE_PROMPT = SCORE_PROMPT_BASE
 
 
-def _parse_score_response(response: str) -> dict:
-    """Parse the LLM's score response into structured data.
-
-    Args:
-        response: Raw LLM response text.
-
-    Returns:
-        {"score": int, "keywords": str, "reasoning": str}
-    """
-    score = 0
-    keywords = ""
-    reasoning = response
-
-    for line in response.split("\n"):
-        line = line.strip()
-        if line.startswith("SCORE:"):
-            try:
-                score = int(re.search(r"\d+", line).group())
-                score = max(1, min(10, score))
-            except (AttributeError, ValueError):
-                score = 0
-        elif line.startswith("KEYWORDS:"):
-            keywords = line.replace("KEYWORDS:", "").strip()
-        elif line.startswith("REASONING:"):
-            reasoning = line.replace("REASONING:", "").strip()
-
+def _parse_score_response(data: dict) -> dict:
+    """Validate and normalize a scored job JSON object."""
+    try:
+        score = int(data.get("score", 0))
+        score = max(1, min(10, score))
+    except (TypeError, ValueError):
+        raise LLMJsonError(f"Invalid score field: {data.get('score')!r}")
+    keywords = str(data.get("keywords") or "").strip()
+    reasoning = str(data.get("reasoning") or "").strip()
+    if not reasoning:
+        raise LLMJsonError("Missing reasoning field")
     return {"score": score, "keywords": keywords, "reasoning": reasoning}
 
 
-def score_job(resume_text: str, job: dict, profile: dict | None = None) -> dict:
+def score_job(resume_text: str, job: dict, profile: dict | None = None) -> dict | None:
     """Score a single job against the resume.
 
     Args:
@@ -130,7 +112,7 @@ def score_job(resume_text: str, job: dict, profile: dict | None = None) -> dict:
         profile: Optional profile for target-role guidance.
 
     Returns:
-        {"score": int, "keywords": str, "reasoning": str}
+        {"score": int, "keywords": str, "reasoning": str} or None on parse/LLM failure.
     """
     job_text = (
         f"TITLE: {job['title']}\n"
@@ -147,11 +129,16 @@ def score_job(resume_text: str, job: dict, profile: dict | None = None) -> dict:
 
     try:
         client = get_client()
-        response = client.chat(messages, max_tokens=512, temperature=0.2)
-        return _parse_score_response(response)
-    except Exception as e:
+        data = chat_json_object(
+            client,
+            messages,
+            max_tokens=512,
+            temperature=0.2,
+        )
+        return _parse_score_response(data)
+    except (LLMJsonError, Exception) as e:
         log.error("LLM error scoring job '%s': %s", job.get("title", "?"), e)
-        return {"score": 0, "keywords": "", "reasoning": f"LLM error: {e}"}
+        return None
 
 
 def run_scoring(limit: int = 0, rescore: bool = False) -> dict:
@@ -196,12 +183,14 @@ def run_scoring(limit: int = 0, rescore: bool = False) -> dict:
 
     for job in jobs:
         result = score_job(resume_text, job, profile=profile)
-        result["url"] = job["url"]
         completed += 1
 
-        if result["score"] == 0:
+        if result is None:
             errors += 1
+            log.warning("[%d/%d] score failed  %s", completed, len(jobs), job.get("title", "?")[:60])
+            continue
 
+        result["url"] = job["url"]
         results.append(result)
 
         log.info(

@@ -14,12 +14,18 @@ APP_DIR = Path(os.environ.get("JOBWRIGHT_DIR", Path.home() / ".jobwright"))
 # Core paths (reassigned by set_app_dir / set_active_user)
 DB_PATH = APP_DIR / "jobwright.db"
 PROFILE_PATH = APP_DIR / "profile.json"
-RESUME_PATH = APP_DIR / "resume.txt"
-RESUME_PDF_PATH = APP_DIR / "resume.pdf"
+RESUME_DIR = APP_DIR / "resume"
+RESUME_PATH = RESUME_DIR / "base.txt"
+RESUME_PDF_PATH = RESUME_DIR / "base.pdf"
+COVER_LETTER_INPUT_DIR = APP_DIR / "cover-letter"
+COVER_LETTER_TEMPLATE_PATH = COVER_LETTER_INPUT_DIR / "template.txt"
+COVER_LETTER_EXAMPLES_DIR = COVER_LETTER_INPUT_DIR / "examples"
 SEARCH_CONFIG_PATH = APP_DIR / "searches.yaml"
 ENV_PATH = APP_DIR / ".env"
 CONNECTIONS_PATH = APP_DIR / "connections.csv"
 TARGETS_PATH = APP_DIR / "target_companies.yaml"
+REFERENCES_DIR = APP_DIR / "references"
+REFERENCES_INBOX_DIR = REFERENCES_DIR / "inbox"
 
 # Generated output
 TAILORED_DIR = APP_DIR / "tailored_resumes"
@@ -45,7 +51,9 @@ def set_app_dir(path: Path | str) -> Path:
     global APP_DIR, DB_PATH, PROFILE_PATH, RESUME_PATH, RESUME_PDF_PATH
     global SEARCH_CONFIG_PATH, ENV_PATH, CONNECTIONS_PATH, TARGETS_PATH
     global TAILORED_DIR, COVER_LETTER_DIR, LOG_DIR, NETWORK_DIR
-    global CHROME_WORKER_DIR, APPLY_WORKER_DIR
+    global CHROME_WORKER_DIR, APPLY_WORKER_DIR, REFERENCES_DIR, REFERENCES_INBOX_DIR
+    global RESUME_DIR, COVER_LETTER_INPUT_DIR, COVER_LETTER_TEMPLATE_PATH
+    global COVER_LETTER_EXAMPLES_DIR
 
     app_dir = Path(path).expanduser().resolve()
     os.environ["JOBWRIGHT_DIR"] = str(app_dir)
@@ -53,19 +61,102 @@ def set_app_dir(path: Path | str) -> Path:
     APP_DIR = app_dir
     DB_PATH = APP_DIR / "jobwright.db"
     PROFILE_PATH = APP_DIR / "profile.json"
-    RESUME_PATH = APP_DIR / "resume.txt"
-    RESUME_PDF_PATH = APP_DIR / "resume.pdf"
+    RESUME_DIR = APP_DIR / "resume"
+    RESUME_PATH = RESUME_DIR / "base.txt"
+    RESUME_PDF_PATH = RESUME_DIR / "base.pdf"
+    COVER_LETTER_INPUT_DIR = APP_DIR / "cover-letter"
+    COVER_LETTER_TEMPLATE_PATH = COVER_LETTER_INPUT_DIR / "template.txt"
+    COVER_LETTER_EXAMPLES_DIR = COVER_LETTER_INPUT_DIR / "examples"
     SEARCH_CONFIG_PATH = APP_DIR / "searches.yaml"
     ENV_PATH = APP_DIR / ".env"
     CONNECTIONS_PATH = APP_DIR / "connections.csv"
     TARGETS_PATH = APP_DIR / "target_companies.yaml"
+    REFERENCES_DIR = APP_DIR / "references"
+    REFERENCES_INBOX_DIR = REFERENCES_DIR / "inbox"
     TAILORED_DIR = APP_DIR / "tailored_resumes"
     COVER_LETTER_DIR = APP_DIR / "cover_letters"
     LOG_DIR = APP_DIR / "logs"
     NETWORK_DIR = APP_DIR / "network"
     CHROME_WORKER_DIR = APP_DIR / "chrome-workers"
     APPLY_WORKER_DIR = APP_DIR / "apply-workers"
+    refresh_user_material_paths()
     return APP_DIR
+
+
+def refresh_user_material_paths() -> None:
+    """Resolve resume paths: prefer resume/base.*, fall back to legacy root files."""
+    global RESUME_PATH, RESUME_PDF_PATH
+
+    structured_txt = RESUME_DIR / "base.txt"
+    legacy_txt = APP_DIR / "resume.txt"
+    if structured_txt.exists():
+        RESUME_PATH = structured_txt
+    elif legacy_txt.exists():
+        RESUME_PATH = legacy_txt
+    else:
+        RESUME_PATH = structured_txt
+
+    structured_pdf = RESUME_DIR / "base.pdf"
+    legacy_pdf = APP_DIR / "resume.pdf"
+    if structured_pdf.exists():
+        RESUME_PDF_PATH = structured_pdf
+    elif legacy_pdf.exists():
+        RESUME_PDF_PATH = legacy_pdf
+    else:
+        RESUME_PDF_PATH = structured_pdf
+
+
+def user_relative_path(relative: str) -> Path:
+    """Resolve a path relative to the active user's APP_DIR."""
+    p = Path(relative)
+    if p.is_absolute():
+        return p
+    return (APP_DIR / p).resolve()
+
+
+def cover_letter_template_path(profile: dict | None = None) -> Path:
+    """Cover letter skeleton (input), not generated output."""
+    if profile:
+        rel = profile.get("cover_letter_template")
+        if rel:
+            candidate = user_relative_path(str(rel))
+            if candidate.exists():
+                return candidate
+    if COVER_LETTER_TEMPLATE_PATH.exists():
+        return COVER_LETTER_TEMPLATE_PATH
+    legacy = REFERENCES_DIR / "cover_letter_template.txt"
+    return legacy if legacy.exists() else COVER_LETTER_TEMPLATE_PATH
+
+
+def cover_letter_examples_dir(profile: dict | None = None) -> Path:
+    """Directory of real sent cover letters (input examples)."""
+    if profile:
+        rel = profile.get("cover_letter_examples_dir")
+        if rel:
+            candidate = user_relative_path(str(rel))
+            if candidate.is_dir():
+                return candidate
+    if COVER_LETTER_EXAMPLES_DIR.is_dir():
+        return COVER_LETTER_EXAMPLES_DIR
+    legacy = REFERENCES_DIR / "cover_letter_examples"
+    return legacy if legacy.is_dir() else COVER_LETTER_EXAMPLES_DIR
+
+
+def load_cover_letter_materials(profile: dict | None = None) -> tuple[str, list[str]]:
+    """Load template text and example letter bodies for prompt injection."""
+    template_path = cover_letter_template_path(profile)
+    template = ""
+    if template_path.exists():
+        template = template_path.read_text(encoding="utf-8").strip()
+
+    examples: list[str] = []
+    examples_dir = cover_letter_examples_dir(profile)
+    if examples_dir.is_dir():
+        for path in sorted(examples_dir.glob("*.txt")):
+            text = path.read_text(encoding="utf-8").strip()
+            if text and not text.startswith("#"):
+                examples.append(text)
+    return template, examples
 
 
 def set_active_user(user_id: str) -> Path:
@@ -145,8 +236,9 @@ def get_chrome_user_data() -> Path:
 def ensure_dirs():
     """Create all required directories."""
     for d in [
-        APP_DIR, TAILORED_DIR, COVER_LETTER_DIR, LOG_DIR, NETWORK_DIR,
-        CHROME_WORKER_DIR, APPLY_WORKER_DIR,
+        APP_DIR, RESUME_DIR, COVER_LETTER_INPUT_DIR, COVER_LETTER_EXAMPLES_DIR,
+        TAILORED_DIR, COVER_LETTER_DIR, LOG_DIR, NETWORK_DIR,
+        CHROME_WORKER_DIR, APPLY_WORKER_DIR, REFERENCES_DIR, REFERENCES_INBOX_DIR,
     ]:
         d.mkdir(parents=True, exist_ok=True)
     try:
@@ -344,7 +436,7 @@ def get_tier() -> int:
     """
     load_env()
 
-    has_llm = any(os.environ.get(k) for k in ("GEMINI_API_KEY", "OPENAI_API_KEY", "LLM_URL"))
+    has_llm = any(os.environ.get(k) for k in ("FIREWORKS_API_KEY", "GEMINI_API_KEY", "OPENAI_API_KEY", "LLM_URL"))
     if not has_llm:
         return 1
 
@@ -375,8 +467,8 @@ def check_tier(required: int, feature: str) -> None:
     _console = Console(stderr=True)
 
     missing: list[str] = []
-    if required >= 2 and not any(os.environ.get(k) for k in ("GEMINI_API_KEY", "OPENAI_API_KEY", "LLM_URL")):
-        missing.append("LLM API key — run [bold]jobwright init[/bold] or set GEMINI_API_KEY")
+    if required >= 2 and not any(os.environ.get(k) for k in ("FIREWORKS_API_KEY", "GEMINI_API_KEY", "OPENAI_API_KEY", "LLM_URL")):
+        missing.append("LLM API key — run [bold]jobwright init[/bold] or set FIREWORKS_API_KEY")
     if required >= 3:
         provider = get_agent_provider()
         if not has_apply_agent():

@@ -14,19 +14,17 @@ import logging
 import re
 import time
 from datetime import datetime, timezone
-from pathlib import Path
 
 from jobwright.config import load_profile
 import jobwright.config as config
 from jobwright.database import get_connection, get_jobs_by_stage
 from jobwright.llm import get_client
+from jobwright.llm_json import LLMJsonError, parse_json_object
 from jobwright.scoring.portfolio import get_selected_projects
 from jobwright.scoring.validator import (
     BANNED_WORDS,
-    FABRICATION_WATCHLIST,
     sanitize_text,
     validate_json_fields,
-    validate_tailored_resume,
 )
 
 log = logging.getLogger(__name__)
@@ -55,12 +53,10 @@ def _build_tailor_prompt(profile: dict) -> str:
 
     # Preserved entities
     companies = resume_facts.get("preserved_companies", [])
-    projects = resume_facts.get("preserved_projects", [])
     school = resume_facts.get("preserved_school", "")
     real_metrics = resume_facts.get("real_metrics", [])
 
     companies_str = ", ".join(companies) if companies else "N/A"
-    projects_str = ", ".join(projects) if projects else "N/A"
     metrics_str = ", ".join(real_metrics) if real_metrics else "N/A"
 
     # Include ALL banned words from the validator so the LLM knows exactly
@@ -178,46 +174,11 @@ Be strict about major lies. Be lenient about minor stretches and learnable skill
 # ── JSON Extraction ───────────────────────────────────────────────────────
 
 def extract_json(raw: str) -> dict:
-    """Robustly extract JSON from LLM response (handles fences, preamble).
-
-    Args:
-        raw: Raw LLM response text.
-
-    Returns:
-        Parsed JSON dict.
-
-    Raises:
-        ValueError: If no valid JSON found.
-    """
-    raw = raw.strip()
-
-    # Direct parse
+    """Parse JSON object from an LLM response (json_mode or legacy text)."""
     try:
-        return json.loads(raw)
-    except json.JSONDecodeError:
-        pass
-
-    # Markdown fences
-    if "```" in raw:
-        for part in raw.split("```")[1::2]:
-            part = part.strip()
-            if part.startswith("json"):
-                part = part[4:].strip()
-            try:
-                return json.loads(part)
-            except json.JSONDecodeError:
-                continue
-
-    # Find outermost { ... }
-    start = raw.find("{")
-    end = raw.rfind("}")
-    if start != -1 and end > start:
-        try:
-            return json.loads(raw[start:end + 1])
-        except json.JSONDecodeError:
-            pass
-
-    raise ValueError("No valid JSON found in LLM response")
+        return parse_json_object(raw, json_mode=True)
+    except LLMJsonError:
+        return parse_json_object(raw, json_mode=False)
 
 
 # ── Resume Assembly (profile-driven header) ──────────────────────────────
