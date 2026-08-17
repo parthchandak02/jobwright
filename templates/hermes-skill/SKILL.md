@@ -39,7 +39,7 @@ If missing, set `JOBWRIGHT_REPO` to your clone path and re-run `./scripts/instal
 | Start | `${JOBWRIGHT_REPO}/AGENTS.md` |
 | Hermes ops | `${JOBWRIGHT_REPO}/docs/agents/hermes-operator-guide.md` |
 | WhatsApp inbound | `${JOBWRIGHT_REPO}/docs/agents/whatsapp-routing.md` |
-| Cron / install | `${JOBWRIGHT_REPO}/docs/agents/hermes-setup.md` |
+| Cron / install | `${JOBWRIGHT_REPO}/docs/agents/hermes-setup.md` (Hermes agent registers crons) |
 | Repo map | `${JOBWRIGHT_REPO}/docs/agents/repo-map.md` |
 | Human UX | `${JOBWRIGHT_REPO}/docs/agents/whatsapp-user-guide.md` |
 
