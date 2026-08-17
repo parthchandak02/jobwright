@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Printing Press-style thin wrapper over applypilot-cursor.
+# Printing Press-style thin wrapper over jobwright.
 set -euo pipefail
 
 AGENT_JSON=false

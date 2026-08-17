@@ -10,7 +10,7 @@ import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
-from applypilot.config import DB_PATH
+import applypilot.config as config
 
 # Thread-local connection storage — each thread gets its own connection
 # (required for SQLite thread safety with parallel workers)
@@ -29,7 +29,7 @@ def get_connection(db_path: Path | str | None = None) -> sqlite3.Connection:
     Returns:
         sqlite3.Connection configured with WAL mode and row factory.
     """
-    path = str(db_path or DB_PATH)
+    path = str(db_path or config.DB_PATH)
 
     if not hasattr(_local, 'connections'):
         _local.connections = {}
@@ -52,7 +52,7 @@ def get_connection(db_path: Path | str | None = None) -> sqlite3.Connection:
 
 def close_connection(db_path: Path | str | None = None) -> None:
     """Close the cached connection for the current thread."""
-    path = str(db_path or DB_PATH)
+    path = str(db_path or config.DB_PATH)
     if hasattr(_local, 'connections'):
         conn = _local.connections.pop(path, None)
         if conn is not None:
@@ -81,7 +81,7 @@ def init_db(db_path: Path | str | None = None) -> sqlite3.Connection:
     Returns:
         sqlite3.Connection with the schema initialized.
     """
-    path = db_path or DB_PATH
+    path = db_path or config.DB_PATH
 
     # Ensure parent directory exists
     Path(path).parent.mkdir(parents=True, exist_ok=True)

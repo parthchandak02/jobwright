@@ -1,6 +1,6 @@
-# Contributing to ApplyPilot
+# Contributing to jobwright
 
-Thank you for your interest in contributing to ApplyPilot. This guide covers everything you need to get started.
+Thank you for your interest in contributing to jobwright (a fork of [Pickle-Pixel/ApplyPilot](https://github.com/Pickle-Pixel/ApplyPilot)). This guide covers everything you need to get started.
 
 ## Development Setup
 
@@ -12,13 +12,13 @@ Thank you for your interest in contributing to ApplyPilot. This guide covers eve
 ### Clone and Install
 
 ```bash
-git clone https://github.com/Pickle-Pixel/ApplyPilot.git
-cd ApplyPilot
+git clone https://github.com/parthchandak02/jobwright.git
+cd jobwright
 pip install -e ".[dev]"
 playwright install chromium
 ```
 
-This installs ApplyPilot in editable mode with all development dependencies (pytest, ruff, etc.) and downloads the Chromium browser binary for Playwright.
+This installs jobwright in editable mode with all development dependencies (pytest, ruff, etc.) and downloads the Chromium browser binary for Playwright. The console command stays `applypilot` (upstream lineage).
 
 ### Verify Installation
 
@@ -32,11 +32,11 @@ ruff check src/
 
 ### Adding New Workday Employers
 
-Workday employer portals are configured in `config/employers.yaml`. To add a new employer:
+Workday employer portals are configured in `src/applypilot/config/employers.yaml`. To add a new employer:
 
 1. Find the company's Workday career portal URL (usually `https://company.wd5.myworkdaysite.com/`)
 2. Identify the Workday instance number (wd1, wd3, wd5, etc.) and the tenant ID
-3. Add an entry to `config/employers.yaml`:
+3. Add an entry to `src/applypilot/config/employers.yaml`:
 
 ```yaml
 - name: "Company Name"
@@ -50,10 +50,10 @@ Workday employer portals are configured in `config/employers.yaml`. To add a new
 
 ### Adding New Career Sites
 
-Direct career site scrapers are configured in `config/sites.yaml`. To add a new site:
+Direct career site scrapers are configured in `src/applypilot/config/sites.yaml`. To add a new site:
 
 1. Inspect the company's careers page and identify the job listing structure
-2. Add an entry to `config/sites.yaml` with CSS selectors:
+2. Add an entry to `src/applypilot/config/sites.yaml` with CSS selectors:
 
 ```yaml
 - name: "Company Name"
@@ -113,7 +113,7 @@ ruff format src/
 - **Docstrings**: All public functions and classes must have docstrings (Google style)
 - **Naming**: snake_case for functions and variables, PascalCase for classes
 - **Imports**: Sorted by Ruff (isort-compatible)
-- **Line length**: 100 characters maximum
+- **Line length**: 120 characters maximum (Ruff `line-length = 120`)
 
 ## PR Guidelines
 
@@ -127,23 +127,33 @@ ruff format src/
 ## Project Structure
 
 ```
-ApplyPilot/
-├── src/applypilot/       # Main package
-│   ├── __init__.py
-│   ├── cli.py            # CLI entry points
-│   ├── discover/         # Stage 1: job discovery scrapers
-│   ├── enrich/           # Stage 2: description extraction
-│   ├── score/            # Stage 3: AI scoring
-│   ├── tailor/           # Stage 4: resume tailoring
-│   ├── cover/            # Stage 5: cover letter generation
-│   ├── apply/            # Stage 6: browser automation
-│   └── utils/            # Shared utilities
-├── config/               # Default configuration files
-├── tests/                # Test suite
-├── docs/                 # Documentation
-└── pyproject.toml        # Package configuration
+jobwright/
+├── README.md                 # Single entry point: setup + how to apply
+├── LICENSE                   # AGPL-3.0
+├── pyproject.toml            # Package + tooling config
+├── profile.example.json      # Onboarding profile template
+├── src/applypilot/           # Main package (import name kept from upstream)
+│   ├── cli.py                # Typer CLI: init/run/apply/status/doctor/...
+│   ├── pipeline.py           # Stages 1-5 orchestrator
+│   ├── config.py             # Paths, environment, packaged-config loader
+│   ├── database.py           # SQLite job store
+│   ├── llm.py                # Shared LLM client
+│   ├── discovery/            # Stage 1: JobSpy + Workday + smart-extract
+│   ├── enrichment/           # Stage 2: full description scrape
+│   ├── scoring/              # Stages 3-5 + portfolio + pdf
+│   ├── apply/                # Stage 6: browser automation + agent providers
+│   ├── network/              # LinkedIn connection ranking
+│   ├── targets/              # LLM target-company builder
+│   ├── wizard/               # First-run setup
+│   └── config/               # Packaged YAML/JSON (employers, sites, searches)
+├── bin/job-apply-pp-cli      # Agent-native CLI wrapper
+├── scripts/                  # Hermes cron + install helpers
+├── config/live.env.example   # Live-apply env template
+├── tests/                    # Test suite
+└── docs/                     # All docs (this folder)
+    └── adr/                  # Architecture decision records
 ```
 
 ## License
 
-By contributing to ApplyPilot, you agree that your contributions will be licensed under the [GNU Affero General Public License v3.0](LICENSE).
+By contributing to jobwright, you agree that your contributions will be licensed under the [GNU Affero General Public License v3.0](../LICENSE).

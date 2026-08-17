@@ -22,6 +22,8 @@ app = typer.Typer(
     help="AI-powered end-to-end job application pipeline.",
     no_args_is_help=True,
 )
+users_app = typer.Typer(help="Manage multi-profile users (local registry).")
+app.add_typer(users_app, name="users")
 console = Console()
 log = logging.getLogger(__name__)
 
@@ -43,10 +45,14 @@ def _bootstrap() -> None:
     init_db()
 
 
-def _version_callback(value: bool) -> None:
-    if value:
-        console.print(f"[bold]applypilot[/bold] {__version__}")
-        raise typer.Exit()
+def _resolve_user_option(user: Optional[str]) -> None:
+    """Activate a registry user (sets APPLYPILOT_DIR) before bootstrap."""
+    if not user:
+        return
+    from applypilot.config import set_active_user
+
+    path = set_active_user(user)
+    console.print(f"[dim]Active user:[/dim] {user}  [dim]({path})[/dim]")
 
 
 # ---------------------------------------------------------------------------
@@ -58,16 +64,232 @@ def main(
     version: bool = typer.Option(
         False, "--version", "-V",
         help="Show version and exit.",
-        callback=_version_callback,
         is_eager=True,
+    ),
+    user: Optional[str] = typer.Option(
+        None,
+        "--user", "-u",
+        help="Multi-profile user id (sets APPLYPILOT_DIR to ~/.applypilot-users/<id>). "
+             "Put --user BEFORE the subcommand. Hermes wrappers should pass --user explicitly; "
+             "do not rely on a leftover APPLYPILOT_USER env for interactive CLI.",
     ),
 ) -> None:
     """ApplyPilot — AI-powered end-to-end job application pipeline."""
+    if version:
+        console.print(f"[bold]applypilot[/bold] {__version__}")
+        raise typer.Exit()
+    # Prefer explicit --user; only fall back to APPLYPILOT_USER when set by Hermes wrappers
+    # after an explicit export (scripts set both APPLYPILOT_USER and APPLYPILOT_DIR).
+    if not user:
+        import os
+        # Only honor env when APPLYPILOT_DIR already points at that user's data dir
+        # (avoids accidental cross-user switches from a stale shell export).
+        env_user = os.environ.get("APPLYPILOT_USER")
+        env_dir = os.environ.get("APPLYPILOT_DIR", "")
+        if env_user and f"/.applypilot-users/{env_user}" in env_dir.replace("\\", "/"):
+            user = env_user
+    _resolve_user_option(user)
+
+
+# ---------------------------------------------------------------------------
+# users subcommands
+# ---------------------------------------------------------------------------
+
+@users_app.command("add")
+def users_add(
+    user_id: str = typer.Argument(..., help="Short id (e.g. richa)."),
+    name: str = typer.Option("", "--name", "-n", help="Display name."),
+    whatsapp: str = typer.Option(
+        "", "--whatsapp", "-w",
+        help="Hermes deliver target, e.g. whatsapp:1203634...",
+    ),
+    apply_enabled: bool = typer.Option(
+        False, "--apply/--no-apply",
+        help="Allow live apply after CONFIRM APPLY (default: off / find-only).",
+    ),
+    schedule: str = typer.Option(
+        "0 */3 * * 1-5", "--schedule",
+        help="Cron schedule for morning prep (default: every 3h weekdays).",
+    ),
+    template: Optional[str] = typer.Option(
+        None, "--template",
+        help="Seed searches.yaml from a packaged template (e.g. nontech-bay-area).",
+    ),
+    copy_env: Optional[str] = typer.Option(
+        None, "--copy-env",
+        help="Copy an existing .env (API keys). Default: stub .env only (no secret copy).",
+    ),
+) -> None:
+    """Register a new user and create their data directory."""
+    from applypilot.users import add_user, USERS_ROOT
+    from applypilot.config import CONFIG_DIR
+    from pathlib import Path
+    import shutil
+
+    try:
+        user = add_user(
+            user_id=user_id,
+            name=name,
+            whatsapp_target=whatsapp,
+            apply_enabled=apply_enabled,
+            schedule=schedule,
+            copy_env_from=Path(copy_env) if copy_env else None,
+        )
+    except ValueError as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(code=1)
+
+    data_dir = user.resolve_data_dir()
+    if template:
+        src = CONFIG_DIR / f"searches.{template}.yaml"
+        if not src.exists():
+            src = CONFIG_DIR / f"{template}.yaml"
+        if src.exists():
+            shutil.copy2(src, data_dir / "searches.yaml")
+            console.print(f"[green]Seeded searches.yaml from {src.name}[/green]")
+        else:
+            console.print(f"[yellow]Template not found:[/yellow] {template}")
+        # Seed a starter profile when using the nontech template
+        if template in ("nontech-bay-area", "richa") and not (data_dir / "profile.json").exists():
+            profile_src = CONFIG_DIR / "profile.richa.example.json"
+            if profile_src.exists():
+                shutil.copy2(profile_src, data_dir / "profile.json")
+                console.print(f"[green]Seeded profile.json from {profile_src.name}[/green]")
+                console.print("[yellow]Edit profile.json: email, phone, sponsorship, etc.[/yellow]")
+
+    console.print(f"[green]Created user[/green] {user.user_id}")
+    console.print(f"  data dir:       {data_dir}")
+    console.print(f"  apply_enabled:  {user.apply_enabled}")
+    console.print(f"  whatsapp:       {user.whatsapp_target or '(none)'}")
+    console.print(f"  registry:       {USERS_ROOT / 'users.yaml'}")
+    console.print(
+        "\nNext: copy resume.txt + profile.json into the data dir, "
+        f"or run [bold]applypilot --user {user_id} init[/bold]"
+    )
+
+
+@users_app.command("list")
+def users_list() -> None:
+    """List registered multi-profile users."""
+    from applypilot.users import list_users, REGISTRY_PATH
+
+    users = list_users()
+    if not users:
+        console.print(
+            f"[yellow]No users registered.[/yellow]\n"
+            f"Add one: applypilot users add <id>\n"
+            f"Registry: {REGISTRY_PATH}"
+        )
+        return
+
+    table = Table(title="ApplyPilot Users", show_header=True, header_style="bold cyan")
+    table.add_column("user_id")
+    table.add_column("name")
+    table.add_column("apply")
+    table.add_column("whatsapp")
+    table.add_column("schedule")
+    table.add_column("data_dir")
+    for u in users:
+        table.add_row(
+            u.user_id,
+            u.name,
+            "yes" if u.apply_enabled else "no",
+            u.whatsapp_target or "-",
+            u.schedule,
+            str(u.resolve_data_dir()),
+        )
+    console.print(table)
+
+
+@users_app.command("show")
+def users_show(user_id: str = typer.Argument(...)) -> None:
+    """Show one user's registry record and data dir contents."""
+    from applypilot.users import get_user
+
+    user = get_user(user_id)
+    if user is None:
+        console.print(f"[red]Unknown user:[/red] {user_id}")
+        raise typer.Exit(code=1)
+    data_dir = user.resolve_data_dir()
+    console.print(f"[bold]{user.user_id}[/bold] ({user.name})")
+    console.print(f"  apply_enabled:   {user.apply_enabled}")
+    console.print(f"  whatsapp_target: {user.whatsapp_target or '-'}")
+    console.print(f"  schedule:        {user.schedule}")
+    console.print(f"  digest_schedule: {user.digest_schedule}")
+    console.print(f"  data_dir:        {data_dir}")
+    for fname in (
+        "profile.json", "resume.txt", "searches.yaml", ".env",
+        "connections.csv", "target_companies.yaml", "applypilot.db",
+    ):
+        exists = (data_dir / fname).exists()
+        mark = "[green]OK[/green]" if exists else "[dim]missing[/dim]"
+        console.print(f"  {fname:24} {mark}")
+
+
+@users_app.command("remove")
+def users_remove(
+    user_id: str = typer.Argument(...),
+    delete_data: bool = typer.Option(
+        False, "--delete-data",
+        help="Also delete ~/.applypilot-users/<id>/ (destructive).",
+    ),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation."),
+) -> None:
+    """Remove a user from the registry (optionally delete their data dir)."""
+    from applypilot.users import remove_user, get_user
+
+    user = get_user(user_id)
+    if user is None:
+        console.print(f"[red]Unknown user:[/red] {user_id}")
+        raise typer.Exit(code=1)
+    if delete_data and not yes:
+        confirm = typer.confirm(
+            f"Delete data dir {user.resolve_data_dir()} permanently?"
+        )
+        if not confirm:
+            console.print("Aborted.")
+            raise typer.Exit()
+    remove_user(user_id, delete_data=delete_data)
+    console.print(f"[green]Removed user[/green] {user_id}")
+
+
+@users_app.command("set")
+def users_set(
+    user_id: str = typer.Argument(...),
+    apply_enabled: Optional[bool] = typer.Option(
+        None, "--apply/--no-apply", help="Toggle live apply.",
+    ),
+    whatsapp: Optional[str] = typer.Option(None, "--whatsapp", "-w"),
+    name: Optional[str] = typer.Option(None, "--name", "-n"),
+    schedule: Optional[str] = typer.Option(None, "--schedule"),
+) -> None:
+    """Update fields on an existing user."""
+    from applypilot.users import update_user
+
+    fields: dict = {}
+    if apply_enabled is not None:
+        fields["apply_enabled"] = apply_enabled
+    if whatsapp is not None:
+        fields["whatsapp_target"] = whatsapp
+    if name is not None:
+        fields["name"] = name
+    if schedule is not None:
+        fields["schedule"] = schedule
+    if not fields:
+        console.print("[yellow]No fields to update.[/yellow]")
+        raise typer.Exit(code=1)
+    try:
+        user = update_user(user_id, **fields)
+    except ValueError as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(code=1)
+    console.print(f"[green]Updated[/green] {user.user_id}: {fields}")
 
 
 @app.command()
 def init() -> None:
     """Run the first-time setup wizard (profile, resume, search config)."""
+    _bootstrap()
     from applypilot.wizard.init import run_wizard
 
     run_wizard()
@@ -167,6 +389,18 @@ def apply(
     _bootstrap()
 
     import os
+    from applypilot.config import get_active_user_id
+    from applypilot.users import is_apply_enabled
+
+    active = get_active_user_id()
+    if live and active and not is_apply_enabled(active):
+        console.print(
+            f"[red]Live apply disabled[/red] for user '{active}'.\n"
+            f"Enable with: applypilot users set {active} --apply\n"
+            "Finding + tailoring still work without apply."
+        )
+        raise typer.Exit(code=1)
+
     if agent_provider:
         os.environ["AGENT_PROVIDER"] = agent_provider
 
@@ -175,7 +409,8 @@ def apply(
     elif os.environ.get("APPLY_DRY_RUN", "").lower() in ("1", "true", "yes"):
         dry_run = True
 
-    from applypilot.config import check_tier, PROFILE_PATH as _profile_path, get_agent_provider
+    import applypilot.config as config
+    from applypilot.config import check_tier, get_agent_provider
     from applypilot.database import get_connection
 
     # --- Utility modes (no Chrome/Claude needed) ---
@@ -204,7 +439,7 @@ def apply(
     check_tier(3, "auto-apply")
 
     # Check 2: Profile exists
-    if not _profile_path.exists():
+    if not config.PROFILE_PATH.exists():
         console.print(
             "[red]Profile not found.[/red]\n"
             "Run [bold]applypilot init[/bold] to create your profile first."
@@ -225,7 +460,7 @@ def apply(
             raise typer.Exit(code=1)
 
     if gen:
-        from applypilot.apply.launcher import gen_prompt, BASE_CDP_PORT
+        from applypilot.apply.launcher import gen_prompt
         target = url or ""
         if not target:
             console.print("[red]--gen requires --url to specify which job.[/red]")
@@ -234,13 +469,13 @@ def apply(
         if not prompt_file:
             console.print("[red]No matching job found for that URL.[/red]")
             raise typer.Exit(code=1)
-        mcp_path = _profile_path.parent / ".mcp-apply-0.json"
+        mcp_path = config.PROFILE_PATH.parent / ".mcp-apply-0.json"
         provider = get_agent_provider()
         console.print(f"[green]Wrote prompt to:[/green] {prompt_file}")
         console.print(f"\n[bold]Run manually ({provider}):[/bold]")
         if provider == "cursor-cli":
             console.print(
-                f"  agent -p --trust --force --approve-mcps --workspace ~/.applypilot/apply-workers/0 "
+                f"  agent -p --trust --force --approve-mcps --workspace {config.APPLY_WORKER_DIR}/0 "
                 f"$(cat {prompt_file})"
             )
         elif provider == "claude":
@@ -360,10 +595,8 @@ def dashboard() -> None:
 def doctor() -> None:
     """Check your setup and diagnose missing requirements."""
     import shutil
-    from applypilot.config import (
-        load_env, PROFILE_PATH, RESUME_PATH, RESUME_PDF_PATH,
-        SEARCH_CONFIG_PATH, ENV_PATH, get_chrome_path,
-    )
+    import applypilot.config as config
+    from applypilot.config import load_env, get_chrome_path
 
     load_env()
 
@@ -373,28 +606,33 @@ def doctor() -> None:
 
     results: list[tuple[str, str, str]] = []  # (check, status, note)
 
+    # Active user / data dir
+    from applypilot.config import get_active_user_id
+    active = get_active_user_id()
+    results.append((
+        "data dir",
+        ok_mark,
+        f"{config.APP_DIR}" + (f" (user={active})" if active else " (legacy single-user)"),
+    ))
+
     # --- Tier 1 checks ---
-    # Profile
-    if PROFILE_PATH.exists():
-        results.append(("profile.json", ok_mark, str(PROFILE_PATH)))
+    if config.PROFILE_PATH.exists():
+        results.append(("profile.json", ok_mark, str(config.PROFILE_PATH)))
     else:
         results.append(("profile.json", fail_mark, "Run 'applypilot init' to create"))
 
-    # Resume
-    if RESUME_PATH.exists():
-        results.append(("resume.txt", ok_mark, str(RESUME_PATH)))
-    elif RESUME_PDF_PATH.exists():
+    if config.RESUME_PATH.exists():
+        results.append(("resume.txt", ok_mark, str(config.RESUME_PATH)))
+    elif config.RESUME_PDF_PATH.exists():
         results.append(("resume.txt", warn_mark, "Only PDF found — plain-text needed for AI stages"))
     else:
         results.append(("resume.txt", fail_mark, "Run 'applypilot init' to add your resume"))
 
-    # Search config
-    if SEARCH_CONFIG_PATH.exists():
-        results.append(("searches.yaml", ok_mark, str(SEARCH_CONFIG_PATH)))
+    if config.SEARCH_CONFIG_PATH.exists():
+        results.append(("searches.yaml", ok_mark, str(config.SEARCH_CONFIG_PATH)))
     else:
         results.append(("searches.yaml", warn_mark, "Will use example config — run 'applypilot init'"))
 
-    # jobspy (discovery dep installed separately)
     try:
         import jobspy  # noqa: F401
         results.append(("python-jobspy", ok_mark, "Job board scraping available"))
@@ -417,7 +655,7 @@ def doctor() -> None:
         results.append(("LLM API key", ok_mark, f"Local: {os.environ.get('LLM_URL')}"))
     else:
         results.append(("LLM API key", fail_mark,
-                        "Set GEMINI_API_KEY in ~/.applypilot/.env (run 'applypilot init')"))
+                        f"Set GEMINI_API_KEY in {config.ENV_PATH} (run 'applypilot init')"))
 
     # --- Tier 3 checks ---
     from applypilot.config import get_agent_provider, has_apply_agent
@@ -429,7 +667,7 @@ def doctor() -> None:
             results.append(("CURSOR_API_KEY", ok_mark, f"cursor-sdk ({os.environ.get('APPLY_AGENT_MODEL', 'composer-2.5')})"))
         else:
             results.append(("CURSOR_API_KEY", fail_mark,
-                            "Set in ~/.applypilot/.env (Cursor Dashboard → Integrations)"))
+                            f"Set in {config.ENV_PATH} (Cursor Dashboard → Integrations)"))
         try:
             import cursor_sdk  # noqa: F401
             results.append(("cursor-sdk package", ok_mark, "pip install cursor-sdk"))
@@ -452,7 +690,6 @@ def doctor() -> None:
 
     results.append(("AGENT_PROVIDER", ok_mark if has_apply_agent() else fail_mark, provider))
 
-    # Chrome
     try:
         chrome_path = get_chrome_path()
         results.append(("Chrome/Chromium", ok_mark, chrome_path))
@@ -460,7 +697,6 @@ def doctor() -> None:
         results.append(("Chrome/Chromium", fail_mark,
                         "Install Chrome or set CHROME_PATH env var (needed for auto-apply)"))
 
-    # Node.js / npx (for Playwright MCP)
     npx_bin = shutil.which("npx")
     if npx_bin:
         results.append(("Node.js (npx)", ok_mark, npx_bin))
@@ -468,7 +704,6 @@ def doctor() -> None:
         results.append(("Node.js (npx)", fail_mark,
                         "Install Node.js 18+ from nodejs.org (needed for auto-apply)"))
 
-    # CapSolver (optional)
     capsolver = os.environ.get("CAPSOLVER_API_KEY")
     if capsolver:
         results.append(("CapSolver API key", ok_mark, "CAPTCHA solving enabled"))
@@ -476,7 +711,19 @@ def doctor() -> None:
         results.append(("CapSolver API key", "[dim]optional[/dim]",
                         "Set CAPSOLVER_API_KEY in .env for CAPTCHA solving"))
 
-    # --- Render results ---
+    try:
+        from playwright.sync_api import sync_playwright
+        with sync_playwright() as pw:
+            pw.chromium.launch(headless=True).close()
+        results.append(("Playwright browsers", ok_mark, "chromium headless launch OK"))
+    except ImportError:
+        results.append(("Playwright browsers", warn_mark,
+                        "pip install playwright && playwright install chromium"))
+    except Exception as e:
+        err = str(e).split("\n")[0][:80]
+        results.append(("Playwright browsers", fail_mark,
+                        f"Run: playwright install chromium ({err})"))
+
     console.print()
     console.print("[bold]ApplyPilot Doctor[/bold]\n")
 
@@ -487,7 +734,6 @@ def doctor() -> None:
 
     console.print()
 
-    # Tier summary
     from applypilot.config import get_tier, TIER_LABELS
     tier = get_tier()
     console.print(f"[bold]Current tier: Tier {tier} — {TIER_LABELS[tier]}[/bold]")
@@ -499,6 +745,60 @@ def doctor() -> None:
         console.print("[dim]  → Tier 3 unlocks: auto-apply (needs CURSOR_API_KEY or agent CLI + Chrome + Node.js)[/dim]")
 
     console.print()
+
+
+@app.command()
+def network(
+    top: int = typer.Option(25, "--top", "-n", help="How many contacts to keep."),
+    csv: Optional[str] = typer.Option(
+        None, "--csv",
+        help="Path to LinkedIn Connections.csv (default: <data_dir>/connections.csv).",
+    ),
+) -> None:
+    """Rank LinkedIn 1st-degree contacts from an exported Connections.csv (no scraping)."""
+    _bootstrap()
+    from applypilot.config import check_tier
+    from pathlib import Path
+
+    check_tier(2, "network ranking")
+    from applypilot.network.rank import run_network_rank
+
+    try:
+        result = run_network_rank(
+            top_n=top,
+            csv_path=Path(csv) if csv else None,
+        )
+    except FileNotFoundError as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(code=1)
+
+    console.print(result["digest"])
+    console.print(
+        f"\n[dim]Saved {result['ranked']}/{result['contacts']} → "
+        f"{result['txt_path']}[/dim]"
+    )
+
+
+@app.command()
+def targets(
+    limit: int = typer.Option(30, "--limit", "-n", help="Max companies to generate."),
+    merge: bool = typer.Option(
+        False, "--merge-searches",
+        help="Also write company names into searches.yaml target_companies.",
+    ),
+) -> None:
+    """Build a ranked target-company list from the active profile (LLM)."""
+    _bootstrap()
+    from applypilot.config import check_tier
+
+    check_tier(2, "target company list")
+    from applypilot.targets.build import run_targets
+
+    result = run_targets(limit=limit, merge_into_searches=merge)
+    console.print(result["digest"])
+    console.print(
+        f"\n[dim]Saved {result['count']} companies → {result['yaml_path']}[/dim]"
+    )
 
 
 if __name__ == "__main__":

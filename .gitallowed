@@ -12,3 +12,10 @@ applypilot/\.env
 ENV_PATH
 \*\.env
 \.env\.\*
+# Benign 'env'/'venv' word usage flagged by the broad .env pattern (no secret values)
+env-specific
+env names
+\.venv
+Interpreter / venv
+env = f"APPLYPILOT_USER
+deliver, env]

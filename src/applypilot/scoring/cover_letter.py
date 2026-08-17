@@ -11,7 +11,8 @@ import re
 import time
 from datetime import datetime, timezone
 
-from applypilot.config import COVER_LETTER_DIR, RESUME_PATH, load_profile
+from applypilot.config import load_profile
+import applypilot.config as config
 from applypilot.database import get_connection, get_jobs_by_stage
 from applypilot.llm import get_client
 from applypilot.scoring.portfolio import get_selected_projects
@@ -204,7 +205,7 @@ def run_cover_letters(min_score: int = 7, limit: int = 20,
         {"generated": int, "errors": int, "elapsed": float}
     """
     profile = load_profile()
-    resume_text = RESUME_PATH.read_text(encoding="utf-8")
+    resume_text = config.RESUME_PATH.read_text(encoding="utf-8")
     conn = get_connection()
 
     # Fetch jobs that have tailored resumes but no cover letter yet
@@ -228,7 +229,7 @@ def run_cover_letters(min_score: int = 7, limit: int = 20,
         columns = jobs[0].keys()
         jobs = [dict(zip(columns, row)) for row in jobs]
 
-    COVER_LETTER_DIR.mkdir(parents=True, exist_ok=True)
+    config.COVER_LETTER_DIR.mkdir(parents=True, exist_ok=True)
     log.info(
         "Generating cover letters for %d jobs (score >= %d)...",
         len(jobs), min_score,
@@ -249,7 +250,7 @@ def run_cover_letters(min_score: int = 7, limit: int = 20,
             safe_site = re.sub(r"[^\w\s-]", "", job["site"])[:20].strip().replace(" ", "_")
             prefix = f"{safe_site}_{safe_title}"
 
-            cl_path = COVER_LETTER_DIR / f"{prefix}_CL.txt"
+            cl_path = config.COVER_LETTER_DIR / f"{prefix}_CL.txt"
             cl_path.write_text(letter, encoding="utf-8")
 
             # Generate PDF (best-effort)

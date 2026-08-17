@@ -16,7 +16,8 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from applypilot.config import RESUME_PATH, TAILORED_DIR, load_profile
+from applypilot.config import load_profile
+import applypilot.config as config
 from applypilot.database import get_connection, get_jobs_by_stage
 from applypilot.llm import get_client
 from applypilot.scoring.portfolio import get_selected_projects
@@ -481,7 +482,7 @@ def run_tailoring(min_score: int = 7, limit: int = 20,
         {"approved": int, "failed": int, "errors": int, "elapsed": float}
     """
     profile = load_profile()
-    resume_text = RESUME_PATH.read_text(encoding="utf-8")
+    resume_text = config.RESUME_PATH.read_text(encoding="utf-8")
     conn = get_connection()
 
     jobs = get_jobs_by_stage(conn=conn, stage="pending_tailor", min_score=min_score, limit=limit)
@@ -490,7 +491,7 @@ def run_tailoring(min_score: int = 7, limit: int = 20,
         log.info("No untailored jobs with score >= %d.", min_score)
         return {"approved": 0, "failed": 0, "errors": 0, "elapsed": 0.0}
 
-    TAILORED_DIR.mkdir(parents=True, exist_ok=True)
+    config.TAILORED_DIR.mkdir(parents=True, exist_ok=True)
     log.info("Tailoring resumes for %d jobs (score >= %d)...", len(jobs), min_score)
     t0 = time.time()
     completed = 0
@@ -509,11 +510,11 @@ def run_tailoring(min_score: int = 7, limit: int = 20,
             prefix = f"{safe_site}_{safe_title}"
 
             # Save tailored resume text
-            txt_path = TAILORED_DIR / f"{prefix}.txt"
+            txt_path = config.TAILORED_DIR / f"{prefix}.txt"
             txt_path.write_text(tailored, encoding="utf-8")
 
             # Save job description for traceability
-            job_path = TAILORED_DIR / f"{prefix}_JOB.txt"
+            job_path = config.TAILORED_DIR / f"{prefix}_JOB.txt"
             job_desc = (
                 f"Title: {job['title']}\n"
                 f"Company: {job['site']}\n"
@@ -525,7 +526,7 @@ def run_tailoring(min_score: int = 7, limit: int = 20,
             job_path.write_text(job_desc, encoding="utf-8")
 
             # Save validation report
-            report_path = TAILORED_DIR / f"{prefix}_REPORT.json"
+            report_path = config.TAILORED_DIR / f"{prefix}_REPORT.json"
             report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
 
             # Generate PDF for approved resumes (best-effort)

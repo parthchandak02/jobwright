@@ -43,8 +43,21 @@ Thumbs.db
 # Playwright MCP session dumps (tokens, browsing artifacts)
 .playwright-mcp/
 
+# Cloudflare Wrangler scratch
+.wrangler/
+
+# Local debug captures (may contain PII)
+*-snapshot.yml
+*-form-review.png
+apply-form-snapshot.yml
+job-page-snapshot.yml
+
 # User data dir copies (canonical: ~/.applypilot/)
 searches.yaml
 dashboard.html
 .applypilot/
 .hermes/
+
+reference/
+# Multi-profile user data (canonical: ~/.applypilot-users/)
+.applypilot-users/

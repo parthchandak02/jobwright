@@ -10,7 +10,7 @@ ApplyPilot (Pickle-Pixel/ApplyPilot) provides a mature 6-stage job application p
 
 ## Decision
 
-Fork ApplyPilot as `applypilot-cursor` under AGPL-3.0. Reuse stages 1–5 unchanged. Replace stage 6 with a pluggable `AgentProvider` abstraction defaulting to `cursor-sdk`.
+Fork ApplyPilot as `jobwright` under AGPL-3.0. Reuse stages 1–5 unchanged. Replace stage 6 with a pluggable `AgentProvider` abstraction defaulting to `cursor-sdk`.
 
 ## Consequences
 

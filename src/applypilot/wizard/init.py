@@ -18,15 +18,8 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.prompt import Confirm, Prompt
 
-from applypilot.config import (
-    APP_DIR,
-    ENV_PATH,
-    PROFILE_PATH,
-    RESUME_PATH,
-    RESUME_PDF_PATH,
-    SEARCH_CONFIG_PATH,
-    ensure_dirs,
-)
+import applypilot.config as config
+from applypilot.config import ensure_dirs
 
 console = Console()
 
@@ -36,7 +29,7 @@ console = Console()
 # ---------------------------------------------------------------------------
 
 def _setup_resume() -> None:
-    """Prompt for resume file and copy into APP_DIR."""
+    """Prompt for resume file and copy into config.APP_DIR."""
     console.print(Panel("[bold]Step 1: Resume[/bold]\nPoint to your master resume file (.txt or .pdf)."))
 
     while True:
@@ -53,11 +46,11 @@ def _setup_resume() -> None:
             continue
 
         if suffix == ".txt":
-            shutil.copy2(src, RESUME_PATH)
-            console.print(f"[green]Copied to {RESUME_PATH}[/green]")
+            shutil.copy2(src, config.RESUME_PATH)
+            console.print(f"[green]Copied to {config.RESUME_PATH}[/green]")
         elif suffix == ".pdf":
-            shutil.copy2(src, RESUME_PDF_PATH)
-            console.print(f"[green]Copied to {RESUME_PDF_PATH}[/green]")
+            shutil.copy2(src, config.RESUME_PDF_PATH)
+            console.print(f"[green]Copied to {config.RESUME_PDF_PATH}[/green]")
 
             # Also ask for a plain-text version for LLM consumption
             txt_path_str = Prompt.ask(
@@ -67,8 +60,8 @@ def _setup_resume() -> None:
             if txt_path_str.strip():
                 txt_src = Path(txt_path_str.strip().strip('"').strip("'")).expanduser().resolve()
                 if txt_src.exists():
-                    shutil.copy2(txt_src, RESUME_PATH)
-                    console.print(f"[green]Copied to {RESUME_PATH}[/green]")
+                    shutil.copy2(txt_src, config.RESUME_PATH)
+                    console.print(f"[green]Copied to {config.RESUME_PATH}[/green]")
                 else:
                     console.print("[yellow]File not found, skipping plain-text copy.[/yellow]")
         break
@@ -175,8 +168,8 @@ def _setup_profile() -> dict:
     }
 
     # Save
-    PROFILE_PATH.write_text(json.dumps(profile, indent=2, ensure_ascii=False), encoding="utf-8")
-    console.print(f"\n[green]Profile saved to {PROFILE_PATH}[/green]")
+    config.PROFILE_PATH.write_text(json.dumps(profile, indent=2, ensure_ascii=False), encoding="utf-8")
+    console.print(f"\n[green]Profile saved to {config.PROFILE_PATH}[/green]")
     return profile
 
 
@@ -225,8 +218,8 @@ def _setup_searches() -> None:
         lines.append(f'  - query: "{role}"')
         lines.append(f"    tier: {min(i + 1, 3)}")
 
-    SEARCH_CONFIG_PATH.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    console.print(f"[green]Search config saved to {SEARCH_CONFIG_PATH}[/green]")
+    config.SEARCH_CONFIG_PATH.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    console.print(f"[green]Search config saved to {config.SEARCH_CONFIG_PATH}[/green]")
 
 
 # ---------------------------------------------------------------------------
@@ -271,8 +264,8 @@ def _setup_ai_features() -> None:
         env_lines.append(f"LLM_MODEL={model}")
 
     env_lines.append("")
-    ENV_PATH.write_text("\n".join(env_lines), encoding="utf-8")
-    console.print(f"[green]AI configuration saved to {ENV_PATH}[/green]")
+    config.ENV_PATH.write_text("\n".join(env_lines), encoding="utf-8")
+    console.print(f"[green]AI configuration saved to {config.ENV_PATH}[/green]")
 
 
 # ---------------------------------------------------------------------------
@@ -306,15 +299,15 @@ def _setup_auto_apply() -> None:
     if Confirm.ask("Configure CapSolver API key? (optional)", default=False):
         capsolver_key = Prompt.ask("CapSolver API key")
         # Append to existing .env or create
-        if ENV_PATH.exists():
-            existing = ENV_PATH.read_text(encoding="utf-8")
+        if config.ENV_PATH.exists():
+            existing = config.ENV_PATH.read_text(encoding="utf-8")
             if "CAPSOLVER_API_KEY" not in existing:
-                ENV_PATH.write_text(
+                config.ENV_PATH.write_text(
                     existing.rstrip() + f"\nCAPSOLVER_API_KEY={capsolver_key}\n",
                     encoding="utf-8",
                 )
         else:
-            ENV_PATH.write_text(f"# ApplyPilot configuration\nCAPSOLVER_API_KEY={capsolver_key}\n", encoding="utf-8")
+            config.ENV_PATH.write_text(f"# ApplyPilot configuration\nCAPSOLVER_API_KEY={capsolver_key}\n", encoding="utf-8")
         console.print("[green]CapSolver key saved.[/green]")
     else:
         console.print("[dim]Skipped. Add CAPSOLVER_API_KEY to .env later if needed.[/dim]")
@@ -331,14 +324,14 @@ def run_wizard() -> None:
         Panel.fit(
             "[bold green]ApplyPilot Setup Wizard[/bold green]\n\n"
             "This will create your configuration at:\n"
-            f"  [cyan]{APP_DIR}[/cyan]\n\n"
+            f"  [cyan]{config.APP_DIR}[/cyan]\n\n"
             "You can re-run this anytime with [bold]applypilot init[/bold].",
             border_style="green",
         )
     )
 
     ensure_dirs()
-    console.print(f"[dim]Created {APP_DIR}[/dim]\n")
+    console.print(f"[dim]Created {config.APP_DIR}[/dim]\n")
 
     # Step 1: Resume
     _setup_resume()
