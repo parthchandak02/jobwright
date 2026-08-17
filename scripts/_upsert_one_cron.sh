@@ -17,7 +17,14 @@ env_kv="$5"
 find_job_id() {
   local n="$1"
   hermes cron list 2>/dev/null | awk -v name="${n}" '
-    $0 ~ name { id=$1; sub(/[^a-f0-9].*$/, "", id); if (length(id) >= 8) { print id; exit } }
+    /^[[:space:]]+[a-f0-9]{8,}/ {
+      id = $1
+      gsub(/^[[:space:]]+/, "", id)
+      sub(/ .*/, "", id)
+    }
+    $0 ~ "Name:[[:space:]]+" name "[[:space:]]*$" {
+      if (id != "") { print id; exit }
+    }
   '
 }
 
@@ -25,12 +32,14 @@ script_arg="${script}"
 if [[ -n "${env_kv}" ]]; then
   # env_kv is JOBWRIGHT_USER=uid — also pin JOBWRIGHT_DIR + JOBWRIGHT_REPO
   uid="${env_kv#JOBWRIGHT_USER=}"
+  users_root="${JOBWRIGHT_USERS_ROOT:-${REPO_ROOT}/users}"
   wrap="${HOME}/.hermes/scripts/wrap_${name}.sh"
   cat > "${wrap}" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
 export JOBWRIGHT_USER="${uid}"
-export JOBWRIGHT_DIR="\${HOME}/.jobwright-users/${uid}"
+export JOBWRIGHT_USERS_ROOT="${users_root}"
+export JOBWRIGHT_DIR="${users_root}/${uid}"
 export JOBWRIGHT_REPO="${REPO_ROOT}"
 export PATH="\${HOME}/.local/bin:\${PATH}"
 exec bash "\${HOME}/.hermes/scripts/${script}"

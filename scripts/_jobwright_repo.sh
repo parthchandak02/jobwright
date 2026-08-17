@@ -33,3 +33,20 @@ _jobwright_resolve_repo() {
   echo "ERROR: Cannot find the jobwright repo. Set JOBWRIGHT_REPO." >&2
   return 1
 }
+
+_jobwright_users_root() {
+  if [[ -n "${JOBWRIGHT_USERS_ROOT:-}" ]]; then
+    echo "${JOBWRIGHT_USERS_ROOT}"
+    return 0
+  fi
+  local repo
+  repo="$(_jobwright_resolve_repo)" || return 1
+  echo "${repo}/users"
+}
+
+_jobwright_default_user_dir() {
+  local uid="$1"
+  local root
+  root="$(_jobwright_users_root)" || return 1
+  echo "${root}/${uid}"
+}

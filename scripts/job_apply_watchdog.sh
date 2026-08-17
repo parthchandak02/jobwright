@@ -3,8 +3,17 @@
 # Multi-profile: JOBWRIGHT_USER / JOBWRIGHT_DIR. Uses per-user PID only (no global pgrep).
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -f "${SCRIPT_DIR}/_jobwright_repo.sh" ]]; then
+  # shellcheck source=/dev/null
+  source "${SCRIPT_DIR}/_jobwright_repo.sh"
+else
+  # shellcheck source=/dev/null
+  source "${SCRIPT_DIR}/../scripts/_jobwright_repo.sh"
+fi
+
 if [[ -n "${JOBWRIGHT_USER:-}" ]]; then
-  export JOBWRIGHT_DIR="${JOBWRIGHT_DIR:-$HOME/.jobwright-users/${JOBWRIGHT_USER}}"
+  export JOBWRIGHT_DIR="${JOBWRIGHT_DIR:-$(_jobwright_default_user_dir "${JOBWRIGHT_USER}")}"
 else
   export JOBWRIGHT_DIR="${JOBWRIGHT_DIR:-$HOME/.jobwright}"
 fi

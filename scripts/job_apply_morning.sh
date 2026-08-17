@@ -20,7 +20,7 @@ if [[ ! -f "${PIPELINE}" ]]; then
 fi
 
 if [[ -n "${JOBWRIGHT_USER:-}" ]]; then
-  export JOBWRIGHT_DIR="${JOBWRIGHT_DIR:-$HOME/.jobwright-users/${JOBWRIGHT_USER}}"
+  export JOBWRIGHT_DIR="${JOBWRIGHT_DIR:-$(_jobwright_default_user_dir "${JOBWRIGHT_USER}")}"
 else
   export JOBWRIGHT_DIR="${JOBWRIGHT_DIR:-$HOME/.jobwright}"
 fi

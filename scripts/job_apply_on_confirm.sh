@@ -4,12 +4,20 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-export PATH="${HOME}/.local/bin:${PATH}"
+if [[ -f "${SCRIPT_DIR}/_jobwright_repo.sh" ]]; then
+  # shellcheck source=/dev/null
+  source "${SCRIPT_DIR}/_jobwright_repo.sh"
+else
+  # shellcheck source=/dev/null
+  source "${SCRIPT_DIR}/../scripts/_jobwright_repo.sh"
+fi
+REPO_ROOT="$(_jobwright_resolve_repo)"
+export JOBWRIGHT_REPO="${REPO_ROOT}"
+export PATH="${HOME}/.local/bin:${HOME}/bin:${PATH}"
 
 # Resolve per-user data dir
 if [[ -n "${JOBWRIGHT_USER:-}" ]]; then
-  export JOBWRIGHT_DIR="${JOBWRIGHT_DIR:-$HOME/.jobwright-users/${JOBWRIGHT_USER}}"
+  export JOBWRIGHT_DIR="${JOBWRIGHT_DIR:-$(_jobwright_default_user_dir "${JOBWRIGHT_USER}")}"
   USER_FLAG=(--user "${JOBWRIGHT_USER}")
 else
   export JOBWRIGHT_DIR="${JOBWRIGHT_DIR:-$HOME/.jobwright}"
@@ -41,7 +49,6 @@ TODAY="$(date +%Y%m%d)"
 CONFIRM_FILE="${JOBWRIGHT_DIR}/APPLY_CONFIRMED"
 DONE_MARKER="${JOBWRIGHT_DIR}/APPLY_CONFIRMED_DONE_${TODAY}"
 MANIFEST_FILE="${JOBWRIGHT_DIR}/APPLY_MANIFEST_${TODAY}"
-LOCK_FILE="${JOBWRIGHT_DIR}/apply.lock"
 
 if [[ -f "${DONE_MARKER}" ]]; then
   echo "SKIP: Live apply already completed today."
@@ -54,14 +61,16 @@ if [[ ! -f "${CONFIRM_FILE}" ]]; then
 fi
 
 mkdir -p "${JOBWRIGHT_DIR}"
-exec 200>"${LOCK_FILE}"
-if ! flock -n 200; then
+LOCK_DIR="${JOBWRIGHT_DIR}/apply.lock.d"
+if ! mkdir "${LOCK_DIR}" 2>/dev/null; then
   echo "SKIP: Another apply run is in progress."
   exit 0
 fi
+rmdir_lock() { rmdir "${LOCK_DIR}" 2>/dev/null || true; }
 
 cleanup() {
   rm -f "${CONFIRM_FILE}"
+  rmdir_lock
 }
 trap cleanup EXIT
 
