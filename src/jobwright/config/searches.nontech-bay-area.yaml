@@ -1,29 +1,30 @@
 # Non-technical Bay Area search template (Chief of Staff / strategy / CSR / VC platform)
 # Seed with: jobwright users add <id> --template nontech-bay-area
 # Or copy to users/<id>/searches.yaml
+# Fast daily mode (DISCOVER_MODE=fast) runs tier: 1 only.
 
 queries:
+  # Tier 1 — daily fast discover
   - query: "chief of staff"
     tier: 1
   - query: "chief of staff startup"
     tier: 1
-  - query: "strategy partnerships"
+  - query: "startup chief of staff Bay Area"
     tier: 1
   - query: "strategic partnerships"
     tier: 1
-  - query: "corporate social responsibility"
+  - query: "head of partnerships nonprofit"
     tier: 1
-  - query: "CSR manager"
+  - query: "director corporate social responsibility"
     tier: 1
-  - query: "CSR strategy"
+  - query: "venture platform manager"
     tier: 1
-  - query: "employee engagement CSR"
+  - query: "foundation partnerships officer"
+    tier: 1
+  # Tier 2 — full mode / weekly deep crawl
+  - query: "strategy partnerships"
     tier: 2
-  - query: "venture platform"
-    tier: 1
   - query: "platform associate venture"
-    tier: 1
-  - query: "impact investing platform"
     tier: 2
   - query: "foundation program officer"
     tier: 2
@@ -31,13 +32,18 @@ queries:
     tier: 2
   - query: "social impact strategy"
     tier: 2
-  - query: "startup chief of staff Bay Area"
-    tier: 1
   - query: "business operations chief of staff"
     tier: 2
   - query: "community partnerships"
     tier: 2
+  - query: "venture platform"
+    tier: 2
+  # Tier 3 — rare / broad
   - query: "nonprofit strategy consultant"
+    tier: 3
+  - query: "CSR strategy"
+    tier: 3
+  - query: "employee engagement CSR"
     tier: 3
 
 locations:
@@ -65,7 +71,8 @@ location:
     - "Mountain View"
     - "Berkeley"
     - "California"
-    - "CA"
+    - ", CA"
+    - " CA "
     - "Remote"
     - "Anywhere"
     - "United States"
@@ -81,6 +88,23 @@ location:
     - "Philippines"
     - "Bangalore"
     - "Hyderabad"
+    - "Calgary"
+    - "Toronto"
+    - "Ontario"
+    - "Alberta"
+    - "Saskatchewan"
+    - "Manitoba"
+    - "Quebec"
+    - "Vancouver"
+    - "Montreal"
+    - "etobicoke"
+    - "Canada"
+    - "Canada only"
+    - "(ON)"
+    - "(AB)"
+    - "(SK)"
+    - "(BC)"
+    - "(QC)"
 
 country: "USA"
 
