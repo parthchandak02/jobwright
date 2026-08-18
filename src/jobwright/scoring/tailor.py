@@ -395,7 +395,9 @@ def tailor_resume(
                 continue
             # Last attempt — assemble whatever we got
             tailored = assemble_resume_text(data, profile)
-            report["status"] = "failed_validation"
+            report["status"] = (
+                "approved_with_judge_warning" if validation_mode == "lenient" else "failed_validation"
+            )
             return tailored, report
 
         # Assemble text (header injected by code, em dashes auto-fixed)
