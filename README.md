@@ -38,7 +38,7 @@ When paired with **Hermes**, the results land in your chat app:
 ```
 You provide once          jobwright (daily)              Hermes → your chat
 ─────────────────         ─────────────────              ────────────────
-base resume.txt     →     discover → score → tailor  →   notify (job list + links)
+base resume.pdf     →     discover → score → tailor  →   notify (job list + links)
 profile.json              cover → docx → connect        dashboard (materials)
 searches.yaml                                           network suggestions
 connections.csv (opt.)
@@ -48,7 +48,7 @@ connections.csv (opt.)
 
 | Input | Purpose |
 |-------|---------|
-| `resume/base.txt` (or PDF) | Source of truth for tailoring; LLM never fabricates beyond this |
+| `resume/base.pdf` | Source of truth for tailoring (markdown is derived); LLM never fabricates beyond this |
 | `profile.json` | Contact info, skills, experience, compensation floor, work auth |
 | `searches.yaml` | Queries, locations, boards, title exclusions, min salary |
 | `cover-letter/examples/` | Style and tone for generated cover letters |
@@ -80,11 +80,12 @@ Hermes setup: [docs/agents/hermes-setup.md](docs/agents/hermes-setup.md). Human-
 | 3b. Portfolio | `run portfolio` | Picks the 4-5 most relevant projects from your profile per job |
 | 4. Tailor | `run tailor` | Rewrites your resume per job from your base resume (never fabricates) |
 | 5. Cover letter | `run cover` | Writes a targeted cover letter per job from your examples and profile |
+| 5a. PDF | `run pdf` | Optional HTML/PDF export; skipped by the daily brief and dashboard Auto Search |
 | 5b. DOCX | `run docx` | Exports tailored resume and cover letter as Word documents |
 | 5c. Connect | `run connect` | Ranks people in your LinkedIn network relevant to each job |
 | 6. Apply | `apply` | A browser agent fills forms, uploads documents, and submits (optional, gated) |
 
-Stages 1–5c are fully automated and safe. Stage 6 (apply) is opt-in and dry-run by default.
+Stages 1–5c are fully automated and safe (5a is optional). Stage 6 (apply) is opt-in and dry-run by default. The dashboard Auto Search and daily brief run 1–5c except 5a.
 
 ---
 
@@ -127,7 +128,7 @@ jobwright doctor    # shows what is installed and what is missing
 
 API keys live in a **single gitignored `.env` at the repo root**, shared across all profiles (never committed):
 
-- **`.env`** (repo root) - `GEMINI_API_KEY`, `LLM_MODEL`, optional `CURSOR_API_KEY` and `CAPSOLVER_API_KEY`.
+- **`.env`** (repo root) - `FIREWORKS_API_KEY` (preferred), `GEMINI_API_KEY` (failover), `LLM_MODEL`, optional `CURSOR_API_KEY` and `CAPSOLVER_API_KEY`.
 
 Your per-profile data lives under `~/.jobwright/` (single user) or `users/<id>/` under the repo (multi-profile), and holds only user-specific files:
 
@@ -142,7 +143,8 @@ Board and site definitions ship inside the package at `src/jobwright/config/` (`
 
 ```bash
 # Run the full prep pipeline in parallel, keeping only strong matches
-jobwright run discover enrich score portfolio tailor cover -w 4 --min-score 7
+# (same stages as daily brief / Auto Search; `pdf` is optional via `run pdf` or `run all`)
+jobwright run discover enrich score portfolio tailor cover docx connect -w 4 --min-score 7
 
 jobwright status      # pipeline statistics
 jobwright dashboard   # open the local HTML results snapshot
@@ -150,6 +152,7 @@ jobwright dashboard   # open the local HTML results snapshot
 # Hosted Kanban (optional): install .[web], then:
 # ./scripts/restart.sh          # API :8002 + Vite HMR :5120
 # open http://127.0.0.1:5120
+# Profile page edits search keywords, resume PDF, and cover-letter example PDFs.
 # See docs/agents/dashboard-hosting.md for jobwright.parthchandak.info
 ```
 
