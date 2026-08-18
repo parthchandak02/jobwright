@@ -66,7 +66,9 @@ Cron names: `jobwright-brief-<id>`, `jobwright-send-<id>`, `jobwright-check-<id>
 
 | Variable | Role |
 |----------|------|
-| `FIREWORKS_API_KEY` / `GEMINI_API_KEY` | Stages 3-5 (+ docx/connect LLM) |
+| `FIREWORKS_API_KEY` / `GEMINI_API_KEY` | Stages 3-5 (+ docx/connect LLM); Gemini is also Fireworks empty-response failover |
+| `GEMINI_FALLBACK_MODEL` | Fallback model (default `gemini-3.7-flash`) |
+| `GEMINI_THINKING_LEVEL` | Gemini 3.x thinking (`low` default; `minimal\|low\|medium\|high`) |
 | `EXA_API_KEY` | Optional web research for per-job connections |
 | `CURSOR_API_KEY` | Stage 6 (default provider) |
 | `AGENT_PROVIDER` | `cursor-sdk` \| `cursor-cli` \| `claude` |
@@ -74,5 +76,6 @@ Cron names: `jobwright-brief-<id>`, `jobwright-send-<id>`, `jobwright-check-<id>
 | `JOBWRIGHT_USERS_ROOT` | Registry root (default `<repo>/users`) |
 | `JOBWRIGHT_DIR` | Active user data directory |
 | `JOBWRIGHT_USER` | Set by Hermes wrappers after resolution |
+| `JOBWRIGHT_DISCOVER_LINKEDIN` | Opt-in LinkedIn discovery board (`1`/`true`; default off) |
 
 Templates: `.env.example`, `config/live.env.example`.
