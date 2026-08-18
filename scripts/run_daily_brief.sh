@@ -143,7 +143,22 @@ if [[ "${AUTO_DELIVER_CHAT:-1}" != "0" ]]; then
   fi
 fi
 
-if [[ "${AUTO_MATERIALS_INDEX:-1}" != "0" ]]; then
+# Auto-deliver editable DOCX for every job in the digest so the user never has
+# to reply "materials N". AUTO_MATERIALS_ALL=0 falls back to the legacy
+# single-index behavior (AUTO_MATERIALS_INDEX, default job 1).
+if [[ "${AUTO_MATERIALS_ALL:-1}" != "0" ]]; then
+  JOB_COUNT=0
+  if [[ -f "${MANIFEST_FILE}" ]]; then
+    JOB_COUNT="$(grep -c . "${MANIFEST_FILE}" 2>/dev/null || echo 0)"
+  fi
+  for ((i = 1; i <= JOB_COUNT; i++)); do
+    bash "${REPO_ROOT}/scripts/jobwright_deliver_materials.sh" "${i}" \
+      >> "${LOG}" 2>&1 && echo "materials_delivered index=${i}" >> "${STATUS_FILE}" \
+      || echo "materials_delivery_failed index=${i}" >> "${STATUS_FILE}"
+    # Small gap to keep WhatsApp message ordering and avoid provider throttling.
+    sleep 2
+  done
+elif [[ "${AUTO_MATERIALS_INDEX:-1}" != "0" ]]; then
   bash "${REPO_ROOT}/scripts/jobwright_deliver_materials.sh" "${AUTO_MATERIALS_INDEX:-1}" \
     >> "${LOG}" 2>&1 && echo "materials_delivered index=${AUTO_MATERIALS_INDEX:-1}" >> "${STATUS_FILE}" \
     || echo "materials_delivery_failed index=${AUTO_MATERIALS_INDEX:-1}" >> "${STATUS_FILE}"

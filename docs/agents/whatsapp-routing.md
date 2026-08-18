@@ -50,7 +50,7 @@ Or via Python: `jobwright users list`.
 3. For each path in JSON `files`, send as a WhatsApp document (or use `MEDIA:` via `jobwright_deliver_materials.sh`).
 4. If `files` is empty, say materials are not ready and suggest `find jobs now`.
 
-**Auto-materials:** When `run_daily_brief.sh` finishes with RC=0, it can auto-send job #1 DOCX via `jobwright_deliver_materials.sh` (`AUTO_MATERIALS_INDEX=1` default). Disable with `AUTO_MATERIALS_INDEX=0`.
+**Auto-materials:** When `run_daily_brief.sh` finishes, it auto-sends editable DOCX for **every job in the digest** via `jobwright_deliver_materials.sh` (`AUTO_MATERIALS_ALL=1` default, one send per job with a short gap). Users don't need to reply `materials N` to get materials; that reply is only an optional resend. Set `AUTO_MATERIALS_ALL=0` to fall back to legacy single-job delivery (`AUTO_MATERIALS_INDEX=1`, or `0` to disable).
 
 ### Pipeline env (Hermes / cron)
 
