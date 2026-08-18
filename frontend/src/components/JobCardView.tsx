@@ -1,91 +1,86 @@
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { Building2, DollarSign, MapPin } from 'lucide-react'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { JobMetaBadges } from '@/components/JobMetaBadges'
-import { MetaField } from '@/components/MetaField'
-import { ScoreBadge } from '@/components/ScoreBadge'
-import { WorkModelBadge } from '@/components/WorkModelBadge'
+import { JobSummary } from '@/components/JobSummary'
 import { cn } from '@/lib/utils'
-import { JobCard } from '@/lib/api'
+import { JobCard, laneTone } from '@/lib/api'
+import type { CSSProperties, MouseEvent, PointerEvent } from 'react'
 
 type Props = {
   job: JobCard
+  stage?: string
   onOpen?: (job: JobCard) => void
   dragging?: boolean
+  onScoreSaved?: () => void
 }
 
-function scoreRationale(job: JobCard): string {
-  const parts = [job.keywords, job.reasoning].map((s) => s?.trim()).filter(Boolean)
-  return parts.join(' — ') || 'No score rationale yet.'
+function stopCardOpen(e: MouseEvent | PointerEvent) {
+  e.stopPropagation()
 }
 
-export function JobCardView({ job, onOpen, dragging }: Props) {
+export function JobCardView({ job, stage, onOpen, dragging, onScoreSaved }: Props) {
+  const lane = stage ? laneTone(stage) : undefined
+
   return (
     <div
+      style={lane ? ({ '--lane': lane } as CSSProperties) : undefined}
       className={cn(
-        'glass glass-interactive relative cursor-pointer rounded-xl p-3',
-        'bg-[color-mix(in_oklch,var(--lane,transparent)_10%,var(--glass))]',
-        dragging && 'ring-2 ring-ring',
+        'glass job-card-pad relative cursor-pointer rounded-xl',
+        lane && 'lane-card',
+        dragging
+          ? 'glass-strong cursor-grabbing ring-2 ring-[color:var(--lane)] shadow-[var(--glass-shadow-hover)] rotate-[0.75deg] scale-[1.02]'
+          : 'glass-interactive',
       )}
       onClick={() => onOpen?.(job)}
     >
-      {/* Score: top-right, hover reveals the rationale */}
-      <div className="absolute right-2.5 top-2.5 z-10">
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <span
-              onClick={(e) => e.stopPropagation()}
-              onPointerDown={(e) => e.stopPropagation()}
-              className="cursor-help"
-            >
-              <ScoreBadge score={job.fit_score} className="h-7 min-w-7 rounded-lg text-sm" />
-            </span>
-          </TooltipTrigger>
-          <TooltipContent side="left">
-            <p className="font-medium text-foreground">
-              Fit score{job.fit_score != null ? `: ${job.fit_score}/10` : ' unavailable'}
-            </p>
-            <p className="mt-1 text-muted-foreground">{scoreRationale(job)}</p>
-          </TooltipContent>
-        </Tooltip>
-      </div>
-
-      <div className="space-y-2.5">
-        <div className="min-w-0 pr-9">
-          <h3 className="truncate text-sm font-semibold leading-snug text-foreground">
-            {job.title || 'Untitled'}
-          </h3>
-          <p className="mt-0.5 flex items-center gap-1 truncate text-xs text-muted-foreground">
-            <Building2 className="size-3 shrink-0" />
-            {job.company || job.site || 'Unknown'}
-          </p>
-        </div>
-
-        <div className="space-y-1.5">
-          <WorkModelBadge workModel={job.work_model} />
-          <MetaField icon={MapPin} label="Location" value={job.location} />
-          <MetaField icon={DollarSign} label="Salary" value={job.salary} />
-        </div>
-
-        <JobMetaBadges job={job} />
-      </div>
+      <JobSummary job={job} onScoreSaved={onScoreSaved} onLinkClick={stopCardOpen} />
     </div>
   )
 }
 
-export function SortableJobCard({ job, onOpen }: { job: JobCard; onOpen: (j: JobCard) => void }) {
+export function SortableJobCard({
+  job,
+  stage,
+  onOpen,
+  onScoreSaved,
+}: {
+  job: JobCard
+  stage: string
+  onOpen: (j: JobCard) => void
+  onScoreSaved?: () => void
+}) {
+  const lane = laneTone(stage)
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: job.url,
+    transition: {
+      duration: 200,
+      easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
+    },
   })
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
-    opacity: isDragging ? 0.35 : 1,
   }
+
+  if (isDragging) {
+    return (
+      <div
+        ref={setNodeRef}
+        style={{ ...style, '--lane': lane } as CSSProperties}
+        className="touch-none"
+        {...attributes}
+        {...listeners}
+      >
+        <div
+          className="min-h-[7.5rem] rounded-xl border-2 border-dashed border-[color:var(--lane)]/35 bg-[color-mix(in_srgb,var(--lane)_8%,transparent)]"
+          aria-hidden
+        />
+      </div>
+    )
+  }
+
   return (
     <div ref={setNodeRef} style={style} {...attributes} {...listeners} className="touch-none">
-      <JobCardView job={job} onOpen={onOpen} />
+      <JobCardView job={job} stage={stage} onOpen={onOpen} onScoreSaved={onScoreSaved} />
     </div>
   )
 }

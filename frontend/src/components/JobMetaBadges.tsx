@@ -1,34 +1,76 @@
-import { FileText, Mail, MessageSquareReply } from 'lucide-react'
-import { Badge } from '@/components/ui/badge'
+import type { LucideIcon } from 'lucide-react'
+import {
+  Ban,
+  CheckCheck,
+  CheckCircle,
+  FileText,
+  Ghost,
+  Mail,
+  PenLine,
+  Undo2,
+  XCircle,
+} from 'lucide-react'
+import { Chip } from '@/components/Chip'
 import type { JobCard } from '@/lib/api'
 
 type Props = {
   job: Pick<
     JobCard,
-    'source' | 'has_resume' | 'has_cover' | 'first_response_at' | 'outcome'
+    'source' | 'has_resume' | 'has_cover' | 'outcome' | 'whatsapp_notified_at'
   >
 }
 
+function formatNotified(iso: string): string {
+  const d = new Date(iso)
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleString()
+}
+
+const OUTCOME_ICONS: Record<string, LucideIcon> = {
+  accepted: CheckCircle,
+  rejected: XCircle,
+  withdrawn: Undo2,
+  ghosted: Ghost,
+  cancelled: Ban,
+}
+
 export function JobMetaBadges({ job }: Props) {
+  const hasAny =
+    job.source === 'manual' ||
+    job.has_resume ||
+    job.has_cover ||
+    job.outcome ||
+    job.whatsapp_notified_at
+  if (!hasAny) return null
+
+  const outcomeIcon = job.outcome
+    ? OUTCOME_ICONS[job.outcome.toLowerCase()] || Ban
+    : undefined
+
   return (
-    <div className="flex flex-wrap gap-1">
-      {job.source === 'manual' && <Badge variant="secondary">manual</Badge>}
+    <>
+      {job.source === 'manual' && (
+        <Chip icon={PenLine}>manual</Chip>
+      )}
       {job.has_resume && (
-        <Badge variant="success">
-          <FileText /> resume
-        </Badge>
+        <Chip icon={FileText}>resume</Chip>
       )}
       {job.has_cover && (
-        <Badge variant="info">
-          <Mail /> cover
-        </Badge>
+        <Chip icon={Mail}>cover</Chip>
       )}
-      {job.first_response_at && (
-        <Badge variant="warning">
-          <MessageSquareReply /> reply
-        </Badge>
+      {job.whatsapp_notified_at && (
+        <Chip
+          icon={CheckCheck}
+          tone="--stage-offer"
+          title={`Notified on WhatsApp ${formatNotified(job.whatsapp_notified_at)}`}
+        >
+          WhatsApp
+        </Chip>
       )}
-      {job.outcome && <Badge variant="outline">{job.outcome}</Badge>}
-    </div>
+      {job.outcome && (
+        <Chip icon={outcomeIcon} muted>
+          {job.outcome}
+        </Chip>
+      )}
+    </>
   )
 }

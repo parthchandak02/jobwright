@@ -9,7 +9,7 @@ function ScrollArea({
 }: React.ComponentProps<typeof ScrollAreaPrimitive.Root>) {
   return (
     <ScrollAreaPrimitive.Root data-slot="scroll-area" className={cn('relative', className)} {...props}>
-      <ScrollAreaPrimitive.Viewport className="size-full rounded-[inherit] outline-none">
+      <ScrollAreaPrimitive.Viewport className="size-full rounded-[inherit] outline-none [&>div]:!block [&>div]:min-w-0">
         {children}
       </ScrollAreaPrimitive.Viewport>
       <ScrollAreaPrimitive.ScrollAreaScrollbar

@@ -1,49 +1,60 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   DndContext,
+  DragCancelEvent,
   DragEndEvent,
+  DragOverEvent,
   DragOverlay,
+  DragStartEvent,
   PointerSensor,
-  closestCorners,
+  defaultDropAnimationSideEffects,
   useSensor,
   useSensors,
 } from '@dnd-kit/core'
+import { useNavigate, useParams } from 'react-router-dom'
 import {
-  Columns3,
-  LayoutList,
+  CircleUser,
   Menu,
-  PanelLeftClose,
-  PanelLeftOpen,
+  MessageCircle,
   Plus,
-  RefreshCw,
   Search,
-  Terminal,
+  Sparkles,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   apiFetch,
   BoardResponse,
   JobCard,
+  notifyWhatsApp,
   Profile,
   STAGE_LABELS,
 } from '@/lib/api'
-import { errorMessage } from '@/lib/utils'
+import { cn, errorMessage } from '@/lib/utils'
 import { AppSidebar } from '@/components/AppSidebar'
+import { APP_SHELL_HEADER } from '@/components/BrandLogo'
+import { AutoSearchDialog } from '@/components/AutoSearchDialog'
 import { CloseJobDialog } from '@/components/CloseJobDialog'
 import { JobCardView } from '@/components/JobCardView'
 import { JobDrawer } from '@/components/JobDrawer'
 import { JobsTable } from '@/components/JobsTable'
 import { KanbanColumn } from '@/components/KanbanColumn'
 import { ManualAddModal } from '@/components/ManualAddModal'
-import { RunConsole } from '@/components/RunConsole'
+import { ProfilePage } from '@/components/ProfilePage'
+import { SidebarActionButton } from '@/components/SidebarActionButton'
 import { SidebarNav } from '@/components/SidebarNav'
 import { ThemeToggle } from '@/components/ThemeToggle'
+import { ViewModeTabs, type ViewMode } from '@/components/ViewModeTabs'
+import {
+  createKanbanCollisionDetection,
+  findJobStage,
+  moveJobAcrossColumns,
+  reorderWithinColumn,
+} from '@/lib/boardDnD'
 
-type ViewMode = 'board' | 'table'
+type Page = 'board' | 'profile'
 
 const SIDEBAR_KEY = 'jobwright-sidebar'
 const SIDEBAR_AUTO_COLLAPSE_MQ = '(max-width: 1023px)'
@@ -69,21 +80,29 @@ function jobMatchesQuery(job: JobCard, q: string): boolean {
 }
 
 export default function App() {
+  const navigate = useNavigate()
+  const { jobId } = useParams<{ jobId?: string }>()
   const [board, setBoard] = useState<BoardResponse | null>(null)
   const [profile, setProfile] = useState<Profile | null>(null)
   const [selectedUrl, setSelectedUrl] = useState<string | null>(null)
   const [activeCard, setActiveCard] = useState<JobCard | null>(null)
   const [view, setView] = useState<ViewMode>('board')
+  const [page, setPage] = useState<Page>('board')
   const [filterStage, setFilterStage] = useState<string | 'all'>('all')
   const [searchQuery, setSearchQuery] = useState('')
   const [showAdd, setShowAdd] = useState(false)
-  const [showRun, setShowRun] = useState(false)
+  const [showAutoSearch, setShowAutoSearch] = useState(false)
+  const [notifying, setNotifying] = useState(false)
   const [loading, setLoading] = useState(true)
+  const resolvedJobId = useRef<string | null>(null)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(readSidebarCollapsed)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const [closeTarget, setCloseTarget] = useState<{ url: string; title: string | null } | null>(
     null,
   )
+  const [dropTargetStage, setDropTargetStage] = useState<string | null>(null)
+  const dragOriginStage = useRef<string | null>(null)
+  const boardSnapshot = useRef<BoardResponse | null>(null)
   const [sidebarManual, setSidebarManual] = useState(() => {
     try {
       return localStorage.getItem(SIDEBAR_KEY) !== null
@@ -125,6 +144,11 @@ export default function App() {
     if (selectedUrl) setSidebarCollapsed(true)
   }, [selectedUrl])
 
+  function selectStage(stage: string | 'all') {
+    setFilterStage(stage)
+    setPage('board')
+  }
+
   function toggleSidebar() {
     setSidebarManual(true)
     setSidebarCollapsed((prev) => {
@@ -139,7 +163,12 @@ export default function App() {
   }
 
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+  )
+
+  const collisionDetection = useMemo(
+    () => (board ? createKanbanCollisionDetection(board.stages, board.columns) : undefined),
+    [board],
   )
 
   const search = searchQuery.trim().toLowerCase()
@@ -148,6 +177,63 @@ export default function App() {
     if (!board) return []
     return board.stages.flatMap((s) => board.columns[s] || [])
   }, [board])
+
+  function openJob(job: JobCard) {
+    setSelectedUrl(job.url)
+    if (job.job_id) {
+      resolvedJobId.current = job.job_id
+      navigate(`/jobs/${job.job_id}`)
+    }
+  }
+
+  function openJobByUrl(url: string) {
+    const job = allJobs.find((j) => j.url === url)
+    if (job) openJob(job)
+    else setSelectedUrl(url)
+  }
+
+  function closeDrawer() {
+    setSelectedUrl(null)
+    resolvedJobId.current = null
+    if (jobId) navigate('/')
+  }
+
+  // Deep link: /jobs/:jobId opens the matching job drawer once the board loads.
+  useEffect(() => {
+    if (!jobId) {
+      resolvedJobId.current = null
+      return
+    }
+    if (resolvedJobId.current === jobId) return
+    if (!board) return
+    const match = allJobs.find((j) => j.job_id === jobId)
+    if (match) {
+      resolvedJobId.current = jobId
+      setSelectedUrl(match.url)
+      return
+    }
+    resolvedJobId.current = jobId
+    apiFetch<JobCard>(`/jobs/by-id/${encodeURIComponent(jobId)}`)
+      .then((j) => setSelectedUrl(j.url))
+      .catch((e) => toast.error(errorMessage(e)))
+  }, [jobId, board, allJobs])
+
+  async function handleNotify() {
+    setNotifying(true)
+    try {
+      const res = await notifyWhatsApp()
+      if (res.skipped) {
+        toast.info(res.message || 'No new jobs to notify')
+      } else {
+        toast.success(`Sent ${res.sent} jobs to WhatsApp`)
+      }
+      void refresh()
+    } catch (e) {
+      toast.error(errorMessage(e))
+    } finally {
+      setNotifying(false)
+    }
+  }
 
   const filteredJobs = useMemo(
     () => allJobs.filter((j) => jobMatchesQuery(j, search)),
@@ -173,17 +259,6 @@ export default function App() {
     if (filterStage === 'all') return filteredJobs
     return filteredJobs.filter((j) => j.funnel_stage === filterStage)
   }, [filteredJobs, filterStage])
-
-  const statsLine = useMemo(() => {
-    if (loading) return 'Loading…'
-    const total = board?.total ?? 0
-    const shown = filteredJobs.length
-    const base =
-      search && shown !== total
-        ? `${shown} of ${total} jobs`
-        : `${total} jobs`
-    return `${base} · ${profile?.stats.scored ?? 0} scored · ${profile?.stats.tailored ?? 0} tailored`
-  }, [loading, board?.total, filteredJobs.length, search, profile])
 
   async function completeMove(url: string, toStage: string, outcome?: string) {
     if (!board) return
@@ -226,12 +301,17 @@ export default function App() {
     }
   }
 
-  async function moveCard(url: string, toStage: string) {
+  async function moveCard(url: string, toStage: string, revertBoard?: BoardResponse | null) {
     if (!board) return
-    const job = allJobs.find((j) => j.url === url)
+    let job: JobCard | undefined
+    for (const stage of board.stages) {
+      job = board.columns[stage]?.find((j) => j.url === url)
+      if (job) break
+    }
     if (!job) return
 
     if (toStage === 'closed' && !job.outcome) {
+      if (revertBoard) setBoard(revertBoard)
       setCloseTarget({ url, title: job.title })
       return
     }
@@ -239,20 +319,76 @@ export default function App() {
     await completeMove(url, toStage)
   }
 
-  function onDragEnd(event: DragEndEvent) {
-    setActiveCard(null)
+  function onDragStart(event: DragStartEvent) {
+    const url = String(event.active.id)
+    const card = allJobs.find((j) => j.url === url)
+    setActiveCard(card || null)
+    if (board) {
+      boardSnapshot.current = board
+      dragOriginStage.current = findJobStage(url, board.stages, board.columns) || null
+    }
+  }
+
+  function onDragOver(event: DragOverEvent) {
     const { active, over } = event
     if (!over || !board) return
-    const url = String(active.id)
+
+    const activeId = String(active.id)
     const overId = String(over.id)
-    const toStage = board.stages.includes(overId)
-      ? overId
-      : allJobs.find((j) => j.url === overId)?.funnel_stage
-    if (!toStage) return
-    const from = allJobs.find((j) => j.url === url)?.funnel_stage
-    if (from === toStage) return
-    void moveCard(url, toStage)
+    const overStage = findJobStage(overId, board.stages, board.columns) || null
+    setDropTargetStage(overStage)
+
+    const next = moveJobAcrossColumns(board, activeId, overId)
+    if (next) setBoard(next)
   }
+
+  function onDragEnd(event: DragEndEvent) {
+    const { active, over } = event
+    setActiveCard(null)
+    setDropTargetStage(null)
+
+    if (!board) {
+      dragOriginStage.current = null
+      boardSnapshot.current = null
+      return
+    }
+
+    const url = String(active.id)
+    const originStage = dragOriginStage.current
+    const snapshot = boardSnapshot.current
+    dragOriginStage.current = null
+    boardSnapshot.current = null
+
+    let workingBoard = board
+    if (over) {
+      const reordered = reorderWithinColumn(board, url, String(over.id))
+      if (reordered) {
+        workingBoard = reordered
+        setBoard(reordered)
+      }
+    }
+
+    const currentStage = findJobStage(url, workingBoard.stages, workingBoard.columns)
+    if (!currentStage || !originStage || currentStage === originStage) return
+    void moveCard(url, currentStage, snapshot)
+  }
+
+  function onDragCancel(_event: DragCancelEvent) {
+    setActiveCard(null)
+    setDropTargetStage(null)
+    if (boardSnapshot.current) setBoard(boardSnapshot.current)
+    dragOriginStage.current = null
+    boardSnapshot.current = null
+  }
+
+  const dropAnimation = useMemo(
+    () => ({
+      sideEffects: defaultDropAnimationSideEffects({
+        styles: { active: { opacity: '0.4' } },
+      }),
+    }),
+    [],
+  )
 
   return (
     <div className="flex h-full bg-background">
@@ -260,13 +396,22 @@ export default function App() {
         profile={profile}
         board={board}
         filterStage={filterStage}
-        onFilterStage={setFilterStage}
+        onFilterStage={selectStage}
         collapsed={sidebarCollapsed}
-        onProfileChanged={() => void refresh()}
+        onToggleSidebar={toggleSidebar}
+        profileActive={page === 'profile'}
+        onOpenProfile={() => setPage('profile')}
       />
 
+      {page === 'profile' ? (
+        <ProfilePage
+          profile={profile}
+          onBack={() => setPage('board')}
+          onProfileChanged={() => void refresh()}
+        />
+      ) : (
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-20 flex flex-wrap items-center gap-3 border-b border-border/40 bg-background/70 px-4 py-3 backdrop-blur-xl">
+        <header className={cn('sticky top-0 z-20', APP_SHELL_HEADER)}>
           <Button
             type="button"
             size="icon-sm"
@@ -278,54 +423,36 @@ export default function App() {
           >
             <Menu />
           </Button>
-          <Button
-            type="button"
-            size="icon-sm"
-            variant="ghost"
-            onClick={toggleSidebar}
-            title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            className="hidden md:inline-flex"
-          >
-            {sidebarCollapsed ? <PanelLeftOpen /> : <PanelLeftClose />}
-          </Button>
-          <div className="min-w-0 flex-1">
-            <h1 className="text-base font-semibold tracking-tight">Application board</h1>
-            <p className="truncate text-xs text-muted-foreground">{statsLine}</p>
-          </div>
 
-          <div className="relative w-full max-w-xs sm:w-56">
-            <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search jobs…"
-              className="h-8 pl-8"
-              aria-label="Search jobs"
-            />
-          </div>
+          <ViewModeTabs value={view} onChange={setView} />
 
-          <Tabs value={view} onValueChange={(v) => setView(v as ViewMode)}>
-            <TabsList>
-              <TabsTrigger value="board" className="gap-1.5">
-                <Columns3 className="size-3.5" /> Board
-              </TabsTrigger>
-              <TabsTrigger value="table" className="gap-1.5">
-                <LayoutList className="size-3.5" /> Table
-              </TabsTrigger>
-            </TabsList>
-          </Tabs>
+          <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-2">
+            <div className="relative w-full max-w-xs sm:w-56">
+              <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search jobs…"
+                className="h-8 pl-8"
+                aria-label="Search jobs"
+              />
+            </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <ThemeToggle />
+            <Button size="sm" onClick={() => setShowAutoSearch(true)}>
+              <Sparkles /> Auto Search
+            </Button>
+
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={notifying}
+              onClick={() => void handleNotify()}
+            >
+              <MessageCircle /> Notify WhatsApp
+            </Button>
+
             <Button size="sm" variant="outline" onClick={() => setShowAdd(true)}>
               <Plus /> Add job
-            </Button>
-            <Button size="sm" variant="outline" onClick={() => setShowRun(true)}>
-              <Terminal /> Run
-            </Button>
-            <Button size="sm" variant="ghost" onClick={() => void refresh()}>
-              <RefreshCw /> Refresh
             </Button>
           </div>
         </header>
@@ -336,13 +463,11 @@ export default function App() {
           ) : view === 'board' && board ? (
             <DndContext
               sensors={sensors}
-              collisionDetection={closestCorners}
-              onDragStart={(e) => {
-                const card = allJobs.find((j) => j.url === String(e.active.id))
-                setActiveCard(card || null)
-              }}
+              collisionDetection={collisionDetection}
+              onDragStart={onDragStart}
+              onDragOver={onDragOver}
               onDragEnd={onDragEnd}
-              onDragCancel={() => setActiveCard(null)}
+              onDragCancel={onDragCancel}
             >
               <div className="flex h-full min-h-[70vh] gap-3 overflow-x-auto pb-2">
                 {visibleStages.map((stage) => (
@@ -351,24 +476,38 @@ export default function App() {
                     stage={stage}
                     label={STAGE_LABELS[stage] || stage}
                     jobs={filteredColumns[stage] || []}
-                    onOpen={(j) => setSelectedUrl(j.url)}
+                    isDropTarget={dropTargetStage === stage}
+                    isDragging={!!activeCard}
+                    onOpen={(j) => openJob(j)}
+                    onScoreSaved={() => void refresh()}
                   />
                 ))}
               </div>
-              <DragOverlay>
-                {activeCard ? <JobCardView job={activeCard} dragging /> : null}
+              <DragOverlay dropAnimation={dropAnimation}>
+                {activeCard ? (
+                  <JobCardView
+                    job={activeCard}
+                    stage={dropTargetStage || activeCard.funnel_stage}
+                    dragging
+                  />
+                ) : null}
               </DragOverlay>
             </DndContext>
           ) : (
-            <JobsTable jobs={tableJobs} onOpen={setSelectedUrl} />
+            <JobsTable
+              jobs={tableJobs}
+              stages={board?.stages ?? []}
+              onOpen={openJobByUrl}
+              onScoreSaved={() => void refresh()}
+            />
           )}
         </main>
       </div>
+      )}
 
       <JobDrawer
         jobUrl={selectedUrl}
-        applyEnabled={!!profile?.apply_enabled}
-        onClose={() => setSelectedUrl(null)}
+        onClose={closeDrawer}
         onChanged={() => void refresh()}
         onRequestClose={(url, title) => setCloseTarget({ url, title })}
       />
@@ -391,15 +530,14 @@ export default function App() {
           void refresh()
         }}
       />
-      <RunConsole
-        open={showRun}
-        applyEnabled={!!profile?.apply_enabled}
-        onClose={() => setShowRun(false)}
+      <AutoSearchDialog
+        open={showAutoSearch}
+        onClose={() => setShowAutoSearch(false)}
         onDone={() => void refresh()}
       />
 
       <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
-        <SheetContent side="left" className="w-64 gap-0 p-0">
+        <SheetContent side="left" className="flex w-64 flex-col gap-0 p-0">
           <SheetHeader className="border-b px-4 py-4 text-left">
             <SheetTitle className="text-sm">Stages</SheetTitle>
             <p className="text-xs font-normal text-muted-foreground">
@@ -407,12 +545,28 @@ export default function App() {
             </p>
           </SheetHeader>
           <SidebarNav
+            className="min-h-0 flex-1 overflow-y-auto"
             profile={profile}
             board={board}
             filterStage={filterStage}
-            onFilterStage={setFilterStage}
+            onFilterStage={(s) => {
+              selectStage(s)
+              setMobileNavOpen(false)
+            }}
             onNavigate={() => setMobileNavOpen(false)}
           />
+          <div className="mt-auto flex flex-col gap-0.5 border-t border-border p-2">
+            <SidebarActionButton
+              active={page === 'profile'}
+              icon={CircleUser}
+              label={profile?.name || profile?.user_id || 'Profile'}
+              onClick={() => {
+                setPage('profile')
+                setMobileNavOpen(false)
+              }}
+            />
+            <ThemeToggle />
+          </div>
         </SheetContent>
       </Sheet>
     </div>

@@ -1,3 +1,5 @@
+import { Pencil } from 'lucide-react'
+import { scoreBadgeStyle, scoreTextStyle } from '@/lib/scoreColor'
 import { cn } from '@/lib/utils'
 
 type Props = {
@@ -5,46 +7,48 @@ type Props = {
   className?: string
   /** Compact chip (kanban) vs inline table text */
   variant?: 'chip' | 'text'
+  /** User overrode the AI score */
+  userModified?: boolean
 }
 
-export function scoreTone(score: number | null | undefined) {
-  if (score == null) return 'muted' as const
-  if (score >= 8) return 'high' as const
-  if (score >= 7) return 'mid' as const
-  return 'low' as const
-}
-
-const CHIP: Record<ReturnType<typeof scoreTone>, string> = {
-  muted: 'bg-muted text-muted-foreground ring-black/5 dark:ring-white/10',
-  high: 'bg-emerald-600 text-white ring-white/25 dark:bg-emerald-500',
-  mid: 'bg-sky-600 text-white ring-white/25 dark:bg-sky-500',
-  low: 'bg-amber-500 text-white ring-white/25 dark:bg-amber-500',
-}
-
-const TEXT: Record<ReturnType<typeof scoreTone>, string> = {
-  muted: 'text-muted-foreground',
-  high: 'font-semibold text-emerald-700 dark:text-emerald-400',
-  mid: 'font-semibold text-sky-700 dark:text-sky-400',
-  low: 'font-semibold text-amber-700 dark:text-amber-400',
-}
-
-export function ScoreBadge({ score, className, variant = 'chip' }: Props) {
-  const tone = scoreTone(score)
+export function ScoreBadge({ score, className, variant = 'chip', userModified }: Props) {
   const label = score ?? '—'
 
   if (variant === 'text') {
-    return <span className={cn(TEXT[tone], className)}>{label}</span>
+    return (
+      <span
+        className={cn(
+          'font-semibold',
+          score == null && 'text-muted-foreground',
+          className,
+        )}
+        style={scoreTextStyle(score)}
+      >
+        {label}
+        {userModified ? <span className="ml-1 text-[10px] opacity-70">*</span> : null}
+      </span>
+    )
   }
 
   return (
     <span
       className={cn(
-        'inline-flex h-6 min-w-6 items-center justify-center rounded-md text-xs font-bold shadow-sm ring-1 ring-inset',
-        CHIP[tone],
+        'relative inline-flex h-6 min-w-6 items-center justify-center rounded-lg text-xs font-bold tabular-nums',
+        'backdrop-blur-sm transition-[box-shadow,transform] duration-200',
+        score == null &&
+          'bg-muted/60 text-muted-foreground shadow-[inset_0_0_0_1px_oklch(0.5_0_0/0.12)] dark:bg-muted/40',
+        userModified && 'ring-2 ring-primary/50 ring-offset-1 ring-offset-background',
         className,
       )}
+      style={scoreBadgeStyle(score)}
     >
       {label}
+      {userModified ? (
+        <Pencil
+          className="absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full bg-primary p-0.5 text-primary-foreground shadow-sm"
+          aria-hidden
+        />
+      ) : null}
     </span>
   )
 }
