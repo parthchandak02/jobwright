@@ -11,9 +11,10 @@ Nested agent notes for the Python package. Root context: [../../AGENTS.md](../..
 | `config.py` | `set_active_user`, `set_app_dir`, path constants |
 | `users.py` | Registry at `<repo>/users/users.yaml` |
 | `database.py` | SQLite schema, `jobs` table, stats |
-| `discovery/` | `jobspy.py`, `workday.py`, `smartextract.py` |
+| `discovery/` | `jobspy.py`, `workday.py`, `known_urls.py`, `smartextract.py` (`DISCOVER_MODE`) |
 | `enrichment/detail.py` | Full JD extraction |
-| `scoring/` | `scorer`, `tailor`, `cover_letter`, `portfolio`, `pdf`, `validator` |
+| `scoring/` | `scorer`, `tailor`, `cover_letter`, `portfolio`, `pdf`, `docx_export`, `validator` |
+| `network/` | CSV rank, per-job connect, Exa research |
 | `apply/` | `launcher`, `chrome`, `prompt`, `dashboard`, `ats/` |
 | `apply/providers/` | `base.parse_result_output`, `cursor_sdk`, `cursor_cli`, `claude` |
 | `wizard/init.py` | `jobwright init` onboarding |
@@ -41,6 +42,6 @@ Single-user doctor: `jobwright doctor`. Multi-profile: `jobwright --user <id> do
 | File | Covers |
 |------|--------|
 | `tests/test_users_and_filters.py` | Registry, user paths, filters |
-| `tests/test_ats.py` | ATS detection helpers |
+| `tests/test_scorer.py` | Batch score JSON mapping |
 
 Add tests for new provider behavior or user-resolution logic.
