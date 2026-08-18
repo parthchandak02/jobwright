@@ -78,12 +78,16 @@ def research_company_contacts(
         # Skip LinkedIn profile scrapes; prefer public pages
         if "linkedin.com/in/" in url.lower():
             continue
-        key_id = (name or title).lower()
+        # Only surface results that resolve to a real person. Otherwise the
+        # digest fills its "Connections" section with job reposts, not contacts.
+        if not name:
+            continue
+        key_id = name.lower()
         if key_id in seen:
             continue
         seen.add(key_id)
         out.append({
-            "name": name or title[:60],
+            "name": name,
             "role": role or "hiring / team",
             "source_url": url,
             "note": snippet or f"Public web result for {company}",

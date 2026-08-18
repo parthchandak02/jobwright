@@ -85,7 +85,7 @@ if [ "${RC}" -ne 0 ]; then
 fi
 
 export DIGEST_FILE MANIFEST_FILE MIN_SCORE APPLY_LIMIT MAX_ATTEMPTS PIPELINE_RC="${RC}"
-JOBWRIGHT_USER="${JOBWRIGHT_USER:-}" JOBWRIGHT_DIR="${JOBWRIGHT_DIR}" \
+if JOBWRIGHT_USER="${JOBWRIGHT_USER:-}" JOBWRIGHT_DIR="${JOBWRIGHT_DIR}" \
 PYTHONPATH="${REPO_ROOT}/src${PYTHONPATH:+:$PYTHONPATH}" python3 -c "
 import os
 from pathlib import Path
@@ -127,8 +127,12 @@ write_morning_digest_and_manifest(
     pipeline_rc=pipeline_rc,
     health=health,
 )
-" >> "${LOG}" 2>&1
-echo 'digest_written' >> "${STATUS_FILE}"
+" >> "${LOG}" 2>&1; then
+  echo 'digest_written' >> "${STATUS_FILE}"
+else
+  RC=1
+  echo 'digest_write_failed' >> "${STATUS_FILE}"
+fi
 
 # Chat delivery: digest text first, then materials for job 1 (single coordinated send).
 if [[ "${AUTO_DELIVER_CHAT:-1}" != "0" ]]; then

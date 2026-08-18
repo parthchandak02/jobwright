@@ -132,8 +132,13 @@ def _run_enrich(workers: int = 1) -> dict:
     """Stage: Detail enrichment — scrape full descriptions and apply URLs."""
     try:
         from jobwright.enrichment.detail import run_enrichment
-        run_enrichment(workers=workers)
-        return {"status": "ok"}
+        stats = run_enrichment(workers=workers) or {}
+        processed = int(stats.get("processed") or 0)
+        ok = int(stats.get("ok") or 0) + int(stats.get("partial") or 0)
+        errors = int(stats.get("error") or 0)
+        if processed > 0 and ok == 0 and errors > 0:
+            return {"status": f"error: all {errors} enrichments failed", **stats}
+        return {"status": "ok", **stats}
     except Exception as e:
         log.error("Enrichment failed: %s", e)
         return {"status": f"error: {e}"}
@@ -373,6 +378,7 @@ def _run_stage_streaming(
 
     # For downstream stages: loop until upstream done + no pending work
     passes = 0
+    last_status = "ok"
     while not stop_event.is_set():
         # Wait for upstream to start producing work (first pass only)
         if passes == 0 and upstream and not tracker.is_done(upstream):
@@ -383,10 +389,15 @@ def _run_stage_streaming(
 
         if pending > 0:
             try:
-                runner(**kwargs)
+                result = runner(**kwargs)
                 passes += 1
+                if isinstance(result, dict):
+                    status = str(result.get("status") or "ok")
+                    if status.startswith("error"):
+                        last_status = status
             except Exception as e:
                 log.error("Stage '%s' error (pass %d): %s", stage, passes, e)
+                last_status = f"error: {e}"
                 passes += 1
         else:
             # No work right now
@@ -398,7 +409,7 @@ def _run_stage_streaming(
             if stop_event.wait(timeout=_STREAM_POLL_INTERVAL):
                 break  # Stop requested
 
-    tracker.mark_done(stage, {"status": "ok", "passes": passes})
+    tracker.mark_done(stage, {"status": last_status, "passes": passes})
 
 
 # ---------------------------------------------------------------------------
