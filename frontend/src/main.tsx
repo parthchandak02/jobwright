@@ -12,6 +12,7 @@ createRoot(document.getElementById('root')!).render(
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<App />} />
+          <Route path="/profile" element={<App />} />
           <Route path="/jobs/:jobId" element={<App />} />
         </Routes>
         <Toaster richColors position="bottom-right" />

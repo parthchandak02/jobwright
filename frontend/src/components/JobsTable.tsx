@@ -102,33 +102,53 @@ function ColumnFilterButton({
   )
 }
 
-function SortHeader({
+function ColumnHead({
   label,
-  active,
-  direction,
-  onClick,
+  sort,
   filter,
 }: {
   label: string
-  active: boolean
-  direction?: 'asc' | 'desc'
-  onClick: () => void
+  sort?: {
+    active: boolean
+    direction?: 'asc' | 'desc'
+    onClick: () => void
+  }
   filter?: ReactNode
 }) {
-  const SortIcon = active ? (direction === 'asc' ? ArrowUp : ArrowDown) : ArrowUpDown
+  const SortIcon = sort?.active
+    ? sort.direction === 'asc'
+      ? ArrowUp
+      : ArrowDown
+    : ArrowUpDown
   return (
-    <div className="flex items-center gap-0.5">
-      <button
-        type="button"
-        onClick={onClick}
-        className="inline-flex min-h-9 items-center gap-1 rounded-md px-1 text-left font-medium hover:bg-accent/50"
-      >
-        {label}
-        <SortIcon className={cn('size-3.5', active ? 'text-foreground' : 'text-muted-foreground')} />
-      </button>
-      {filter}
+    <div className="jobs-table-head">
+      {sort ? (
+        <button type="button" className="jobs-table-sort" onClick={sort.onClick}>
+          <span className="min-w-0 truncate">{label}</span>
+          <SortIcon
+            className={cn(
+              'size-3.5 shrink-0',
+              sort.active ? 'text-foreground' : 'text-muted-foreground',
+            )}
+            aria-hidden
+          />
+        </button>
+      ) : (
+        <span className="jobs-table-label">
+          <span className="min-w-0 truncate">{label}</span>
+        </span>
+      )}
+      {filter ? <span className="shrink-0">{filter}</span> : null}
     </div>
   )
+}
+
+function sortAria(
+  active: boolean,
+  direction?: 'asc' | 'desc',
+): 'none' | 'ascending' | 'descending' {
+  if (!active) return 'none'
+  return direction === 'asc' ? 'ascending' : 'descending'
 }
 
 function FiltersPanel({
@@ -451,28 +471,36 @@ export function JobsTable({ jobs, stages, onOpen, onScoreSaved }: Props) {
         )}
       </div>
 
-      {/* Desktop: filterable table */}
+      {/* Desktop: filterable table. All columns stay visible so col widths stay aligned; the wrapper scrolls. */}
       <div className="hidden overflow-hidden rounded-xl border bg-card shadow-sm md:block">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[920px] table-fixed border-collapse text-left text-sm">
+          <table className="jobs-table">
             <colgroup>
-              <col className="w-12" />
-              <col />
-              <col className="w-[12%]" />
-              <col className="w-[14%]" />
-              <col className="w-[7.5rem]" />
-              <col className="w-[6.5rem]" />
-              <col className="w-[5.5rem]" />
-              <col className="w-[9rem]" />
+              <col className="jobs-table-col-score" />
+              <col className="jobs-table-col-title" />
+              <col className="jobs-table-col-company" />
+              <col className="jobs-table-col-location" />
+              <col className="jobs-table-col-stage" />
+              <col className="jobs-table-col-work" />
+              <col className="jobs-table-col-source" />
+              <col className="jobs-table-col-materials" />
             </colgroup>
             <thead className="sticky top-0 z-10 border-b bg-muted/80 text-muted-foreground backdrop-blur">
               <tr>
-                <th className="p-2 pl-3">
-                  <SortHeader
+                <th
+                  scope="col"
+                  aria-sort={sortAria(
+                    sort === 'score-desc' || sort === 'score-asc',
+                    sort === 'score-asc' ? 'asc' : 'desc',
+                  )}
+                >
+                  <ColumnHead
                     label="Score"
-                    active={sort === 'score-desc' || sort === 'score-asc'}
-                    direction={sort === 'score-asc' ? 'asc' : 'desc'}
-                    onClick={() => toggleSort('score')}
+                    sort={{
+                      active: sort === 'score-desc' || sort === 'score-asc',
+                      direction: sort === 'score-asc' ? 'asc' : 'desc',
+                      onClick: () => toggleSort('score'),
+                    }}
                     filter={
                       <ColumnFilterButton active={filters.scoreMin != null} label="score">
                         <Select
@@ -500,12 +528,20 @@ export function JobsTable({ jobs, stages, onOpen, onScoreSaved }: Props) {
                     }
                   />
                 </th>
-                <th className="p-2">
-                  <SortHeader
+                <th
+                  scope="col"
+                  aria-sort={sortAria(
+                    sort === 'title-asc' || sort === 'title-desc',
+                    sort === 'title-desc' ? 'desc' : 'asc',
+                  )}
+                >
+                  <ColumnHead
                     label="Title"
-                    active={sort === 'title-asc' || sort === 'title-desc'}
-                    direction={sort === 'title-desc' ? 'desc' : 'asc'}
-                    onClick={() => toggleSort('title')}
+                    sort={{
+                      active: sort === 'title-asc' || sort === 'title-desc',
+                      direction: sort === 'title-desc' ? 'desc' : 'asc',
+                      onClick: () => toggleSort('title'),
+                    }}
                     filter={
                       <ColumnFilterButton active={!!filters.title.trim()} label="title">
                         <Input
@@ -518,12 +554,17 @@ export function JobsTable({ jobs, stages, onOpen, onScoreSaved }: Props) {
                     }
                   />
                 </th>
-                <th className="p-2">
-                  <SortHeader
+                <th
+                  scope="col"
+                  aria-sort={sortAria(sort === 'company-asc', 'asc')}
+                >
+                  <ColumnHead
                     label="Company"
-                    active={sort === 'company-asc'}
-                    direction="asc"
-                    onClick={() => toggleSort('company')}
+                    sort={{
+                      active: sort === 'company-asc',
+                      direction: 'asc',
+                      onClick: () => toggleSort('company'),
+                    }}
                     filter={
                       <ColumnFilterButton active={!!filters.company.trim()} label="company">
                         <Input
@@ -536,25 +577,29 @@ export function JobsTable({ jobs, stages, onOpen, onScoreSaved }: Props) {
                     }
                   />
                 </th>
-                <th className="hidden p-2 lg:table-cell">
-                  <div className="flex items-center gap-0.5">
-                    <span className="px-1 font-medium">Location</span>
-                    <ColumnFilterButton active={!!filters.location.trim()} label="location">
-                      <Input
-                        value={filters.location}
-                        onChange={(e) => setFilters((f) => ({ ...f, location: e.target.value }))}
-                        placeholder="Contains…"
-                        className="h-8"
-                      />
-                    </ColumnFilterButton>
-                  </div>
+                <th scope="col">
+                  <ColumnHead
+                    label="Location"
+                    filter={
+                      <ColumnFilterButton active={!!filters.location.trim()} label="location">
+                        <Input
+                          value={filters.location}
+                          onChange={(e) => setFilters((f) => ({ ...f, location: e.target.value }))}
+                          placeholder="Contains…"
+                          className="h-8"
+                        />
+                      </ColumnFilterButton>
+                    }
+                  />
                 </th>
-                <th className="p-2">
-                  <SortHeader
+                <th scope="col" aria-sort={sortAria(sort === 'stage', 'asc')}>
+                  <ColumnHead
                     label="Stage"
-                    active={sort === 'stage'}
-                    direction="asc"
-                    onClick={() => toggleSort('stage')}
+                    sort={{
+                      active: sort === 'stage',
+                      direction: 'asc',
+                      onClick: () => toggleSort('stage'),
+                    }}
                     filter={
                       stageOptions.length > 1 ? (
                         <ColumnFilterButton active={filters.stages.length > 0} label="stage">
@@ -588,81 +633,87 @@ export function JobsTable({ jobs, stages, onOpen, onScoreSaved }: Props) {
                     }
                   />
                 </th>
-                <th className="hidden p-2 xl:table-cell">
-                  <div className="flex items-center gap-0.5">
-                    <span className="px-1 font-medium">Work</span>
-                    <ColumnFilterButton active={!!filters.workModel} label="work model">
-                      <Select
-                        value={filters.workModel || 'any'}
-                        onValueChange={(v) =>
-                          setFilters((f) => ({ ...f, workModel: v === 'any' ? '' : v }))
-                        }
-                      >
-                        <SelectTrigger className="h-8">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="any">Any</SelectItem>
-                          {workModels.map((m) => (
-                            <SelectItem key={m} value={m}>
-                              {m.charAt(0).toUpperCase() + m.slice(1)}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </ColumnFilterButton>
-                  </div>
+                <th scope="col">
+                  <ColumnHead
+                    label="Work"
+                    filter={
+                      <ColumnFilterButton active={!!filters.workModel} label="work model">
+                        <Select
+                          value={filters.workModel || 'any'}
+                          onValueChange={(v) =>
+                            setFilters((f) => ({ ...f, workModel: v === 'any' ? '' : v }))
+                          }
+                        >
+                          <SelectTrigger className="h-8">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="any">Any</SelectItem>
+                            {workModels.map((m) => (
+                              <SelectItem key={m} value={m}>
+                                {m.charAt(0).toUpperCase() + m.slice(1)}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </ColumnFilterButton>
+                    }
+                  />
                 </th>
-                <th className="p-2">
-                  <div className="flex items-center gap-0.5">
-                    <span className="px-1 font-medium">Source</span>
-                    <ColumnFilterButton active={!!filters.source} label="source">
-                      <Select
-                        value={filters.source || 'any'}
-                        onValueChange={(v) =>
-                          setFilters((f) => ({ ...f, source: v === 'any' ? '' : v }))
-                        }
-                      >
-                        <SelectTrigger className="h-8">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="any">Any</SelectItem>
-                          {sources.map((s) => (
-                            <SelectItem key={s} value={s}>
-                              {s}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </ColumnFilterButton>
-                  </div>
+                <th scope="col">
+                  <ColumnHead
+                    label="Source"
+                    filter={
+                      <ColumnFilterButton active={!!filters.source} label="source">
+                        <Select
+                          value={filters.source || 'any'}
+                          onValueChange={(v) =>
+                            setFilters((f) => ({ ...f, source: v === 'any' ? '' : v }))
+                          }
+                        >
+                          <SelectTrigger className="h-8">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="any">Any</SelectItem>
+                            {sources.map((s) => (
+                              <SelectItem key={s} value={s}>
+                                {s}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </ColumnFilterButton>
+                    }
+                  />
                 </th>
-                <th className="hidden p-2 lg:table-cell">
-                  <div className="flex items-center gap-0.5">
-                    <span className="px-1 font-medium">Materials</span>
-                    <ColumnFilterButton active={filters.materials !== 'any'} label="materials">
-                      <Select
-                        value={filters.materials}
-                        onValueChange={(v) =>
-                          setFilters((f) => ({
-                            ...f,
-                            materials: v as ColumnFilters['materials'],
-                          }))
-                        }
-                      >
-                        <SelectTrigger className="h-8">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="any">Any</SelectItem>
-                          <SelectItem value="resume">Resume</SelectItem>
-                          <SelectItem value="cover">Cover</SelectItem>
-                          <SelectItem value="both">Both</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </ColumnFilterButton>
-                  </div>
+                <th scope="col">
+                  <ColumnHead
+                    label="Materials"
+                    filter={
+                      <ColumnFilterButton active={filters.materials !== 'any'} label="materials">
+                        <Select
+                          value={filters.materials}
+                          onValueChange={(v) =>
+                            setFilters((f) => ({
+                              ...f,
+                              materials: v as ColumnFilters['materials'],
+                            }))
+                          }
+                        >
+                          <SelectTrigger className="h-8">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="any">Any</SelectItem>
+                            <SelectItem value="resume">Resume</SelectItem>
+                            <SelectItem value="cover">Cover</SelectItem>
+                            <SelectItem value="both">Both</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </ColumnFilterButton>
+                    }
+                  />
                 </th>
               </tr>
             </thead>
@@ -680,35 +731,35 @@ export function JobsTable({ jobs, stages, onOpen, onScoreSaved }: Props) {
                     className="cursor-pointer border-t border-border/50 hover:bg-accent/30"
                     onClick={() => onOpen(job.url)}
                   >
-                    <td className="p-2 pl-3" onClick={(e) => e.stopPropagation()}>
+                    <td onClick={(e) => e.stopPropagation()}>
                       <ScoreEditor job={job} onSaved={onScoreSaved} />
                     </td>
-                    <td className="overflow-hidden p-2 font-medium">
+                    <td className="font-medium">
                       <span className="line-clamp-2 break-words">{job.title || 'Untitled'}</span>
                     </td>
-                    <td className="overflow-hidden p-2 text-muted-foreground">
+                    <td className="text-muted-foreground">
                       <span className="flex min-w-0 items-center gap-1">
-                        <Building2 className="size-3 shrink-0" />
+                        <Building2 className="size-3 shrink-0" aria-hidden />
                         <span className="truncate">{job.company || job.site || '—'}</span>
                       </span>
                     </td>
-                    <td className="hidden overflow-hidden p-2 text-muted-foreground lg:table-cell">
+                    <td className="text-muted-foreground">
                       <span className="flex min-w-0 items-center gap-1">
-                        <MapPin className="size-3 shrink-0" />
+                        <MapPin className="size-3 shrink-0" aria-hidden />
                         <span className="truncate">{job.location || '—'}</span>
                       </span>
                     </td>
-                    <td className="overflow-hidden whitespace-nowrap p-2">
+                    <td>
                       <StageBadge stage={job.funnel_stage} />
                     </td>
-                    <td className="hidden overflow-hidden whitespace-nowrap p-2 xl:table-cell">
+                    <td>
                       <WorkModelBadge workModel={job.work_model} />
                     </td>
-                    <td className="overflow-hidden p-2 text-muted-foreground">
+                    <td className="text-muted-foreground">
                       <span className="block truncate">{job.source}</span>
                     </td>
-                    <td className="hidden overflow-hidden p-2 lg:table-cell">
-                      <div className="flex flex-wrap gap-1">
+                    <td>
+                      <div className="flex min-w-0 flex-wrap gap-1">
                         <JobMetaBadges job={job} />
                       </div>
                     </td>

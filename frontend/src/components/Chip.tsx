@@ -1,4 +1,5 @@
 import type { LucideIcon } from 'lucide-react'
+import { X } from 'lucide-react'
 import type { CSSProperties, ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 
@@ -14,13 +15,33 @@ type Props = {
   /** Native title for hover tooltip / accessibility. */
   title?: string
   className?: string
+  /** When set, renders a small remove control. */
+  onRemove?: () => void
+  /** Accessible label for remove (defaults to string children). */
+  removeLabel?: string
 }
 
 /**
  * Reusable status pill for job cards, table rows, and drawer metadata.
  * Always icon-led; use `tone` for lane-colored stage chips.
  */
-export function Chip({ children, icon: Icon, muted, tone, iconClassName, title, className }: Props) {
+function removeAriaLabel(children: ReactNode, removeLabel?: string): string {
+  if (removeLabel) return removeLabel
+  if (typeof children === 'string') return children
+  return 'item'
+}
+
+export function Chip({
+  children,
+  icon: Icon,
+  muted,
+  tone,
+  iconClassName,
+  title,
+  className,
+  onRemove,
+  removeLabel,
+}: Props) {
   const toneStyle: CSSProperties | undefined = tone
     ? {
         borderColor: `color-mix(in srgb, var(${tone}) 42%, transparent)`,
@@ -48,7 +69,25 @@ export function Chip({ children, icon: Icon, muted, tone, iconClassName, title, 
           aria-hidden
         />
       )}
-      <span className="truncate">{children}</span>
+      <span className={cn('min-w-0', typeof children === 'string' && 'truncate')}>{children}</span>
+      {onRemove && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation()
+            onRemove()
+          }}
+          className={cn(
+            '-mr-0.5 ml-0.5 inline-flex shrink-0 rounded-full p-0.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
+            tone
+              ? 'text-current/70 hover:bg-current/15 hover:text-current'
+              : 'text-muted-foreground hover:bg-foreground/10 hover:text-foreground',
+          )}
+          aria-label={`Remove ${removeAriaLabel(children, removeLabel)}`}
+        >
+          <X className="size-3" aria-hidden />
+        </button>
+      )}
     </span>
   )
 }

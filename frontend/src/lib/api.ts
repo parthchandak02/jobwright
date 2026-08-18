@@ -22,6 +22,27 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
   return res.json() as Promise<T>
 }
 
+export async function apiUpload<T>(path: string, file: File): Promise<T> {
+  const body = new FormData()
+  body.append('file', file)
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: 'PUT',
+    credentials: 'include',
+    body,
+  })
+  if (!res.ok) {
+    let detail = res.statusText
+    try {
+      const parsed = await res.json()
+      detail = parsed.detail || JSON.stringify(parsed)
+    } catch {
+      /* ignore */
+    }
+    throw new Error(detail)
+  }
+  return res.json() as Promise<T>
+}
+
 export type JobCard = {
   job_id: string
   whatsapp_notified_at: string | null
@@ -103,12 +124,23 @@ export type SettingsSearches = {
   results_per_site: number | null
 }
 
+export type CoverLetterExample = {
+  id: string
+  filename: string
+  kind: 'pdf' | 'txt'
+  mtime: number
+  markdown: string
+}
+
 export type SettingsData = {
   user_id: string
   name: string
   profile: SettingsProfile
   searches: SettingsSearches
-  resume: string
+  resume_markdown: string
+  has_resume_pdf: boolean
+  resume_pdf_mtime: number | null
+  cover_letter_examples: CoverLetterExample[]
 }
 
 export const STAGE_LABELS: Record<string, string> = {
@@ -157,6 +189,7 @@ export type RunHandle = {
   log_path: string
   user: string
   stages: string[]
+  kind?: string
 }
 
 /** Full run record from GET /api/runs. */
@@ -182,6 +215,26 @@ export function startRun(stages: string[], opts?: StartRunOptions): Promise<RunH
       stages,
       min_score: opts?.min_score ?? 7,
       workers: opts?.workers ?? 4,
+    }),
+  })
+}
+
+export type TailorInstructions = {
+  resume_instructions: string
+  cover_instructions: string
+}
+
+export function tailorDefaults(): Promise<TailorInstructions> {
+  return apiFetch<TailorInstructions>('/tailor/defaults')
+}
+
+/** Start a verbose per-job tailor + cover + docx run. */
+export function startJobTailor(url: string, instructions?: Partial<TailorInstructions>): Promise<RunHandle> {
+  return apiFetch<RunHandle>(`/jobs/${encodeURIComponent(url)}/tailor`, {
+    method: 'POST',
+    body: JSON.stringify({
+      resume_instructions: instructions?.resume_instructions,
+      cover_instructions: instructions?.cover_instructions,
     }),
   })
 }

@@ -11,14 +11,13 @@ import {
   useSensor,
   useSensors,
 } from '@dnd-kit/core'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useLocation } from 'react-router-dom'
 import {
   CircleUser,
   Menu,
   MessageCircle,
   Plus,
   Search,
-  Sparkles,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -36,6 +35,8 @@ import { cn, errorMessage } from '@/lib/utils'
 import { AppSidebar } from '@/components/AppSidebar'
 import { APP_SHELL_HEADER } from '@/components/BrandLogo'
 import { AutoSearchDialog } from '@/components/AutoSearchDialog'
+import { RunProgressButton } from '@/components/RunProgressButton'
+import { useAutoSearch, STAGE_LABELS as AUTO_STAGE_LABELS } from '@/lib/useAutoSearch'
 import { CloseJobDialog } from '@/components/CloseJobDialog'
 import { JobCardView } from '@/components/JobCardView'
 import { JobDrawer } from '@/components/JobDrawer'
@@ -54,22 +55,6 @@ import {
   reorderWithinColumn,
 } from '@/lib/boardDnD'
 
-type Page = 'board' | 'profile'
-
-const SIDEBAR_KEY = 'jobwright-sidebar'
-const SIDEBAR_AUTO_COLLAPSE_MQ = '(max-width: 1023px)'
-
-function readSidebarCollapsed(): boolean {
-  try {
-    const v = localStorage.getItem(SIDEBAR_KEY)
-    if (v === 'collapsed') return true
-    if (v === 'open') return false
-  } catch {
-    /* ignore */
-  }
-  return typeof window !== 'undefined' && window.matchMedia(SIDEBAR_AUTO_COLLAPSE_MQ).matches
-}
-
 function jobMatchesQuery(job: JobCard, q: string): boolean {
   if (!q) return true
   const hay = [job.title, job.company, job.location, job.site]
@@ -81,13 +66,14 @@ function jobMatchesQuery(job: JobCard, q: string): boolean {
 
 export default function App() {
   const navigate = useNavigate()
+  const location = useLocation()
   const { jobId } = useParams<{ jobId?: string }>()
+  const profilePage = location.pathname === '/profile'
   const [board, setBoard] = useState<BoardResponse | null>(null)
   const [profile, setProfile] = useState<Profile | null>(null)
   const [selectedUrl, setSelectedUrl] = useState<string | null>(null)
   const [activeCard, setActiveCard] = useState<JobCard | null>(null)
   const [view, setView] = useState<ViewMode>('board')
-  const [page, setPage] = useState<Page>('board')
   const [filterStage, setFilterStage] = useState<string | 'all'>('all')
   const [searchQuery, setSearchQuery] = useState('')
   const [showAdd, setShowAdd] = useState(false)
@@ -95,7 +81,6 @@ export default function App() {
   const [notifying, setNotifying] = useState(false)
   const [loading, setLoading] = useState(true)
   const resolvedJobId = useRef<string | null>(null)
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(readSidebarCollapsed)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const [closeTarget, setCloseTarget] = useState<{ url: string; title: string | null } | null>(
     null,
@@ -103,14 +88,6 @@ export default function App() {
   const [dropTargetStage, setDropTargetStage] = useState<string | null>(null)
   const dragOriginStage = useRef<string | null>(null)
   const boardSnapshot = useRef<BoardResponse | null>(null)
-  const [sidebarManual, setSidebarManual] = useState(() => {
-    try {
-      return localStorage.getItem(SIDEBAR_KEY) !== null
-    } catch {
-      return false
-    }
-  })
-
   const refresh = useCallback(async () => {
     try {
       const [b, p] = await Promise.all([
@@ -130,36 +107,15 @@ export default function App() {
     void refresh()
   }, [refresh])
 
-  useEffect(() => {
-    const mq = window.matchMedia(SIDEBAR_AUTO_COLLAPSE_MQ)
-    const onChange = () => {
-      if (sidebarManual) return
-      setSidebarCollapsed(mq.matches)
-    }
-    mq.addEventListener('change', onChange)
-    return () => mq.removeEventListener('change', onChange)
-  }, [sidebarManual])
-
-  useEffect(() => {
-    if (selectedUrl) setSidebarCollapsed(true)
-  }, [selectedUrl])
+  const autoSearch = useAutoSearch(() => void refresh())
 
   function selectStage(stage: string | 'all') {
     setFilterStage(stage)
-    setPage('board')
+    if (profilePage) navigate('/')
   }
 
-  function toggleSidebar() {
-    setSidebarManual(true)
-    setSidebarCollapsed((prev) => {
-      const next = !prev
-      try {
-        localStorage.setItem(SIDEBAR_KEY, next ? 'collapsed' : 'open')
-      } catch {
-        /* ignore */
-      }
-      return next
-    })
+  function openProfile() {
+    navigate('/profile')
   }
 
   const sensors = useSensors(
@@ -391,22 +347,21 @@ export default function App() {
   )
 
   return (
-    <div className="flex h-full bg-background">
+    <div className="relative flex h-full bg-background">
       <AppSidebar
         profile={profile}
         board={board}
         filterStage={filterStage}
         onFilterStage={selectStage}
-        collapsed={sidebarCollapsed}
-        onToggleSidebar={toggleSidebar}
-        profileActive={page === 'profile'}
-        onOpenProfile={() => setPage('profile')}
+        profileActive={profilePage}
+        onOpenProfile={openProfile}
+        jobOpen={Boolean(selectedUrl)}
       />
 
-      {page === 'profile' ? (
+      {profilePage ? (
         <ProfilePage
           profile={profile}
-          onBack={() => setPage('board')}
+          onBack={() => navigate('/')}
           onProfileChanged={() => void refresh()}
         />
       ) : (
@@ -438,9 +393,17 @@ export default function App() {
               />
             </div>
 
-            <Button size="sm" onClick={() => setShowAutoSearch(true)}>
-              <Sparkles /> Auto Search
-            </Button>
+            <RunProgressButton
+              run={autoSearch}
+              idleLabel="Auto Search"
+              stageLabels={AUTO_STAGE_LABELS}
+              titleIdle="Run auto search"
+              titleActive="Auto search in progress. Click to view logs"
+              onClick={() => {
+                autoSearch.start()
+                setShowAutoSearch(true)
+              }}
+            />
 
             <Button
               size="sm"
@@ -533,7 +496,7 @@ export default function App() {
       <AutoSearchDialog
         open={showAutoSearch}
         onClose={() => setShowAutoSearch(false)}
-        onDone={() => void refresh()}
+        run={autoSearch}
       />
 
       <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
@@ -557,11 +520,11 @@ export default function App() {
           />
           <div className="mt-auto flex flex-col gap-0.5 border-t border-border p-2">
             <SidebarActionButton
-              active={page === 'profile'}
+              active={profilePage}
               icon={CircleUser}
               label={profile?.name || profile?.user_id || 'Profile'}
               onClick={() => {
-                setPage('profile')
+                openProfile()
                 setMobileNavOpen(false)
               }}
             />

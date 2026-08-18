@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ExternalLink, Loader2, Plus, Trash2, UserRound } from 'lucide-react'
 import { toast } from 'sonner'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { apiFetch } from '@/lib/api'
@@ -65,33 +64,29 @@ function ContactRow({
   const isManual = contact.source === 'manual'
 
   return (
-    <li className="flex w-full min-w-0 items-start gap-3 overflow-hidden rounded-lg border border-border/50 bg-muted/20 px-3 py-2.5">
-      <div
-        className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full bg-background/60"
-        aria-hidden
-      >
-        <UserRound className="size-4 text-muted-foreground" />
+    <li className="connection-row">
+      <div className="connection-avatar" aria-hidden>
+        <UserRound />
       </div>
 
-      <div className="min-w-0 flex-1 overflow-hidden">
-        <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
-          <p className="min-w-0 break-words text-sm font-medium leading-snug text-foreground">
-            {name}
-          </p>
-          {isManual ? (
-            <Badge variant="outline" className="h-4 shrink-0 px-1.5 text-[10px] font-normal">
-              Added
-            </Badge>
-          ) : null}
+      <div className="connection-body">
+        <div className="flex min-w-0 flex-wrap items-baseline gap-x-1.5 gap-y-0">
+          {href ? (
+            <a
+              href={href}
+              target="_blank"
+              rel="noreferrer"
+              className="connection-name linkedin-link"
+            >
+              {name}
+            </a>
+          ) : (
+            <span className="connection-name">{name}</span>
+          )}
+          {isManual ? <span className="connection-added">Added</span> : null}
         </div>
-        {meta ? (
-          <p className="break-words text-xs leading-snug text-muted-foreground">{meta}</p>
-        ) : null}
-        {contact.why ? (
-          <p className="mt-0.5 line-clamp-3 break-words text-xs leading-snug text-muted-foreground">
-            {contact.why}
-          </p>
-        ) : null}
+        {meta ? <p className="connection-meta">{meta}</p> : null}
+        {contact.why ? <p className="connection-why">{contact.why}</p> : null}
       </div>
 
       <div className="flex shrink-0 items-center -mr-1">
@@ -101,10 +96,10 @@ function ContactRow({
             type="button"
             size="icon-sm"
             variant="ghost"
-            className="text-muted-foreground hover:text-foreground"
+            className="linkedin-link hover:bg-[var(--linkedin-muted)]"
           >
             <a href={href} target="_blank" rel="noreferrer" aria-label={`Open ${name} on LinkedIn`}>
-              <ExternalLink className="size-3.5" />
+              <ExternalLink className="size-3" />
             </a>
           </Button>
         ) : null}
@@ -118,7 +113,7 @@ function ContactRow({
             onClick={onRemove}
             aria-label={`Remove ${name}`}
           >
-            <Trash2 className="size-3.5" />
+            <Trash2 className="size-3" />
           </Button>
         ) : null}
       </div>
@@ -242,9 +237,11 @@ export function ConnectionsPanel({ jobUrl, connections, onChanged }: Props) {
   }
 
   return (
-    <div className="min-w-0 space-y-4">
-      {hasAny ? (
-        <ul className="min-w-0 space-y-2">
+    <div className="connections-panel min-w-0">
+      {!hasAny ? (
+        <p className="text-xs text-muted-foreground">No contacts yet.</p>
+      ) : (
+        <ul className="connections-list min-w-0">
           {suggested.map((c, i) => (
             <ContactRow key={`s-${i}-${displayName(c)}`} contact={c} />
           ))}
@@ -257,49 +254,48 @@ export function ConnectionsPanel({ jobUrl, connections, onChanged }: Props) {
             />
           ))}
         </ul>
-      ) : (
-        <p className="text-sm text-muted-foreground">
-          No contacts yet. Search your LinkedIn export or paste a profile URL.
-        </p>
       )}
 
-      <div className="space-y-3 rounded-lg border border-border/60 bg-muted/10 p-3">
-        <div ref={searchBoxRef} className="relative space-y-1.5">
-          <label htmlFor="conn-search" className="text-xs font-medium text-foreground">
-            Search your connections
+      <div className="connections-add">
+        <div ref={searchBoxRef} className="relative">
+          <label htmlFor="conn-search" className="sr-only">
+            Search connections
           </label>
           <Input
             id="conn-search"
             value={search}
-            placeholder="Name from Connections.csv…"
+            placeholder="Search connections…"
             disabled={busy}
+            className="connections-add-input"
             onChange={(e) => setSearch(e.target.value)}
             onFocus={() => searchResults.length > 0 && setSearchOpen(true)}
           />
           {searchOpen && (searchResults.length > 0 || searchBusy) ? (
             <ul
               className={cn(
-                'absolute z-20 mt-1 max-h-48 w-full overflow-auto rounded-md border border-border bg-popover p-1 shadow-md',
+                'absolute z-20 mt-1 max-h-44 w-full overflow-auto rounded-md border border-border/80 bg-popover p-0.5 shadow-md',
               )}
             >
               {searchBusy ? (
-                <li className="flex items-center gap-2 px-2 py-2 text-xs text-muted-foreground">
-                  <Loader2 className="size-3.5 animate-spin" /> Searching…
+                <li className="flex items-center gap-2 px-2 py-1.5 text-xs text-muted-foreground">
+                  <Loader2 className="size-3 animate-spin" /> Searching…
                 </li>
               ) : (
                 searchResults.map((c, i) => (
                   <li key={`${c.url || ''}-${i}`}>
                     <button
                       type="button"
-                      className="flex w-full items-start gap-2 rounded-sm px-2 py-1.5 text-left text-sm hover:bg-muted"
+                      className="connections-search-item"
                       disabled={busy}
                       onClick={() => void addFromSearch(c)}
                     >
-                      <Plus className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
-                      <span>
-                        <span className="font-medium">{displayName(c)}</span>
+                      <Plus className="mt-0.5 size-3 shrink-0 linkedin-link" />
+                      <span className="min-w-0">
+                        <span className="connections-search-item-name">{displayName(c)}</span>
                         {subtitle(c) ? (
-                          <span className="block text-xs text-muted-foreground">{subtitle(c)}</span>
+                          <span className="block text-[0.6875rem] text-muted-foreground">
+                            {subtitle(c)}
+                          </span>
                         ) : null}
                       </span>
                     </button>
@@ -310,31 +306,35 @@ export function ConnectionsPanel({ jobUrl, connections, onChanged }: Props) {
           ) : null}
         </div>
 
-        <div className="space-y-1.5">
-          <label htmlFor="conn-url" className="text-xs font-medium text-foreground">
-            Or add a LinkedIn profile URL
+        <div className="connections-url-row">
+          <label htmlFor="conn-url" className="sr-only">
+            LinkedIn profile URL
           </label>
           <Input
             id="conn-url"
             value={profileUrl}
-            placeholder="https://www.linkedin.com/in/…"
+            placeholder="Paste LinkedIn URL"
             disabled={busy}
+            className="connections-add-input"
             onChange={(e) => setProfileUrl(e.target.value)}
           />
           <Input
             value={profileName}
             placeholder="Name (optional)"
             disabled={busy}
+            className="connections-add-input"
+            aria-label="Contact name (optional)"
             onChange={(e) => setProfileName(e.target.value)}
           />
           <Button
             type="button"
             size="sm"
             variant="secondary"
+            className="shrink-0"
             disabled={busy || !profileUrl.trim()}
             onClick={() => void addFromUrl()}
           >
-            Add profile
+            Add
           </Button>
         </div>
       </div>

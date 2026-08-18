@@ -31,6 +31,8 @@
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent: var(--sidebar-accent);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-tailor: var(--tailor);
+  --color-tailor-muted: var(--tailor-muted);
 }
 
 :root {
@@ -63,6 +65,8 @@
   --stage-prepare: oklch(0.72 0.16 100);
   --stage-in-progress: oklch(0.64 0.18 50);
   --stage-offer: oklch(0.58 0.16 150);
+  --query-daily: var(--stage-offer);
+  --query-weekly: oklch(0.62 0.07 150);
   --stage-applied: oklch(0.55 0.17 255);
   --stage-closed: oklch(0.56 0.17 330);
   /* Liquid glass surfaces */
@@ -77,6 +81,8 @@
   --mesh-2: oklch(0.7 0.14 95 / 0.07);
   /* Motion */
   --ease-glass: cubic-bezier(0.22, 1, 0.36, 1);
+  --sidebar-rail: 3.5rem;
+  --sidebar-panel: 14rem;
   /* Job card layout */
   --job-card-pad: 0.75rem;
   --job-card-section-gap: 0.5rem;
@@ -86,6 +92,30 @@
   --job-card-score-offset: 2.25rem;
   --job-card-action-size: 1.75rem;
   --job-card-icon-gap: 0.375rem;
+  /* Jobs table (desktop Table view) */
+  --jobs-table-cell-y: 0.5rem;
+  --jobs-table-cell-x: 0.75rem;
+  --jobs-table-head-gap: 0.125rem;
+  --jobs-table-min-width: 68rem;
+  --jobs-table-col-score: 8rem;
+  --jobs-table-col-company: 11rem;
+  --jobs-table-col-location: 10rem;
+  --jobs-table-col-stage: 8.5rem;
+  --jobs-table-col-work: 6.75rem;
+  --jobs-table-col-source: 7rem;
+  --jobs-table-col-materials: 9.5rem;
+  /* LinkedIn accent (connections panel) */
+  --linkedin: oklch(0.52 0.14 250);
+  --linkedin-muted: oklch(0.52 0.14 250 / 0.07);
+  --linkedin-subtle: oklch(0.52 0.14 250 / 0.14);
+  /* Custom Tailor (AI) */
+  --tailor: oklch(0.5 0.16 305);
+  --tailor-muted: oklch(0.5 0.16 305 / 0.12);
+  --tailor-subtle: oklch(0.5 0.16 305 / 0.22);
+  /* Job drawer — description pane */
+  --job-drawer-jd-max-height: 24rem;
+  --job-drawer-jd-pad: 0.75rem;
+  --job-drawer-jd-hint-size: 0.625rem;
 }
 
 .dark {
@@ -118,6 +148,8 @@
   --stage-prepare: oklch(0.84 0.17 100);
   --stage-in-progress: oklch(0.76 0.17 50);
   --stage-offer: oklch(0.76 0.16 150);
+  --query-daily: var(--stage-offer);
+  --query-weekly: oklch(0.74 0.07 150);
   --stage-applied: oklch(0.72 0.16 255);
   --stage-closed: oklch(0.74 0.16 330);
   /* Liquid glass surfaces (neutral) */
@@ -130,6 +162,12 @@
   /* App background depth (subtle neutral, no color cast) */
   --mesh-1: oklch(0.6 0 0 / 0.05);
   --mesh-2: oklch(0.6 0 0 / 0.03);
+  --linkedin: oklch(0.62 0.12 250);
+  --linkedin-muted: oklch(0.62 0.12 250 / 0.1);
+  --linkedin-subtle: oklch(0.62 0.12 250 / 0.18);
+  --tailor: oklch(0.78 0.14 305);
+  --tailor-muted: oklch(0.78 0.14 305 / 0.16);
+  --tailor-subtle: oklch(0.78 0.14 305 / 0.28);
 }
 
 @layer base {
@@ -190,6 +228,44 @@
       inset 0 1px 0 0 var(--glass-highlight);
     transform: translateY(-1px);
   }
+
+  .sidebar-shell {
+    width: var(--sidebar-rail);
+    transition:
+      width 0.2s var(--ease-glass),
+      box-shadow 0.2s var(--ease-glass);
+  }
+  .sidebar-shell[data-expanded='true'] {
+    width: var(--sidebar-panel);
+  }
+  .sidebar-spacer {
+    width: var(--sidebar-rail);
+    transition: width 0.2s var(--ease-glass);
+  }
+  .sidebar-spacer[data-pinned='true'] {
+    width: var(--sidebar-panel);
+  }
+  .sidebar-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    opacity: 1;
+    transition: opacity 0.15s var(--ease-glass) 0.05s;
+  }
+  .group[data-expanded='false'] .sidebar-label {
+    opacity: 0;
+    pointer-events: none;
+    transition-delay: 0s;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .sidebar-shell,
+    .sidebar-spacer,
+    .sidebar-label {
+      transition: none;
+    }
+  }
+
   /* Full-card lane tint — uses the same --lane token as the column header.
      Strong enough that each lane's hue is clearly distinguishable, no border needed. */
   .lane-card {
@@ -273,6 +349,241 @@
     @apply inline-flex w-fit max-w-full items-center rounded-full border px-2 py-0.5 text-xs font-medium leading-snug;
     gap: var(--job-card-icon-gap);
   }
+
+  .job-drawer-jd {
+    position: relative;
+    border-radius: var(--radius);
+    border: 1px solid color-mix(in oklch, var(--border) 60%, transparent);
+    background: color-mix(in oklch, var(--muted) 10%, transparent);
+  }
+  .job-drawer-jd-scroll {
+    max-height: var(--job-drawer-jd-max-height);
+    overflow-y: auto;
+    padding: var(--job-drawer-jd-pad);
+    @apply whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground;
+  }
+  .job-drawer-jd-hint {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.125rem;
+    padding: 0.375rem 0.5rem 0.25rem;
+    pointer-events: none;
+    font-size: var(--job-drawer-jd-hint-size);
+    line-height: 1;
+    color: color-mix(in oklch, var(--muted-foreground) 55%, transparent);
+    background: linear-gradient(
+      to top,
+      color-mix(in oklch, var(--background) 92%, transparent) 0%,
+      color-mix(in oklch, var(--background) 55%, transparent) 55%,
+      transparent 100%
+    );
+  }
+  .jobs-table {
+    width: 100%;
+    min-width: var(--jobs-table-min-width);
+    table-layout: fixed;
+    border-collapse: collapse;
+    text-align: left;
+    font-size: 0.875rem;
+  }
+  .jobs-table th,
+  .jobs-table td {
+    overflow: hidden;
+    padding: var(--jobs-table-cell-y) var(--jobs-table-cell-x);
+    vertical-align: middle;
+  }
+  .jobs-table thead th {
+    font-weight: 500;
+    white-space: nowrap;
+  }
+  .jobs-table-col-score {
+    width: var(--jobs-table-col-score);
+  }
+  .jobs-table-col-title {
+    width: auto;
+  }
+  .jobs-table-col-company {
+    width: var(--jobs-table-col-company);
+  }
+  .jobs-table-col-location {
+    width: var(--jobs-table-col-location);
+  }
+  .jobs-table-col-stage {
+    width: var(--jobs-table-col-stage);
+  }
+  .jobs-table-col-work {
+    width: var(--jobs-table-col-work);
+  }
+  .jobs-table-col-source {
+    width: var(--jobs-table-col-source);
+  }
+  .jobs-table-col-materials {
+    width: var(--jobs-table-col-materials);
+  }
+  .jobs-table-head {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: var(--jobs-table-head-gap);
+  }
+  .jobs-table-sort,
+  .jobs-table-label {
+    display: inline-flex;
+    min-width: 0;
+    min-height: 2rem;
+    align-items: center;
+    gap: 0.25rem;
+    border-radius: calc(var(--radius) - 2px);
+    padding-inline: 0.25rem;
+    font-weight: 500;
+    text-align: left;
+  }
+  .jobs-table-sort:hover {
+    background-color: color-mix(in oklch, var(--accent) 50%, transparent);
+  }
+  .jobs-table-sort:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 50%, transparent);
+  }
+
+  /* Connections panel — compact, LinkedIn-tinted */
+  .connections-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 0.625rem;
+  }
+  .connections-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+  .connection-row {
+    display: flex;
+    min-width: 0;
+    align-items: flex-start;
+    gap: 0.5rem;
+    overflow: hidden;
+    padding: 0.375rem 0;
+    border-bottom: 1px solid color-mix(in oklch, var(--border) 55%, transparent);
+  }
+  .connection-row:last-child {
+    border-bottom: none;
+  }
+  .connection-avatar {
+    display: flex;
+    width: 1.5rem;
+    height: 1.5rem;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    margin-top: 0.0625rem;
+    border-radius: 9999px;
+    background: var(--linkedin-muted);
+    color: var(--linkedin);
+  }
+  .connection-avatar svg {
+    width: 0.75rem;
+    height: 0.75rem;
+  }
+  .connection-body {
+    min-width: 0;
+    flex: 1;
+    overflow: hidden;
+  }
+  .connection-name {
+    min-width: 0;
+    overflow-wrap: break-word;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    line-height: 1.35;
+    color: var(--linkedin);
+  }
+  a.connection-name:hover {
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+  .connection-meta {
+    overflow-wrap: break-word;
+    font-size: 0.6875rem;
+    line-height: 1.35;
+    color: var(--muted-foreground);
+  }
+  .connection-why {
+    margin-top: 0.125rem;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    overflow: hidden;
+    overflow-wrap: break-word;
+    font-size: 0.6875rem;
+    line-height: 1.35;
+    color: color-mix(in oklch, var(--muted-foreground) 85%, transparent);
+  }
+  .connection-added {
+    font-size: 0.625rem;
+    font-weight: 400;
+    color: var(--muted-foreground);
+  }
+  .connections-add {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+    border-radius: calc(var(--radius) - 2px);
+    background: var(--linkedin-muted);
+    padding: 0.5rem;
+  }
+  .connections-add-input {
+    height: 1.75rem;
+    border-color: color-mix(in oklch, var(--linkedin) 18%, var(--border));
+    background: color-mix(in oklch, var(--background) 88%, transparent);
+    font-size: 0.8125rem;
+  }
+  .connections-add-input:focus-visible {
+    border-color: color-mix(in oklch, var(--linkedin) 45%, var(--border));
+    box-shadow: 0 0 0 2px var(--linkedin-subtle);
+  }
+  .connections-url-row {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 0.375rem;
+  }
+  .connections-url-row .connections-add-input {
+    min-width: 0;
+    flex: 1;
+  }
+  .connections-url-row .connections-add-input:first-child {
+    flex: 1.4;
+  }
+  .linkedin-link {
+    color: var(--linkedin);
+  }
+  .linkedin-link:hover {
+    color: color-mix(in oklch, var(--linkedin) 85%, var(--foreground));
+  }
+  .connections-search-item {
+    display: flex;
+    width: 100%;
+    align-items: flex-start;
+    gap: 0.375rem;
+    border-radius: calc(var(--radius) - 4px);
+    padding: 0.375rem 0.5rem;
+    text-align: left;
+    font-size: 0.8125rem;
+    transition: background-color 0.15s ease;
+  }
+  .connections-search-item:hover {
+    background: var(--linkedin-muted);
+  }
+  .connections-search-item-name {
+    font-weight: 500;
+    color: var(--linkedin);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -338,4 +649,24 @@
 
 .materials-preview strong {
   font-weight: 600;
+}
+
+.resume-pdf-frame {
+  display: block;
+  width: 100%;
+  height: min(90vh, 1100px);
+  border: 1px solid color-mix(in oklch, var(--border) 80%, transparent);
+  border-radius: var(--radius);
+  background: var(--background);
+}
+
+.resume-md-pane {
+  height: min(90vh, 1100px);
+  overflow-y: auto;
+  border-radius: var(--radius);
+  border: 1px solid color-mix(in oklch, var(--border) 80%, transparent);
+  background: var(--background);
+  padding: 1rem 1.25rem;
+  font-size: 0.875rem;
+  line-height: 1.55;
 }

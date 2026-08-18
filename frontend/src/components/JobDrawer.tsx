@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Loader2 } from 'lucide-react'
+import { ChevronDown, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
@@ -27,6 +27,45 @@ type Connections = {
 }
 
 const AUTOSAVE_MS = 400
+
+function JobDescriptionPane({ text }: { text: string }) {
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const [showHint, setShowHint] = useState(false)
+
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+
+    const update = () => {
+      const overflows = el.scrollHeight > el.clientHeight + 1
+      const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 4
+      setShowHint(overflows && !atBottom)
+    }
+
+    update()
+    el.addEventListener('scroll', update, { passive: true })
+    const ro = new ResizeObserver(update)
+    ro.observe(el)
+    return () => {
+      el.removeEventListener('scroll', update)
+      ro.disconnect()
+    }
+  }, [text])
+
+  return (
+    <div className="job-drawer-jd">
+      <div ref={scrollRef} className="job-drawer-jd-scroll">
+        {text}
+      </div>
+      {showHint ? (
+        <div className="job-drawer-jd-hint" aria-hidden="true">
+          <span>Scroll</span>
+          <ChevronDown className="size-2.5 opacity-70" />
+        </div>
+      ) : null}
+    </div>
+  )
+}
 
 export function JobDrawer({ jobUrl, onClose, onChanged, onRequestClose }: Props) {
   const open = !!jobUrl
@@ -128,6 +167,7 @@ export function JobDrawer({ jobUrl, onClose, onChanged, onRequestClose }: Props)
     materials?.resume_md ||
     materials?.cover_md
   )
+  const showMaterialsSection = hasMaterials || job?.funnel_stage === 'prepare'
 
   const lane = job ? laneTone(job.funnel_stage) : undefined
 
@@ -175,19 +215,36 @@ export function JobDrawer({ jobUrl, onClose, onChanged, onRequestClose }: Props)
 
                 {job.full_description?.trim() ? (
                   <DrawerSection title="Job Description">
-                    <div className="max-h-96 overflow-y-auto whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">
-                      {job.full_description.trim()}
-                    </div>
+                    <JobDescriptionPane text={job.full_description.trim()} />
                   </DrawerSection>
                 ) : null}
 
-                {hasMaterials ? (
-                  <DrawerSection>
-                    <MaterialsPanel materials={materials} />
+                {jobUrl ? (
+                  <DrawerSection title="Connections">
+                    <ConnectionsPanel
+                      jobUrl={jobUrl}
+                      connections={connections}
+                      onChanged={() => {
+                        void load(jobUrl).catch((e) => toast.error(errorMessage(e)))
+                      }}
+                    />
                   </DrawerSection>
                 ) : null}
 
-                <DrawerSection>
+                {showMaterialsSection ? (
+                  <DrawerSection title="Materials">
+                    <MaterialsPanel
+                      materials={materials}
+                      jobUrl={jobUrl ?? undefined}
+                      onTailored={() => {
+                        onChanged()
+                        if (jobUrl) void load(jobUrl).catch((e) => toast.error(errorMessage(e)))
+                      }}
+                    />
+                  </DrawerSection>
+                ) : null}
+
+                <DrawerSection title="Notes">
                   <Textarea
                     id="notes"
                     value={notes}
@@ -201,18 +258,6 @@ export function JobDrawer({ jobUrl, onClose, onChanged, onRequestClose }: Props)
                     onBlur={() => void persistNotes(notes)}
                   />
                 </DrawerSection>
-
-                {jobUrl ? (
-                  <DrawerSection title="Connections">
-                    <ConnectionsPanel
-                      jobUrl={jobUrl}
-                      connections={connections}
-                      onChanged={() => {
-                        void load(jobUrl).catch((e) => toast.error(errorMessage(e)))
-                      }}
-                    />
-                  </DrawerSection>
-                ) : null}
               </>
             )}
           </div>
