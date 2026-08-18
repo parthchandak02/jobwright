@@ -140,6 +140,20 @@ _RATE_LIMIT_BASE_WAIT = 10
 
 _GEMINI_COMPAT_BASE = "https://generativelanguage.googleapis.com/v1beta/openai"
 _GEMINI_NATIVE_BASE = "https://generativelanguage.googleapis.com/v1beta"
+_VALID_THINKING_LEVELS = frozenset({"minimal", "low", "medium", "high"})
+
+
+def _gemini_thinking_level() -> str:
+    """GEMINI_THINKING_LEVEL env (default low). Used for Gemini 3.x thinking."""
+    level = (os.environ.get("GEMINI_THINKING_LEVEL") or "low").strip().lower()
+    if level not in _VALID_THINKING_LEVELS:
+        log.warning("Invalid GEMINI_THINKING_LEVEL=%s; using low", level)
+        return "low"
+    return level
+
+
+def _is_gemini3_model(model: str) -> bool:
+    return model.startswith("gemini-3")
 
 
 class LLMClient:
@@ -168,7 +182,7 @@ class LLMClient:
     def _chat_native_gemini(
         self,
         messages: list[dict],
-        temperature: float,
+        temperature: float | None,
         max_tokens: int,
         json_mode: bool = False,
     ) -> str:
@@ -194,12 +208,18 @@ class LLMClient:
                 # Gemini uses "model" instead of "assistant"
                 contents.append({"role": "model", "parts": [{"text": text}]})
 
+        # Gemini 3.x: low temperature can cause looping; omit when unset sentinel.
         generation_config: dict = {
-            "temperature": temperature,
             "maxOutputTokens": max_tokens,
         }
+        if temperature is not None:
+            generation_config["temperature"] = temperature
         if json_mode:
             generation_config["responseMimeType"] = "application/json"
+        if _is_gemini3_model(self.model):
+            generation_config["thinkingConfig"] = {
+                "thinkingLevel": _gemini_thinking_level(),
+            }
 
         payload: dict = {
             "contents": contents,
@@ -233,7 +253,7 @@ class LLMClient:
     def _chat_compat(
         self,
         messages: list[dict],
-        temperature: float,
+        temperature: float | None,
         max_tokens: int,
         json_mode: bool = False,
     ) -> str:
@@ -242,14 +262,18 @@ class LLMClient:
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
 
-        payload = {
+        payload: dict = {
             "model": self.model,
             "messages": messages,
-            "temperature": temperature,
             "max_tokens": max_tokens,
         }
+        if temperature is not None:
+            payload["temperature"] = temperature
         if json_mode:
             payload["response_format"] = {"type": "json_object"}
+        # OpenAI-compat maps reasoning_effort -> Gemini thinking_level.
+        if self._is_gemini and _is_gemini3_model(self.model):
+            payload["reasoning_effort"] = _gemini_thinking_level()
 
         resp = self._client.post(
             f"{self.base_url}/chat/completions",
@@ -288,7 +312,7 @@ class LLMClient:
     def chat(
         self,
         messages: list[dict],
-        temperature: float = 0.0,
+        temperature: float | None = 0.0,
         max_tokens: int = 4096,
         json_mode: bool = False,
     ) -> str:
@@ -297,9 +321,15 @@ class LLMClient:
         When json_mode=True and the provider is Gemini, uses the native
         generateContent API with responseMimeType=application/json so
         structured outputs are complete and parseable.
+
+        For Gemini 3.x, temperature defaults are left to the API (forcing 0.0
+        can cause looping). Callers that pass an explicit temperature still win.
         """
         if json_mode and self._is_gemini:
             self._use_native_gemini = True
+        # Google warns low temperature on Gemini 3.x can degrade output.
+        if self._is_gemini and _is_gemini3_model(self.model) and temperature == 0.0:
+            temperature = None
         # Qwen3 optimization: prepend /no_think to skip chain-of-thought
         # reasoning, saving tokens on structured extraction tasks.
         if "qwen" in self.model.lower() and messages:
@@ -398,7 +428,7 @@ class LLMClient:
     def _try_fallback(
         self,
         messages: list[dict],
-        temperature: float,
+        temperature: float | None,
         max_tokens: int,
         json_mode: bool = False,
     ) -> str | None:
