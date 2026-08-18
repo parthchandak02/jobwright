@@ -2,7 +2,7 @@
 
 Pointer: canonical overlay lives at [.cursor/commit-overlay.md](../../../commit-overlay.md).
 
-Deploy section for `commit-push-deploy`:
+Deploy section for the `deploy` skill:
 
 ## Deploy commands
 

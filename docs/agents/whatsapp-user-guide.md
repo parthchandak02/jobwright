@@ -11,48 +11,47 @@ You talk to Hermes on WhatsApp. Hermes runs jobwright on the server.
 ## Getting started
 
 1. Ask the admin to register you (name, resume, target roles, WhatsApp chat).
-2. Once registered, you receive **job digests** on a weekday schedule (typically every few hours).
-3. Each digest lists top matching jobs with scores and links.
+2. Once registered, you get **one WhatsApp message each morning** listing new jobs that are ready to review.
+3. Each line has a link. Tap it to open that job in your dashboard, where the tailored resume, cover letter, and networking suggestions live.
 
-No app to install. Just message Hermes in WhatsApp.
+No app to install. Just message Hermes in WhatsApp, and open the links you receive in a browser.
 
 ## Messages you can send
 
 | You send | What happens |
 |----------|----------------|
 | `job status` or `how are my jobs?` | Hermes shows pipeline stats (discovered, scored, tailored, applied). |
-| `find jobs now` | Hermes runs a fresh search (may take several minutes). |
-| `CONFIRM APPLY` | **Only if apply is enabled for you.** Starts live applications for jobs in today's digest. One batch per day. |
+| `find jobs now` | Hermes runs a fresh search (may take several minutes), then sends the new-jobs list. |
+| `notify` or `resend my jobs` | Hermes resends the current list of new jobs with dashboard links. |
 | `help jobs` | Hermes explains what you can do and whether apply is on or off. |
 | Resume or preferences in plain text | Hermes can update your profile (admin may need to approve). |
 
 Hermes understands normal language too. Examples: "Any new PM roles in the Bay Area?" or "Pause applications for me."
 
-## Daily digest flow
+## Daily flow
 
 ```
-Morning / periodic prep  →  Digest on WhatsApp  →  You review
-                                                      ↓
-                                            (optional) CONFIRM APPLY
-                                                      ↓
-                                            Live apply (if enabled)
+Morning search (pipeline runs)  ->  One WhatsApp list of new jobs
+                                          |
+                                    Tap a job link
+                                          |
+                              Review + apply in the dashboard
 ```
 
-**Find-only mode (default for new users):** You get digests and tailored materials. Nothing is submitted until you explicitly opt in and send `CONFIRM APPLY`.
+**Find-only mode (default for new users):** You get the daily list and tailored materials in the dashboard. Nothing is submitted for you.
 
-**Apply enabled:** Digest includes a line asking you to reply `CONFIRM APPLY` to submit up to a few top jobs from that digest. Reply exactly that phrase (case insensitive is fine).
+**Apply enabled:** You can submit an application from the dashboard apply button (it asks you to confirm first). Applying never happens automatically.
 
 ## Safety rules (for you)
 
-1. **Nothing submits without `CONFIRM APPLY`** (and only if apply is enabled on your profile).
-2. **One apply batch per day** after you confirm.
-3. **LinkedIn applications are never automated** (blocked by design). LinkedIn jobs can still appear in the daily brief with tailored DOCX; you apply manually via the LinkedIn link.
-4. **Dry-run first:** Admin enables live apply only after test runs look good.
+1. **Nothing submits automatically.** Applying only happens when you press apply in the dashboard and confirm.
+2. **LinkedIn applications are never automated** (blocked by design). LinkedIn jobs still appear with tailored materials; you apply manually via the LinkedIn link.
+3. **Dry-run first:** Admin enables live apply only after test runs look good.
 
 ## What you will not get on WhatsApp
 
-- Full PDF resumes inline (links or summaries instead).
-- Instant apply to a random URL you paste (admin/agent workflow required).
+- Full PDF or DOCX resumes inline (open the dashboard link instead).
+- Instant apply to a random URL you paste (use the dashboard).
 - LinkedIn connection scraping (export a Connections CSV if you want networking suggestions).
 
 ## Networking and company targets
@@ -70,8 +69,8 @@ Cover letter examples go in `cover-letter/examples/`. Resume source: `resume/bas
 
 | Problem | What to try |
 |---------|-------------|
-| No digest today | Ask Hermes: "Did the job pipeline run?" |
-| `CONFIRM APPLY` did nothing | Apply may be disabled, digest may be find-only, or you already applied today. Ask Hermes to check. |
+| No list today | Ask Hermes: "Did the job pipeline run?" (the list is only sent when new jobs are ready). |
+| A job link will not open | Ask Hermes to check the dashboard is up, or resend with `notify`. |
 | Wrong jobs showing up | Tell Hermes your updated titles, locations, or salary floor. |
 | Want to stop applying | Say "turn off auto apply" or "find only mode." |
 
@@ -82,12 +81,12 @@ You:  job status
 Bot:  42 discovered, 8 scored 7+, 3 tailored, 0 applied today.
 
 You:  find jobs now
-Bot:  Running discover → score → tailor. I'll message when done (~10 min).
+Bot:  Running discover -> score -> tailor. I'll message when done (~10 min).
 
-You:  (later, digest arrives with 5 jobs)
-You:  CONFIRM APPLY
-Bot:  Confirmed. Submitting up to 5 jobs from today's list...
-      Applied 3/5. 2 need manual follow-up (captcha).
+Bot:  (later) 3 new jobs ready to review:
+      * Chief of Staff @ Acme - jobwright.parthchandak.info/jobs/ab12cd
+      ...
+You:  (tap a link, review and apply in the dashboard)
 ```
 
 ## Privacy

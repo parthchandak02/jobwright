@@ -55,7 +55,7 @@ alwaysApply: true
 | Post-change bug review | [.cursor/skills/review-bugbot/SKILL.md](.cursor/skills/review-bugbot/SKILL.md) |
 | Post-change security review | [.cursor/skills/review-security/SKILL.md](.cursor/skills/review-security/SKILL.md) |
 | Split work into reviewable PRs | [.cursor/skills/split-to-prs/SKILL.md](.cursor/skills/split-to-prs/SKILL.md) |
-| Commit, push, or deploy dashboard | [.cursor/skills/commit-push-deploy/SKILL.md](.cursor/skills/commit-push-deploy/SKILL.md) |
+| Commit, push, or deploy dashboard | [.cursor/skills/deploy/SKILL.md](.cursor/skills/deploy/SKILL.md) |
 | GitHub issue triage | [.cursor/skills/triage/SKILL.md](.cursor/skills/triage/SKILL.md) |
 
 ### Ops and prose

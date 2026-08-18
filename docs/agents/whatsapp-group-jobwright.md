@@ -43,13 +43,14 @@ Put the durable prompt below into `~/.hermes/config.yaml` (do not commit secrets
         JOBWRIGHT_REPO=/Volumes/ExternalSSD/Projects/jobwright
         apply_enabled: false until opted in.
 
-        Every turn: load pp-job-apply; resolve WhatsApp sender → user before profile commands.
-        Daily Brief crons: jobwright-brief-richa, jobwright-send-richa, jobwright-check-richa
-          (never job-apply-*). Scripts: ~/.hermes/scripts/jobwright_*.sh
-        Attachments: copy → users/richa/references/inbox/ → file to resume/base.* or connections.csv
+        Every turn: load pp-job-apply; resolve WhatsApp sender -> user before profile commands.
+        Daily Brief cron: jobwright-brief-richa (one per user; never job-apply-*, jobwright-send-*, or jobwright-check-*).
+          Scripts: ~/.hermes/scripts/jobwright_*.sh
+        Attachments: copy -> users/richa/references/inbox/ -> file to resume/base.* or connections.csv
           (backup first). See docs/agents/whatsapp-routing.md.
-        materials N → materials --json or jobwright_deliver_materials.sh N → send DOCX as WhatsApp documents.
-        send digest → jobwright_send.sh stdout posted here. find jobs now → jobwright_brief.sh (detached).
+        find jobs now -> jobwright_brief.sh (detached; sends the notify when done).
+        notify / resend -> jobwright --user richa notify (one WhatsApp list of new jobs with dashboard deep links).
+        Review + apply happen in the dashboard (jobwright.parthchandak.info/jobs/<job_id>), not over WhatsApp.
         Brief LLM: JOBWRIGHT_LLM_MODEL=gpt-oss-120b (Fireworks). Validation: lenient. Never use BRIEF_SMOKE for daily cron.
         Code/bugs: reproduce with doctor/status/logs; fix via cursor-agent or small patches;
           never commit users/ or .env; re-run install_hermes_scripts.sh / install_skills.sh if needed.
@@ -61,10 +62,8 @@ Put the durable prompt below into `~/.hermes/config.yaml` (do not commit secrets
 | Name | Schedule | Script |
 |------|----------|--------|
 | `jobwright-brief-richa` | `0 6 * * *` | `wrap_jobwright-brief-richa.sh` |
-| `jobwright-send-richa` | `30 6 * * *` | `wrap_jobwright-send-richa.sh` |
-| `jobwright-check-richa` | `0 10 * * *` | `wrap_jobwright-check-richa.sh` |
 
-Delete any `job-apply-*` crons if still present.
+One cron per user. Delete any `job-apply-*`, `jobwright-send-*`, or `jobwright-check-*` crons if still present.
 
 ```bash
 hermes cron list | grep -E 'jobwright-|job-apply-'
@@ -77,7 +76,7 @@ cd /Volumes/ExternalSSD/Projects/jobwright
 ./scripts/install_hermes_scripts.sh
 ```
 
-Need: `jobwright_brief.sh`, `jobwright_send.sh`, `jobwright_check.sh`, `jobwright_send_materials.sh`, `jobwright_confirm.sh`, `jobwright_on_confirm.sh`, `run_daily_brief.sh`, `resolve_user_from_whatsapp.sh`.
+Need: `jobwright_brief.sh`, `run_daily_brief.sh`, `jobwright_smoke.sh`, `resolve_user_from_whatsapp.sh`.
 
 ## Inbound (this group)
 
@@ -85,12 +84,12 @@ Need: `jobwright_brief.sh`, `jobwright_send.sh`, `jobwright_check.sh`, `jobwrigh
 |-----------|--------|
 | `job status` | `jobwright --user richa status` |
 | `verify brief` | `JOBWRIGHT_USER=richa bash ~/.hermes/scripts/jobwright_verify.sh` |
-| `find jobs now` | `JOBWRIGHT_USER=richa bash ~/.hermes/scripts/jobwright_brief.sh` (~20–30 min; monitor `logs/brief_YYYYMMDD.log`) |
-| `send digest` | `JOBWRIGHT_USER=richa bash ~/.hermes/scripts/jobwright_send.sh` → post stdout here |
-| `materials 1` | `jobwright_deliver_materials.sh 1` or materials JSON → send DOCX documents |
+| `find jobs now` | `JOBWRIGHT_USER=richa bash ~/.hermes/scripts/jobwright_brief.sh` (~20-30 min; sends notify when done; monitor `logs/brief_YYYYMMDD.log`) |
+| `notify` / resend | `jobwright --user richa notify` (one WhatsApp list of new jobs with dashboard deep links) |
+| open a job / materials | Point to the dashboard deep link from the notify (`jobwright.parthchandak.info/jobs/<job_id>`) |
 | resume / Connections.csv | File into `users/richa/` (backup first) |
-| `CONFIRM APPLY` | Only if `apply_enabled`; confirm scripts |
-| `bug: …` | Continuous improvement in operator guide |
+| apply | Only if `apply_enabled`; from the dashboard apply button (confirm gate), never over WhatsApp |
+| `bug: ...` | Continuous improvement in operator guide |
 
 ## Paste to Hermes: end-to-end demo (high priority)
 
@@ -100,15 +99,15 @@ Show me Daily Brief end to end for user richa in this WhatsApp group.
 1. cd /Volumes/ExternalSSD/Projects/jobwright
 2. ./scripts/install_hermes_scripts.sh && ./scripts/install_skills.sh
 3. Confirm ~/.hermes/scripts/jobwright_brief.sh exists
-4. Follow docs/agents/hermes-setup.md: register jobwright-brief/send/check-richa at 6:00 / 6:30 / 10:00 daily
-5. Delete or pause any job-apply-* crons for richa
-6. Update this group's channel_overrides system_prompt to the text in docs/agents/whatsapp-group-jobwright.md (Daily Brief names + cursor-agent binding). Restart gateway if needed.
+4. Follow docs/agents/hermes-setup.md: register a single jobwright-brief-richa at 6:00 daily
+5. Delete or pause any job-apply-*, jobwright-send-*, or jobwright-check-* crons for richa
+6. Update this group's channel_overrides system_prompt to the text in docs/agents/whatsapp-group-jobwright.md (Daily Brief name + cursor-agent binding). Restart gateway if needed.
 7. jobwright --user richa doctor && jobwright --user richa status
 8. Trigger now: JOBWRIGHT_USER=richa bash ~/.hermes/scripts/jobwright_brief.sh
-9. When DIGEST is ready, post it here (or wait for jobwright-send). Then I will reply materials 1 — send the DOCX files as documents.
-10. Report: cron names, next run times, job count, DOCX paths, and anything that failed.
+9. When it finishes, the brief sends ONE WhatsApp list of new jobs with dashboard deep links. Confirm it landed here.
+10. Report: cron name, next run time, job count, notify result, and anything that failed.
 
-Also confirm you know: resolve sender→richa, file uploads go to users/richa/ with backup, and how to fix bugs via continuous improvement in hermes-operator-guide.md.
+Also confirm you know: resolve sender -> richa, file uploads go to users/richa/ with backup, and how to fix bugs via continuous improvement in hermes-operator-guide.md.
 ```
 
 ## Health check

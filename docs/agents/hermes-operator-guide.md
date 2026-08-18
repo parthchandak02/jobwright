@@ -58,16 +58,17 @@ export JOBWRIGHT_DIR="${JOBWRIGHT_USERS_ROOT}/${USER_ID}"
 
 ## End-to-end workflows
 
-### A. Job discovery + digest (automatic + on demand)
+### A. Job discovery + daily notify (automatic + on demand)
 
 | Trigger | Action |
 |---------|--------|
-| Cron (daily 6:00 / 6:30) | `jobwright_brief.sh` → `jobwright_send.sh` → WhatsApp |
+| Cron (daily 6:00) | `jobwright_brief.sh` -> `run_daily_brief.sh` (pipeline then `jobwright notify`) -> one WhatsApp list |
 | User: "find jobs now" | `JOBWRIGHT_USER=$USER_ID bash ~/.hermes/scripts/jobwright_brief.sh` |
-| User: "materials N" | `jobwright --user $USER_ID materials --index N` → send DOCX as WhatsApp docs |
+| User: "notify" / resend list | `jobwright --user $USER_ID notify` (one list of new prepare jobs; `--dry-run` to preview) |
+| User: "materials" / open job | Point to the dashboard deep link from the notify (`jobwright.parthchandak.info/jobs/<job_id>`) |
 | User: "job status" | `jobwright --user $USER_ID status` |
 
-Pipeline stages: discover → enrich → score → portfolio → tailor → cover → docx → connect.
+Pipeline stages: discover -> enrich -> score -> portfolio -> tailor -> cover -> docx -> connect, then `jobwright notify`.
 
 ### B. Resume tailoring (per job)
 
@@ -116,14 +117,13 @@ jobwright --user $USER_ID targets --merge-searches
 
 ### F. Live apply (opt-in only)
 
-Only if `apply_enabled: true` in registry **and** user sends `CONFIRM APPLY`:
+Only if `apply_enabled: true` in registry. Apply is driven from the dashboard apply button (confirm gate) or an explicit manual command, never over WhatsApp or cron:
 
 ```bash
-JOBWRIGHT_USER=$USER_ID bash ~/.hermes/scripts/jobwright_confirm.sh
-JOBWRIGHT_USER=$USER_ID bash ~/.hermes/scripts/jobwright_on_confirm.sh
+JOBWRIGHT_USER=$USER_ID jobwright --user $USER_ID apply --live --limit 1
 ```
 
-Never use `jobwright apply --live --url ...` for WhatsApp users.
+Dry-run remains the default; `--live` is required to submit, and LinkedIn apply stays blocked in code.
 
 ## Onboarding a new user
 
@@ -167,7 +167,7 @@ After filing, confirm with user on WhatsApp.
    - Ops: `hermes cron edit` (never duplicate); update live config only for JID/prompt/bindings
 4. **Verify:** `pytest tests/ -v` (code), `ruff check src/`, `jobwright --user $USER_ID doctor`
 5. **Sync:** `./scripts/install_hermes_scripts.sh` and/or `./scripts/install_skills.sh` if scripts/skill changed
-6. **Reply on WhatsApp:** what changed, how to retest (`find jobs now` / `materials 1` / send file again)
+6. **Reply on WhatsApp:** what changed, how to retest (`find jobs now` / `notify` / send file again)
 7. **Never commit** unless Parth asks; never commit `users/` or `.env`
 
 ### Working directory
@@ -218,7 +218,7 @@ test -f ~/.hermes/skills/autonomous-ai-agents/pp-job-apply/SKILL.md && cat ~/.he
 
 1. No auto-apply from cron
 2. No LinkedIn job apply
-3. Live apply only via CONFIRM APPLY + manifest
+3. Live apply only from the dashboard apply button (confirm gate) or an explicit `jobwright apply --live`
 4. Registry `apply_enabled` defaults false
 5. Never commit user data or secrets
 
@@ -226,7 +226,7 @@ test -f ~/.hermes/skills/autonomous-ai-agents/pp-job-apply/SKILL.md && cat ~/.he
 
 | She wants | Hermes does |
 |-----------|-------------|
-| Fresh jobs | Cron digest or "find jobs now" |
+| Fresh jobs | Daily brief cron (pipeline + notify) or "find jobs now" |
 | Tailored resume | Pipeline tailor stage (check tailor_mode) |
 | Cover letter | Ensure examples in `cover-letter/examples/`; run cover stage |
 | Network help | `jobwright --user richa network` (needs real connections.csv) |

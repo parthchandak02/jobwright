@@ -27,9 +27,9 @@ When paired with **Hermes**, the results land in your chat app:
 
 | When | What you get |
 |------|----------------|
-| After the brief completes | **Digest text** in chat: up to **5** top matches (scores, links, connection hints) |
-| Right after the digest | **Materials for job #1** (resume + cover letter DOCX when ready); reply `materials 2` for others |
-| Any time | `job status`, `find jobs now`, or plain-language questions |
+| After the brief completes | **One WhatsApp list** of new jobs (scores, links to the dashboard) |
+| When you open a job link | Tailored resume + cover letter DOCX, connections, and apply in the dashboard |
+| Any time | `job status`, `find jobs now`, `notify`, or plain-language questions |
 
 **What to expect:** jobwright prepares materials for your **best matches** (not every job on the internet). Some days boards block scraping or nothing clears your score bar; you still get a clear message instead of silence. Always review tailored documents before you send them.
 
@@ -38,8 +38,8 @@ When paired with **Hermes**, the results land in your chat app:
 ```
 You provide once          jobwright (daily)              Hermes → your chat
 ─────────────────         ─────────────────              ────────────────
-base resume.txt     →     discover → score → tailor  →   digest (top jobs)
-profile.json              cover → docx → connect        materials (DOCX)
+base resume.txt     →     discover → score → tailor  →   notify (job list + links)
+profile.json              cover → docx → connect        dashboard (materials)
 searches.yaml                                           network suggestions
 connections.csv (opt.)
 ```
@@ -55,15 +55,15 @@ connections.csv (opt.)
 | `connections.csv` (optional) | LinkedIn export for per-job "who to reach out to" |
 | `.env` API keys | LLM for score, tailor, cover (e.g. Fireworks or Gemini) |
 
-Multi-profile setups use `users/<id>/` under the repo (or `~/.jobwright/` for a single user). Each profile gets its own digest and materials.
+Multi-profile setups use `users/<id>/` under the repo (or `~/.jobwright/` for a single user). Each profile gets its own daily notify list and dashboard materials.
 
 ### Safety defaults
 
 - **Find and prepare only** by default. Nothing is submitted without an explicit opt-in.
 - **Apply** (browser agent, stage 6) is dry-run by default and never runs from cron automatically.
-- Live apply requires a clear confirmation phrase (e.g. `CONFIRM APPLY`) and per-user enablement.
+- Live apply runs only from the dashboard apply button (with a confirm step) or an explicit `jobwright apply --live`, and only when the profile has apply enabled.
 - LinkedIn jobs can appear in the brief with materials; auto-apply to LinkedIn is blocked by design.
-- **Partial success is OK:** if some pipeline stages fail, the digest still lists whatever jobs are ready, with a short run-stats footer.
+- **Partial success is OK:** if some pipeline stages fail, the notify list still includes whatever jobs are ready, with a short run-stats footer.
 - **Quality gate:** failed resume validation is not saved or delivered as DOCX.
 
 Hermes setup: [docs/agents/hermes-setup.md](docs/agents/hermes-setup.md). Human-facing WhatsApp guide: [docs/agents/whatsapp-user-guide.md](docs/agents/whatsapp-user-guide.md).
@@ -97,7 +97,7 @@ Stages 1–5c are fully automated and safe. Stage 6 (apply) is opt-in and dry-ru
 | Node.js 18+ | Stage 6 apply | Runs the Playwright MCP server |
 | `CURSOR_API_KEY` | Stage 6 apply | Default agent provider (`cursor-sdk`) |
 | Chrome/Chromium | Stage 6 apply | Auto-detected on most systems |
-| Hermes + `hermes` CLI | Chat delivery | Sends digest and DOCX to WhatsApp (or other channels) |
+| Hermes + `hermes` CLI | Chat delivery | Sends the daily job list to WhatsApp (or other channels); materials live on the dashboard |
 
 ---
 
@@ -187,12 +187,11 @@ Safety: dry-run is the default, LinkedIn jobs can appear in the brief with mater
 
 ## Scheduling and multi-profile (Hermes + chat delivery)
 
-jobwright runs per-profile prep on a Hermes cron and delivers a digest to each user's chat (WhatsApp today; any channel Hermes supports):
+jobwright runs per-profile prep on a Hermes cron and sends one WhatsApp notification per day to each user's group:
 
-- **Morning brief:** discover through connect, write digest + DOCX, auto-send editable materials for every job in the digest.
-- **Digest message:** top matches with scores and links.
-- **On demand:** `materials N` to resend a job's DOCX if needed.
-- **Optional apply:** gated behind explicit `CONFIRM APPLY` when enabled for that user.
+- **Morning brief:** one cron per user runs discover through connect, then `jobwright notify`.
+- **Notification:** a single text message listing the newly prepared jobs, each with a dashboard deep link (`jobwright.parthchandak.info/jobs/<job_id>`). If nothing new is ready, nothing is sent.
+- **Review + apply:** happen in the dashboard, not over chat. Open a job's deep link to see its details, materials, and connections; live apply stays gated behind per-user enablement.
 
 See [The Daily Brief](#the-daily-brief-how-it-works-with-hermes) above for the full picture.
 

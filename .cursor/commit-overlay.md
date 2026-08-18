@@ -1,6 +1,6 @@
 # Commit overlay (jobwright)
 
-Used by [.cursor/skills/commit-push-deploy/SKILL.md](.cursor/skills/commit-push-deploy/SKILL.md) and [.cursor/rules/agents-doc-sync.mdc](.cursor/rules/agents-doc-sync.mdc).
+Used by [.cursor/skills/deploy/SKILL.md](.cursor/skills/deploy/SKILL.md) and [.cursor/rules/agents-doc-sync.mdc](.cursor/rules/agents-doc-sync.mdc).
 
 ## Doc-sync matrix
 
@@ -9,7 +9,7 @@ Used by [.cursor/skills/commit-push-deploy/SKILL.md](.cursor/skills/commit-push-
 | `AGENTS.md` | CLI, pipeline, environment variables, Always/Ask/Never, task table, version |
 | `docs/agents/repo-map.md` | Paths, scripts, source layout |
 | `docs/agents/hermes-operator-guide.md` | Hermes workflows, folder layout |
-| `docs/agents/whatsapp-routing.md` | Inbound phrases, CONFIRM APPLY checklist |
+| `docs/agents/whatsapp-routing.md` | Inbound phrases, daily notify, apply safety |
 | `docs/agents/hermes-setup.md` | Cron names, install steps |
 | `docs/agents/install-hermes-skill.md` | Hermes skill install model |
 | `src/jobwright/AGENTS.md` | Package module map or conventions |
@@ -49,7 +49,7 @@ Used by [.cursor/skills/commit-push-deploy/SKILL.md](.cursor/skills/commit-push-
 
 Repo root is `jobwright/`. Stage with explicit paths when the working tree has unrelated dirty files.
 
-## Deploy (commit-push-deploy)
+## Deploy (`/deploy` skill)
 
 Public dashboard: `jobwright.parthchandak.info` (API `:8002` serves `frontend/dist`; tunnel via PM2).
 
