@@ -129,8 +129,9 @@ def list_ready_jobs(
     conn = get_connection()
     rows = conn.execute(
         f"""
-        SELECT url, title, site, application_url, tailored_resume_path,
-               fit_score, location, full_description, cover_letter_path
+        SELECT url, title, site, company, application_url, tailored_resume_path,
+               tailored_resume_docx_path, fit_score, location, full_description,
+               cover_letter_path, cover_letter_docx_path, score_reasoning
         FROM jobs
         WHERE {where}
         ORDER BY fit_score DESC, url
@@ -151,6 +152,83 @@ def list_ready_jobs(
     return ready
 
 
+def _docx_path(txt_path: str | None, stored: str | None) -> str | None:
+    if stored and Path(stored).exists():
+        return stored
+    if txt_path:
+        sibling = Path(txt_path).with_suffix(".docx")
+        if sibling.exists():
+            return str(sibling)
+    return None
+
+
+def gather_brief_health(pipeline_rc: int | None = None) -> dict:
+    """Snapshot DB counts for digest footers and ops visibility."""
+    conn = get_connection()
+    total = conn.execute("SELECT COUNT(*) FROM jobs").fetchone()[0]
+    scored = conn.execute(
+        "SELECT COUNT(*) FROM jobs WHERE fit_score IS NOT NULL"
+    ).fetchone()[0]
+    ready = conn.execute(
+        "SELECT COUNT(*) FROM jobs WHERE tailored_resume_path IS NOT NULL"
+    ).fetchone()[0]
+    pending_score = conn.execute(
+        "SELECT COUNT(*) FROM jobs WHERE full_description IS NOT NULL AND fit_score IS NULL"
+    ).fetchone()[0]
+    return {
+        "total_jobs": total,
+        "scored": scored,
+        "ready_materials": ready,
+        "pending_score": pending_score,
+        "pipeline_rc": pipeline_rc,
+    }
+
+
+def _digest_footer_lines(
+    job_count: int,
+    limit: int,
+    apply_enabled: bool,
+    health: dict | None,
+) -> list[str]:
+    """User-facing hints and optional pipeline health footer."""
+    lines: list[str] = []
+    if job_count == 0:
+        lines.extend([
+            "No matching roles above your score threshold today.",
+            "We will search again on the next scheduled run.",
+            'Reply "find jobs now" to refresh manually.',
+        ])
+    elif job_count == 1:
+        lines.append(
+            'Materials for job 1 are attached below (or reply "materials 1" to resend).'
+        )
+    else:
+        lines.append(
+            'Reply "materials 1" (or 2, 3, ...) for editable resume + cover letter.'
+        )
+    if job_count > 0:
+        if apply_enabled:
+            lines.append(f'Reply *CONFIRM APPLY* to submit up to {limit} jobs (live).')
+        else:
+            lines.append(
+                "Find-only mode: applying is off for this profile. Reply if you want apply enabled."
+            )
+
+    if health:
+        rc = health.get("pipeline_rc")
+        rc_note = ""
+        if rc is not None and rc != 0:
+            rc_note = f" (pipeline exit {rc}; partial results below)"
+        lines.append("")
+        lines.append(
+            f"Run stats{rc_note}: {health.get('total_jobs', 0)} in DB, "
+            f"{health.get('scored', 0)} scored, "
+            f"{health.get('ready_materials', 0)} with tailored resume, "
+            f"{health.get('pending_score', 0)} still pending score."
+        )
+    return lines
+
+
 def write_morning_digest_and_manifest(
     digest_path: Path,
     manifest_path: Path,
@@ -159,38 +237,89 @@ def write_morning_digest_and_manifest(
     max_attempts: int | None = None,
     apply_enabled: bool = True,
     user_label: str | None = None,
+    pipeline_rc: int | None = None,
+    health: dict | None = None,
 ) -> int:
-    """Write digest text and URL manifest using the same queue filters as acquire_job.
+    """Write digest text, URL manifest, and MATERIALS_MANIFEST JSON.
 
     If apply_enabled is False, omit the CONFIRM APPLY line (find-only mode).
     """
+    from jobwright.network.per_job import load_job_contacts
+
     jobs = list_ready_jobs(min_score=min_score, limit=limit, max_attempts=max_attempts)
     manifest_path.write_text(
         "\n".join(job["url"] for job in jobs) + ("\n" if jobs else ""),
         encoding="utf-8",
     )
 
+    contacts_blob = load_job_contacts()
+    contacts_by_url = (contacts_blob.get("jobs") or {}) if contacts_blob else {}
+
+    materials: list[dict] = []
     who = f" ({user_label})" if user_label else ""
     lines = [
-        f"=== Job Digest{who} ===",
+        f"=== Daily Brief{who} ===",
         f"Date: {datetime.now().strftime('%Y-%m-%d %H:%M %Z')}",
         "",
-        "Matched jobs (links + tailored materials when ready):",
+        "Matched jobs (reply materials N for editable DOCX):",
         "",
     ]
     for idx, job in enumerate(jobs, start=1):
+        company = (job.get("company") or job.get("site") or "").strip()
         desc = (job.get("full_description") or job.get("title") or "").replace("\n", " ").replace("\r", " ")
         desc = (desc[:70] or job["title"][:50]).strip()
-        lines.append(f"{idx}. *{job['title']}* @ {job.get('site', '')} (score {job.get('fit_score', '')})")
+        lines.append(f"{idx}. *{job['title']}* @ {company} (score {job.get('fit_score', '')})")
         lines.append(f"   {desc}")
         lines.append(f"   {job['url']}")
+
+        resume_docx = _docx_path(job.get("tailored_resume_path"), job.get("tailored_resume_docx_path"))
+        cover_docx = _docx_path(job.get("cover_letter_path"), job.get("cover_letter_docx_path"))
+        if resume_docx or cover_docx:
+            lines.append("   Materials: DOCX ready (reply materials %d)" % idx)
+
+        entry = contacts_by_url.get(job["url"]) or {}
+        csv_c = entry.get("csv_contacts") or []
+        web_c = entry.get("web_contacts") or []
+        if csv_c or web_c:
+            lines.append("   Connections:")
+            for c in csv_c[:3]:
+                name = f"{c.get('first_name', '')} {c.get('last_name', '')}".strip() or c.get("name", "?")
+                why = c.get("why") or c.get("position") or ""
+                lines.append(f"     - {name} ({c.get('position') or '?'}) — {why}")
+            for c in web_c[:2]:
+                lines.append(
+                    f"     - {c.get('name', '?')} [{c.get('role', 'web')}] {c.get('source_url', '')}"
+                )
         lines.append("")
+
+        materials.append({
+            "index": idx,
+            "url": job["url"],
+            "title": job.get("title"),
+            "company": company,
+            "fit_score": job.get("fit_score"),
+            "resume_docx": resume_docx,
+            "cover_docx": cover_docx,
+            "resume_txt": job.get("tailored_resume_path"),
+            "cover_txt": job.get("cover_letter_path"),
+            "csv_contacts": csv_c,
+            "web_contacts": web_c,
+        })
+
     lines.append("")
-    if apply_enabled:
-        lines.append(f"Reply *CONFIRM APPLY* to submit up to {limit} jobs (live).")
-    else:
-        lines.append("Find-only mode: applying is off for this profile. Reply if you want apply enabled.")
+    lines.extend(_digest_footer_lines(len(jobs), limit, apply_enabled, health))
     digest_path.write_text("\n".join(lines), encoding="utf-8")
+
+    materials_path = digest_path.parent / f"MATERIALS_MANIFEST_{datetime.now().strftime('%Y%m%d')}.json"
+    materials_path.write_text(
+        json.dumps({"generated_at": datetime.now().isoformat(), "jobs": materials}, indent=2),
+        encoding="utf-8",
+    )
+    # Latest pointer
+    (digest_path.parent / "MATERIALS_MANIFEST_latest.json").write_text(
+        materials_path.read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
     return len(jobs)
 
 # How often to poll the DB when the queue is empty (seconds)

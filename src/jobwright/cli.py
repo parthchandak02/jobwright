@@ -25,10 +25,13 @@ app = typer.Typer(
 users_app = typer.Typer(help="Manage multi-profile users (local registry).")
 app.add_typer(users_app, name="users")
 console = Console()
+# Diagnostics banner goes to stderr so it never pollutes stdout consumed by
+# `--json` callers (e.g. jobwright_deliver_materials.sh parses stdout as JSON).
+err_console = Console(stderr=True)
 log = logging.getLogger(__name__)
 
 # Valid pipeline stages (in execution order)
-VALID_STAGES = ("discover", "enrich", "score", "portfolio", "tailor", "cover", "pdf")
+VALID_STAGES = ("discover", "enrich", "score", "portfolio", "tailor", "cover", "pdf", "docx", "connect")
 
 
 # ---------------------------------------------------------------------------
@@ -52,7 +55,7 @@ def _resolve_user_option(user: Optional[str]) -> None:
     from jobwright.config import set_active_user
 
     path = set_active_user(user)
-    console.print(f"[dim]Active user:[/dim] {user}  [dim]({path})[/dim]")
+    err_console.print(f"[dim]Active user:[/dim] {user}  [dim]({path})[/dim]")
 
 
 # ---------------------------------------------------------------------------
@@ -654,7 +657,7 @@ def doctor() -> None:
         model = _resolve_fireworks_model(os.environ.get("LLM_MODEL", ""))
         results.append(("LLM API key", ok_mark, f"Fireworks ({model})"))
     elif has_gemini:
-        model = os.environ.get("LLM_MODEL", "gemini-2.0-flash")
+        model = os.environ.get("LLM_MODEL", "gemini-3.7-flash")
         results.append(("LLM API key", ok_mark, f"Gemini ({model})"))
     elif has_openai:
         model = os.environ.get("LLM_MODEL", "gpt-4o-mini")
@@ -753,6 +756,72 @@ def doctor() -> None:
         console.print("[dim]  → Tier 3 unlocks: auto-apply (needs CURSOR_API_KEY or agent CLI + Chrome + Node.js)[/dim]")
 
     console.print()
+
+
+@app.command()
+def materials(
+    index: int = typer.Option(1, "--index", "-i", help="1-based job index from today's digest."),
+    json_out: bool = typer.Option(
+        True, "--json/--text",
+        help="Print JSON (default) or human text for Hermes file delivery.",
+    ),
+) -> None:
+    """Show DOCX paths for a digest job (reply materials N on WhatsApp)."""
+    _bootstrap()
+    import json as _json
+    from pathlib import Path
+    from datetime import datetime
+    import jobwright.config as cfg
+
+    today = datetime.now().strftime("%Y%m%d")
+    candidates = [
+        cfg.APP_DIR / f"MATERIALS_MANIFEST_{today}.json",
+        cfg.APP_DIR / "MATERIALS_MANIFEST_latest.json",
+    ]
+    path = next((p for p in candidates if p.exists()), None)
+    if path is None:
+        console.print("[red]No materials manifest found. Run the daily brief first.[/red]")
+        raise typer.Exit(code=1)
+
+    data = _json.loads(path.read_text(encoding="utf-8"))
+    jobs = data.get("jobs") or []
+    match = next((j for j in jobs if int(j.get("index", 0)) == index), None)
+    if match is None:
+        console.print(f"[red]No job at index {index}. Manifest has {len(jobs)} jobs.[/red]")
+        raise typer.Exit(code=1)
+
+    # Refresh sibling DOCX if columns empty
+    resume = match.get("resume_docx")
+    cover = match.get("cover_docx")
+    if not resume and match.get("resume_txt"):
+        sibling = Path(match["resume_txt"]).with_suffix(".docx")
+        if sibling.exists():
+            resume = str(sibling)
+    if not cover and match.get("cover_txt"):
+        sibling = Path(match["cover_txt"]).with_suffix(".docx")
+        if sibling.exists():
+            cover = str(sibling)
+
+    payload = {
+        "index": index,
+        "title": match.get("title"),
+        "company": match.get("company"),
+        "url": match.get("url"),
+        "resume_docx": resume,
+        "cover_docx": cover,
+        "files": [p for p in (resume, cover) if p and Path(p).exists()],
+    }
+    if json_out:
+        # Plain print: Rich console soft-wraps long paths and injects newlines
+        # into JSON string values, breaking downstream json.loads.
+        print(_json.dumps(payload, indent=2))
+    else:
+        console.print(f"{payload['title']} @ {payload.get('company') or '?'}")
+        for f in payload["files"]:
+            console.print(f)
+        if not payload["files"]:
+            console.print("[yellow]No DOCX files on disk yet.[/yellow]")
+            raise typer.Exit(code=1)
 
 
 @app.command()
