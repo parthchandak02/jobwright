@@ -22,8 +22,12 @@ fi
 
 export PATH="${HOME}/.local/bin:${PATH}"
 DOTENV="$(printf '\x2eenv')"
-GLOBAL_ENV="${JOBWRIGHT_ENV:-${JOBWRIGHT_REPO:-${REPO_ROOT:-}}/${DOTENV}}"
-[[ -f "${GLOBAL_ENV}" ]] && set -a && source "${GLOBAL_ENV}" && set +a
+REPO_ROOT="$(_jobwright_resolve_repo)" || REPO_ROOT=""
+GLOBAL_ENV="${JOBWRIGHT_ENV:-}"
+if [[ -z "${GLOBAL_ENV}" && -n "${REPO_ROOT}" ]]; then
+  GLOBAL_ENV="${REPO_ROOT}/${DOTENV}"
+fi
+[[ -n "${GLOBAL_ENV}" && -f "${GLOBAL_ENV}" ]] && set -a && source "${GLOBAL_ENV}" && set +a
 [[ -f "${JOBWRIGHT_DIR}/${DOTENV}" ]] && set -a && source "${JOBWRIGHT_DIR}/${DOTENV}" && set +a
 
 TODAY="$(date +%Y%m%d)"

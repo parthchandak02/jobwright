@@ -10,6 +10,7 @@ import json
 import logging
 import os
 import platform
+import re
 import signal
 import sys
 import threading
@@ -152,6 +153,33 @@ def list_ready_jobs(
     return ready
 
 
+# Unicode dashes / hyphens that render poorly in WhatsApp -> ASCII hyphen.
+_DASH_CHARS = "\u2010\u2011\u2012\u2013\u2014\u2015\u2212"  # ‐ ‑ ‒ – — ― −
+_DASH_RE = re.compile(f"[{_DASH_CHARS}]")
+_MARKDOWN_RE = re.compile(r"[*_`#]+")
+_WS_RE = re.compile(r"\s+")
+
+
+def _clean_text(text: str | None) -> str:
+    """Normalize LLM/scraped text for plain WhatsApp: ASCII dashes, no markdown."""
+    if not text:
+        return ""
+    text = text.replace("\u2026", "...")  # ellipsis glyph -> ASCII
+    text = _DASH_RE.sub("-", text)
+    text = _MARKDOWN_RE.sub("", text)
+    text = _WS_RE.sub(" ", text)
+    return text.strip()
+
+
+def _truncate(text: str, limit: int) -> str:
+    """Truncate on a word boundary with an ASCII ellipsis."""
+    text = text.strip()
+    if len(text) <= limit:
+        return text
+    cut = text[:limit].rsplit(" ", 1)[0].rstrip(",.;:-") or text[:limit]
+    return cut + "..."
+
+
 def _docx_path(txt_path: str | None, stored: str | None) -> str | None:
     if stored and Path(stored).exists():
         return stored
@@ -265,11 +293,13 @@ def write_morning_digest_and_manifest(
         "",
     ]
     for idx, job in enumerate(jobs, start=1):
-        company = (job.get("company") or job.get("site") or "").strip()
-        desc = (job.get("full_description") or job.get("title") or "").replace("\n", " ").replace("\r", " ")
-        desc = (desc[:70] or job["title"][:50]).strip()
-        lines.append(f"{idx}. *{job['title']}* @ {company} (score {job.get('fit_score', '')})")
-        lines.append(f"   {desc}")
+        company = _clean_text(job.get("company") or job.get("site") or "")
+        title = _clean_text(job.get("title") or "")
+        desc = _clean_text(job.get("full_description") or title)
+        desc = _truncate(desc, 90)
+        lines.append(f"{idx}. *{title}* @ {company} (score {job.get('fit_score', '')})")
+        if desc:
+            lines.append(f"   {desc}")
         lines.append(f"   {job['url']}")
 
         resume_docx = _docx_path(job.get("tailored_resume_path"), job.get("tailored_resume_docx_path"))
@@ -280,16 +310,29 @@ def write_morning_digest_and_manifest(
         entry = contacts_by_url.get(job["url"]) or {}
         csv_c = entry.get("csv_contacts") or []
         web_c = entry.get("web_contacts") or []
-        if csv_c or web_c:
+        contact_lines: list[str] = []
+        for c in csv_c[:3]:
+            name = _clean_text(
+                f"{c.get('first_name', '')} {c.get('last_name', '')}".strip()
+                or c.get("name", "")
+            )
+            if not name:
+                continue
+            position = _clean_text(c.get("position") or "")
+            why = _clean_text(c.get("why") or "")
+            head = f"{name} ({position})" if position else name
+            contact_lines.append(f"     - {head}: {why}" if why else f"     - {head}")
+        for c in web_c[:2]:
+            name = _clean_text(c.get("name") or "")
+            url = (c.get("source_url") or "").strip()
+            if not name or not url:
+                continue
+            role = _clean_text(c.get("role") or "")
+            head = f"{name} ({role})" if role else name
+            contact_lines.append(f"     - {head}: {url}")
+        if contact_lines:
             lines.append("   Connections:")
-            for c in csv_c[:3]:
-                name = f"{c.get('first_name', '')} {c.get('last_name', '')}".strip() or c.get("name", "?")
-                why = c.get("why") or c.get("position") or ""
-                lines.append(f"     - {name} ({c.get('position') or '?'}) — {why}")
-            for c in web_c[:2]:
-                lines.append(
-                    f"     - {c.get('name', '?')} [{c.get('role', 'web')}] {c.get('source_url', '')}"
-                )
+            lines.extend(contact_lines)
         lines.append("")
 
         materials.append({

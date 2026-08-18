@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # Resolve the repo root even when this script lives under ~/.hermes/scripts/.
-# Order: explicit JOBWRIGHT_REPO env -> git checkout of the caller -> common
-# install paths -> SCRIPT_DIR/..
+# Order: JOBWRIGHT_REPO -> git toplevel of caller -> common install paths -> SCRIPT_DIR/..
 _jobwright_resolve_repo() {
   if [[ -n "${JOBWRIGHT_REPO:-}" && -f "${JOBWRIGHT_REPO}/pyproject.toml" ]]; then
     echo "${JOBWRIGHT_REPO}"
@@ -15,11 +14,20 @@ _jobwright_resolve_repo() {
     echo "${top}"
     return 0
   fi
+  # Also try the directory containing this helper (dev checkout / Hermes install).
+  local helper_dir
+  helper_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)"
+  if top="$(git -C "${helper_dir}" rev-parse --show-toplevel 2>/dev/null)" \
+     && [[ -f "${top}/pyproject.toml" ]]; then
+    echo "${top}"
+    return 0
+  fi
   local cand
-  # Prefer the ExternalSSD dev clone when both exist (Hermes manual runs omit JOBWRIGHT_REPO).
+  # Optional well-known clones (last resort; avoid hard machine-specific paths).
   for cand in \
-    "/Volumes/ExternalSSD/Projects/jobwright" \
-    "${HOME}/projects/jobwright"
+    "${HOME}/projects/jobwright" \
+    "${HOME}/Projects/jobwright" \
+    "${HOME}/src/jobwright"
   do
     if [[ -f "${cand}/pyproject.toml" ]]; then
       echo "${cand}"
@@ -29,6 +37,10 @@ _jobwright_resolve_repo() {
   # Last resort: SCRIPT_DIR/.. (dev checkout, scripts run in place).
   if [[ -f "${caller_dir}/../pyproject.toml" ]]; then
     echo "$(cd "${caller_dir}/.." && pwd)"
+    return 0
+  fi
+  if [[ -f "${helper_dir}/../pyproject.toml" ]]; then
+    echo "$(cd "${helper_dir}/.." && pwd)"
     return 0
   fi
   echo "ERROR: Cannot find the jobwright repo. Set JOBWRIGHT_REPO." >&2

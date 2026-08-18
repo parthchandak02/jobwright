@@ -656,17 +656,42 @@ def doctor() -> None:
 
         model = _resolve_fireworks_model(os.environ.get("LLM_MODEL", ""))
         results.append(("LLM API key", ok_mark, f"Fireworks ({model})"))
+        if not has_gemini:
+            results.append((
+                "Gemini failover",
+                warn_mark,
+                "GEMINI_API_KEY unset — Fireworks empty responses will not fail over",
+            ))
+        else:
+            fb = os.environ.get("GEMINI_FALLBACK_MODEL", "gemini-3.7-flash")
+            level = os.environ.get("GEMINI_THINKING_LEVEL", "low")
+            results.append(("Gemini failover", ok_mark, f"{fb} (thinking={level})"))
     elif has_gemini:
         model = os.environ.get("LLM_MODEL", "gemini-3.7-flash")
         results.append(("LLM API key", ok_mark, f"Gemini ({model})"))
     elif has_openai:
         model = os.environ.get("LLM_MODEL", "gpt-4o-mini")
         results.append(("LLM API key", ok_mark, f"OpenAI ({model})"))
+        if not has_gemini:
+            results.append((
+                "Gemini failover",
+                warn_mark,
+                "GEMINI_API_KEY unset — empty responses will not fail over to Gemini",
+            ))
     elif has_local:
         results.append(("LLM API key", ok_mark, f"Local: {os.environ.get('LLM_URL')}"))
     else:
         results.append(("LLM API key", fail_mark,
                         f"Set FIREWORKS_API_KEY in {config.ENV_PATH} (run 'jobwright init')"))
+
+    # Explicit gemini-* model without GEMINI_API_KEY is a misconfiguration.
+    llm_model = os.environ.get("LLM_MODEL", "")
+    if llm_model.startswith("gemini-") and not has_gemini:
+        results.append((
+            "Gemini model vs key",
+            fail_mark,
+            f"LLM_MODEL={llm_model} but GEMINI_API_KEY is unset",
+        ))
 
     # --- Tier 3 checks ---
     from jobwright.config import get_agent_provider, has_apply_agent
