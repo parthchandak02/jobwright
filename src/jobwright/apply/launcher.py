@@ -111,6 +111,8 @@ def _ready_jobs_query(
     apply_blocked (LinkedIn). Digest/connect use include_apply_blocked=False
     so LinkedIn materials surface in the brief.
     """
+    from jobwright.database import ANTI_CLOBBER_SQL, MANUAL_SOURCE_EXCLUSION_SQL
+
     blocked_sites, blocked_patterns = _load_blocked()
     if include_apply_blocked:
         apply_sites, apply_patterns = _load_apply_blocked()
@@ -134,6 +136,7 @@ def _ready_jobs_query(
         " AND (apply_attempts IS NULL OR apply_attempts < ?)"
         " AND fit_score >= ?"
         f" {site_clause} {url_clauses}"
+        f"{ANTI_CLOBBER_SQL}{MANUAL_SOURCE_EXCLUSION_SQL}"
     )
     return where, params
 
@@ -585,6 +588,8 @@ def mark_result(url: str, status: str, error: str | None = None,
                 permanent: bool = False, duration_ms: int | None = None,
                 task_id: str | None = None) -> None:
     """Update a job's apply status in the database."""
+    from jobwright.database import advance_funnel
+
     conn = get_connection()
     now = datetime.now(timezone.utc).isoformat()
     if status == "applied":
@@ -594,6 +599,10 @@ def mark_result(url: str, status: str, error: str | None = None,
                            apply_duration_ms = ?, apply_task_id = ?
             WHERE url = ?
         """, (now, duration_ms, task_id, url))
+        # Agent apply may set Applied only when explicitly triggered; actor=agent
+        # is allowed for the applied lane via human-initiated apply console.
+        # Use system actor so we don't hit the agent handoff cap.
+        advance_funnel(url, "applied", "system", note="agent apply", conn=conn)
     else:
         attempts = 99 if permanent else "COALESCE(apply_attempts, 0) + 1"
         conn.execute(f"""
@@ -649,7 +658,7 @@ def gen_prompt(target_url: str, min_score: int = 7,
 
     # Write prompt file
     config.ensure_dirs()
-    site_slug = (job.get("site") or "unknown")[:20].replace(" ", "_")
+    site_slug = ((job.get("site") or "unknown"))[:20].replace(" ", "_")
     prompt_file = config.LOG_DIR / f"prompt_{site_slug}_{job['title'][:30].replace(' ', '_')}.txt"
     prompt_file.write_text(prompt, encoding="utf-8")
 
@@ -669,6 +678,8 @@ def mark_job(url: str, status: str, reason: str | None = None) -> None:
         status: Either 'applied' or 'failed'.
         reason: Failure reason (only for status='failed').
     """
+    from jobwright.database import advance_funnel
+
     conn = get_connection()
     now = datetime.now(timezone.utc).isoformat()
     if status == "applied":
@@ -677,6 +688,10 @@ def mark_job(url: str, status: str, reason: str | None = None) -> None:
                            apply_error = NULL, agent_id = NULL
             WHERE url = ?
         """, (now, url))
+        advance_funnel(
+            url, "applied", "human", note="mark-applied",
+            applied_manually=True, conn=conn,
+        )
     else:
         conn.execute("""
             UPDATE jobs SET apply_status = 'failed', apply_error = ?,

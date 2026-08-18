@@ -700,8 +700,10 @@ def _run_detail_scraper(
 
     Returns aggregate stats dict.
     """
+    from jobwright.database import ANTI_CLOBBER_SQL
+
     skip_filter = " AND ".join(f"site != '{s}'" for s in SKIP_DETAIL_SITES)
-    where = f"WHERE detail_scraped_at IS NULL AND {skip_filter}"
+    where = f"WHERE detail_scraped_at IS NULL AND {skip_filter}{ANTI_CLOBBER_SQL}"
     rows = conn.execute(
         f"SELECT url, title, site FROM jobs {where} ORDER BY site"
     ).fetchall()
@@ -812,10 +814,12 @@ def stream_detail(
 
     try:
         while True:
+            from jobwright.database import ANTI_CLOBBER_SQL
+
             skip_filter = " AND ".join(f"site != '{s}'" for s in SKIP_DETAIL_SITES)
             rows = conn.execute(
                 "SELECT url, title, site FROM jobs "
-                f"WHERE detail_scraped_at IS NULL AND {skip_filter} "
+                f"WHERE detail_scraped_at IS NULL AND {skip_filter}{ANTI_CLOBBER_SQL} "
                 "ORDER BY site LIMIT 200"
             ).fetchall()
 

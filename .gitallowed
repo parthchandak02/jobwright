@@ -20,3 +20,4 @@ Interpreter / venv
 env = f"JOBWRIGHT_USER
 deliver, env]
 target: env > user registry
+env\["PYTHONUNBUFFERED"\]

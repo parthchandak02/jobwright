@@ -10,7 +10,8 @@ Nested agent notes for the Python package. Root context: [../../AGENTS.md](../..
 | `pipeline.py` | `STAGE_ORDER`, stage runners, `--stream` mode |
 | `config.py` | `set_active_user`, `set_app_dir`, path constants |
 | `users.py` | Registry at `<repo>/users/users.yaml` |
-| `database.py` | SQLite schema, `jobs` table, stats |
+| `database.py` | SQLite schema, `jobs` + `stage_history`, `advance_funnel`, stats |
+| `web/` | FastAPI Kanban dashboard (board, materials, runs, gated apply) |
 | `discovery/` | `jobspy.py`, `workday.py`, `known_urls.py`, `smartextract.py` (`DISCOVER_MODE`) |
 | `enrichment/detail.py` | Full JD extraction |
 | `scoring/` | `scorer`, `tailor`, `cover_letter`, `portfolio`, `pdf`, `docx_export`, `validator` |

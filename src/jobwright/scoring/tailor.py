@@ -485,8 +485,8 @@ def run_tailoring(min_score: int = 7, limit: int = 20,
                 continue
 
             # Build safe filename prefix (approved only — no orphan files for failures)
-            safe_title = re.sub(r"[^\w\s-]", "", job["title"])[:50].strip().replace(" ", "_")
-            safe_site = re.sub(r"[^\w\s-]", "", job["site"])[:20].strip().replace(" ", "_")
+            safe_title = re.sub(r"[^\w\s-]", "", job.get("title") or "untitled")[:50].strip().replace(" ", "_")
+            safe_site = re.sub(r"[^\w\s-]", "", job.get("site") or "manual")[:20].strip().replace(" ", "_")
             prefix = f"{safe_site}_{safe_title}"
 
             # Save tailored resume text
@@ -550,6 +550,8 @@ def run_tailoring(min_score: int = 7, limit: int = 20,
         )
 
     # Persist to DB: increment attempt counter for ALL, save path only for approved
+    from jobwright.database import maybe_agent_advance_to_prepare
+
     now = datetime.now(timezone.utc).isoformat()
     _success_statuses = {"approved", "approved_with_judge_warning"}
     for r in results:
@@ -559,6 +561,7 @@ def run_tailoring(min_score: int = 7, limit: int = 20,
                 "tailor_attempts=COALESCE(tailor_attempts,0)+1 WHERE url=?",
                 (r["path"], now, r["url"]),
             )
+            maybe_agent_advance_to_prepare(r["url"], conn=conn)
         else:
             conn.execute(
                 "UPDATE jobs SET tailor_attempts=COALESCE(tailor_attempts,0)+1 WHERE url=?",

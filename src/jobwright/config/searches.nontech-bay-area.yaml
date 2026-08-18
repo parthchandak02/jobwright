@@ -112,6 +112,7 @@ country: "USA"
 
 boards:
   - indeed
+  - linkedin
   - glassdoor
   - zip_recruiter
   - google
