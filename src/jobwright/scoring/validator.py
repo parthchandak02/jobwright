@@ -135,7 +135,7 @@ def validate_json_fields(data: dict, profile: dict, mode: str = "normal") -> dic
             if fake in skills_text:
                 errors.append(f"Fabricated skill: '{fake}'")
 
-    # Experience: preserved companies must be present (always enforced)
+    # Experience: preserved companies should appear (warnings in lenient — tailoring may condense)
     resume_facts = profile.get("resume_facts", {})
     preserved_companies = resume_facts.get("preserved_companies", [])
 
@@ -146,7 +146,11 @@ def validate_json_fields(data: dict, profile: dict, mode: str = "normal") -> dic
                 for e in data["experience"]
             )
             if not has_company:
-                errors.append(f"Company '{company}' missing from experience")
+                msg = f"Company '{company}' missing from experience"
+                if mode == "lenient":
+                    warnings.append(msg)
+                else:
+                    errors.append(msg)
         for entry in data["experience"]:
             for b in entry.get("bullets", []):
                 all_text_parts.append(b)
@@ -157,12 +161,16 @@ def validate_json_fields(data: dict, profile: dict, mode: str = "normal") -> dic
             for b in entry.get("bullets", []):
                 all_text_parts.append(b)
 
-    # Education: preserved school must be present (always enforced)
+    # Education: preserved school should appear (warning in lenient)
     preserved_school = resume_facts.get("preserved_school", "")
     if preserved_school:
         edu = str(data.get("education", ""))
         if preserved_school.lower() not in edu.lower():
-            errors.append(f"Education '{preserved_school}' missing")
+            msg = f"Education '{preserved_school}' missing"
+            if mode == "lenient":
+                warnings.append(msg)
+            else:
+                errors.append(msg)
 
     # Bulk text checks
     all_text = " ".join(all_text_parts).lower()
