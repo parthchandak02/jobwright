@@ -100,6 +100,8 @@ def test_job_subroutes_not_shadowed(api_client):
     body = res.json()
     assert body["url"] == url
     assert "resume_docx" in body
+    assert "resume_preview" in body
+    assert "cover_preview" in body
 
     res = api_client.get(f"/api/jobs/{enc}/connections")
     assert res.status_code == 200
@@ -107,3 +109,18 @@ def test_job_subroutes_not_shadowed(api_client):
     assert body["url"] == url
     assert body["csv_contacts"] == []
     assert body["web_contacts"] == []
+
+
+def test_users_and_session(api_client):
+    res = api_client.get("/api/users")
+    assert res.status_code == 200
+    body = res.json()
+    assert any(u["user_id"] == "testdash" for u in body["users"])
+
+    res = api_client.post("/api/session", json={"user_id": "testdash"})
+    assert res.status_code == 200
+    assert res.json()["user_id"] == "testdash"
+    assert "jobwright_user" in res.cookies
+
+    res = api_client.post("/api/session", json={"user_id": "nope"})
+    assert res.status_code == 400

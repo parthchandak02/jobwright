@@ -124,7 +124,7 @@ Detail: [docs/agents/hermes-operator-guide.md](docs/agents/hermes-operator-guide
 | Package code | [src/jobwright/AGENTS.md](src/jobwright/AGENTS.md) |
 | Glossary / ADRs | [docs/GLOSSARY.md](docs/GLOSSARY.md), [docs/adr/](docs/adr/) |
 | Contributing | [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) |
-| Commit workflow | [.cursor/skills/commit-and-push/SKILL.md](.cursor/skills/commit-and-push/SKILL.md) |
+| Commit / push / deploy workflow | [.cursor/skills/commit-push-deploy/SKILL.md](.cursor/skills/commit-push-deploy/SKILL.md) |
 | Cursor agent workflow (todos, skills, finish end-to-end) | [.cursor/rules/agent-orchestration.mdc](.cursor/rules/agent-orchestration.mdc) |
 | Pipeline / Hermes ops (skill entry) | [.cursor/skills/pipeline-operator/SKILL.md](.cursor/skills/pipeline-operator/SKILL.md) |
 

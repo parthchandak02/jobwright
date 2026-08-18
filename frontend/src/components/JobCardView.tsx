@@ -25,6 +25,7 @@ export function JobCardView({ job, onOpen, dragging }: Props) {
     <div
       className={cn(
         'glass glass-interactive relative cursor-pointer rounded-xl p-3',
+        'bg-[color-mix(in_oklch,var(--lane,transparent)_10%,var(--glass))]',
         dragging && 'ring-2 ring-ring',
       )}
       onClick={() => onOpen?.(job)}

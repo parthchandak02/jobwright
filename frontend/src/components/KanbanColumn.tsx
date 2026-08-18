@@ -1,7 +1,6 @@
 import { useDroppable } from '@dnd-kit/core'
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import type { CSSProperties } from 'react'
-import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import { JobCard, STAGE_TONE } from '@/lib/api'
 import { SortableJobCard } from './JobCardView'
@@ -27,36 +26,19 @@ export function KanbanColumn({ stage, label, jobs, onOpen }: Props) {
         } as CSSProperties
       }
       className={cn(
-        'flex w-72 shrink-0 flex-col rounded-2xl border backdrop-blur-md',
-        'border-l-4 border-l-[color:var(--lane)]',
-        'bg-[color-mix(in_oklch,var(--lane)_8%,transparent)]',
-        isOver
-          ? 'border-2 border-dashed border-[color:var(--lane)] bg-[color-mix(in_oklch,var(--lane)_16%,transparent)] ring-2 ring-[color:var(--lane)]/30'
-          : 'border-border/60',
+        'flex w-72 shrink-0 flex-col rounded-lg transition-colors',
+        isOver && 'bg-[color-mix(in_oklch,var(--lane)_8%,transparent)]',
       )}
     >
-      <header
-        className={cn(
-          'flex items-center justify-between gap-2 rounded-t-2xl border-b border-border/50 px-3 py-2.5',
-          'bg-[color-mix(in_oklch,var(--lane)_14%,transparent)]',
-        )}
-      >
-        <div className="flex min-w-0 items-center gap-2">
-          <span
-            className="size-2 shrink-0 rounded-full shadow-[0_0_8px_0_var(--lane)]"
-            style={{ backgroundColor: tone }}
-            aria-hidden
-          />
-          <h2 className="truncate text-sm font-semibold text-foreground">{label}</h2>
-        </div>
-        <Badge
-          variant="secondary"
-          className="border border-[color:var(--lane)]/40 bg-[color-mix(in_oklch,var(--lane)_18%,transparent)]"
-        >
+      <header className="flex items-center justify-between gap-2 border-b border-border/50 px-1.5 pb-2">
+        <h2 className="truncate text-xs font-bold uppercase tracking-wider text-[color:var(--lane)]">
+          {label}
+        </h2>
+        <span className="shrink-0 text-xs font-semibold tabular-nums text-[color:var(--lane)]/70">
           {jobs.length}
-        </Badge>
+        </span>
       </header>
-      <div className="flex min-h-[140px] flex-1 flex-col gap-2 overflow-y-auto p-2">
+      <div className="flex min-h-[140px] flex-1 flex-col gap-2 overflow-y-auto px-0.5 py-2">
         <SortableContext items={jobs.map((j) => j.url)} strategy={verticalListSortingStrategy}>
           {jobs.map((job) => (
             <SortableJobCard key={job.url} job={job} onOpen={onOpen} />

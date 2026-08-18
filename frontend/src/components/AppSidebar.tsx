@@ -1,6 +1,7 @@
 import { Briefcase } from 'lucide-react'
 import { Separator } from '@/components/ui/separator'
 import { SidebarNav } from '@/components/SidebarNav'
+import { UserSwitcher } from '@/components/UserSwitcher'
 import { BoardResponse, Profile } from '@/lib/api'
 import { cn } from '@/lib/utils'
 
@@ -10,6 +11,7 @@ type Props = {
   filterStage: string | 'all'
   onFilterStage: (stage: string | 'all') => void
   collapsed: boolean
+  onProfileChanged?: () => void
 }
 
 export function AppSidebar({
@@ -18,6 +20,7 @@ export function AppSidebar({
   filterStage,
   onFilterStage,
   collapsed,
+  onProfileChanged,
 }: Props) {
   return (
     <aside
@@ -31,11 +34,9 @@ export function AppSidebar({
         <div className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
           <Briefcase className="size-4" />
         </div>
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold">jobwright</p>
-          <p className="truncate text-xs text-muted-foreground">
-            {profile?.name || profile?.user_id || '…'}
-          </p>
+          <UserSwitcher profile={profile} onChanged={() => onProfileChanged?.()} />
         </div>
       </div>
       <Separator className="w-56" />

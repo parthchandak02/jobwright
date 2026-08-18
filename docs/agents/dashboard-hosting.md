@@ -48,6 +48,7 @@ Alias: `./scripts/ops_pm2.sh` → same script. Deploy helper: `./scripts/dashboa
 - **Frontend:** Vite HMR on `:5120` updates instantly. Use this URL while developing.
 - **Backend:** ecosystem example includes uvicorn `--reload`. After editing Python, wait a second for reload (or `./scripts/restart.sh --backend-only`).
 - **Production URL** (`:8002` serving `dist/`): rebuild with `./scripts/restart.sh --prod-ui`.
+- **Do not** restart `jobwright-ui` expecting the public site to update; PM2 `jobwright-ui` is dev-only. Public traffic hits `jobwright-api` + `frontend/dist`.
 
 ### tmux alternative (no PM2)
 
