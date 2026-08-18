@@ -128,3 +128,88 @@ def test_registry_persists_across_memory_clear(api_client):
     res = api_client.get(f"/api/runs/{run_id}")
     assert res.status_code == 200
     assert res.json()["run_id"] == run_id
+
+
+def test_stop_after_memory_clear_kills_process(api_client):
+    """uvicorn --reload drops in-memory Popen handles; Stop must still kill via the registry PID."""
+    import os
+    import time
+
+    from jobwright.web.routers import runs as runs_mod
+
+    res = api_client.post("/api/run", json={"stages": ["score"]})
+    assert res.status_code == 200
+    body = res.json()
+    run_id = body["run_id"]
+    pid = body["pid"]
+    os.kill(pid, 0)  # still alive
+
+    # Simulate reload: forget Popen, do not kill the child (it outlives the worker).
+    runs_mod._runs.clear()
+
+    res = api_client.post(f"/api/runs/{run_id}/stop")
+    assert res.status_code == 200
+    assert res.json()["stopped"] is True
+
+    still_alive = True
+    for _ in range(20):
+        try:
+            os.kill(pid, 0)
+            os.waitpid(pid, os.WNOHANG)
+        except OSError:
+            still_alive = False
+            break
+        except ChildProcessError:
+            still_alive = False
+            break
+        time.sleep(0.05)
+    assert still_alive is False
+
+
+def test_stop_kills_spawned_children(api_client, tmp_path, monkeypatch):
+    """JobSpy worker threads/children must die with Stop, not just the parent PID."""
+    import os
+    import time
+
+    marker = tmp_path / "child.pid"
+    script = (
+        "import pathlib, subprocess, sys, time\n"
+        f"p = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])\n"
+        f"pathlib.Path({str(marker)!r}).write_text(str(p.pid))\n"
+        "time.sleep(60)\n"
+    )
+
+    monkeypatch.setattr(
+        "jobwright.web.routers.runs._jobwright_cmd",
+        lambda args, user_id: [sys.executable, "-c", script],
+    )
+
+    res = api_client.post("/api/run", json={"stages": ["score"]})
+    assert res.status_code == 200
+    parent = res.json()["pid"]
+    run_id = res.json()["run_id"]
+
+    child = None
+    for _ in range(50):
+        if marker.exists() and marker.read_text().strip().isdigit():
+            child = int(marker.read_text().strip())
+            break
+        time.sleep(0.05)
+    assert child is not None
+    os.kill(child, 0)
+
+    res = api_client.post(f"/api/runs/{run_id}/stop")
+    assert res.status_code == 200
+    assert res.json()["stopped"] is True
+
+    time.sleep(0.2)
+    for pid in (parent, child):
+        dead = False
+        for _ in range(20):
+            try:
+                os.kill(pid, 0)
+            except OSError:
+                dead = True
+                break
+            time.sleep(0.05)
+        assert dead, f"pid {pid} still alive after stop"

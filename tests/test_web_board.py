@@ -123,6 +123,8 @@ def test_job_subroutes_not_shadowed(api_client):
     assert "resume_md" in body
     assert "resume_preview" in body
     assert "cover_preview" in body
+    assert "resume_pdf" in body
+    assert "cover_pdf" in body
 
     res = api_client.get(f"/api/jobs/{enc}/connections")
     assert res.status_code == 200

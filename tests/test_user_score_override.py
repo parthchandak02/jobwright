@@ -49,6 +49,52 @@ def test_effective_fit_score_prefers_user_override():
     assert _effective_fit_score(row) == 9
 
 
+def test_row_to_card_material_chips_require_generated_files(
+    db: sqlite3.Connection, tmp_path: Path
+):
+    resume = tmp_path / "tailored.md"
+    resume.write_text("# Tailored", encoding="utf-8")
+    cover = tmp_path / "cover.md"
+    cover.write_text("Dear hiring manager", encoding="utf-8")
+
+    _insert_job(
+        db,
+        url="https://example.com/stale",
+        tailored_resume_path=str(tmp_path / "missing.md"),
+        cover_letter_path=str(tmp_path / "missing_cl.md"),
+    )
+    stale = _row_to_card(
+        db.execute("SELECT * FROM jobs WHERE url = ?", ("https://example.com/stale",)).fetchone()
+    )
+    assert stale["has_resume"] is False
+    assert stale["has_cover"] is False
+
+    _insert_job(
+        db,
+        url="https://example.com/resume-only",
+        tailored_resume_path=str(resume),
+    )
+    resume_only = _row_to_card(
+        db.execute(
+            "SELECT * FROM jobs WHERE url = ?", ("https://example.com/resume-only",)
+        ).fetchone()
+    )
+    assert resume_only["has_resume"] is True
+    assert resume_only["has_cover"] is False
+
+    _insert_job(
+        db,
+        url="https://example.com/both",
+        tailored_resume_path=str(resume),
+        cover_letter_path=str(cover),
+    )
+    both = _row_to_card(
+        db.execute("SELECT * FROM jobs WHERE url = ?", ("https://example.com/both",)).fetchone()
+    )
+    assert both["has_resume"] is True
+    assert both["has_cover"] is True
+
+
 def test_row_to_card_marks_user_modified(db: sqlite3.Connection):
     _insert_job(
         db,
