@@ -58,11 +58,11 @@ def _location_ok(location: str | None, accept: list[str], reject: list[str]) -> 
     if not location:
         return True
     loc = location.lower()
-    if any(r in loc for r in ("remote", "anywhere", "work from home", "wfh", "distributed")):
-        return True
     for r in reject:
         if r.lower() in loc:
             return False
+    if any(r in loc for r in ("remote", "anywhere", "work from home", "wfh", "distributed")):
+        return True
     for a in accept:
         if a.lower() in loc:
             return True
@@ -114,12 +114,13 @@ def _store_jobs_filtered(
         ):
             filtered += 1
             continue
+        company = job.get("company") or job.get("employer") or None
         try:
             conn.execute(
-                "INSERT INTO jobs (url, title, salary, description, location, site, strategy, discovered_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO jobs (url, title, salary, description, location, site, company, strategy, discovered_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (url, job.get("title"), job.get("salary"), job.get("description"),
-                 job.get("location"), site, strategy, now),
+                 job.get("location"), site, company, strategy, now),
             )
             new += 1
         except sqlite3.IntegrityError:

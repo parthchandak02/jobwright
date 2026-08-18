@@ -8,6 +8,7 @@ search configuration YAML (searches.yaml) rather than being hardcoded.
 """
 
 import logging
+import os
 import sqlite3
 import time
 from datetime import datetime, timezone
@@ -93,16 +94,14 @@ def _location_ok(location: str | None, accept: list[str], reject: list[str]) -> 
 
     loc = location.lower()
 
-    # Remote jobs always OK
-    if any(r in loc for r in ("remote", "anywhere", "work from home", "wfh", "distributed")):
-        return True
-
-    # Reject non-remote matches
     for r in reject:
         if r.lower() in loc:
             return False
 
-    # Accept matches
+    # Remote jobs OK after reject pass (avoids "Calgary Remote" slipping through)
+    if any(r in loc for r in ("remote", "anywhere", "work from home", "wfh", "distributed")):
+        return True
+
     for a in accept:
         if a.lower() in loc:
             return True
@@ -188,10 +187,10 @@ def store_jobspy_results(conn: sqlite3.Connection, df, source_label: str) -> tup
 
         try:
             conn.execute(
-                "INSERT INTO jobs (url, title, salary, description, location, site, strategy, discovered_at, "
+                "INSERT INTO jobs (url, title, salary, description, location, site, company, strategy, discovered_at, "
                 "full_description, application_url, detail_scraped_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (url, title, salary, description, location_str, site_label, strategy, now,
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (url, title, salary, description, location_str, site_label, company, strategy, now,
                  full_description, apply_url, detail_scraped_at),
             )
             new += 1
@@ -401,7 +400,15 @@ def _full_crawl(
     if tiers:
         queries = [q for q in queries if q.get("tier") in tiers]
     if locations:
-        locs = [loc for loc in locs if loc.get("label") in locations]
+        allowed = set(locations)
+        locs = [
+            loc for loc in locs
+            if loc.get("location") in allowed or loc.get("label") in allowed
+        ]
+
+    max_queries = os.environ.get("JOBWRIGHT_DISCOVER_MAX_QUERIES")
+    if max_queries:
+        queries = queries[: int(max_queries)]
 
     searches = []
     for q in queries:
@@ -488,6 +495,21 @@ def run_discovery(cfg: dict | None = None) -> dict:
     hours_old = cfg.get("defaults", {}).get("hours_old", 72)
     tiers = cfg.get("tiers")
     locations = cfg.get("location_labels")
+
+    # DISCOVER_MODE=fast → tier-1 queries only (unless searches.yaml sets tiers explicitly)
+    discover_mode = os.environ.get("DISCOVER_MODE", "fast").strip().lower()
+    if tiers is None and discover_mode == "fast":
+        tiers = [1]
+        log.info("JobSpy: DISCOVER_MODE=fast → tier 1 queries only")
+
+    loc_env = os.environ.get("JOBWRIGHT_DISCOVER_LOCATIONS")
+    if loc_env:
+        locations = [x.strip() for x in loc_env.split("|") if x.strip()]
+        log.info("JobSpy: limiting locations to %s", locations)
+
+    rps_env = os.environ.get("JOBWRIGHT_RESULTS_PER_SITE")
+    if rps_env:
+        results_per_site = int(rps_env)
 
     return _full_crawl(
         search_cfg=cfg,

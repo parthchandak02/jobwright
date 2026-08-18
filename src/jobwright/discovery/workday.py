@@ -9,6 +9,7 @@ hardcoded. Supports sequential search + detail fetching with proxy.
 
 import json
 import logging
+import os
 import re
 import sqlite3
 import time
@@ -22,8 +23,13 @@ import yaml
 from jobwright import config
 from jobwright.config import CONFIG_DIR
 from jobwright.database import get_connection, init_db
+from jobwright.discovery.known_urls import job_url_known, load_known_urls
 
 log = logging.getLogger(__name__)
+
+# Stop paginating an employer+query after this many consecutive known jobs
+# (Workday results are typically recency-sorted; a run of known = caught up).
+EARLY_STOP_CONSECUTIVE_KNOWN = 10
 
 
 # -- Employer registry from YAML --------------------------------------------
@@ -54,12 +60,12 @@ def _location_ok(location: str | None, accept: list[str], reject: list[str]) -> 
 
     loc = location.lower()
 
-    if any(r in loc for r in ("remote", "anywhere", "work from home", "wfh", "distributed")):
-        return True
-
     for r in reject:
         if r.lower() in loc:
             return False
+
+    if any(r in loc for r in ("remote", "anywhere", "work from home", "wfh", "distributed")):
+        return True
 
     for a in accept:
         if a.lower() in loc:
@@ -191,8 +197,14 @@ def search_employer(
     max_results: int = 0,
     accept_locs: list[str] | None = None,
     reject_locs: list[str] | None = None,
+    known_urls: set[str] | None = None,
+    early_stop: int = EARLY_STOP_CONSECUTIVE_KNOWN,
 ) -> list[dict]:
-    """Search an employer, paginate through all results, optionally filter by location."""
+    """Search an employer, paginate through all results, optionally filter by location.
+
+    When known_urls is set, stop paginating after `early_stop` consecutive known
+    postings (recency-sorted results mean we've caught up with prior crawls).
+    """
     log.info("%s: searching \"%s\"...", employer["name"], search_text)
 
     all_jobs: list[dict] = []
@@ -200,6 +212,8 @@ def search_employer(
     page_size = 20
     max_pages = 25  # Cap at 500 results
     total = None
+    consecutive_known = 0
+    known_urls = known_urls or set()
 
     while True:
         try:
@@ -216,20 +230,38 @@ def search_employer(
         if not postings:
             break
 
+        stop_early = False
         for j in postings:
             loc = j.get("locationsText", "")
             if location_filter and accept_locs is not None and reject_locs is not None:
                 if not _location_ok(loc, accept_locs, reject_locs):
                     continue
 
-            all_jobs.append({
+            external_path = j.get("externalPath", "") or ""
+            job = {
                 "title": j.get("title", ""),
                 "location": loc,
                 "posted": j.get("postedOn", ""),
-                "external_path": j.get("externalPath", ""),
+                "external_path": external_path,
                 "employer_key": employer_key,
                 "employer_name": employer["name"],
-            })
+            }
+            all_jobs.append(job)
+
+            if known_urls and job_url_known(employer, external_path, known_urls):
+                consecutive_known += 1
+                if early_stop and consecutive_known >= early_stop:
+                    log.info(
+                        "%s: early-stop after %d consecutive known jobs (offset %d)",
+                        employer["name"], consecutive_known, offset,
+                    )
+                    stop_early = True
+                    break
+            else:
+                consecutive_known = 0
+
+        if stop_early:
+            break
 
         offset += page_size
         page_num = offset // page_size
@@ -323,6 +355,7 @@ def store_results(conn: sqlite3.Connection, jobs: list[dict], employers: dict) -
         detail_error = job.get("detail_error")
 
         site = job.get("employer_name", "Corporate")
+        company = job.get("employer_name") or None
         strategy = "workday_api"
 
         if not passes_discovery_filters(
@@ -335,11 +368,11 @@ def store_results(conn: sqlite3.Connection, jobs: list[dict], employers: dict) -
 
         try:
             conn.execute(
-                "INSERT INTO jobs (url, title, salary, description, location, site, strategy, "
+                "INSERT INTO jobs (url, title, salary, description, location, site, company, strategy, "
                 "discovered_at, full_description, application_url, detail_scraped_at, detail_error) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (url, job.get("title"), None, short_desc, job.get("location"),
-                 site, strategy, now, full_description, url, detail_scraped_at, detail_error),
+                 site, company, strategy, now, full_description, url, detail_scraped_at, detail_error),
             )
             new += 1
         except sqlite3.IntegrityError:
@@ -356,9 +389,11 @@ def _process_one(
     location_filter: bool,
     accept_locs: list[str],
     reject_locs: list[str],
+    known_urls: set[str] | None = None,
 ) -> dict:
-    """Search one employer, fetch details, store results."""
+    """Search one employer, fetch details for unknown jobs only, store results."""
     emp = employers[employer_key]
+    known_urls = known_urls or set()
 
     try:
         jobs = search_employer(
@@ -366,27 +401,48 @@ def _process_one(
             location_filter=location_filter,
             accept_locs=accept_locs,
             reject_locs=reject_locs,
+            known_urls=known_urls,
         )
     except Exception as e:
         log.error("%s: ERROR searching '%s': %s", emp["name"], search_text, e)
         return {"employer": emp["name"], "query": search_text,
-                "found": 0, "new": 0, "existing": 0, "error": str(e)}
+                "found": 0, "new": 0, "existing": 0, "skipped_known": 0, "error": str(e)}
 
     if not jobs:
         return {"employer": emp["name"], "query": search_text,
-                "found": 0, "new": 0, "existing": 0}
+                "found": 0, "new": 0, "existing": 0, "skipped_known": 0}
 
-    try:
-        jobs = fetch_details(emp, jobs)
-    except Exception as e:
-        log.error("%s: ERROR fetching details for '%s': %s", emp["name"], search_text, e)
+    to_fetch: list[dict] = []
+    skipped_known = 0
+    for job in jobs:
+        if job_url_known(emp, job.get("external_path", ""), known_urls):
+            skipped_known += 1
+        else:
+            to_fetch.append(job)
+
+    if skipped_known:
+        log.info(
+            "%s: skipped %d known (no detail fetch) for '%s'",
+            emp["name"], skipped_known, search_text,
+        )
+
+    if to_fetch:
+        try:
+            to_fetch = fetch_details(emp, to_fetch)
+        except Exception as e:
+            log.error("%s: ERROR fetching details for '%s': %s", emp["name"], search_text, e)
 
     conn = get_connection()
-    new, existing = store_results(conn, jobs, employers)
-    log.info("%s: %d new, %d already in DB", emp["name"], new, existing)
+    new, existing = store_results(conn, to_fetch, employers) if to_fetch else (0, 0)
+    existing += skipped_known
+    log.info(
+        "%s: %d new, %d already in DB (%d skipped known)",
+        emp["name"], new, existing, skipped_known,
+    )
 
     return {"employer": emp["name"], "query": search_text,
-            "found": len(jobs), "new": new, "existing": existing}
+            "found": len(jobs), "new": new, "existing": existing,
+            "skipped_known": skipped_known}
 
 
 # -- Main orchestrator -------------------------------------------------------
@@ -400,6 +456,7 @@ def scrape_employers(
     accept_locs: list[str] | None = None,
     reject_locs: list[str] | None = None,
     workers: int = 1,
+    known_urls: set[str] | None = None,
 ) -> dict:
     """Run full scrape: search -> filter -> detail -> store.
 
@@ -413,6 +470,8 @@ def scrape_employers(
         accept_locs = []
     if reject_locs is None:
         reject_locs = []
+    if known_urls is None:
+        known_urls = set()
 
     # Ensure DB schema
     init_db()
@@ -420,6 +479,7 @@ def scrape_employers(
     total_new = 0
     total_existing = 0
     total_found = 0
+    total_skipped = 0
     errors = 0
     t0 = time.time()
 
@@ -432,7 +492,7 @@ def scrape_employers(
             futures = {
                 pool.submit(
                     _process_one, key, employers, search_text,
-                    location_filter, accept_locs, reject_locs,
+                    location_filter, accept_locs, reject_locs, known_urls,
                 ): key
                 for key in valid_keys
             }
@@ -442,38 +502,53 @@ def scrape_employers(
                 total_new += result["new"]
                 total_existing += result["existing"]
                 total_found += result["found"]
+                total_skipped += result.get("skipped_known", 0)
                 if "error" in result:
                     errors += 1
 
                 if completed % 10 == 0 or completed == len(valid_keys):
                     elapsed = time.time() - t0
-                    log.info("[%s] Progress: %d/%d employers (%d new, %d dupes, %d errors) [%.0fs]",
-                             search_text, completed, len(valid_keys), total_new, total_existing, errors, elapsed)
+                    log.info(
+                        "[%s] Progress: %d/%d employers (%d new, %d dupes, %d skipped known, %d errors) [%.0fs]",
+                        search_text, completed, len(valid_keys),
+                        total_new, total_existing, total_skipped, errors, elapsed,
+                    )
     else:
         # Sequential mode (default)
         completed = 0
         for key in valid_keys:
             result = _process_one(
                 key, employers, search_text,
-                location_filter, accept_locs, reject_locs,
+                location_filter, accept_locs, reject_locs, known_urls,
             )
             completed += 1
             total_new += result["new"]
             total_existing += result["existing"]
             total_found += result["found"]
+            total_skipped += result.get("skipped_known", 0)
             if "error" in result:
                 errors += 1
 
             if completed % 10 == 0 or completed == len(valid_keys):
                 elapsed = time.time() - t0
-                log.info("[%s] Progress: %d/%d employers (%d new, %d dupes, %d errors) [%.0fs]",
-                         search_text, completed, len(valid_keys), total_new, total_existing, errors, elapsed)
+                log.info(
+                    "[%s] Progress: %d/%d employers (%d new, %d dupes, %d skipped known, %d errors) [%.0fs]",
+                    search_text, completed, len(valid_keys),
+                    total_new, total_existing, total_skipped, errors, elapsed,
+                )
 
     elapsed = time.time() - t0
-    log.info("[%s] Done: %d found, %d new, %d dupes in %.0fs",
-             search_text, total_found, total_new, total_existing, elapsed)
+    log.info(
+        "[%s] Done: %d found, %d new, %d dupes (%d skipped known) in %.0fs",
+        search_text, total_found, total_new, total_existing, total_skipped, elapsed,
+    )
 
-    return {"found": total_found, "new": total_new, "existing": total_existing}
+    return {
+        "found": total_found,
+        "new": total_new,
+        "existing": total_existing,
+        "skipped_known": total_skipped,
+    }
 
 
 # -- Public entry point ------------------------------------------------------
@@ -503,8 +578,12 @@ def run_workday_discovery(employers: dict | None = None, workers: int = 1) -> di
     queries_cfg = search_cfg.get("queries", [])
     accept_locs, reject_locs = _load_location_filter(search_cfg)
 
-    # Default to tier 1-2 queries for workday scraping
-    max_tier = search_cfg.get("workday_max_tier", 2)
+    # DISCOVER_MODE=fast → tier 1 only; full → workday_max_tier (default 2)
+    discover_mode = os.environ.get("DISCOVER_MODE", "fast").strip().lower()
+    if discover_mode == "fast":
+        max_tier = 1
+    else:
+        max_tier = search_cfg.get("workday_max_tier", 2)
     queries = [q["query"] for q in queries_cfg if q.get("tier", 99) <= max_tier]
 
     if not queries:
@@ -513,7 +592,12 @@ def run_workday_discovery(employers: dict | None = None, workers: int = 1) -> di
 
     if not queries:
         log.warning("No search queries configured in searches.yaml.")
-        return {"found": 0, "new": 0, "existing": 0, "queries": 0}
+        return {"found": 0, "new": 0, "existing": 0, "queries": 0, "skipped_known": 0}
+
+    max_queries = os.environ.get("JOBWRIGHT_DISCOVER_MAX_QUERIES")
+    if max_queries:
+        queries = queries[: int(max_queries)]
+        log.info("Workday: limiting to %d queries (JOBWRIGHT_DISCOVER_MAX_QUERIES)", len(queries))
 
     proxy = search_cfg.get("proxy")
     if proxy:
@@ -521,11 +605,19 @@ def run_workday_discovery(employers: dict | None = None, workers: int = 1) -> di
 
     location_filter = search_cfg.get("workday_location_filter", True)
 
-    log.info("Workday crawl: %d queries x %d employers (workers=%d)", len(queries), len(employers), workers)
+    # Load known URLs once; skip detail fetches for jobs already in DB
+    init_db()
+    conn = get_connection()
+    known_urls = load_known_urls(conn)
+    log.info(
+        "Workday crawl: %d queries x %d employers (workers=%d, mode=%s, known_urls=%d)",
+        len(queries), len(employers), workers, discover_mode, len(known_urls),
+    )
 
     grand_new = 0
     grand_existing = 0
     grand_found = 0
+    grand_skipped = 0
 
     for i, query in enumerate(queries, 1):
         log.info("Query %d/%d: \"%s\"", i, len(queries), query)
@@ -536,17 +628,24 @@ def run_workday_discovery(employers: dict | None = None, workers: int = 1) -> di
             accept_locs=accept_locs,
             reject_locs=reject_locs,
             workers=workers,
+            known_urls=known_urls,
         )
         grand_new += result["new"]
         grand_existing += result["existing"]
         grand_found += result["found"]
+        grand_skipped += result.get("skipped_known", 0)
 
-    log.info("Workday crawl done: %d found, %d new, %d existing across %d queries x %d employers",
-             grand_found, grand_new, grand_existing, len(queries), len(employers))
+    log.info(
+        "Workday crawl done: %d found, %d new, %d existing (%d skipped known) "
+        "across %d queries x %d employers",
+        grand_found, grand_new, grand_existing, grand_skipped,
+        len(queries), len(employers),
+    )
 
     return {
         "found": grand_found,
         "new": grand_new,
         "existing": grand_existing,
+        "skipped_known": grand_skipped,
         "queries": len(queries),
     }
