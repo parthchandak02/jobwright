@@ -11,7 +11,7 @@ type Props = {
 export function MetaField({ icon: Icon, label, value, className }: Props) {
   const hasValue = value != null && value.trim() !== ''
   return (
-    <div className={cn('flex items-center gap-1.5 text-[11px] leading-tight', className)}>
+    <div className={cn('job-card-meta-row', className)}>
       {Icon && <Icon className="size-3 shrink-0 text-muted-foreground" />}
       {hasValue ? (
         <span className="truncate text-foreground">{value}</span>

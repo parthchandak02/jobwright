@@ -1,10 +1,26 @@
 import { Moon, Sun } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { SidebarActionButton } from '@/components/SidebarActionButton'
 import { useTheme } from '@/lib/theme'
 
-export function ThemeToggle() {
+type Props = {
+  collapsed?: boolean
+}
+
+export function ThemeToggle({ collapsed }: Props) {
   const { theme, toggleTheme } = useTheme()
   const isDark = theme === 'dark'
+
+  if (collapsed !== undefined) {
+    return (
+      <SidebarActionButton
+        collapsed={collapsed}
+        icon={isDark ? Moon : Sun}
+        label={isDark ? 'Dark theme' : 'Light theme'}
+        onClick={toggleTheme}
+      />
+    )
+  }
 
   return (
     <Button

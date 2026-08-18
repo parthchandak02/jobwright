@@ -23,6 +23,8 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
 }
 
 export type JobCard = {
+  job_id: string
+  whatsapp_notified_at: string | null
   url: string
   title: string | null
   company: string | null
@@ -30,7 +32,13 @@ export type JobCard = {
   location: string | null
   salary: string | null
   work_model: string | null
+  sponsorship_status: 'required' | 'not_required' | 'not_found'
   fit_score: number | null
+  ai_fit_score?: number | null
+  user_fit_score?: number | null
+  user_score_rationale?: string | null
+  user_score_at?: string | null
+  score_user_modified?: boolean
   keywords: string
   reasoning: string
   funnel_stage: string
@@ -70,6 +78,39 @@ export type Profile = {
   source: string
 }
 
+export type QueryEntry = { query: string; tier: number }
+export type LocationEntry = { location: string; remote: boolean }
+
+export type SettingsProfile = {
+  personal: Record<string, string>
+  compensation: Record<string, string>
+  experience: Record<string, string>
+  job_preferences: {
+    ideal_roles?: string[]
+    seek?: string
+    avoid_roles?: string[]
+    company_types?: string
+  }
+}
+
+export type SettingsSearches = {
+  queries: QueryEntry[]
+  locations: LocationEntry[]
+  boards: string[]
+  exclude_titles: string[]
+  min_salary: number | null
+  hours_old: number | null
+  results_per_site: number | null
+}
+
+export type SettingsData = {
+  user_id: string
+  name: string
+  profile: SettingsProfile
+  searches: SettingsSearches
+  resume: string
+}
+
 export const STAGE_LABELS: Record<string, string> = {
   backlog: 'Backlog',
   prepare: 'Prepare',
@@ -78,6 +119,18 @@ export const STAGE_LABELS: Record<string, string> = {
   offer: 'Offer',
   closed: 'Closed',
 }
+
+/** Kanban lane order (matches backend FUNNEL_STAGES). */
+export const FUNNEL_STAGES = [
+  'backlog',
+  'prepare',
+  'applied',
+  'in_progress',
+  'offer',
+  'closed',
+] as const
+
+export type FunnelStage = (typeof FUNNEL_STAGES)[number]
 
 /** CSS custom-property names for per-lane accents (defined in index.css). */
 export const STAGE_TONE: Record<string, string> = {
@@ -89,4 +142,69 @@ export const STAGE_TONE: Record<string, string> = {
   closed: '--stage-closed',
 }
 
+/** Resolved lane color for headers, card tints, etc. */
+export function laneTone(stage: string): string {
+  const token = STAGE_TONE[stage] || STAGE_TONE.backlog
+  return `var(${token})`
+}
+
 export const OUTCOMES = ['accepted', 'rejected', 'withdrawn', 'ghosted', 'cancelled'] as const
+
+/** Handle returned when a pipeline run is started. */
+export type RunHandle = {
+  run_id: string
+  pid: number
+  log_path: string
+  user: string
+  stages: string[]
+}
+
+/** Full run record from GET /api/runs. */
+export type RunRecord = RunHandle & {
+  started_at: string
+  running: boolean
+  returncode: number | null
+}
+
+export type StopRunResponse = {
+  run_id: string
+  stopped: boolean
+  returncode: number | null
+}
+
+export type StartRunOptions = { min_score?: number; workers?: number }
+
+/** Start a pipeline run; returns the process handle (run id, pid, log path). */
+export function startRun(stages: string[], opts?: StartRunOptions): Promise<RunHandle> {
+  return apiFetch<RunHandle>('/run', {
+    method: 'POST',
+    body: JSON.stringify({
+      stages,
+      min_score: opts?.min_score ?? 7,
+      workers: opts?.workers ?? 4,
+    }),
+  })
+}
+
+/** Stop a running pipeline process. */
+export function stopRun(runId: string): Promise<StopRunResponse> {
+  return apiFetch<StopRunResponse>(`/runs/${runId}/stop`, { method: 'POST' })
+}
+
+/** List known runs (newest first). */
+export function listRuns(): Promise<RunRecord[]> {
+  return apiFetch<{ runs: RunRecord[] }>('/runs').then((r) => r.runs)
+}
+
+export type NotifyResponse = {
+  sent: number
+  skipped: boolean
+  reason?: string
+  message?: string
+  jobs: { job_id: string; title: string | null; company: string | null }[]
+}
+
+/** Trigger the WhatsApp notify digest for newly surfaced jobs. */
+export function notifyWhatsApp(): Promise<NotifyResponse> {
+  return apiFetch<NotifyResponse>('/notify', { method: 'POST' })
+}
