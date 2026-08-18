@@ -62,7 +62,7 @@ Multi-profile setups use `users/<id>/` under the repo (or `~/.jobwright/` for a 
 - **Find and prepare only** by default. Nothing is submitted without an explicit opt-in.
 - **Apply** (browser agent, stage 6) is dry-run by default and never runs from cron automatically.
 - Live apply requires a clear confirmation phrase (e.g. `CONFIRM APPLY`) and per-user enablement.
-- LinkedIn job applications are blocked by design.
+- LinkedIn jobs can appear in the brief with materials; auto-apply to LinkedIn is blocked by design.
 - **Partial success is OK:** if some pipeline stages fail, the digest still lists whatever jobs are ready, with a short run-stats footer.
 - **Quality gate:** failed resume validation is not saved or delivered as DOCX.
 
@@ -176,7 +176,7 @@ export AGENT_PROVIDER=cursor-cli   # fallback: the `agent` CLI
 export AGENT_PROVIDER=claude       # legacy upstream behavior
 ```
 
-Safety: dry-run is the default, LinkedIn apply is blocked, live workers are capped at 1, and multi-profile users must be explicitly opted in (`apply_enabled`). See [docs/agents/whatsapp-routing.md](docs/agents/whatsapp-routing.md) and [docs/agents/install-hermes-skill.md](docs/agents/install-hermes-skill.md).
+Safety: dry-run is the default, LinkedIn jobs can appear in the brief with materials (auto-apply to LinkedIn is blocked by design), live workers are capped at 1, and multi-profile users must be explicitly opted in (`apply_enabled`). See [docs/agents/whatsapp-routing.md](docs/agents/whatsapp-routing.md) and [docs/agents/install-hermes-skill.md](docs/agents/install-hermes-skill.md).
 
 ---
 
