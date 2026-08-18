@@ -59,25 +59,12 @@ base_urls:
 
 sites:
   # ── Searchable sites (URL includes query + location params) ──────────
-  # Canada-specific
-  - name: "Eluta"
-    url: "https://www.eluta.ca/search?q={query_encoded}&l={location_encoded}"
-    type: search
+  # Canada-only boards (Eluta, Randstad Canada, CareerJet Canada, Job Bank
+  # Canada) intentionally omitted for US Bay Area profiles. Re-add locally
+  # if a profile targets Canada. base_urls above still resolve old DB rows.
 
   - name: "Talent.com"
     url: "https://www.talent.com/jobs?k={query_encoded}&l={location_encoded}"
-    type: search
-
-  - name: "Randstad Canada"
-    url: "https://www.randstad.ca/jobs/?keywords={query_encoded}&location={location_encoded}"
-    type: search
-
-  - name: "CareerJet Canada"
-    url: "https://www.careerjet.ca/search/jobs?s={query_encoded}&l={location_encoded}"
-    type: search
-
-  - name: "Job Bank Canada"
-    url: "https://www.jobbank.gc.ca/jobsearch/jobsearch?searchstring={query_encoded}&locationstring={location_encoded}&fage=2&sort=D"
     type: search
 
   # General tech (with search)

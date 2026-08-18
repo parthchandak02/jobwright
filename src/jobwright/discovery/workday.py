@@ -24,12 +24,21 @@ from jobwright import config
 from jobwright.config import CONFIG_DIR
 from jobwright.database import get_connection, init_db
 from jobwright.discovery.known_urls import job_url_known, load_known_urls
+from jobwright.discovery.location import location_ok as _location_ok
 
 log = logging.getLogger(__name__)
 
 # Stop paginating an employer+query after this many consecutive known jobs
 # (Workday results are typically recency-sorted; a run of known = caught up).
 EARLY_STOP_CONSECUTIVE_KNOWN = 10
+
+# Canada-primary Workday employers. Filtered out when the user's reject list
+# includes "canada" (empty-location Workday rows otherwise leak these banks).
+_CANADA_EMPLOYER_KEYS = frozenset({
+    "td", "cibc", "rbc", "bmo", "manulife", "sunlife", "desjardins", "intact",
+    "aviva", "tmx", "cppib", "omers", "otpp", "psp", "cdpq", "hoopp", "aimco",
+    "blackberry", "telus", "telus_health", "magna",
+})
 
 
 # -- Employer registry from YAML --------------------------------------------
@@ -51,27 +60,6 @@ def _load_location_filter(search_cfg: dict | None = None):
     if search_cfg is None:
         search_cfg = config.load_search_config()
     return config.load_location_filters(search_cfg)
-
-
-def _location_ok(location: str | None, accept: list[str], reject: list[str]) -> bool:
-    """Check if a job location passes the user's location filter."""
-    if not location:
-        return True
-
-    loc = location.lower()
-
-    for r in reject:
-        if r.lower() in loc:
-            return False
-
-    if any(r in loc for r in ("remote", "anywhere", "work from home", "wfh", "distributed")):
-        return True
-
-    for a in accept:
-        if a.lower() in loc:
-            return True
-
-    return False
 
 
 # -- HTML stripper -----------------------------------------------------------
@@ -577,6 +565,23 @@ def run_workday_discovery(employers: dict | None = None, workers: int = 1) -> di
     search_cfg = config.load_search_config()
     queries_cfg = search_cfg.get("queries", [])
     accept_locs, reject_locs = _load_location_filter(search_cfg)
+
+    # When the profile rejects Canada, skip Canada-primary Workday tenants.
+    # Empty-location Workday rows otherwise bypass location_ok and leak banks.
+    reject_l = [r.lower() for r in reject_locs]
+    if any("canada" in r for r in reject_l):
+        before = len(employers)
+        employers = {
+            k: v for k, v in employers.items()
+            if k not in _CANADA_EMPLOYER_KEYS
+            and "canada" not in (v.get("name") or "").lower()
+        }
+        skipped = before - len(employers)
+        if skipped:
+            log.info(
+                "Workday: skipped %d Canada-primary employers (reject includes canada)",
+                skipped,
+            )
 
     # DISCOVER_MODE=fast → tier 1 only; full → workday_max_tier (default 2)
     discover_mode = os.environ.get("DISCOVER_MODE", "fast").strip().lower()

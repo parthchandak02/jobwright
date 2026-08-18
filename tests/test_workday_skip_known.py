@@ -142,3 +142,43 @@ def test_search_employer_early_stops_on_consecutive_known(monkeypatch):
     assert call_count["n"] == 1  # did not paginate to offset 20
     assert len(jobs) == 10
     assert all(j["external_path"].startswith("/job/SF/Known_") for j in jobs)
+
+
+def test_canada_employers_filtered_when_reject_includes_canada(monkeypatch):
+    """Empty-location Canada banks must not leak when reject includes canada."""
+    from jobwright.discovery import workday
+
+    employers = {
+        "rbc": {"name": "RBC"},
+        "nvidia": {"name": "NVIDIA"},
+        "salesforce": {"name": "Salesforce"},
+    }
+    monkeypatch.setattr(workday, "load_employers", lambda: employers)
+    monkeypatch.setattr(
+        workday.config,
+        "load_search_config",
+        lambda: {
+            "queries": [{"query": "chief of staff", "tier": 1}],
+            "location": {"reject": ["Canada", "Toronto"]},
+        },
+    )
+    monkeypatch.setattr(
+        workday,
+        "_load_location_filter",
+        lambda _cfg=None: ([], ["Canada", "Toronto"]),
+    )
+    monkeypatch.setattr(workday, "init_db", lambda: None)
+    monkeypatch.setattr(workday, "get_connection", lambda: None)
+    monkeypatch.setattr(workday, "load_known_urls", lambda _c: set())
+
+    captured: dict = {}
+
+    def capture_scrape(**kwargs):
+        captured["employers"] = kwargs.get("employers")
+        return {"found": 0, "new": 0, "existing": 0, "skipped_known": 0, "errors": 0}
+
+    monkeypatch.setattr(workday, "scrape_employers", capture_scrape)
+    out = workday.run_workday_discovery()
+    assert "rbc" not in captured["employers"]
+    assert "nvidia" in captured["employers"]
+    assert out["queries"] == 1

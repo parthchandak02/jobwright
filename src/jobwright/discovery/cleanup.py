@@ -8,6 +8,7 @@ from typing import Any
 
 from jobwright.config import load_location_filters, load_search_config
 from jobwright.discovery.filters import passes_discovery_filters, title_excluded
+from jobwright.discovery.location import location_ok as _location_ok
 
 log = logging.getLogger(__name__)
 
@@ -47,21 +48,6 @@ def _title_is_obvious_noise(title: str) -> bool:
             # conductor/engineer railroad roles
             if "engineer" in t or "brakeman" in t or "terminal" in t:
                 return True
-    return False
-
-
-def _location_ok(location: str | None, accept: list[str], reject: list[str]) -> bool:
-    if not location:
-        return True
-    loc = location.lower()
-    for r in reject:
-        if r.lower() in loc:
-            return False
-    if any(r in loc for r in ("remote", "anywhere", "work from home", "wfh", "distributed")):
-        return True
-    for a in accept:
-        if a.lower() in loc:
-            return True
     return False
 
 
