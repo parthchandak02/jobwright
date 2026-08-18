@@ -4,20 +4,22 @@
 # Fast daily mode (DISCOVER_MODE=fast) runs tier: 1 only.
 
 queries:
-  # Tier 1 — daily fast discover
+  # Tier 1 — daily fast discover. First three are distinct role families so a
+  # narrow smoke (JOBWRIGHT_DISCOVER_MAX_QUERIES=3) samples breadth, not three
+  # near-duplicate "chief of staff" phrasings.
   - query: "chief of staff"
     tier: 1
-  - query: "chief of staff startup"
-    tier: 1
-  - query: "startup chief of staff Bay Area"
-    tier: 1
   - query: "strategic partnerships"
+    tier: 1
+  - query: "venture platform manager"
+    tier: 1
+  - query: "chief of staff startup"
     tier: 1
   - query: "head of partnerships nonprofit"
     tier: 1
   - query: "director corporate social responsibility"
     tier: 1
-  - query: "venture platform manager"
+  - query: "startup chief of staff Bay Area"
     tier: 1
   - query: "foundation partnerships officer"
     tier: 1
@@ -116,7 +118,7 @@ boards:
 
 defaults:
   results_per_site: 50
-  hours_old: 24          # tighter freshness for near-real-time digests
+  hours_old: 72          # 3-day window; dedup + known-URL skip prevent re-spam. Override per-run with JOBWRIGHT_HOURS_OLD.
 
 # Drop technical / deep-specialist titles (case-insensitive substring)
 exclude_titles:
