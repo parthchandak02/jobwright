@@ -171,6 +171,33 @@ def _clean_text(text: str | None) -> str:
     return text.strip()
 
 
+_PERSON_TOKEN_RE = re.compile(r"^[A-Z][A-Za-z.'-]*$")
+# Words that signal a job-posting title rather than a person's name.
+_TITLE_WORDS = {
+    "chief", "executive", "director", "manager", "officer", "president",
+    "vp", "ceo", "cto", "cfo", "coo", "head", "lead", "senior", "junior",
+    "staff", "jobs", "job", "careers", "career", "hiring", "hire", "team",
+    "post", "associate", "assistant", "coordinator", "analyst", "specialist",
+    "intern", "recruiter", "recruiting", "operations", "growth", "strategy",
+    "engineer", "engineering", "developer", "leadership",
+}
+
+
+def _looks_like_person_name(name: str) -> bool:
+    """True only for plausible 'First Last' names, not job-posting titles.
+
+    Web research occasionally stores a page title (job repost) as the contact
+    name. Real names are 2-4 capitalized tokens with no lowercase connectors
+    (of/at/to/by), symbols (|, &), or digits, and no job-title words.
+    """
+    tokens = name.split()
+    if not (2 <= len(tokens) <= 4):
+        return False
+    if not all(_PERSON_TOKEN_RE.match(t) for t in tokens):
+        return False
+    return not any(t.lower() in _TITLE_WORDS for t in tokens)
+
+
 def _truncate(text: str, limit: int) -> str:
     """Truncate on a word boundary with an ASCII ellipsis."""
     text = text.strip()
@@ -325,7 +352,7 @@ def write_morning_digest_and_manifest(
         for c in web_c[:2]:
             name = _clean_text(c.get("name") or "")
             url = (c.get("source_url") or "").strip()
-            if not name or not url:
+            if not name or not url or not _looks_like_person_name(name):
                 continue
             role = _clean_text(c.get("role") or "")
             head = f"{name} ({role})" if role else name
