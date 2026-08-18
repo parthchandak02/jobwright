@@ -49,6 +49,22 @@ def test_resolve_material_path_prefers_md(tmp_path: Path):
     assert resolve_material_path(str(legacy)) == modern
 
 
+def test_generated_material_exists_requires_on_disk_file(tmp_path: Path):
+    from jobwright.scoring.materials_format import generated_material_exists
+
+    missing = tmp_path / "gone.md"
+    md = tmp_path / "resume.md"
+    md.write_text("# Tailored", encoding="utf-8")
+    docx = tmp_path / "resume.docx"
+    docx.write_bytes(b"PK")
+
+    assert generated_material_exists(None, None) is False
+    assert generated_material_exists(str(missing)) is False
+    assert generated_material_exists(str(md)) is True
+    assert generated_material_exists(None, str(docx)) is True
+    assert generated_material_exists(str(missing), str(tmp_path / "also-gone.docx")) is False
+
+
 def test_format_legacy_resume_markdown_adds_headers():
     from jobwright.scoring.materials_format import format_legacy_resume_markdown
 

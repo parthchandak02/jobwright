@@ -77,13 +77,22 @@ def test_store_jobspy_persists_company(tmp_path: Path, monkeypatch):
             }
         ]
     )
-    new, existing = store_jobspy_results(conn, df, "linkedin")
+    new, existing, skipped_known = store_jobspy_results(conn, df, "linkedin")
     assert new == 1
     assert existing == 0
+    assert skipped_known == 0
     row = conn.execute(
         "SELECT company, title FROM jobs WHERE url = ?",
         ("https://example.com/jobs/1",),
     ).fetchone()
     assert row["company"] == "Acme Impact"
     assert row["title"] == "Chief of Staff"
+
+    # Second pass with known_urls should skip filter work and count as existing
+    new2, existing2, skipped2 = store_jobspy_results(
+        conn, df, "linkedin", known_urls={"https://example.com/jobs/1"},
+    )
+    assert new2 == 0
+    assert existing2 == 1
+    assert skipped2 == 1
     close_connection(db)

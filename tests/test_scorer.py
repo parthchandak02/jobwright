@@ -73,13 +73,10 @@ def test_run_scoring_records_errors_on_empty_batch(tmp_path, monkeypatch):
     from jobwright.scoring import scorer
 
     db = tmp_path / "jobs.db"
-    resume = tmp_path / "resume" / "base.txt"
-    resume.parent.mkdir(parents=True)
-    resume.write_text("Jane Doe\nOps leader\n", encoding="utf-8")
     monkeypatch.setattr(config, "DB_PATH", db)
     monkeypatch.setattr(config, "APP_DIR", tmp_path)
-    monkeypatch.setattr(config, "RESUME_PATH", resume)
     monkeypatch.setattr(config, "PROFILE_PATH", tmp_path / "missing-profile.json")
+    monkeypatch.setattr("jobwright.resume.load_resume_text", lambda: "Jane Doe\nOps leader\n")
     monkeypatch.setenv("SCORE_BATCH_SIZE", "2")
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     close_connection(db)
