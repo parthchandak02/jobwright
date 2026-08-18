@@ -14,7 +14,6 @@ import time
 from datetime import datetime, timezone
 
 from jobwright.config import load_profile
-import jobwright.config as config
 from jobwright.database import get_connection, get_jobs_by_stage
 from jobwright.llm import get_client
 from jobwright.llm_json import LLMJsonError, chat_json_object, get_list_field
@@ -41,6 +40,7 @@ SCORING CRITERIA:
 IMPORTANT FACTORS:
 - Weight skills and experience that match the candidate's TARGET ROLE guidance (below) - not a generic engineering checklist.
 - Prefer consulting, entrepreneurship, partnerships, strategy, operations, CSR, and leadership experience when the target role is non-technical.
+- When the target role includes social impact, CSR, philanthropy, or community investment, boost those program/foundation roles and penalize generic tech GTM, developer relations, partner engineering, and IT/technical program manager tracks.
 - Penalize roles that are primarily technical (software engineering, data science, deep ESG/climate science, heavy finance/IB) when the guidance says to avoid them.
 - Consider transferable experience and project/program leadership.
 - Be realistic about experience level vs. job requirements (years of experience, seniority).
@@ -326,7 +326,9 @@ def run_scoring(limit: int = 0, rescore: bool = False) -> dict:
     Returns:
         {"scored": int, "errors": int, "elapsed": float, "distribution": list}
     """
-    resume_text = config.RESUME_PATH.read_text(encoding="utf-8")
+    from jobwright.resume import load_resume_text
+
+    resume_text = load_resume_text()
     try:
         profile = load_profile()
     except FileNotFoundError:

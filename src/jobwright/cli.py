@@ -196,7 +196,7 @@ def users_add(
     console.print(f"  whatsapp:       {user.whatsapp_target or '(none)'}")
     console.print(f"  registry:       {USERS_ROOT / 'users.yaml'}")
     console.print(
-        "\nNext: copy resume.txt + profile.json into the data dir, "
+        "\nNext: copy resume/base.pdf + profile.json into the data dir, "
         f"or run [bold]jobwright --user {user_id} init[/bold]"
     )
 
@@ -251,15 +251,15 @@ def users_show(user_id: str = typer.Argument(...)) -> None:
     console.print(f"  digest_schedule: {user.digest_schedule}")
     console.print(f"  data_dir:        {data_dir}")
     for fname in (
-        "profile.json", "resume/base.txt", "resume/base.pdf", "searches.yaml",
-        "cover-letter/template.txt", "connections.csv", "target_companies.yaml",
+        "profile.json", "resume/base.pdf", "searches.yaml",
+        "connections.csv", "target_companies.yaml",
         "jobwright.db",
     ):
         exists = (data_dir / fname).exists()
         mark = "[green]OK[/green]" if exists else "[dim]missing[/dim]"
         console.print(f"  {fname:24} {mark}")
     examples_dir = data_dir / "cover-letter" / "examples"
-    ex_count = len(list(examples_dir.glob("*.txt"))) if examples_dir.is_dir() else 0
+    ex_count = len(list(examples_dir.glob("*.pdf"))) if examples_dir.is_dir() else 0
     console.print(f"  cover-letter/examples   {ex_count} file(s)")
 
 
@@ -406,6 +406,47 @@ def run(
 
     if result.get("errors"):
         raise typer.Exit(code=1)
+
+
+@app.command("tailor-job")
+def tailor_job(
+    url: str = typer.Option(..., "--url", help="Job URL to tailor resume and cover letter for."),
+    verbose: bool = typer.Option(True, "--verbose", "-v", help="DEBUG logs to stdout."),
+    validation: str = typer.Option("lenient", "--validation"),
+    resume_instructions_file: Optional[str] = typer.Option(
+        None, "--resume-instructions-file", help="Override resume tailor instructions (text file).",
+    ),
+    cover_instructions_file: Optional[str] = typer.Option(
+        None, "--cover-instructions-file", help="Override cover letter instructions (text file).",
+    ),
+) -> None:
+    """Tailor resume + cover letter for one job (dashboard / verbose logs)."""
+    import os
+    from pathlib import Path
+
+    if verbose:
+        os.environ["JOBWRIGHT_LOG_LEVEL"] = "DEBUG"
+    _bootstrap()
+    from jobwright.config import check_tier
+
+    check_tier(2, "AI scoring/tailoring")
+    from jobwright.scoring.tailor import run_single_job_materials
+
+    def _read_opt(path: str | None) -> str | None:
+        if not path:
+            return None
+        p = Path(path)
+        if not p.is_file():
+            raise typer.BadParameter(f"Instructions file not found: {path}")
+        return p.read_text(encoding="utf-8")
+
+    rc = run_single_job_materials(
+        url,
+        validation_mode=validation,
+        resume_instructions=_read_opt(resume_instructions_file),
+        cover_instructions=_read_opt(cover_instructions_file),
+    )
+    raise typer.Exit(code=rc)
 
 
 @app.command()
@@ -665,12 +706,10 @@ def doctor() -> None:
     else:
         results.append(("profile.json", fail_mark, "Run 'jobwright init' to create"))
 
-    if config.RESUME_PATH.exists():
-        results.append(("resume.txt", ok_mark, str(config.RESUME_PATH)))
-    elif config.RESUME_PDF_PATH.exists():
-        results.append(("resume.txt", warn_mark, "Only PDF found — plain-text needed for AI stages"))
+    if config.RESUME_PDF_PATH.exists():
+        results.append(("resume.pdf", ok_mark, str(config.RESUME_PDF_PATH)))
     else:
-        results.append(("resume.txt", fail_mark, "Run 'jobwright init' to add your resume"))
+        results.append(("resume.pdf", fail_mark, "Run 'jobwright init' to add resume/base.pdf"))
 
     if config.SEARCH_CONFIG_PATH.exists():
         results.append(("searches.yaml", ok_mark, str(config.SEARCH_CONFIG_PATH)))

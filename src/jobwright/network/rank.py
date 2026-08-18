@@ -232,8 +232,12 @@ def run_network_rank(top_n: int = 25, csv_path: Path | None = None) -> dict:
     """Full network rank pipeline for the active user."""
     profile = load_profile()
     resume = ""
-    if config.RESUME_PATH.exists():
-        resume = config.RESUME_PATH.read_text(encoding="utf-8")
+    try:
+        from jobwright.resume import load_resume_text
+
+        resume = load_resume_text()
+    except FileNotFoundError:
+        pass
     contacts = load_connections_csv(csv_path)
     log.info("Loaded %d connections from CSV", len(contacts))
     ranked, batch_errors = rank_contacts(contacts, profile, resume_text=resume, top_n=top_n)

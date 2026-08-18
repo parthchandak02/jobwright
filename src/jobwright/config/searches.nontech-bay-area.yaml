@@ -1,63 +1,60 @@
-# Non-technical Bay Area search template (Chief of Staff / strategy / CSR / VC platform)
+# Non-technical search template (social impact / CSR / philanthropy / CoS slice)
 # Seed with: jobwright users add <id> --template nontech-bay-area
 # Or copy to users/<id>/searches.yaml
 # Fast daily mode (DISCOVER_MODE=fast) runs tier: 1 only.
 
 queries:
-  # Tier 1 — daily fast discover. First three are distinct role families so a
-  # narrow smoke (JOBWRIGHT_DISCOVER_MAX_QUERIES=3) samples breadth, not three
-  # near-duplicate "chief of staff" phrasings.
-  - query: "chief of staff"
+  # Tier 1 - daily. Distinct families for impact/CSR/foundation plus one CoS query.
+  - query: "social impact program manager"
     tier: 1
-  - query: "strategic partnerships"
+  - query: "corporate social responsibility"
     tier: 1
-  - query: "venture platform manager"
+  - query: "community impact"
     tier: 1
-  - query: "chief of staff startup"
+  - query: "foundation program officer"
+    tier: 1
+  - query: "philanthropy manager"
     tier: 1
   - query: "head of partnerships nonprofit"
     tier: 1
-  - query: "director corporate social responsibility"
+  - query: "impact investing associate"
     tier: 1
-  - query: "startup chief of staff Bay Area"
+  - query: "chief of staff"
     tier: 1
-  - query: "foundation partnerships officer"
-    tier: 1
-  # Tier 2 — full mode / weekly deep crawl
-  - query: "strategy partnerships"
+  # Tier 2 - full mode / weekly deep crawl
+  - query: "corporate purpose"
     tier: 2
-  - query: "platform associate venture"
+  - query: "community investment"
     tier: 2
-  - query: "foundation program officer"
+  - query: "data for good program manager"
+    tier: 2
+  - query: "portfolio director nonprofit"
+    tier: 2
+  - query: "employee engagement CSR"
     tier: 2
   - query: "foundation partnerships"
     tier: 2
   - query: "social impact strategy"
     tier: 2
-  - query: "business operations chief of staff"
+  - query: "venture platform manager"
     tier: 2
-  - query: "community partnerships"
-    tier: 2
-  - query: "venture platform"
-    tier: 2
-  # Tier 3 — rare / broad
+  # Tier 3 - rare / broad
   - query: "nonprofit strategy consultant"
     tier: 3
-  - query: "CSR strategy"
+  - query: "venture philanthropy"
     tier: 3
-  - query: "employee engagement CSR"
+  - query: "strategic partnerships nonprofit"
+    tier: 3
+  - query: "FUSE fellow"
     tier: 3
 
 locations:
+  # SF covers the Bay Area ~50-mile LinkedIn/Indeed radius (SJ/Oakland/Palo Alto overlap).
   - location: "San Francisco, CA"
     remote: false
-  - location: "San Jose, CA"
+  - location: "New York, NY"
     remote: false
-  - location: "Oakland, CA"
-    remote: false
-  - location: "Palo Alto, CA"
-    remote: false
-  - location: "Bay Area, CA"
+  - location: "Los Angeles, CA"
     remote: false
   - location: "Remote"
     remote: true
@@ -75,14 +72,19 @@ location:
     - "California"
     - ", CA"
     - " CA "
+    - "New York"
+    - "NYC"
+    - "Manhattan"
+    - "Brooklyn"
+    - "Los Angeles"
+    - "Atlanta"
+    - "Wilmington"
     - "Remote"
     - "Anywhere"
     - "United States"
     - "US"
     - "USA"
   reject_patterns:
-    - "New York only"
-    - "NYC only"
     - "Seattle only"
     - "onsite only"
     - "London, UK"
@@ -121,7 +123,7 @@ defaults:
   results_per_site: 50
   hours_old: 72          # 3-day window; dedup + known-URL skip prevent re-spam. Override per-run with JOBWRIGHT_HOURS_OLD.
 
-# Drop technical / deep-specialist titles (case-insensitive substring)
+# Drop technical / deep-specialist / GTM noise (case-insensitive substring)
 exclude_titles:
   - "software engineer"
   - "software developer"
@@ -154,8 +156,28 @@ exclude_titles:
   - "quantitative analyst"
   - "investment banking"
   - "private equity associate"
+  - "technical program manager"
+  - "it program manager"
+  - "developer relations"
+  - "solutions architect"
+  - "partner engineer"
+  - "account executive"
+  - "customer success"
+  - "executive assistant"
+  - "office manager"
+  - "people operations"
+  - "talent acquisition"
+  - "recruiter"
+  - "sales development"
+  - "police officer"
 
-# Annual USD floor — jobs clearly below this are dropped at discovery when salary is known
+# Annual USD floor - jobs clearly below this are dropped at discovery when salary is known
 min_salary: 115000
 
-exclude_companies: []
+exclude_companies:
+  - NVIDIA
+  - Intel
+  - Moderna
+  - Motorola Solutions
+  - Cisco
+  - BlackBerry

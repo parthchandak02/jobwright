@@ -3,21 +3,23 @@
 Reads and writes the same files the daily pipeline consumes:
 - ``profile.json`` (identity + scoring guidance)
 - ``searches.yaml`` (discover queries / locations / filters)
-- ``resume/base.txt`` (base resume text)
-
-Edits here take effect on the next pipeline run for the active user.
+- ``resume/base.pdf`` (source of truth; markdown is derived)
 """
 
 from __future__ import annotations
 
 import json
-from typing import Any
+import re
+from pathlib import Path
+from typing import Annotated, Any
 
 import yaml
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, File, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from jobwright import config
+from jobwright.resume import cached_pdf_markdown, load_resume_text
 from jobwright.users import get_user
 from jobwright.web.session import resolve_dashboard_user
 
@@ -79,7 +81,7 @@ def _write_json(data: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     try:
-        path.chmod(0o600)  # PII — mirror CLI file permissions
+        path.chmod(0o600)
     except OSError:
         pass
 
@@ -100,9 +102,15 @@ def get_settings(request: Request) -> dict:
     searches = _load_searches()
     defaults = searches.get("defaults") or {}
 
-    resume_text = ""
-    if config.RESUME_PATH.exists():
-        resume_text = config.RESUME_PATH.read_text(encoding="utf-8")
+    resume_markdown = ""
+    try:
+        resume_markdown = load_resume_text()
+    except FileNotFoundError:
+        pass
+
+    pdf_path = config.RESUME_PDF_PATH
+    has_pdf = pdf_path.is_file()
+    pdf_mtime = int(pdf_path.stat().st_mtime) if has_pdf else None
 
     display_name = (
         (user.name if user else None)
@@ -126,7 +134,10 @@ def get_settings(request: Request) -> dict:
             "hours_old": defaults.get("hours_old"),
             "results_per_site": defaults.get("results_per_site"),
         },
-        "resume": resume_text,
+        "resume_markdown": resume_markdown,
+        "has_resume_pdf": has_pdf,
+        "resume_pdf_mtime": pdf_mtime,
+        "cover_letter_examples": _list_cover_letter_examples(),
     }
 
 
@@ -178,13 +189,137 @@ def put_searches(body: SearchSettings) -> dict:
     return {"ok": True}
 
 
-class ResumeSettings(BaseModel):
-    text: str
+@router.get("/resume.pdf")
+def get_resume_pdf() -> FileResponse:
+    path = config.RESUME_PDF_PATH
+    if not path.is_file():
+        raise HTTPException(404, "No resume PDF on file")
+    return FileResponse(
+        str(path),
+        media_type="application/pdf",
+        filename=path.name,
+        content_disposition_type="inline",
+    )
 
 
-@router.put("/resume")
-def put_resume(body: ResumeSettings) -> dict:
-    path = config.RESUME_PATH
+@router.put("/resume.pdf")
+async def put_resume_pdf(file: Annotated[UploadFile, File()]) -> dict:
+    if not (file.filename or "").lower().endswith(".pdf"):
+        raise HTTPException(400, "Upload a PDF file")
+    data = await file.read()
+    if not data.startswith(b"%PDF"):
+        raise HTTPException(400, "File is not a PDF")
+    path = config.RESUME_PDF_PATH
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(body.text, encoding="utf-8")
+    path.write_bytes(data)
+    md_path = config.RESUME_MD_PATH
+    if md_path.exists():
+        md_path.unlink()
+    markdown = load_resume_text()
+    return {"ok": True, "bytes": len(data), "markdown_chars": len(markdown)}
+
+
+_EXAMPLE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,80}$")
+_SKIP_EXAMPLE_STEMS = {"readme"}
+
+
+def _sanitize_example_stem(filename: str) -> str:
+    stem = Path(filename or "example").stem
+    stem = re.sub(r"[^A-Za-z0-9._-]+", "-", stem).strip(".-") or "example"
+    return stem[:80]
+
+
+def _example_pdf_path(example_id: str) -> Path:
+    if not _EXAMPLE_ID_RE.match(example_id):
+        raise HTTPException(400, "Invalid cover letter id")
+    return config.COVER_LETTER_EXAMPLES_DIR / f"{example_id}.pdf"
+
+
+def _unique_example_stem(stem: str) -> str:
+    examples_dir = config.COVER_LETTER_EXAMPLES_DIR
+    candidate = stem
+    n = 2
+    while (examples_dir / f"{candidate}.pdf").exists():
+        candidate = f"{stem}-{n}"
+        n += 1
+        if n > 99:
+            raise HTTPException(400, "Too many cover letters with this name")
+    return candidate
+
+
+def _list_cover_letter_examples() -> list[dict[str, Any]]:
+    examples_dir = config.COVER_LETTER_EXAMPLES_DIR
+    if not examples_dir.is_dir():
+        return []
+    items: list[dict[str, Any]] = []
+    for path in sorted(examples_dir.glob("*.pdf")):
+        if not path.is_file() or not _EXAMPLE_ID_RE.match(path.stem):
+            continue
+        if path.stem.lower() in _SKIP_EXAMPLE_STEMS:
+            continue
+        markdown = ""
+        try:
+            markdown = cached_pdf_markdown(path, path.with_suffix(".md"))
+        except (OSError, ValueError, RuntimeError):
+            markdown = ""
+        items.append(
+            {
+                "id": path.stem,
+                "filename": path.name,
+                "kind": "pdf",
+                "mtime": int(path.stat().st_mtime),
+                "markdown": markdown,
+            }
+        )
+    return items
+
+
+@router.get("/cover-letters/{example_id}/pdf")
+def get_cover_letter_example_pdf(example_id: str) -> FileResponse:
+    path = _example_pdf_path(example_id)
+    if not path.is_file():
+        raise HTTPException(404, "Cover letter PDF not found")
+    return FileResponse(
+        str(path),
+        media_type="application/pdf",
+        filename=path.name,
+        content_disposition_type="inline",
+    )
+
+
+@router.put("/cover-letters")
+async def put_cover_letter_example(file: Annotated[UploadFile, File()]) -> dict:
+    if not (file.filename or "").lower().endswith(".pdf"):
+        raise HTTPException(400, "Upload a PDF file")
+    data = await file.read()
+    if not data.startswith(b"%PDF"):
+        raise HTTPException(400, "File is not a PDF")
+    examples_dir = config.COVER_LETTER_EXAMPLES_DIR
+    examples_dir.mkdir(parents=True, exist_ok=True)
+    stem = _unique_example_stem(_sanitize_example_stem(file.filename or "example"))
+    path = examples_dir / f"{stem}.pdf"
+    path.write_bytes(data)
+    markdown = cached_pdf_markdown(path, path.with_suffix(".md"))
+    return {
+        "ok": True,
+        "id": stem,
+        "filename": path.name,
+        "bytes": len(data),
+        "markdown_chars": len(markdown),
+    }
+
+
+@router.delete("/cover-letters/{example_id}")
+def delete_cover_letter_example(example_id: str) -> dict:
+    if not _EXAMPLE_ID_RE.match(example_id):
+        raise HTTPException(400, "Invalid cover letter id")
+    examples_dir = config.COVER_LETTER_EXAMPLES_DIR
+    removed = False
+    for suffix in (".pdf", ".txt", ".md"):
+        path = examples_dir / f"{example_id}{suffix}"
+        if path.is_file():
+            path.unlink()
+            removed = True
+    if not removed:
+        raise HTTPException(404, "Cover letter not found")
     return {"ok": True}
