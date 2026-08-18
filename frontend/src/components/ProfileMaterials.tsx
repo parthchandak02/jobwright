@@ -48,15 +48,25 @@ export function ProfileMaterials({
   }, [doc, examples])
 
   return (
-    <Tabs value={doc} onValueChange={setDoc} className="gap-2">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <TabsList className="h-8 max-w-full flex-wrap">
-          <TabsTrigger value={RESUME_TAB}>Resume</TabsTrigger>
+    <Tabs
+      value={doc}
+      onValueChange={setDoc}
+      orientation="vertical"
+      className="flex-col gap-3 md:flex-row md:items-start"
+    >
+      <div className="flex w-full shrink-0 flex-col gap-2 md:w-48">
+        <TabsList className="flex h-auto max-h-40 w-full flex-col items-stretch justify-start gap-0.5 overflow-y-auto md:max-h-[min(90vh,1100px)]">
+          <TabsTrigger
+            value={RESUME_TAB}
+            className="h-auto w-full flex-none justify-start py-1.5 text-left"
+          >
+            Resume
+          </TabsTrigger>
           {examples.map((example) => (
             <TabsTrigger
               key={example.id}
               value={coverTab(example.id)}
-              className="max-w-[12rem]"
+              className="h-auto w-full flex-none justify-start py-1.5 text-left"
             >
               <span className="truncate">{displayName(example)}</span>
             </TabsTrigger>
@@ -74,52 +84,54 @@ export function ProfileMaterials({
         </Button>
       </div>
 
-      <TabsContent value={RESUME_TAB}>
-        <ResumePreview
-          pdfUrl={resume.pdfUrl}
-          markdown={resume.markdown}
-          actions={
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              disabled={resume.replacing}
-              onClick={resume.onReplace}
-            >
-              <Upload />
-              {resume.replacing ? 'Uploading…' : resume.pdfUrl ? 'Replace PDF' : 'Add PDF'}
-            </Button>
-          }
-        />
-      </TabsContent>
-
-      {examples.map((example) => (
-        <TabsContent key={example.id} value={coverTab(example.id)}>
+      <div className="min-w-0 flex-1">
+        <TabsContent value={RESUME_TAB}>
           <ResumePreview
-            pdfUrl={
-              example.kind !== 'txt'
-                ? `/api/settings/cover-letters/${encodeURIComponent(example.id)}/pdf?t=${example.mtime}`
-                : null
-            }
-            markdown={example.markdown}
-            pdfTitle={`${example.filename} preview`}
-            emptyPdf="No PDF on file."
-            emptyMarkdown="No markdown yet. It appears after the PDF is converted on the server."
+            pdfUrl={resume.pdfUrl}
+            markdown={resume.markdown}
             actions={
               <Button
                 type="button"
                 size="sm"
                 variant="outline"
-                disabled={uploading}
-                onClick={() => onRemoveCover(example.id)}
+                disabled={resume.replacing}
+                onClick={resume.onReplace}
               >
-                <Trash2 />
-                Remove
+                <Upload />
+                {resume.replacing ? 'Uploading…' : resume.pdfUrl ? 'Replace PDF' : 'Add PDF'}
               </Button>
             }
           />
         </TabsContent>
-      ))}
+
+        {examples.map((example) => (
+          <TabsContent key={example.id} value={coverTab(example.id)}>
+            <ResumePreview
+              pdfUrl={
+                example.kind !== 'txt'
+                  ? `/api/settings/cover-letters/${encodeURIComponent(example.id)}/pdf?t=${example.mtime}`
+                  : null
+              }
+              markdown={example.markdown}
+              pdfTitle={`${example.filename} preview`}
+              emptyPdf="No PDF on file."
+              emptyMarkdown="No markdown yet. It appears after the PDF is converted on the server."
+              actions={
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={uploading}
+                  onClick={() => onRemoveCover(example.id)}
+                >
+                  <Trash2 />
+                  Remove
+                </Button>
+              }
+            />
+          </TabsContent>
+        ))}
+      </div>
     </Tabs>
   )
 }
