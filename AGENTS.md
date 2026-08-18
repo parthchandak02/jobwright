@@ -8,7 +8,11 @@ Entry point for **Cursor, Claude Code, Hermes, and cron wrappers**. Read this fi
 
 ## What this is
 
-Daily Brief pipeline (`jobwright` CLI, `src/jobwright/`): discover → enrich → score → portfolio → tailor → cover → **docx** → **connect** → WhatsApp digest. Optional **apply** (browser agent) is opt-in. Brief stages are cron-safe. Apply is dry-run by default, never auto-submit from cron.
+**Product model:** jobwright is a daily career advisor. Each user supplies a base resume, profile, and search criteria. The pipeline discovers jobs, scores fit with an LLM, tailors resume + cover letter per strong match (from base materials only), exports DOCX, and ranks LinkedIn connections per job. Hermes (or another agent) delivers the digest and materials to the user's chat app. The user reviews and applies; optional browser apply is gated and never runs from cron.
+
+**Pipeline:** discover → enrich → score → portfolio → tailor → cover → **docx** → **connect** → digest. Optional **apply** (browser agent) is opt-in. Brief stages are cron-safe. Apply is dry-run by default, never auto-submit from cron.
+
+**Human-readable overview:** [README.md#the-daily-brief-how-it-works-with-hermes](README.md#the-daily-brief-how-it-works-with-hermes).
 
 Version: `pyproject.toml` / `jobwright --version`.
 
@@ -74,13 +78,21 @@ jobwright users add <id> --name "Name" --whatsapp "whatsapp:..." --template nont
 # Crons: ask Hermes agent — docs/agents/hermes-setup.md (paste block at top)
 ```
 
-Env: `FIREWORKS_API_KEY` (stages 3-5, preferred), `GEMINI_API_KEY` (fallback), optional `EXA_API_KEY` (per-job web connections), `CURSOR_API_KEY` + `AGENT_PROVIDER=cursor-sdk` (stage 6), `DISCOVER_MODE=fast|full` (default `fast`: skip smart-extract, tier-1 queries; Workday skips detail fetch for known URLs), `SCORE_BATCH_SIZE` (default `10`: jobs per scoring LLM call; set `1` for sequential), `BRIEF_SMOKE=1` (narrow E2E: 3 queries, SF+Remote, JobSpy only, top 3 digest). Templates: `.env.example`.
+Env: `FIREWORKS_API_KEY` (stages 3-5, preferred), `GEMINI_API_KEY` (runtime failover: retried automatically when Fireworks returns empty content), optional `EXA_API_KEY` (per-job web connections), `CURSOR_API_KEY` + `AGENT_PROVIDER=cursor-sdk` (stage 6), `DISCOVER_MODE=fast|full` (default `fast`: skip smart-extract, tier-1 queries; Workday skips detail fetch for known URLs), `SCORE_BATCH_SIZE` (default `10`: jobs per scoring LLM call; set `1` for sequential), `BRIEF_SMOKE=1` (narrow E2E: 3 queries, SF+Remote, JobSpy only, top 3 digest; `jobwright_smoke.sh` pins gpt-oss-120b, waits for `done RC=`, and asserts `digest_written`). Templates: `.env.example`.
 
 ---
 
-## End-to-end flow (Hermes + WhatsApp)
+## End-to-end flow (Hermes + chat)
 
-`jobwright-brief` cron (6:00 daily) runs discover → connect, writes digest + DOCX, then auto-delivers materials for job 1 via `hermes send` (`AUTO_MATERIALS_INDEX=1`, set `0` to disable). `jobwright-send` (6:30) posts the text digest to WhatsApp. User can still reply `materials N` for other jobs. Live apply only if user sends `CONFIRM APPLY` and `apply_enabled: true` → `jobwright_confirm.sh` + `jobwright_on_confirm.sh`.
+**User inputs (once per profile):** `resume/base.txt`, `profile.json`, `searches.yaml`, `cover-letter/examples/`, optional `connections.csv`.
+
+**Daily brief cron** (`jobwright-brief`, ~6:00): runs discover → connect, writes digest + DOCX. On completion, sends digest text then materials for job 1 via `hermes send` (`AUTO_DELIVER_CHAT=1`, `AUTO_MATERIALS_INDEX=1`; set `0` to disable either).
+
+**Digest cron** (`jobwright-send`, ~6:30): fallback if chat delivery was off during the brief; otherwise no-op once `DIGEST_DELIVERED_*` exists.
+
+**User replies:** `materials N` for other jobs; `CONFIRM APPLY` only if `apply_enabled: true` → `jobwright_confirm.sh` + `jobwright_on_confirm.sh`.
+
+**User's job:** review curated roles, use tailored DOCX, act on network suggestions, apply manually or via gated agent apply.
 
 Detail: [docs/agents/hermes-operator-guide.md](docs/agents/hermes-operator-guide.md), [docs/agents/whatsapp-routing.md](docs/agents/whatsapp-routing.md).
 
@@ -122,4 +134,4 @@ Cloning this repo does **not** register Hermes skills automatically. Run `./scri
 
 ---
 
-**Last verified:** `0.4.0`, Daily Brief (docx + connect), `SCORE_BATCH_SIZE=10`, `DISCOVER_MODE=fast|full`, Fireworks LLM provider, `users/` registry, `cursor-sdk` default apply provider.
+**Last verified:** `0.4.0`, Daily Brief product model in README, docx + connect, `SCORE_BATCH_SIZE=10`, `DISCOVER_MODE=fast|full`, Fireworks LLM provider with automatic Gemini failover on empty responses, `users/` registry, `cursor-sdk` default apply provider. Full smoke E2E (discover -> digest + WhatsApp materials) validated for `richa`.

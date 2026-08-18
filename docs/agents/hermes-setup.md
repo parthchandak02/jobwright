@@ -15,7 +15,8 @@ Set up jobwright Hermes crons on this machine.
 2. Follow the playbook: ${JOBWRIGHT_REPO}/docs/agents/hermes-setup.md — sections "Prerequisites" through "Register crons".
 3. Use jobwright users list for registry users, schedules, and whatsapp_target.
 4. Before creating each cron, check hermes cron list for an existing job with the same Name; edit if found, create only if missing.
-5. Report back: cron names, schedules, deliver targets, and next run times.
+5. Pause or remove any old job-apply-* crons for the same users (replaced by jobwright-brief/send/check).
+6. Report back: cron names, schedules, deliver targets, and next run times.
 ```
 
 Replace `${JOBWRIGHT_REPO}` with your actual path if the skill file is missing, e.g. `/Volumes/ExternalSSD/Projects/jobwright`.
@@ -34,11 +35,15 @@ cd "${JOBWRIGHT_REPO}"
 ./scripts/install_hermes_scripts.sh
 
 # Verify
-test -f ~/.hermes/scripts/job_apply_morning.sh && echo "scripts OK"
+test -f ~/.hermes/scripts/jobwright_brief.sh && echo "scripts OK"
 jobwright users list
 ```
 
-Read full agent context: `${JOBWRIGHT_REPO}/AGENTS.md` and `${JOBWRIGHT_REPO}/docs/agents/hermes-operator-guide.md`.
+Read full agent context: `${JOBWRIGHT_REPO}/AGENTS.md`, `${JOBWRIGHT_REPO}/docs/agents/whatsapp-group-jobwright.md`, and `${JOBWRIGHT_REPO}/docs/agents/hermes-operator-guide.md`.
+
+### Skills checklist (when user asks "do you have everything for jobwright?")
+
+Answer: load **pp-job-apply** / **jobwright** (this skill), plus **hermes-cron-jobs** for scheduling. See [whatsapp-group-jobwright.md](whatsapp-group-jobwright.md).
 
 ---
 
@@ -46,33 +51,35 @@ Read full agent context: `${JOBWRIGHT_REPO}/AGENTS.md` and `${JOBWRIGHT_REPO}/do
 
 | Cron name | Script | Mode | Purpose |
 |-----------|--------|------|---------|
-| `job-apply-morning-<user_id>` | `wrap_job-apply-morning-<user_id>.sh` | `--no-agent` | Prep pipeline stages 1-5 (detached) |
-| `job-apply-digest-<user_id>` | `wrap_job-apply-digest-<user_id>.sh` | `--no-agent` | WhatsApp digest delivery |
-| `job-apply-watchdog-<user_id>` | `wrap_job-apply-watchdog-<user_id>.sh` | `--no-agent` | Stuck pipeline / delivery check |
+| `jobwright-brief-<user_id>` | `wrap_jobwright-brief-<user_id>.sh` | `--no-agent` | Daily Brief: discover → cover → docx → connect (detached) |
+| `jobwright-send-<user_id>` | `wrap_jobwright-send-<user_id>.sh` | `--no-agent` | WhatsApp digest delivery |
+| `jobwright-check-<user_id>` | `wrap_jobwright-check-<user_id>.sh` | `--no-agent` | Stuck pipeline / delivery check |
 
 **Never** register `job-apply-discover` or `job-apply-submit` (deprecated).
+
+**Never** keep `job-apply-morning-*` / `job-apply-digest-*` / `job-apply-watchdog-*` alongside the new names (duplicates digests). Pause or delete them.
 
 **Never** use agent mode for these jobs. Always `--no-agent` + `--script`.
 
 Schedules and deliver targets come from `users/users.yaml` per user (`schedule`, `digest_schedule`, `whatsapp_target`). Default if missing:
 
-- morning: `0 */3 * * 1-5` (every 3h weekdays)
-- digest: `15 */3 * * 1-5` (15 min after morning tick)
-- watchdog: `0 11 * * 1-5`
+- brief: `0 6 * * *` (6:00 AM every day)
+- send: `30 6 * * *` (6:30 AM every day)
+- check: `0 10 * * *` (10:00 AM every day)
 
 ---
 
 ## Step 1: Create per-user wrapper scripts
 
-For each registry user `<id>`, write `~/.hermes/scripts/wrap_job-apply-morning-<id>.sh` (and digest/watchdog variants) that export user env then exec the real script:
+For each registry user `<id>`, write `~/.hermes/scripts/wrap_jobwright-brief-<id>.sh` (and send/check variants) that export user env then exec the real script:
 
 ```bash
 USER_ID=richa   # example
 REPO="${JOBWRIGHT_REPO}"
 USERS_ROOT="${JOBWRIGHT_USERS_ROOT}"
 
-for kind in morning digest watchdog; do
-  cat > "${HOME}/.hermes/scripts/wrap_job-apply-${kind}-${USER_ID}.sh" <<EOF
+for kind in brief send check; do
+  cat > "${HOME}/.hermes/scripts/wrap_jobwright-${kind}-${USER_ID}.sh" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
 export JOBWRIGHT_USER="${USER_ID}"
@@ -80,9 +87,9 @@ export JOBWRIGHT_USERS_ROOT="${USERS_ROOT}"
 export JOBWRIGHT_DIR="${USERS_ROOT}/${USER_ID}"
 export JOBWRIGHT_REPO="${REPO}"
 export PATH="\${HOME}/.local/bin:\${PATH}"
-exec bash "\${HOME}/.hermes/scripts/job_apply_${kind}.sh"
+exec bash "\${HOME}/.hermes/scripts/jobwright_${kind}.sh"
 EOF
-  chmod 755 "${HOME}/.hermes/scripts/wrap_job-apply-${kind}-${USER_ID}.sh"
+  chmod 755 "${HOME}/.hermes/scripts/wrap_jobwright-${kind}-${USER_ID}.sh"
 done
 ```
 
@@ -117,8 +124,8 @@ If `find_cron_id` returns an id, use `hermes cron edit <id> ...`. Otherwise `her
 Values from registry (Hermes should read live from `jobwright users show richa`):
 
 - `whatsapp_target`: `whatsapp:120363427224277278@g.us`
-- `schedule`: `0 */3 * * 1-5`
-- `digest_schedule`: `15 */3 * * 1-5`
+- `schedule`: `0 6 * * *` (or whatever is in users.yaml)
+- `digest_schedule`: `30 6 * * *`
 
 ```bash
 REPO="${JOBWRIGHT_REPO}"
@@ -148,23 +155,23 @@ upsert_cron() {
   fi
 }
 
-upsert_cron "job-apply-morning-${UID}" "0 */3 * * 1-5" "wrap_job-apply-morning-${UID}.sh"
-upsert_cron "job-apply-digest-${UID}" "15 */3 * * 1-5" "wrap_job-apply-digest-${UID}.sh"
-upsert_cron "job-apply-watchdog-${UID}" "0 11 * * 1-5" "wrap_job-apply-watchdog-${UID}.sh"
+upsert_cron "jobwright-brief-${UID}" "0 6 * * *" "wrap_jobwright-brief-${UID}.sh"
+upsert_cron "jobwright-send-${UID}" "30 6 * * *" "wrap_jobwright-send-${UID}.sh"
+upsert_cron "jobwright-check-${UID}" "0 10 * * *" "wrap_jobwright-check-${UID}.sh"
 ```
 
-Repeat for every user in the registry.
+Repeat for every user in the registry. Pause any `job-apply-*` crons for the same user.
 
 ---
 
 ## Step 4: Verify
 
 ```bash
-hermes cron list | grep -A6 'job-apply'
+hermes cron list | grep -E 'jobwright-|job-apply-'
 jobwright --user richa doctor
 ```
 
-Confirm exactly **one** cron per name. Report next run times to the user on WhatsApp.
+Confirm exactly **one** cron per new name. Report next run times to the user on WhatsApp.
 
 ---
 
@@ -172,8 +179,8 @@ Confirm exactly **one** cron per name. Report next run times to the user on What
 
 | Surface | Mode |
 |---------|------|
-| Cron ticks (morning, digest, watchdog) | `--no-agent` (script stdout → WhatsApp) |
-| WhatsApp chat (CONFIRM APPLY, status, find jobs now) | Hermes agent + skill `pp-job-apply` / `jobwright` + terminal |
+| Cron ticks (brief, send, check) | `--no-agent` (script stdout → WhatsApp) |
+| WhatsApp chat (CONFIRM APPLY, status, find jobs now, materials N) | Hermes agent + skill `pp-job-apply` / `jobwright` + terminal |
 
 Inbound WhatsApp routing: [whatsapp-routing.md](whatsapp-routing.md).
 
@@ -181,7 +188,9 @@ Inbound WhatsApp routing: [whatsapp-routing.md](whatsapp-routing.md).
 
 ## Env and API keys
 
-Cron wrappers source `${JOBWRIGHT_REPO}/.env` automatically inside `job_apply_*.sh`. Do not put API keys in cron definitions.
+Cron wrappers source `${JOBWRIGHT_REPO}/.env` automatically inside `jobwright_*.sh`. Do not put API keys in cron definitions.
+
+Optional: `EXA_API_KEY` enables web research for per-job connections.
 
 ---
 
@@ -197,26 +206,49 @@ Re-run cron registration (Step 3) only if schedules, deliver targets, or user li
 
 ---
 
+## Post-deploy demo (paste after Daily Brief lands)
+
+```text
+Show me Daily Brief end to end for user richa in this WhatsApp group.
+
+1. cd /Volumes/ExternalSSD/Projects/jobwright
+2. ./scripts/install_hermes_scripts.sh && ./scripts/install_skills.sh
+3. Confirm ~/.hermes/scripts/jobwright_brief.sh exists
+4. Follow docs/agents/hermes-setup.md: register jobwright-brief/send/check-richa at 6:00 / 6:30 / 10:00 daily
+5. Delete any job-apply-* crons for richa
+6. Update this group's channel_overrides system_prompt (see docs/agents/whatsapp-group-jobwright.md). Bind cursor-agent. Restart gateway if needed.
+7. jobwright --user richa doctor && jobwright --user richa status
+8. Trigger now: JOBWRIGHT_USER=richa bash ~/.hermes/scripts/jobwright_brief.sh
+9. When DIGEST is ready, post it here. I will reply materials 1 — send DOCX as documents.
+10. Report: cron names, next run times, job count, DOCX paths, failures.
+
+Also confirm you know: resolve sender→richa, file uploads to users/richa/ with backup, continuous improvement in hermes-operator-guide.md.
+```
+
+---
+
 ## Optional: legacy single-user crons
 
-Only if `jobwright users list` is **empty** and data lives in `~/.jobwright/`:
+**Only** if `jobwright users list` is **empty** and data lives in `~/.jobwright`.
+
+**If registry users exist (e.g. `richa`), do NOT create legacy crons** (`jobwright-brief` without `-<user_id>`, or old `job-apply-*`). They duplicate digests.
+
+Legacy example (empty registry only):
 
 ```bash
-hermes cron create "0 5 * * 1-5" \
-  --name job-apply-morning \
-  --script job_apply_morning.sh \
+hermes cron create "0 6 * * *" \
+  --name jobwright-brief \
+  --script jobwright_brief.sh \
   --no-agent \
   --deliver "whatsapp:..." \
   --workdir "${JOBWRIGHT_REPO}"
 ```
 
-Do not create legacy crons when registry users exist (duplicates digests).
-
 ---
 
 ## Mac mini notes
 
-- Cron hard timeout: **300s** — morning script detaches long pipeline (by design).
+- Cron hard timeout: **300s** — brief script detaches long pipeline (by design).
 - Gateway: `launchctl list | grep ai.hermes.gateway`
 - Logs: `~/.hermes/logs/gateway.log`
 - Optional `terminal.cwd` in `~/.hermes/config.yaml` → `${JOBWRIGHT_REPO}`

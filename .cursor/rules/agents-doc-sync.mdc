@@ -14,7 +14,7 @@ Update in the same change set if you touched:
 - CLI commands, subcommands, or flags (`src/jobwright/cli.py`)
 - Pipeline stages or order (`src/jobwright/pipeline.py`)
 - User registry, paths, or multi-profile behavior (`src/jobwright/users.py`, `src/jobwright/config.py`)
-- Hermes/cron scripts (`scripts/job_apply_*.sh`, installers)
+- Hermes/cron scripts (`scripts/jobwright_*.sh`, installers)
 - Apply safety gates, providers, or CONFIRM APPLY flow
 - Agent doc locations (`docs/agents/`, `templates/hermes-skill/`)
 - Version in `pyproject.toml`

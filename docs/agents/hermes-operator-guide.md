@@ -15,7 +15,7 @@ cd "${JOBWRIGHT_REPO}"
 | Repo | `${JOBWRIGHT_REPO}` |
 | Registry | `${JOBWRIGHT_USERS_ROOT}/users.yaml` |
 | User data | `${JOBWRIGHT_USERS_ROOT}/<user_id>/` |
-| Hermes scripts | `~/.hermes/scripts/job_apply_*.sh` |
+| Hermes scripts | `~/.hermes/scripts/jobwright_*.sh` |
 | Skill (this doc) | `${JOBWRIGHT_REPO}/docs/agents/hermes-operator-guide.md` |
 | Human WhatsApp guide | `${JOBWRIGHT_REPO}/docs/agents/whatsapp-user-guide.md` |
 
@@ -62,11 +62,12 @@ export JOBWRIGHT_DIR="${JOBWRIGHT_USERS_ROOT}/${USER_ID}"
 
 | Trigger | Action |
 |---------|--------|
-| Cron (weekdays, ~every 3h) | `job_apply_morning.sh` → digest cron → WhatsApp |
-| User: "find jobs now" | `JOBWRIGHT_USER=$USER_ID bash ~/.hermes/scripts/job_apply_morning.sh` |
+| Cron (daily 6:00 / 6:30) | `jobwright_brief.sh` → `jobwright_send.sh` → WhatsApp |
+| User: "find jobs now" | `JOBWRIGHT_USER=$USER_ID bash ~/.hermes/scripts/jobwright_brief.sh` |
+| User: "materials N" | `jobwright --user $USER_ID materials --index N` → send DOCX as WhatsApp docs |
 | User: "job status" | `jobwright --user $USER_ID status` |
 
-Pipeline stages: discover → enrich → score → portfolio → tailor → cover.
+Pipeline stages: discover → enrich → score → portfolio → tailor → cover → docx → connect.
 
 ### B. Resume tailoring (per job)
 
@@ -118,8 +119,8 @@ jobwright --user $USER_ID targets --merge-searches
 Only if `apply_enabled: true` in registry **and** user sends `CONFIRM APPLY`:
 
 ```bash
-JOBWRIGHT_USER=$USER_ID bash ~/.hermes/scripts/job_apply_confirm.sh
-JOBWRIGHT_USER=$USER_ID bash ~/.hermes/scripts/job_apply_on_confirm.sh
+JOBWRIGHT_USER=$USER_ID bash ~/.hermes/scripts/jobwright_confirm.sh
+JOBWRIGHT_USER=$USER_ID bash ~/.hermes/scripts/jobwright_on_confirm.sh
 ```
 
 Never use `jobwright apply --live --url ...` for WhatsApp users.
@@ -151,13 +152,27 @@ Apply stays OFF unless: `jobwright users set <id> --apply`
 
 After filing, confirm with user on WhatsApp.
 
-## Repo access + improving jobwright (Cursor Agent)
+## Continuous improvement (user reports issue / wants change)
 
-Hermes has full terminal access on the Mac mini. Use it to **run jobwright** and **improve the repo** when users need features the pipeline lacks.
+1. **Classify:** profile/prefs (`profile.json`, `searches.yaml`) vs data (`resume/`, `connections.csv`) vs pipeline bug (`src/jobwright/`) vs Hermes ops (cron/scripts/`config.yaml`).
+2. **Reproduce:**
+   ```bash
+   jobwright --user $USER_ID doctor
+   jobwright --user $USER_ID status
+   tail -80 "${JOBWRIGHT_DIR}/logs/brief_$(date +%Y%m%d).log"
+   ```
+3. **Fix:**
+   - Data/prefs: edit user files; confirm on WhatsApp; optional re-run `jobwright_brief.sh`
+   - Code: `agent -p --force '…'` (tight scope) or tiny patch; no drive-by refactors
+   - Ops: `hermes cron edit` (never duplicate); update live config only for JID/prompt/bindings
+4. **Verify:** `pytest tests/ -v` (code), `ruff check src/`, `jobwright --user $USER_ID doctor`
+5. **Sync:** `./scripts/install_hermes_scripts.sh` and/or `./scripts/install_skills.sh` if scripts/skill changed
+6. **Reply on WhatsApp:** what changed, how to retest (`find jobs now` / `materials 1` / send file again)
+7. **Never commit** unless Parth asks; never commit `users/` or `.env`
 
 ### Working directory
 
-Always `cd "${JOBWRIGHT_REPO}"` before repo commands. Optional: set in `~/.hermes/config.yaml`:
+Always `cd "${JOBWRIGHT_REPO}"` before repo commands. Optional in `~/.hermes/config.yaml`:
 
 ```yaml
 terminal:
@@ -165,56 +180,37 @@ terminal:
   cwd: /Volumes/ExternalSSD/Projects/jobwright
 ```
 
-### Run jobwright CLI
-
-```bash
-cd "${JOBWRIGHT_REPO}"
-jobwright --user richa doctor
-jobwright --user richa status
-./bin/job-apply-pp-cli status --agent --user richa
-```
-
-### Invoke Cursor Agent to modify the repo
-
-When a user need requires code changes (e.g. `keyword_swap` tailor, digest attachments, new filters):
+### Invoke Cursor Agent for code
 
 ```bash
 cd "${JOBWRIGHT_REPO}"
 agent -p --force "$(cat <<'EOF'
-Context: jobwright repo at JOBWRIGHT_REPO. User richa needs keyword-only resume tailoring (same length, no new sentences).
+Context: jobwright repo. Reproduce first with doctor/status/logs.
 
-Task: Implement tailor_mode keyword_swap in src/jobwright/scoring/tailor.py. Match existing code style. Add tests if straightforward.
-
+Task: <specific user-reported gap>. Match existing style. Add tests if straightforward.
 Do not commit unless asked. Summarize changes when done.
 EOF
 )"
 ```
 
-Rules for repo changes via Cursor Agent:
+Small fixes: Hermes may edit files directly. Prefer `cursor-agent` / `agent -p` for multi-file work.
 
-1. **Scope:** Fix the specific gap blocking the user; no drive-by refactors.
-2. **Never commit** `users/` or `.env`.
-3. **After code changes:** `./scripts/install_hermes_scripts.sh` if scripts changed; `./scripts/install_skills.sh` if `templates/hermes-skill/` changed.
-4. **Verify:** `python3 -m pytest tests/` and `jobwright --user <id> doctor`.
-5. **Tell the user** what changed and what to test on WhatsApp.
-
-Alternative: Hermes can edit files directly with `read_file` / `patch` terminal tools for small fixes; use `agent -p` for multi-file features.
-
-### Post-change sync checklist
+### Post-change sync
 
 ```bash
 cd "${JOBWRIGHT_REPO}"
 ./scripts/install_skills.sh          # if templates/hermes-skill/SKILL.md changed
 ./scripts/install_hermes_scripts.sh  # if scripts/*.sh changed
-# Crons: Hermes agent — docs/agents/hermes-setup.md (edit existing, do not duplicate)
+# Crons: docs/agents/hermes-setup.md (edit existing, do not duplicate)
 ```
 
 ## Health checks
 
 ```bash
 jobwright --user $USER_ID doctor
-tail -50 "${JOBWRIGHT_DIR}/logs/morning_$(date +%Y%m%d).log"
-hermes cron list | grep job-apply
+tail -50 "${JOBWRIGHT_DIR}/logs/brief_$(date +%Y%m%d).log"
+hermes cron list | grep jobwright-
+test -f ~/.hermes/scripts/jobwright_brief.sh && echo scripts_OK
 test -f ~/.hermes/skills/autonomous-ai-agents/pp-job-apply/SKILL.md && cat ~/.hermes/skills/autonomous-ai-agents/pp-job-apply/JOBWRIGHT_REPO && echo skill OK
 ```
 
