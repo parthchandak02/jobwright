@@ -35,8 +35,8 @@ class UserRecord:
     name: str = ""
     whatsapp_target: str = ""
     apply_enabled: bool = False
-    schedule: str = "0 */3 * * 1-5"  # every 3 hours weekdays (near-real-time)
-    digest_schedule: str = "15 */3 * * 1-5"
+    schedule: str = "0 6 * * *"  # daily brief at 6:00 (all days)
+    digest_schedule: str = "30 6 * * *"  # WhatsApp send at 6:30
     notes: str = ""
     # Optional overrides; empty = use default path under USERS_ROOT
     data_dir: str = ""
