@@ -13,7 +13,12 @@ export DISCOVER_MODE=fast
 export DISCOVER_WORKDAY=0
 export JOBWRIGHT_DISCOVER_MAX_QUERIES=3
 export JOBWRIGHT_DISCOVER_LOCATIONS="San Francisco, CA|Remote"
-export JOBWRIGHT_RESULTS_PER_SITE=15
+export JOBWRIGHT_RESULTS_PER_SITE="${JOBWRIGHT_RESULTS_PER_SITE:-25}"
+# Indeed is the only consistently reliable board (ZipRecruiter/Glassdoor/Google
+# sit behind WAFs and usually return 0), and a 7-day window offsets the narrow
+# query/location set so smoke actually surfaces a few fresh roles.
+export JOBWRIGHT_DISCOVER_BOARDS="${JOBWRIGHT_DISCOVER_BOARDS:-indeed}"
+export JOBWRIGHT_HOURS_OLD="${JOBWRIGHT_HOURS_OLD:-168}"
 
 # Pin a scoring model known to return non-empty JSON, score sequentially, and
 # use the same min-score as the daily brief so one mid-fit job still lands.

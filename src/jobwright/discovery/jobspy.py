@@ -9,6 +9,7 @@ search configuration YAML (searches.yaml) rather than being hardcoded.
 
 import logging
 import os
+import re
 import sqlite3
 import time
 from datetime import datetime, timezone
@@ -83,6 +84,22 @@ def _load_location_config(search_cfg: dict) -> tuple[list[str], list[str]]:
     return load_location_filters(search_cfg)
 
 
+def _pattern_matches(loc: str, pattern: str) -> bool:
+    """Match a location pattern against a lowercased location string.
+
+    Short alphanumeric tokens (<= 3 chars, e.g. "US", "SF", "CA") are matched on
+    word boundaries so "US" does not match "Australia" and "CA" does not match
+    "Calgary". Longer or punctuated patterns (", CA", "San Francisco") use plain
+    substring matching.
+    """
+    p = pattern.lower().strip()
+    if not p:
+        return False
+    if len(p) <= 3 and p.isalnum():
+        return re.search(rf"\b{re.escape(p)}\b", loc) is not None
+    return p in loc
+
+
 def _location_ok(location: str | None, accept: list[str], reject: list[str]) -> bool:
     """Check if a job location passes the user's location filter.
 
@@ -95,7 +112,7 @@ def _location_ok(location: str | None, accept: list[str], reject: list[str]) -> 
     loc = location.lower()
 
     for r in reject:
-        if r.lower() in loc:
+        if _pattern_matches(loc, r):
             return False
 
     # Remote jobs OK after reject pass (avoids "Calgary Remote" slipping through)
@@ -103,7 +120,7 @@ def _location_ok(location: str | None, accept: list[str], reject: list[str]) -> 
         return True
 
     for a in accept:
-        if a.lower() in loc:
+        if _pattern_matches(loc, a):
             return True
 
     # No match -- reject unknown
@@ -246,6 +263,10 @@ def _run_one_search(
             kwargs["proxies"] = [proxy_config["jobspy"]]
         if "linkedin" in other_sites:
             kwargs["linkedin_fetch_description"] = True
+        if "google" in other_sites:
+            # JobSpy's Google scraper ignores search_term/location; it needs an
+            # explicit natural-language google_search_term or it returns nothing.
+            kwargs["google_search_term"] = f"{s['query']} jobs near {s['location']} since yesterday"
         try:
             df = _scrape_with_retry(kwargs, max_retries=max_retries)
             all_dfs.append(df)
@@ -510,6 +531,26 @@ def run_discovery(cfg: dict | None = None) -> dict:
     rps_env = os.environ.get("JOBWRIGHT_RESULTS_PER_SITE")
     if rps_env:
         results_per_site = int(rps_env)
+
+    # Widen (or narrow) the freshness window without editing searches.yaml.
+    # The default 24h is tight for niche non-tech roles; dedup + known-URL skip
+    # make a wider window safe on re-runs.
+    hours_env = os.environ.get("JOBWRIGHT_HOURS_OLD")
+    if hours_env:
+        try:
+            hours_old = int(hours_env)
+            log.info("JobSpy: hours_old override = %d", hours_old)
+        except ValueError:
+            log.warning("Ignoring non-integer JOBWRIGHT_HOURS_OLD=%r", hours_env)
+
+    # Restrict boards without editing searches.yaml (e.g. Indeed-only for smoke,
+    # since ZipRecruiter/Glassdoor/Google frequently return 0 behind WAFs).
+    boards_env = os.environ.get("JOBWRIGHT_DISCOVER_BOARDS")
+    if boards_env:
+        override = [b.strip() for b in boards_env.replace("|", ",").split(",") if b.strip()]
+        if override:
+            sites = override
+            log.info("JobSpy: board override = %s", sites)
 
     return _full_crawl(
         search_cfg=cfg,
