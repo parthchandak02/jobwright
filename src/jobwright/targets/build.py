@@ -204,8 +204,12 @@ def run_targets(
     """Build + persist target company list for the active user."""
     profile = load_profile()
     resume = ""
-    if config.RESUME_PATH.exists():
-        resume = config.RESUME_PATH.read_text(encoding="utf-8")
+    try:
+        from jobwright.resume import load_resume_text
+
+        resume = load_resume_text()
+    except FileNotFoundError:
+        pass
     companies, parse_error = build_target_list(profile, resume_text=resume, limit=limit)
     yaml_path = save_targets(companies)
     label = (profile.get("personal") or {}).get("preferred_name") or ""

@@ -98,6 +98,16 @@ def resolve_material_path(path: str | Path | None) -> Path | None:
     return None
 
 
+def generated_material_exists(
+    md_path: str | Path | None,
+    docx_path: str | Path | None = None,
+) -> bool:
+    """True when a tailored markdown/text or DOCX file is on disk."""
+    if resolve_material_path(md_path):
+        return True
+    return bool(docx_path and Path(docx_path).is_file())
+
+
 def material_docx_path(path: str | Path | None) -> Path | None:
     """Sibling DOCX for a markdown/text material path."""
     resolved = resolve_material_path(path)

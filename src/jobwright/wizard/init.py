@@ -1,7 +1,7 @@
 """jobwright first-time setup wizard.
 
 Interactive flow that creates ~/.jobwright/ with:
-  - resume.txt (and optionally resume.pdf)
+  - resume/base.pdf (source of truth; markdown is derived)
   - profile.json
   - searches.yaml
 
@@ -29,41 +29,31 @@ console = Console()
 # ---------------------------------------------------------------------------
 
 def _setup_resume() -> None:
-    """Prompt for resume file and copy into config.APP_DIR."""
-    console.print(Panel("[bold]Step 1: Resume[/bold]\nPoint to your master resume file (.txt or .pdf)."))
+    """Prompt for a resume PDF and copy into config.APP_DIR."""
+    console.print(Panel("[bold]Step 1: Resume[/bold]\nPoint to your master resume PDF. Markdown for AI stages is derived from it."))
 
     while True:
-        path_str = Prompt.ask("Resume file path")
+        path_str = Prompt.ask("Resume PDF path")
         src = Path(path_str.strip().strip('"').strip("'")).expanduser().resolve()
 
         if not src.exists():
             console.print(f"[red]File not found:[/red] {src}")
             continue
 
-        suffix = src.suffix.lower()
-        if suffix not in (".txt", ".pdf"):
-            console.print("[red]Unsupported format.[/red] Provide a .txt or .pdf file.")
+        if src.suffix.lower() != ".pdf":
+            console.print("[red]Provide a .pdf file.[/red] Plain-text resumes are no longer used.")
             continue
 
-        if suffix == ".txt":
-            shutil.copy2(src, config.RESUME_PATH)
-            console.print(f"[green]Copied to {config.RESUME_PATH}[/green]")
-        elif suffix == ".pdf":
-            shutil.copy2(src, config.RESUME_PDF_PATH)
-            console.print(f"[green]Copied to {config.RESUME_PDF_PATH}[/green]")
+        config.RESUME_PDF_PATH.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, config.RESUME_PDF_PATH)
+        console.print(f"[green]Copied to {config.RESUME_PDF_PATH}[/green]")
+        try:
+            from jobwright.resume import load_resume_text
 
-            # Also ask for a plain-text version for LLM consumption
-            txt_path_str = Prompt.ask(
-                "Plain-text version of your resume (.txt)",
-                default="",
-            )
-            if txt_path_str.strip():
-                txt_src = Path(txt_path_str.strip().strip('"').strip("'")).expanduser().resolve()
-                if txt_src.exists():
-                    shutil.copy2(txt_src, config.RESUME_PATH)
-                    console.print(f"[green]Copied to {config.RESUME_PATH}[/green]")
-                else:
-                    console.print("[yellow]File not found, skipping plain-text copy.[/yellow]")
+            md = load_resume_text()
+            console.print(f"[green]Derived markdown ({len(md)} chars) at {config.RESUME_MD_PATH}[/green]")
+        except (OSError, ImportError, ValueError) as exc:
+            console.print(f"[yellow]PDF copied but markdown conversion failed:[/yellow] {exc}")
         break
 
 

@@ -85,10 +85,10 @@ COVER LETTER TEMPLATE (follow this structure and tone; adapt placeholders per jo
 
     examples_block = ""
     if examples:
-        joined = "\n---\n".join(ex[:2000] for ex in examples[:3])
+        joined = config.join_cover_letter_examples(examples)
         examples_block = f"""
 
-EXAMPLE LETTERS THE CANDIDATE HAS ACTUALLY SENT (match this voice; use NEW stories, do NOT copy resume bullets verbatim):
+EXAMPLE LETTERS THE CANDIDATE HAS ACTUALLY SENT (amalgamate this voice and structure; use NEW stories, do NOT copy them verbatim):
 ---
 {joined}
 ---"""
@@ -154,6 +154,7 @@ def _strip_preamble(text: str) -> str:
 def generate_cover_letter(
     resume_text: str, job: dict, profile: dict,
     max_retries: int = 3, validation_mode: str = "normal",
+    extra_instructions: str | None = None,
 ) -> str:
     """Generate a cover letter with fresh context on each retry + auto-sanitize.
 
@@ -186,11 +187,30 @@ def generate_cover_letter(
     letter = ""
     client = get_client()
     template_text, example_texts = config.load_cover_letter_materials(profile)
-    cl_prompt_base = _build_cover_letter_prompt(
-        profile, template=template_text, examples=example_texts or None,
-    )
+    if extra_instructions is not None:
+        from jobwright.scoring.tailor_instructions import build_dashboard_cover_prompt
+
+        log.info("Using dashboard cover instructions (%d chars)", len(extra_instructions))
+        log.info("Cover instructions:\n%s", extra_instructions[:4000])
+        cl_prompt_base = build_dashboard_cover_prompt(
+            profile,
+            template=template_text,
+            examples=example_texts or None,
+            user_instructions=extra_instructions,
+        )
+    else:
+        cl_prompt_base = _build_cover_letter_prompt(
+            profile, template=template_text, examples=example_texts or None,
+        )
 
     for attempt in range(max_retries + 1):
+        log.info(
+            "LLM cover letter attempt %d/%d for %s @ %s",
+            attempt + 1,
+            max_retries + 1,
+            job.get("title"),
+            job.get("site"),
+        )
         # Fresh conversation every attempt
         prompt = cl_prompt_base
         if avoid_notes:
@@ -215,16 +235,112 @@ def generate_cover_letter(
 
         validation = validate_cover_letter(letter, mode=validation_mode)
         if validation["passed"]:
+            log.info("Cover letter validated (%d chars)", len(letter))
             return letter
 
         avoid_notes.extend(validation["errors"])
-        # Warnings never block — only hard errors trigger a retry
-        log.debug(
-            "Cover letter attempt %d/%d failed: %s",
+        log.info(
+            "Cover letter attempt %d/%d failed validation: %s",
             attempt + 1, max_retries + 1, validation["errors"],
         )
 
     return letter  # last attempt even if failed
+
+
+def _job_file_prefix(job: dict) -> str:
+    safe_title = re.sub(r"[^\w\s-]", "", job.get("title") or "untitled")[:50].strip().replace(" ", "_")
+    safe_site = re.sub(r"[^\w\s-]", "", job.get("site") or "manual")[:20].strip().replace(" ", "_")
+    return f"{safe_site}_{safe_title}"
+
+
+def _persist_cover_result(conn, job: dict, letter: str) -> dict:
+    """Save cover letter files and update DB (single job)."""
+    from jobwright.database import maybe_agent_advance_to_prepare
+    from jobwright.scoring.materials_format import format_cover_letter_markdown
+
+    letter = format_cover_letter_markdown(letter)
+    prefix = _job_file_prefix(job)
+    cl_path = config.COVER_LETTER_DIR / f"{prefix}_CL.md"
+    cl_path.write_text(letter, encoding="utf-8")
+
+    pdf_path = None
+    try:
+        from jobwright.scoring.pdf import convert_to_pdf
+        pdf_path = str(convert_to_pdf(cl_path))
+    except Exception:
+        log.debug("PDF generation failed for %s", cl_path, exc_info=True)
+
+    now = datetime.now(timezone.utc).isoformat()
+    conn.execute(
+        "UPDATE jobs SET cover_letter_path=?, cover_letter_at=?, "
+        "cover_attempts=COALESCE(cover_attempts,0)+1 WHERE url=?",
+        (str(cl_path), now, job["url"]),
+    )
+    maybe_agent_advance_to_prepare(job["url"], conn=conn)
+    conn.commit()
+
+    return {
+        "url": job["url"],
+        "path": str(cl_path),
+        "pdf_path": pdf_path,
+        "title": job["title"],
+        "site": job["site"],
+    }
+
+
+def cover_one_job(
+    url: str,
+    *,
+    resume_text: str | None = None,
+    validation_mode: str = "normal",
+    extra_instructions: str | None = None,
+    conn=None,
+) -> dict:
+    """Generate cover letter for a single job URL (dashboard action; no min_score gate)."""
+    from jobwright.database import get_connection
+    from jobwright.resume import load_resume_text
+
+    owns_conn = conn is None
+    if owns_conn:
+        conn = get_connection()
+
+    row = conn.execute("SELECT * FROM jobs WHERE url = ?", (url,)).fetchone()
+    if row is None:
+        raise ValueError("job not found")
+    job = dict(row)
+
+    description = (job.get("full_description") or job.get("description") or "").strip()
+    if not description:
+        raise ValueError("job description required")
+    if not job.get("full_description"):
+        job["full_description"] = description
+
+    profile = load_profile()
+    if resume_text is None:
+        resume_text = load_resume_text()
+    config.COVER_LETTER_DIR.mkdir(parents=True, exist_ok=True)
+
+    try:
+        letter = generate_cover_letter(
+            resume_text, job, profile,
+            validation_mode=validation_mode,
+            extra_instructions=extra_instructions,
+        )
+        return _persist_cover_result(conn, job, letter)
+    except Exception as e:
+        conn.execute(
+            "UPDATE jobs SET cover_attempts=COALESCE(cover_attempts,0)+1 WHERE url=?",
+            (url,),
+        )
+        conn.commit()
+        return {
+            "url": url,
+            "path": None,
+            "pdf_path": None,
+            "title": job.get("title"),
+            "site": job.get("site"),
+            "error": str(e),
+        }
 
 
 # ── Batch Entry Point ────────────────────────────────────────────────────
@@ -242,7 +358,9 @@ def run_cover_letters(min_score: int = 7, limit: int = 20,
         {"generated": int, "errors": int, "elapsed": float}
     """
     profile = load_profile()
-    resume_text = config.RESUME_PATH.read_text(encoding="utf-8")
+    from jobwright.resume import load_resume_text
+
+    resume_text = load_resume_text()
     conn = get_connection()
 
     # Fetch jobs that have tailored resumes but no cover letter yet
@@ -283,71 +401,30 @@ def run_cover_letters(min_score: int = 7, limit: int = 20,
         try:
             letter = generate_cover_letter(resume_text, job, profile,
                                           validation_mode=validation_mode)
-            from jobwright.scoring.materials_format import format_cover_letter_markdown
-
-            letter = format_cover_letter_markdown(letter)
-
-            # Build safe filename prefix
-            safe_title = re.sub(r"[^\w\s-]", "", job.get("title") or "untitled")[:50].strip().replace(" ", "_")
-            safe_site = re.sub(r"[^\w\s-]", "", job.get("site") or "manual")[:20].strip().replace(" ", "_")
-            prefix = f"{safe_site}_{safe_title}"
-
-            cl_path = config.COVER_LETTER_DIR / f"{prefix}_CL.md"
-            cl_path.write_text(letter, encoding="utf-8")
-
-            # Generate PDF (best-effort)
-            pdf_path = None
-            try:
-                from jobwright.scoring.pdf import convert_to_pdf
-                pdf_path = str(convert_to_pdf(cl_path))
-            except Exception:
-                log.debug("PDF generation failed for %s", cl_path, exc_info=True)
-
-            result = {
-                "url": job["url"],
-                "path": str(cl_path),
-                "pdf_path": pdf_path,
-                "title": job["title"],
-                "site": job["site"],
-            }
-            results.append(result)
-
-            elapsed = time.time() - t0
-            rate = completed / elapsed if elapsed > 0 else 0
-            log.info(
-                "%d/%d [OK] | %.1f jobs/min | %s",
-                completed, len(jobs), rate * 60, result["title"][:40],
-            )
+            result = _persist_cover_result(conn, job, letter)
         except Exception as e:
+            conn.execute(
+                "UPDATE jobs SET cover_attempts=COALESCE(cover_attempts,0)+1 WHERE url=?",
+                (job["url"],),
+            )
+            conn.commit()
             result = {
                 "url": job["url"], "title": job["title"], "site": job["site"],
                 "path": None, "pdf_path": None, "error": str(e),
             }
             error_count += 1
-            results.append(result)
             log.error("%d/%d [ERROR] %s -- %s", completed, len(jobs), job["title"][:40], e)
 
-    # Persist to DB: increment attempt counter for ALL, save path only for successes
-    from jobwright.database import maybe_agent_advance_to_prepare
-
-    now = datetime.now(timezone.utc).isoformat()
-    saved = 0
-    for r in results:
-        if r.get("path"):
-            conn.execute(
-                "UPDATE jobs SET cover_letter_path=?, cover_letter_at=?, "
-                "cover_attempts=COALESCE(cover_attempts,0)+1 WHERE url=?",
-                (r["path"], now, r["url"]),
+        results.append(result)
+        elapsed = time.time() - t0
+        rate = completed / elapsed if elapsed > 0 else 0
+        if result.get("path"):
+            log.info(
+                "%d/%d [OK] | %.1f jobs/min | %s",
+                completed, len(jobs), rate * 60, result["title"][:40],
             )
-            maybe_agent_advance_to_prepare(r["url"], conn=conn)
-            saved += 1
-        else:
-            conn.execute(
-                "UPDATE jobs SET cover_attempts=COALESCE(cover_attempts,0)+1 WHERE url=?",
-                (r["url"],),
-            )
-    conn.commit()
 
+    saved = sum(1 for r in results if r.get("path"))
     elapsed = time.time() - t0
     log.info("Cover letters done in %.1fs: %d generated, %d errors", elapsed, saved, error_count)
 

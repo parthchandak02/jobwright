@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import json
+import uuid
 from pathlib import Path
 from urllib.parse import unquote
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse
+from pydantic import BaseModel, Field
 
 from jobwright import config
 from jobwright.database import get_connection
@@ -16,11 +18,29 @@ from jobwright.scoring.materials_format import (
     format_material_preview,
     resolve_material_path,
 )
+from jobwright.scoring.tailor_instructions import (
+    DEFAULT_COVER_INSTRUCTIONS,
+    DEFAULT_RESUME_INSTRUCTIONS,
+)
+from jobwright.web.routers.runs import spawn_logged_run
+from jobwright.web.session import resolve_dashboard_user
 
 router = APIRouter(prefix="/api", tags=["materials"])
 
 # Cap preview text so the drawer stays scannable (~6–8 KB).
 _PREVIEW_MAX_CHARS = 8000
+
+
+class TailorJobBody(BaseModel):
+    resume_instructions: str | None = Field(default=None, max_length=20_000)
+    cover_instructions: str | None = Field(default=None, max_length=20_000)
+
+
+def _sibling_export(path: str | None, suffix: str) -> str | None:
+    if not path:
+        return None
+    candidate = Path(path).with_suffix(suffix)
+    return str(candidate) if candidate.is_file() else None
 
 
 def _allowed_roots() -> list[Path]:
@@ -108,10 +128,81 @@ def job_materials(url: str) -> dict:
         "resume_docx": d.get("tailored_resume_docx_path") if _exists(d.get("tailored_resume_docx_path")) else None,
         "cover_md": cover_md,
         "cover_docx": d.get("cover_letter_docx_path") if _exists(d.get("cover_letter_docx_path")) else None,
+        "resume_pdf": _sibling_export(resume_md, ".pdf") or _sibling_export(d.get("tailored_resume_docx_path"), ".pdf"),
+        "cover_pdf": _sibling_export(cover_md, ".pdf") or _sibling_export(d.get("cover_letter_docx_path"), ".pdf"),
         "resume_preview": _read_preview(d.get("tailored_resume_path"), "resume"),
         "cover_preview": _read_preview(d.get("cover_letter_path"), "cover"),
         "manifest": manifest_entry,
     }
+
+
+@router.get("/tailor/defaults")
+def tailor_instruction_defaults() -> dict:
+    """Default Auto Tailor instructions shown in Custom Tailor."""
+    return {
+        "resume_instructions": DEFAULT_RESUME_INSTRUCTIONS,
+        "cover_instructions": DEFAULT_COVER_INSTRUCTIONS,
+    }
+
+
+@router.post("/jobs/{url:path}/tailor")
+def tailor_job_materials(url: str, request: Request, body: TailorJobBody | None = None) -> dict:
+    """Start a verbose per-job tailor run (resume, cover, docx) and return the run handle."""
+    url = unquote(url)
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT url, full_description, description FROM jobs WHERE url = ?",
+        (url,),
+    ).fetchone()
+    if not row:
+        raise HTTPException(404, "Job not found")
+    description = (row["full_description"] or row["description"] or "").strip()
+    if not description:
+        raise HTTPException(400, "Job description required")
+
+    try:
+        from jobwright.resume import load_resume_text
+
+        load_resume_text()
+    except FileNotFoundError as e:
+        raise HTTPException(400, str(e)) from e
+
+    body = body or TailorJobBody()
+    log_dir = Path(config.LOG_DIR)
+    log_dir.mkdir(parents=True, exist_ok=True)
+    token = uuid.uuid4().hex[:8]
+    resume_file = log_dir / f"tailor_resume_instr_{token}.txt"
+    cover_file = log_dir / f"tailor_cover_instr_{token}.txt"
+    resume_file.write_text(
+        (body.resume_instructions or DEFAULT_RESUME_INSTRUCTIONS).strip(),
+        encoding="utf-8",
+    )
+    cover_file.write_text(
+        (body.cover_instructions or DEFAULT_COVER_INSTRUCTIONS).strip(),
+        encoding="utf-8",
+    )
+    args = [
+        "tailor-job",
+        "--url",
+        url,
+        "--verbose",
+        "--validation",
+        "lenient",
+        "--resume-instructions-file",
+        str(resume_file),
+        "--cover-instructions-file",
+        str(cover_file),
+    ]
+
+    handle = spawn_logged_run(
+        args=args,
+        user_id=resolve_dashboard_user(request),
+        stages=["tailor", "cover", "docx"],
+        log_name="web_tailor",
+        kind="tailor",
+        extra_env={"JOBWRIGHT_LOG_LEVEL": "DEBUG"},
+    )
+    return {**handle, "url": url}
 
 
 @router.get("/download")

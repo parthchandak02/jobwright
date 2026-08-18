@@ -11,6 +11,7 @@ import logging
 import os
 import sqlite3
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 
 from jobspy import scrape_jobs
@@ -18,9 +19,14 @@ from jobspy import scrape_jobs
 from jobwright import config
 from jobwright.config import load_location_filters
 from jobwright.database import get_connection, init_db
+from jobwright.discovery.known_urls import load_known_urls
 from jobwright.discovery.location import location_ok as _location_ok
 
 log = logging.getLogger(__name__)
+
+# Cap JobSpy parallelism to avoid LinkedIn/Indeed soft-bans. Override via
+# JOBWRIGHT_DISCOVER_WORKERS (still clamped to this default ceiling unless set).
+_DEFAULT_DISCOVER_WORKER_CAP = 4
 
 
 # -- Proxy parsing -----------------------------------------------------------
@@ -86,22 +92,48 @@ def _load_location_config(search_cfg: dict) -> tuple[list[str], list[str]]:
 
 # -- DB storage (JobSpy DataFrame -> SQLite) ---------------------------------
 
-def store_jobspy_results(conn: sqlite3.Connection, df, source_label: str) -> tuple[int, int]:
-    """Store JobSpy DataFrame results into the DB. Returns (new, existing)."""
+def store_jobspy_results(
+    conn: sqlite3.Connection,
+    df,
+    source_label: str,
+    known_urls: set[str] | None = None,
+) -> tuple[int, int, int]:
+    """Store JobSpy DataFrame results into the DB.
+
+    Returns (new, existing, skipped_known). ``skipped_known`` counts rows
+    short-circuited via the known-URL set before filters / sponsorship work;
+    IntegrityError on INSERT still counts toward ``existing`` as a backstop
+    for URLs discovered twice within the same run.
+    """
     now = datetime.now(timezone.utc).isoformat()
     new = 0
     existing = 0
+    skipped_known = 0
+    # Read-only view of the shared known set (safe across threads). Track
+    # URLs we insert in this batch locally so within-DataFrame dupes skip
+    # filter/sponsorship work without racing on the shared set.
+    known = known_urls or set()
+    seen_batch: set[str] = set()
+    search_cfg = config.load_search_config()
+
+    from jobwright.discovery.filters import passes_discovery_filters
+    from jobwright.enrichment.sponsorship import derive_sponsorship_status
 
     for _, row in df.iterrows():
         url = str(row.get("job_url", ""))
         if not url or url == "nan":
             continue
 
+        if url in known or url in seen_batch:
+            existing += 1
+            if url in known:
+                skipped_known += 1
+            continue
+
         title = str(row.get("title", "")) if str(row.get("title", "")) != "nan" else None
         company = str(row.get("company", "")) if str(row.get("company", "")) != "nan" else None
         location_str = str(row.get("location", "")) if str(row.get("location", "")) != "nan" else None
 
-        search_cfg = config.load_search_config()
         excluded = False
         for exc in search_cfg.get("exclude_companies", []):
             if not exc:
@@ -132,7 +164,6 @@ def store_jobspy_results(conn: sqlite3.Connection, df, source_label: str) -> tup
 
         description = str(row.get("description", "")) if str(row.get("description", "")) != "nan" else None
 
-        from jobwright.discovery.filters import passes_discovery_filters
         if not passes_discovery_filters(
             title=title,
             salary=salary,
@@ -156,9 +187,10 @@ def store_jobspy_results(conn: sqlite3.Connection, df, source_label: str) -> tup
         if description and len(description) > 200:
             full_description = description
             detail_scraped_at = now
-            from jobwright.enrichment.sponsorship import classify_sponsorship
-
-            sponsorship_status = classify_sponsorship(full_description)
+            # Regex-only here: discovery is the hot loop (hundreds of jobs).
+            # The LLM tie-breaker runs in the enrichment stage, not inline per
+            # discovered job, so discovery never blocks on LLM rate limits.
+            sponsorship_status = derive_sponsorship_status(full_description)
 
         # Extract apply URL if JobSpy provided it
         apply_url = str(row.get("job_url_direct", "")) if str(row.get("job_url_direct", "")) != "nan" else None
@@ -172,11 +204,13 @@ def store_jobspy_results(conn: sqlite3.Connection, df, source_label: str) -> tup
                  full_description, apply_url, detail_scraped_at, sponsorship_status),
             )
             new += 1
+            seen_batch.add(url)
         except sqlite3.IntegrityError:
             existing += 1
+            seen_batch.add(url)
 
     conn.commit()
-    return new, existing
+    return new, existing, skipped_known
 
 
 # -- Single search execution -------------------------------------------------
@@ -192,6 +226,7 @@ def _run_one_search(
     accept_locs: list[str],
     reject_locs: list[str],
     glassdoor_map: dict,
+    known_urls: set[str] | None = None,
 ) -> dict:
     """Run a single search query and store results in DB."""
     s = search
@@ -257,7 +292,10 @@ def _run_one_search(
 
     if not all_dfs:
         log.error("[%s]: all sites failed", label)
-        return {"new": 0, "existing": 0, "errors": 1, "filtered": 0, "total": 0, "label": label}
+        return {
+            "new": 0, "existing": 0, "skipped_known": 0, "errors": 1,
+            "filtered": 0, "total": 0, "label": label,
+        }
 
     import pandas as pd
     import warnings
@@ -267,7 +305,10 @@ def _run_one_search(
 
     if len(df) == 0:
         log.info("[%s] 0 results", label)
-        return {"new": 0, "existing": 0, "errors": 0, "filtered": 0, "total": 0, "label": label}
+        return {
+            "new": 0, "existing": 0, "skipped_known": 0, "errors": 0,
+            "filtered": 0, "total": 0, "label": label,
+        }
 
     # Filter by location before storing
     before = len(df)
@@ -278,14 +319,26 @@ def _run_one_search(
     filtered = before - len(df)
 
     conn = get_connection()
-    new, existing = store_jobspy_results(conn, df, s["query"])
+    new, existing, skipped_known = store_jobspy_results(
+        conn, df, s["query"], known_urls=known_urls,
+    )
 
     msg = f"[{label}] {before} results -> {new} new, {existing} dupes"
+    if skipped_known:
+        msg += f" ({skipped_known} skipped known)"
     if filtered:
         msg += f", {filtered} filtered (location)"
     log.info(msg)
 
-    return {"new": new, "existing": existing, "errors": 0, "filtered": filtered, "total": before, "label": label}
+    return {
+        "new": new,
+        "existing": existing,
+        "skipped_known": skipped_known,
+        "errors": 0,
+        "filtered": filtered,
+        "total": before,
+        "label": label,
+    }
 
 
 # -- Single query search -----------------------------------------------------
@@ -346,8 +399,8 @@ def search_jobs(
             log.info("  %s: %d", site, count)
 
     conn = init_db()
-    new, existing = store_jobspy_results(conn, df, query)
-    log.info("Stored: %d new, %d already in DB", new, existing)
+    new, existing, skipped_known = store_jobspy_results(conn, df, query)
+    log.info("Stored: %d new, %d already in DB (%d skipped known)", new, existing, skipped_known)
 
     db_total = conn.execute("SELECT COUNT(*) FROM jobs").fetchone()[0]
     pending = conn.execute("SELECT COUNT(*) FROM jobs WHERE detail_scraped_at IS NULL").fetchone()[0]
@@ -367,6 +420,7 @@ def _full_crawl(
     hours_old: int = 72,
     proxy: str | None = None,
     max_retries: int = 2,
+    workers: int = 1,
 ) -> dict:
     """Run all search queries from search config across all locations."""
     if sites is None:
@@ -404,52 +458,102 @@ def _full_crawl(
 
     proxy_config = parse_proxy(proxy) if proxy else None
 
-    log.info("Full crawl: %d search combinations", len(searches))
-    log.info("Sites: %s | Results/site: %d | Hours old: %d",
-             ", ".join(sites), results_per_site, hours_old)
+    # Cap concurrency to avoid LinkedIn/Indeed soft-bans. Env override lets
+    # operators raise the ceiling without a code change.
+    worker_cap = _DEFAULT_DISCOVER_WORKER_CAP
+    cap_env = os.environ.get("JOBWRIGHT_DISCOVER_WORKERS")
+    if cap_env:
+        try:
+            worker_cap = max(1, int(cap_env))
+        except ValueError:
+            log.warning("Ignoring non-integer JOBWRIGHT_DISCOVER_WORKERS=%r", cap_env)
+    effective_workers = max(1, min(workers, worker_cap))
 
-    # Ensure DB schema is ready
+    log.info("Full crawl: %d search combinations", len(searches))
+    log.info(
+        "Sites: %s | Results/site: %d | Hours old: %d | Workers: %d",
+        ", ".join(sites), results_per_site, hours_old, effective_workers,
+    )
+
+    # Ensure DB schema is ready; preload known URLs so store skips redundant
+    # filter/sponsorship work for jobs already in the DB.
     init_db()
+    known_urls = load_known_urls(get_connection())
+    log.info("JobSpy: %d known URLs preloaded for skip", len(known_urls))
 
     total_new = 0
     total_existing = 0
+    total_skipped = 0
     total_errors = 0
     completed = 0
+    t0 = time.time()
 
-    for s in searches:
-        result = _run_one_search(
-            s, sites, results_per_site, hours_old,
-            proxy_config, defaults, max_retries,
-            accept_locs, reject_locs, glassdoor_map,
-        )
+    search_args = (
+        sites, results_per_site, hours_old,
+        proxy_config, defaults, max_retries,
+        accept_locs, reject_locs, glassdoor_map,
+    )
+
+    def _accumulate(result: dict) -> None:
+        nonlocal total_new, total_existing, total_skipped, total_errors, completed
         completed += 1
         total_new += result["new"]
         total_existing += result["existing"]
+        total_skipped += result.get("skipped_known", 0)
         total_errors += result["errors"]
 
-        if completed % 5 == 0 or completed == len(searches):
-            log.info("Progress: %d/%d queries done (%d new, %d dupes, %d errors)",
-                     completed, len(searches), total_new, total_existing, total_errors)
+    if effective_workers > 1 and len(searches) > 1:
+        with ThreadPoolExecutor(max_workers=min(effective_workers, len(searches))) as pool:
+            futures = {
+                pool.submit(_run_one_search, s, *search_args, known_urls): s
+                for s in searches
+            }
+            for future in as_completed(futures):
+                result = future.result()
+                _accumulate(result)
+                if completed % 5 == 0 or completed == len(searches):
+                    elapsed = time.time() - t0
+                    log.info(
+                        "Progress: %d/%d queries done (%d new, %d dupes, %d skipped known, %d errors) [%.0fs]",
+                        completed, len(searches), total_new, total_existing,
+                        total_skipped, total_errors, elapsed,
+                    )
+    else:
+        for s in searches:
+            result = _run_one_search(s, *search_args, known_urls)
+            _accumulate(result)
+            if completed % 5 == 0 or completed == len(searches):
+                elapsed = time.time() - t0
+                log.info(
+                    "Progress: %d/%d queries done (%d new, %d dupes, %d skipped known, %d errors) [%.0fs]",
+                    completed, len(searches), total_new, total_existing,
+                    total_skipped, total_errors, elapsed,
+                )
 
     # Final stats
     conn = get_connection()
     db_total = conn.execute("SELECT COUNT(*) FROM jobs").fetchone()[0]
+    elapsed = time.time() - t0
 
-    log.info("Full crawl complete: %d new | %d dupes | %d errors | %d total in DB",
-             total_new, total_existing, total_errors, db_total)
+    log.info(
+        "Full crawl complete: %d new | %d dupes (%d skipped known) | %d errors | %d total in DB [%.0fs]",
+        total_new, total_existing, total_skipped, total_errors, db_total, elapsed,
+    )
 
     return {
         "new": total_new,
         "existing": total_existing,
+        "skipped_known": total_skipped,
         "errors": total_errors,
         "db_total": db_total,
         "queries": len(searches),
+        "workers": effective_workers,
     }
 
 
 # -- Public entry point ------------------------------------------------------
 
-def run_discovery(cfg: dict | None = None) -> dict:
+def run_discovery(cfg: dict | None = None, workers: int = 1) -> dict:
     """Main entry point for JobSpy-based job discovery.
 
     Loads search queries and locations from the user's search config YAML,
@@ -458,6 +562,8 @@ def run_discovery(cfg: dict | None = None) -> dict:
     Args:
         cfg: Override the search configuration dict. If None, loads from
              the user's searches.yaml file.
+        workers: Parallel search-combination threads (capped; see
+             JOBWRIGHT_DISCOVER_WORKERS). Default 1 = sequential.
 
     Returns:
         Dict with stats: new, existing, errors, db_total, queries.
@@ -521,4 +627,5 @@ def run_discovery(cfg: dict | None = None) -> dict:
         results_per_site=results_per_site,
         hours_old=hours_old,
         proxy=proxy,
+        workers=workers,
     )

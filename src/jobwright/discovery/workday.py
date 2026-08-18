@@ -343,9 +343,11 @@ def store_results(conn: sqlite3.Connection, jobs: list[dict], employers: dict) -
         detail_error = job.get("detail_error")
         sponsorship_status = None
         if full_description:
-            from jobwright.enrichment.sponsorship import classify_sponsorship
+            # Regex-only in the discovery hot loop; the LLM tie-breaker runs in
+            # the enrichment stage so discovery never blocks on LLM rate limits.
+            from jobwright.enrichment.sponsorship import derive_sponsorship_status
 
-            sponsorship_status = classify_sponsorship(full_description)
+            sponsorship_status = derive_sponsorship_status(full_description)
 
         site = job.get("employer_name", "Corporate")
         company = job.get("employer_name") or None

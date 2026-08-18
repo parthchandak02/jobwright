@@ -15,8 +15,9 @@ APP_DIR = Path(os.environ.get("JOBWRIGHT_DIR", Path.home() / ".jobwright"))
 DB_PATH = APP_DIR / "jobwright.db"
 PROFILE_PATH = APP_DIR / "profile.json"
 RESUME_DIR = APP_DIR / "resume"
-RESUME_PATH = RESUME_DIR / "base.txt"
 RESUME_PDF_PATH = RESUME_DIR / "base.pdf"
+RESUME_MD_PATH = RESUME_DIR / "base.md"
+RESUME_PATH = RESUME_MD_PATH  # derived markdown for LLM stages; PDF is source of truth
 COVER_LETTER_INPUT_DIR = APP_DIR / "cover-letter"
 COVER_LETTER_TEMPLATE_PATH = COVER_LETTER_INPUT_DIR / "template.txt"
 COVER_LETTER_EXAMPLES_DIR = COVER_LETTER_INPUT_DIR / "examples"
@@ -48,7 +49,7 @@ def set_app_dir(path: Path | str) -> Path:
     Call before bootstrap so DB/profile/env resolve to the right user.
     Always read paths via `jobwright.config.DB_PATH` (not a stale import alias).
     """
-    global APP_DIR, DB_PATH, PROFILE_PATH, RESUME_PATH, RESUME_PDF_PATH
+    global APP_DIR, DB_PATH, PROFILE_PATH, RESUME_PATH, RESUME_PDF_PATH, RESUME_MD_PATH
     global SEARCH_CONFIG_PATH, ENV_PATH, CONNECTIONS_PATH, TARGETS_PATH
     global TAILORED_DIR, COVER_LETTER_DIR, LOG_DIR, NETWORK_DIR
     global CHROME_WORKER_DIR, APPLY_WORKER_DIR, REFERENCES_DIR, REFERENCES_INBOX_DIR
@@ -62,8 +63,9 @@ def set_app_dir(path: Path | str) -> Path:
     DB_PATH = APP_DIR / "jobwright.db"
     PROFILE_PATH = APP_DIR / "profile.json"
     RESUME_DIR = APP_DIR / "resume"
-    RESUME_PATH = RESUME_DIR / "base.txt"
     RESUME_PDF_PATH = RESUME_DIR / "base.pdf"
+    RESUME_MD_PATH = RESUME_DIR / "base.md"
+    RESUME_PATH = RESUME_MD_PATH
     COVER_LETTER_INPUT_DIR = APP_DIR / "cover-letter"
     COVER_LETTER_TEMPLATE_PATH = COVER_LETTER_INPUT_DIR / "template.txt"
     COVER_LETTER_EXAMPLES_DIR = COVER_LETTER_INPUT_DIR / "examples"
@@ -84,17 +86,8 @@ def set_app_dir(path: Path | str) -> Path:
 
 
 def refresh_user_material_paths() -> None:
-    """Resolve resume paths: prefer resume/base.*, fall back to legacy root files."""
-    global RESUME_PATH, RESUME_PDF_PATH
-
-    structured_txt = RESUME_DIR / "base.txt"
-    legacy_txt = APP_DIR / "resume.txt"
-    if structured_txt.exists():
-        RESUME_PATH = structured_txt
-    elif legacy_txt.exists():
-        RESUME_PATH = legacy_txt
-    else:
-        RESUME_PATH = structured_txt
+    """Resolve resume paths: PDF is source of truth; markdown is derived."""
+    global RESUME_PATH, RESUME_PDF_PATH, RESUME_MD_PATH
 
     structured_pdf = RESUME_DIR / "base.pdf"
     legacy_pdf = APP_DIR / "resume.pdf"
@@ -104,6 +97,9 @@ def refresh_user_material_paths() -> None:
         RESUME_PDF_PATH = legacy_pdf
     else:
         RESUME_PDF_PATH = structured_pdf
+
+    RESUME_MD_PATH = RESUME_DIR / "base.md"
+    RESUME_PATH = RESUME_MD_PATH
 
 
 def user_relative_path(relative: str) -> Path:
@@ -143,20 +139,48 @@ def cover_letter_examples_dir(profile: dict | None = None) -> Path:
 
 
 def load_cover_letter_materials(profile: dict | None = None) -> tuple[str, list[str]]:
-    """Load template text and example letter bodies for prompt injection."""
+    """Load template text and example letter bodies for prompt injection.
+
+    Cover letter examples are PDFs in ``cover-letter/examples/`` (markdown cache
+    as sibling ``.md``). ``.txt`` examples are not used.
+    """
+    from jobwright.resume import cached_pdf_markdown
+
     template_path = cover_letter_template_path(profile)
     template = ""
-    if template_path.exists():
-        template = template_path.read_text(encoding="utf-8").strip()
+    if template_path.is_file() and template_path.suffix.lower() == ".pdf":
+        template = cached_pdf_markdown(template_path, template_path.with_suffix(".md")).strip()
 
     examples: list[str] = []
     examples_dir = cover_letter_examples_dir(profile)
-    if examples_dir.is_dir():
-        for path in sorted(examples_dir.glob("*.txt")):
-            text = path.read_text(encoding="utf-8").strip()
-            if text and not text.startswith("#"):
-                examples.append(text)
+    if not examples_dir.is_dir():
+        return template, examples
+
+    for path in sorted(examples_dir.glob("*.pdf")):
+        if not path.is_file():
+            continue
+        text = cached_pdf_markdown(path, path.with_suffix(".md")).strip()
+        if text:
+            examples.append(text)
     return template, examples
+
+
+def join_cover_letter_examples(
+    examples: list[str], *, per_max: int = 2500, total_max: int = 12000
+) -> str:
+    """Concatenate example letters for tailor/cover prompts."""
+    chunks: list[str] = []
+    used = 0
+    for i, raw in enumerate(examples, start=1):
+        piece = raw.strip()[:per_max]
+        if not piece:
+            continue
+        block = f"EXAMPLE {i}:\n{piece}"
+        if used + len(block) > total_max:
+            break
+        chunks.append(block)
+        used += len(block) + 5
+    return "\n---\n".join(chunks)
 
 
 def set_active_user(user_id: str) -> Path:

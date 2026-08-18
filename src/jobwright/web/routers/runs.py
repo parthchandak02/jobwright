@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import os
 import shlex
 import signal
 import subprocess
 import sys
+import time
 import uuid
 from collections.abc import AsyncIterator
 from datetime import datetime, timezone
@@ -21,6 +21,8 @@ from pydantic import BaseModel, Field
 
 from jobwright import config
 from jobwright.database import get_connection
+from jobwright.run_registry import load_registry as _load_registry
+from jobwright.run_registry import upsert_registry as _upsert_registry
 from jobwright.users import is_apply_enabled
 from jobwright.web.session import resolve_dashboard_user
 
@@ -68,42 +70,6 @@ def _jobwright_cmd(args: list[str], user_id: str) -> list[str]:
     return [sys.executable, "-m", "jobwright", "--user", user_id, *args]
 
 
-# ---------------------------------------------------------------------------
-# Durable run registry ({LOG_DIR}/web_runs.json)
-# ---------------------------------------------------------------------------
-
-def _registry_path() -> Path:
-    return Path(config.LOG_DIR) / "web_runs.json"
-
-
-def _load_registry() -> list[dict]:
-    """Load the on-disk run registry; return [] if missing or corrupt."""
-    path = _registry_path()
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (FileNotFoundError, ValueError, OSError):
-        return []
-    if not isinstance(data, list):
-        return []
-    return [e for e in data if isinstance(e, dict) and e.get("run_id")]
-
-
-def _save_registry(entries: list[dict]) -> None:
-    path = _registry_path()
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(entries, indent=2), encoding="utf-8")
-    except OSError:
-        pass
-
-
-def _upsert_registry(entry: dict) -> None:
-    """Insert or replace a registry entry by run_id."""
-    entries = [e for e in _load_registry() if e.get("run_id") != entry.get("run_id")]
-    entries.append(entry)
-    _save_registry(entries)
-
-
 def _pid_running(pid: int | None) -> bool:
     """Best-effort liveness check for a bare PID (no live Popen handle)."""
     if not pid:
@@ -116,7 +82,90 @@ def _pid_running(pid: int | None) -> bool:
         return True
     except OSError:
         return False
+    # Signal 0 succeeds on zombies. If we are the parent, reap and treat as dead.
+    try:
+        waited, _ = os.waitpid(pid, os.WNOHANG)
+        if waited == pid:
+            return False
+    except ChildProcessError:
+        pass
+    except OSError:
+        pass
     return True
+
+
+def _dedicated_pgid(pid: int) -> int | None:
+    """Return the process group id if this PID is a session leader we spawned.
+
+    Pipeline runs use start_new_session=True so pgid == pid. Never return our
+    own group (the API / uvicorn worker) — killpg on that would take down the
+    dashboard.
+    """
+    try:
+        pgid = os.getpgid(pid)
+    except OSError:
+        return None
+    if pgid != pid:
+        return None
+    try:
+        if pgid == os.getpgrp():
+            return None
+    except OSError:
+        return None
+    return pgid
+
+
+def _kill_run(pid: int | None, proc: subprocess.Popen | None = None, grace: float = 3.0) -> int | None:
+    """SIGTERM then SIGKILL the run's process group (or the single PID)."""
+    if not pid and proc is not None:
+        pid = proc.pid
+    if not pid:
+        return proc.poll() if proc is not None else None
+
+    pgid = _dedicated_pgid(pid)
+
+    def _send(sig: int) -> None:
+        if pgid is not None:
+            try:
+                os.killpg(pgid, sig)
+                return
+            except (ProcessLookupError, PermissionError, OSError):
+                pass
+        if proc is not None and proc.poll() is None:
+            if sig == signal.SIGKILL:
+                proc.kill()
+            else:
+                proc.terminate()
+            return
+        try:
+            os.kill(pid, sig)
+        except (ProcessLookupError, PermissionError, OSError):
+            pass
+
+    _send(signal.SIGTERM)
+    if proc is not None:
+        try:
+            proc.wait(timeout=grace)
+        except subprocess.TimeoutExpired:
+            _send(signal.SIGKILL)
+            try:
+                proc.wait(timeout=grace)
+            except subprocess.TimeoutExpired:
+                pass
+        return proc.poll()
+
+    deadline = time.time() + grace
+    while time.time() < deadline:
+        if not _pid_running(pid):
+            return None
+        time.sleep(0.05)
+    _send(signal.SIGKILL)
+    try:
+        os.waitpid(pid, os.WNOHANG)
+    except (ChildProcessError, OSError):
+        pass
+    time.sleep(0.05)
+    return None
 
 
 def _status_from_entry(run_id: str, entry: dict) -> dict:
@@ -139,6 +188,7 @@ def _status_from_entry(run_id: str, entry: dict) -> dict:
         "returncode": code,
         "log_path": entry.get("log_path"),
         "user": entry.get("user"),
+        "kind": entry.get("kind") or "pipeline",
     }
 
 
@@ -168,38 +218,28 @@ def _write_log_header(
     log_file.flush()
 
 
-# ---------------------------------------------------------------------------
-# Endpoints
-# ---------------------------------------------------------------------------
-
-@router.post("/run")
-def start_run(body: RunBody, request: Request) -> dict:
-    stages = [s for s in body.stages if s in ALLOWED_STAGES]
-    if not stages:
-        raise HTTPException(400, f"No valid stages; allowed: {ALLOWED_STAGES}")
-
-    user_id = _user_id(request)
+def spawn_logged_run(
+    *,
+    args: list[str],
+    user_id: str,
+    stages: list[str],
+    log_name: str,
+    kind: str,
+    extra_env: dict[str, str] | None = None,
+) -> dict:
+    """Spawn a jobwright subprocess, tee stdout to a log file, register the run."""
     run_id = uuid.uuid4().hex[:12]
     log_dir = Path(config.LOG_DIR)
     log_dir.mkdir(parents=True, exist_ok=True)
-    log_path = log_dir / f"web_run_{run_id}.log"
-
-    cmd = _jobwright_cmd(
-        [
-            "run",
-            *stages,
-            "-w",
-            str(max(1, min(body.workers, 4))),
-            "--min-score",
-            str(body.min_score),
-            "--verbose",
-        ],
-        user_id,
-    )
+    log_path = log_dir / f"{log_name}_{run_id}.log"
+    cmd = _jobwright_cmd(args, user_id)
     cwd = str(Path(__file__).resolve().parents[4])
     env = os.environ.copy()
     env["PYTHONUNBUFFERED"] = "1"
-    env["JOBWRIGHT_LOG_LEVEL"] = env.get("JOBWRIGHT_LOG_LEVEL", "INFO")
+    env["JOBWRIGHT_WEB_RUN_ID"] = run_id
+    if extra_env:
+        env.update(extra_env)
+    env.setdefault("JOBWRIGHT_LOG_LEVEL", "INFO")
 
     with log_path.open("w", encoding="utf-8") as log_file:
         proc = subprocess.Popen(
@@ -208,6 +248,7 @@ def start_run(body: RunBody, request: Request) -> dict:
             stderr=subprocess.STDOUT,
             cwd=cwd,
             env=env,
+            start_new_session=True,
         )
         _write_log_header(
             log_file, run_id=run_id, pid=proc.pid, user=user_id, cwd=cwd, cmd=cmd
@@ -222,6 +263,7 @@ def start_run(body: RunBody, request: Request) -> dict:
         "started_at": started_at,
         "cmd": cmd,
         "user": user_id,
+        "kind": kind,
     }
     _upsert_registry(
         {
@@ -232,6 +274,7 @@ def start_run(body: RunBody, request: Request) -> dict:
             "log_path": str(log_path),
             "user": user_id,
             "cmd": cmd,
+            "kind": kind,
         }
     )
     return {
@@ -240,7 +283,35 @@ def start_run(body: RunBody, request: Request) -> dict:
         "user": user_id,
         "stages": stages,
         "log_path": str(log_path),
+        "kind": kind,
     }
+
+
+# ---------------------------------------------------------------------------
+# Endpoints
+# ---------------------------------------------------------------------------
+
+@router.post("/run")
+def start_run(body: RunBody, request: Request) -> dict:
+    stages = [s for s in body.stages if s in ALLOWED_STAGES]
+    if not stages:
+        raise HTTPException(400, f"No valid stages; allowed: {ALLOWED_STAGES}")
+
+    return spawn_logged_run(
+        args=[
+            "run",
+            *stages,
+            "-w",
+            str(max(1, min(body.workers, 4))),
+            "--min-score",
+            str(body.min_score),
+            "--verbose",
+        ],
+        user_id=_user_id(request),
+        stages=stages,
+        log_name="web_run",
+        kind="pipeline",
+    )
 
 
 @router.get("/runs")
@@ -265,41 +336,30 @@ def stop_run(run_id: str) -> dict:
     info = _runs.get(run_id)
     if info is not None:
         proc: subprocess.Popen = info["proc"]
-        if proc.poll() is None:
-            proc.terminate()
-            try:
-                proc.wait(timeout=3)
-            except subprocess.TimeoutExpired:
-                proc.kill()
-                try:
-                    proc.wait(timeout=3)
-                except subprocess.TimeoutExpired:
-                    pass
-        code = proc.poll()
+        code = _kill_run(info.get("pid") or proc.pid, proc=proc)
         return {"run_id": run_id, "stopped": True, "returncode": code}
 
-    # Only known from the on-disk registry: signal the bare PID.
+    # Only known from the on-disk registry (API reload dropped the Popen handle).
     entry = next((e for e in _load_registry() if e.get("run_id") == run_id), None)
     if entry is None:
         raise HTTPException(404, "Unknown run_id")
 
     pid = entry.get("pid")
     if not _pid_running(pid):
-        return {"run_id": run_id, "stopped": False, "returncode": None}
-    try:
-        os.kill(pid, signal.SIGTERM)
-    except (ProcessLookupError, PermissionError, OSError):
-        return {"run_id": run_id, "stopped": False, "returncode": None}
-    return {"run_id": run_id, "stopped": True, "returncode": None}
+        return {"run_id": run_id, "stopped": True, "returncode": None}
+    _kill_run(pid)
+    return {"run_id": run_id, "stopped": not _pid_running(pid), "returncode": None}
 
 
 @router.get("/stream/{run_id}")
 async def stream_run(run_id: str) -> StreamingResponse:
-    info = _runs.get(run_id)
+    merged = _merged_entries()
+    info = merged.get(run_id)
     if not info:
         raise HTTPException(404, "Unknown run_id")
     log_path = Path(info["log_path"])
-    proc: subprocess.Popen = info["proc"]
+    proc: subprocess.Popen | None = info.get("proc")
+    pid = info.get("pid")
 
     async def event_gen() -> AsyncIterator[str]:
         pos = 0
@@ -311,9 +371,14 @@ async def stream_run(run_id: str) -> StreamingResponse:
                     pos = len(data)
                     for line in chunk.splitlines():
                         yield f"data: {line}\n\n"
-            code = proc.poll()
-            if code is not None:
-                yield f"data: [done RC={code}]\n\n"
+            if proc is not None:
+                code = proc.poll()
+                done = code is not None
+            else:
+                code = None
+                done = not _pid_running(pid)
+            if done:
+                yield f"data: [done RC={code if code is not None else 0}]\n\n"
                 yield "event: done\ndata: {}\n\n"
                 break
             await asyncio.sleep(0.5)
@@ -340,55 +405,16 @@ def apply_job(body: ApplyBody, request: Request) -> dict:
     if body.url:
         args.extend(["--url", body.url])
 
-    run_id = uuid.uuid4().hex[:12]
-    log_dir = Path(config.LOG_DIR)
-    log_dir.mkdir(parents=True, exist_ok=True)
-    log_path = log_dir / f"web_apply_{run_id}.log"
-    cmd = _jobwright_cmd(args, user_id)
-    cwd = str(Path(__file__).resolve().parents[4])
-    env = os.environ.copy()
-    env["PYTHONUNBUFFERED"] = "1"
-    env["JOBWRIGHT_LOG_LEVEL"] = env.get("JOBWRIGHT_LOG_LEVEL", "INFO")
-
-    with log_path.open("w", encoding="utf-8") as log_file:
-        proc = subprocess.Popen(
-            cmd,
-            stdout=log_file,
-            stderr=subprocess.STDOUT,
-            cwd=cwd,
-            env=env,
-        )
-        _write_log_header(
-            log_file, run_id=run_id, pid=proc.pid, user=user_id, cwd=cwd, cmd=cmd
-        )
-
-    started_at = datetime.now(timezone.utc).isoformat()
-    _runs[run_id] = {
-        "proc": proc,
-        "pid": proc.pid,
-        "log_path": str(log_path),
-        "stages": ["apply"],
-        "started_at": started_at,
-        "cmd": cmd,
-        "user": user_id,
-    }
-    _upsert_registry(
-        {
-            "run_id": run_id,
-            "pid": proc.pid,
-            "stages": ["apply"],
-            "started_at": started_at,
-            "log_path": str(log_path),
-            "user": user_id,
-            "cmd": cmd,
-        }
+    handle = spawn_logged_run(
+        args=args,
+        user_id=user_id,
+        stages=["apply"],
+        log_name="web_apply",
+        kind="apply",
     )
     return {
-        "run_id": run_id,
-        "pid": proc.pid,
-        "user": user_id,
+        **handle,
         "dry_run": body.dry_run,
-        "log_path": str(log_path),
         "url": body.url,
     }
 

@@ -160,7 +160,13 @@ def _classify_llm(description: str) -> str | None:
                 {"role": "system", "content": _LLM_SYSTEM},
                 {"role": "user", "content": f"JOB POSTING:\n{_excerpt(description)}"},
             ],
-            max_tokens=64,
+            # Reasoning models (e.g. gpt-oss-120b) spend part of the completion
+            # budget on hidden reasoning tokens. A tiny cap (was 64) is consumed
+            # entirely by reasoning, so the model returns empty content
+            # (finish_reason=length), forcing retries + provider fallback and a
+            # rate-limit storm during discovery. Give enough headroom for the
+            # reasoning plus the one-field JSON answer.
+            max_tokens=512,
             temperature=0.0,
             max_parse_retries=1,
         )

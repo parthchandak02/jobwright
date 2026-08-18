@@ -113,10 +113,17 @@ def validate_json_fields(data: dict, profile: dict, mode: str = "normal") -> dic
     errors: list[str] = []
     warnings: list[str] = []
 
-    # Required keys — always checked regardless of mode
+    # Required keys — empty lists/strings are warnings in lenient (LLM often
+    # omits projects when condensing); still hard errors otherwise.
     for key in ("title", "summary", "skills", "experience", "projects", "education"):
-        if key not in data or not data[key]:
+        if key not in data:
             errors.append(f"Missing required field: {key}")
+        elif not data[key]:
+            msg = f"Missing required field: {key}"
+            if mode == "lenient":
+                warnings.append(msg)
+            else:
+                errors.append(msg)
     if errors:
         return {"passed": False, "errors": errors, "warnings": warnings}
 

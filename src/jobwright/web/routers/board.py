@@ -17,6 +17,7 @@ from jobwright.database import (
     job_id_for_url,
 )
 from jobwright.enrichment.sponsorship import derive_sponsorship_status
+from jobwright.scoring.materials_format import generated_material_exists
 
 router = APIRouter(prefix="/api", tags=["board"])
 
@@ -75,8 +76,12 @@ def _row_to_card(row) -> dict:
         "notes": d.get("notes"),
         "board_updated_by": d.get("board_updated_by"),
         "board_updated_at": d.get("board_updated_at"),
-        "has_resume": bool(d.get("tailored_resume_path") or d.get("tailored_resume_docx_path")),
-        "has_cover": bool(d.get("cover_letter_path") or d.get("cover_letter_docx_path")),
+        "has_resume": generated_material_exists(
+            d.get("tailored_resume_path"), d.get("tailored_resume_docx_path")
+        ),
+        "has_cover": generated_material_exists(
+            d.get("cover_letter_path"), d.get("cover_letter_docx_path")
+        ),
         "application_url": d.get("application_url") or d.get("url"),
         "discovered_at": d.get("discovered_at"),
         "apply_status": d.get("apply_status"),

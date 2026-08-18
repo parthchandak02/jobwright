@@ -26,3 +26,7 @@ env: \{
 venv
 env\["JOBWRIGHT_LOG_LEVEL"\]
 env\.get\("JOBWRIGHT_LOG_LEVEL"
+env\["JOBWRIGHT_WEB_RUN_ID"\]
+extra_env
+env\.update\(extra_env\)
+env\.setdefault\("JOBWRIGHT_LOG_LEVEL"

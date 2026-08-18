@@ -79,13 +79,13 @@ for envf in "${GLOBAL_ENV}" "${JOBWRIGHT_DIR}/${DOTENV}"; do
   fi
 done
 
-if [[ -n "${GEMINI_API_KEY:-}" && -f "${JOBWRIGHT_DIR}/resume.txt" ]]; then
+if [[ -n "${GEMINI_API_KEY:-}" && -f "${JOBWRIGHT_DIR}/resume/base.pdf" ]]; then
   echo ""
   echo "=== pipeline dry-run (discover..cover, limit 2) ==="
   jobwright run discover enrich score portfolio tailor cover --min-score 8 --dry-run 2>&1 | tail -20 || true
 else
   echo ""
-  echo "SKIP pipeline dry-run: need GEMINI_API_KEY + resume.txt in ${JOBWRIGHT_DIR}"
+  echo "SKIP pipeline dry-run: need GEMINI_API_KEY + resume/base.pdf in ${JOBWRIGHT_DIR}"
 fi
 
 if [[ -n "${CURSOR_API_KEY:-}" ]]; then
