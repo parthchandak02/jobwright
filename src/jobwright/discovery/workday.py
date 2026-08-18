@@ -341,6 +341,11 @@ def store_results(conn: sqlite3.Connection, jobs: list[dict], employers: dict) -
         full_description = description if len(description) > 200 else None
         detail_scraped_at = now if full_description else None
         detail_error = job.get("detail_error")
+        sponsorship_status = None
+        if full_description:
+            from jobwright.enrichment.sponsorship import classify_sponsorship
+
+            sponsorship_status = classify_sponsorship(full_description)
 
         site = job.get("employer_name", "Corporate")
         company = job.get("employer_name") or None
@@ -357,10 +362,12 @@ def store_results(conn: sqlite3.Connection, jobs: list[dict], employers: dict) -
         try:
             conn.execute(
                 "INSERT INTO jobs (url, title, salary, description, location, site, company, strategy, "
-                "discovered_at, full_description, application_url, detail_scraped_at, detail_error) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "discovered_at, full_description, application_url, detail_scraped_at, detail_error, "
+                "sponsorship_status) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (url, job.get("title"), None, short_desc, job.get("location"),
-                 site, company, strategy, now, full_description, url, detail_scraped_at, detail_error),
+                 site, company, strategy, now, full_description, url, detail_scraped_at, detail_error,
+                 sponsorship_status),
             )
             new += 1
         except sqlite3.IntegrityError:

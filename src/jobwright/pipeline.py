@@ -337,7 +337,7 @@ _PENDING_SQL: dict[str, str] = {
     ),
     "pdf": (
         "SELECT COUNT(*) FROM jobs WHERE tailored_resume_path IS NOT NULL "
-        "AND tailored_resume_path LIKE '%.txt'"
+        "AND (tailored_resume_path LIKE '%.md' OR tailored_resume_path LIKE '%.txt')"
         " AND (board_updated_by IS NULL OR board_updated_by != 'human')"
         " AND COALESCE(funnel_stage, 'backlog') NOT IN "
         "('applied', 'in_progress', 'offer', 'closed')"

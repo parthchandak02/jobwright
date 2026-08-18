@@ -448,13 +448,13 @@ def build_prompt(job: dict, tailored_resume: str,
 
     src_pdf = Path(resume_path).with_suffix(".pdf").resolve()
     if not src_pdf.exists():
-        txt_path = Path(resume_path)
-        if txt_path.suffix.lower() != ".txt":
-            txt_path = txt_path.with_suffix(".txt")
-        if txt_path.exists():
+        from jobwright.scoring.materials_format import resolve_material_path
+
+        material_path = resolve_material_path(resume_path)
+        if material_path and material_path.exists():
             from jobwright.scoring.pdf import convert_to_pdf
 
-            convert_to_pdf(txt_path, src_pdf)
+            convert_to_pdf(material_path, src_pdf)
         if not src_pdf.exists() or not src_pdf.is_file() or src_pdf.stat().st_size < 64:
             raise ValueError(f"Resume PDF not found or invalid: {src_pdf}")
 
@@ -472,15 +472,13 @@ def build_prompt(job: dict, tailored_resume: str,
     cl_upload_path = ""
     cl_path = job.get("cover_letter_path")
     if cl_path and Path(cl_path).exists():
-        cl_src = Path(cl_path)
-        # Read text from .txt sibling (PDF is binary)
-        cl_txt = cl_src.with_suffix(".txt")
-        if cl_txt.exists():
-            cover_letter_text = cl_txt.read_text(encoding="utf-8")
-        elif cl_src.suffix == ".txt":
+        from jobwright.scoring.materials_format import resolve_material_path
+
+        cl_src = resolve_material_path(cl_path)
+        if cl_src:
             cover_letter_text = cl_src.read_text(encoding="utf-8")
         # Upload must be PDF
-        cl_pdf_src = cl_src.with_suffix(".pdf")
+        cl_pdf_src = Path(cl_path).with_suffix(".pdf")
         if cl_pdf_src.exists():
             cl_upload = dest_dir / f"{name_slug}_Cover_Letter.pdf"
             shutil.copy(str(cl_pdf_src), str(cl_upload))

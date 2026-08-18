@@ -24,3 +24,5 @@ env\["PYTHONUNBUFFERED"\]
 # Benign PM2/venv config tokens (no secret values)
 env: \{
 venv
+env\["JOBWRIGHT_LOG_LEVEL"\]
+env\.get\("JOBWRIGHT_LOG_LEVEL"

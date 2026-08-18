@@ -11,6 +11,11 @@ from fastapi.responses import FileResponse
 
 from jobwright import config
 from jobwright.database import get_connection
+from jobwright.scoring.materials_format import (
+    MaterialKind,
+    format_material_preview,
+    resolve_material_path,
+)
 
 router = APIRouter(prefix="/api", tags=["materials"])
 
@@ -47,18 +52,16 @@ def _load_manifest() -> dict | None:
         return None
 
 
-def _read_preview(path: str | None) -> str | None:
-    """Read a text file for drawer preview; return None if missing/unreadable."""
-    if not path:
-        return None
-    p = Path(path)
-    if not p.is_file():
+def _read_preview(path: str | None, kind: MaterialKind) -> str | None:
+    """Read and format markdown/text for drawer preview; return None if missing/unreadable."""
+    resolved = resolve_material_path(path)
+    if not resolved:
         return None
     try:
-        text = p.read_text(encoding="utf-8", errors="replace")
+        text = resolved.read_text(encoding="utf-8", errors="replace")
     except OSError:
         return None
-    text = text.strip()
+    text = format_material_preview(text, kind)
     if not text:
         return None
     if len(text) > _PREVIEW_MAX_CHARS:
@@ -91,20 +94,22 @@ def job_materials(url: str) -> dict:
     def _exists(p: str | None) -> bool:
         return bool(p) and Path(p).is_file()
 
-    resume_txt = d.get("tailored_resume_path") if _exists(d.get("tailored_resume_path")) else None
-    cover_txt = d.get("cover_letter_path") if _exists(d.get("cover_letter_path")) else None
+    resume_md_path = resolve_material_path(d.get("tailored_resume_path"))
+    cover_md_path = resolve_material_path(d.get("cover_letter_path"))
+    resume_md = str(resume_md_path) if resume_md_path else None
+    cover_md = str(cover_md_path) if cover_md_path else None
 
     return {
         "url": url,
         "title": d.get("title"),
         "company": d.get("company"),
         "fit_score": d.get("fit_score"),
-        "resume_txt": resume_txt,
+        "resume_md": resume_md,
         "resume_docx": d.get("tailored_resume_docx_path") if _exists(d.get("tailored_resume_docx_path")) else None,
-        "cover_txt": cover_txt,
+        "cover_md": cover_md,
         "cover_docx": d.get("cover_letter_docx_path") if _exists(d.get("cover_letter_docx_path")) else None,
-        "resume_preview": _read_preview(resume_txt),
-        "cover_preview": _read_preview(cover_txt),
+        "resume_preview": _read_preview(d.get("tailored_resume_path"), "resume"),
+        "cover_preview": _read_preview(d.get("cover_letter_path"), "cover"),
         "manifest": manifest_entry,
     }
 

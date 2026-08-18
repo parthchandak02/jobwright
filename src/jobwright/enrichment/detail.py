@@ -661,10 +661,21 @@ def scrape_site_batch(
 
                 if status in ("ok", "partial"):
                     stats[status] += 1
+                    from jobwright.enrichment.sponsorship import classify_sponsorship
+
+                    full_description = result.get("full_description")
+                    sponsorship_status = classify_sponsorship(full_description)
                     conn.execute(
                         "UPDATE jobs SET full_description = ?, application_url = ?, "
-                        "detail_scraped_at = ?, detail_error = NULL WHERE url = ?",
-                        (result.get("full_description"), result.get("application_url"), now, url),
+                        "detail_scraped_at = ?, detail_error = NULL, sponsorship_status = ? "
+                        "WHERE url = ?",
+                        (
+                            full_description,
+                            result.get("application_url"),
+                            now,
+                            sponsorship_status,
+                            url,
+                        ),
                     )
                 else:
                     stats["error"] += 1

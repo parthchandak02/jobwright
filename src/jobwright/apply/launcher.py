@@ -10,7 +10,6 @@ import json
 import logging
 import os
 import platform
-import re
 import signal
 import sys
 import threading
@@ -182,247 +181,6 @@ def list_ready_jobs(
             break
     return ready
 
-
-# Unicode dashes / hyphens that render poorly in WhatsApp -> ASCII hyphen.
-_DASH_CHARS = "\u2010\u2011\u2012\u2013\u2014\u2015\u2212"  # ‐ ‑ ‒ – — ― −
-_DASH_RE = re.compile(f"[{_DASH_CHARS}]")
-_MARKDOWN_RE = re.compile(r"[*_`#]+")
-_WS_RE = re.compile(r"\s+")
-
-
-def _clean_text(text: str | None) -> str:
-    """Normalize LLM/scraped text for plain WhatsApp: ASCII dashes, no markdown."""
-    if not text:
-        return ""
-    text = text.replace("\u2026", "...")  # ellipsis glyph -> ASCII
-    text = _DASH_RE.sub("-", text)
-    text = _MARKDOWN_RE.sub("", text)
-    text = _WS_RE.sub(" ", text)
-    return text.strip()
-
-
-_PERSON_TOKEN_RE = re.compile(r"^[A-Z][A-Za-z.'-]*$")
-# Words that signal a job-posting title rather than a person's name.
-_TITLE_WORDS = {
-    "chief", "executive", "director", "manager", "officer", "president",
-    "vp", "ceo", "cto", "cfo", "coo", "head", "lead", "senior", "junior",
-    "staff", "jobs", "job", "careers", "career", "hiring", "hire", "team",
-    "post", "associate", "assistant", "coordinator", "analyst", "specialist",
-    "intern", "recruiter", "recruiting", "operations", "growth", "strategy",
-    "engineer", "engineering", "developer", "leadership",
-}
-
-
-def _looks_like_person_name(name: str) -> bool:
-    """True only for plausible 'First Last' names, not job-posting titles.
-
-    Web research occasionally stores a page title (job repost) as the contact
-    name. Real names are 2-4 capitalized tokens with no lowercase connectors
-    (of/at/to/by), symbols (|, &), or digits, and no job-title words.
-    """
-    tokens = name.split()
-    if not (2 <= len(tokens) <= 4):
-        return False
-    if not all(_PERSON_TOKEN_RE.match(t) for t in tokens):
-        return False
-    return not any(t.lower() in _TITLE_WORDS for t in tokens)
-
-
-def _truncate(text: str, limit: int) -> str:
-    """Truncate on a word boundary with an ASCII ellipsis."""
-    text = text.strip()
-    if len(text) <= limit:
-        return text
-    cut = text[:limit].rsplit(" ", 1)[0].rstrip(",.;:-") or text[:limit]
-    return cut + "..."
-
-
-def _docx_path(txt_path: str | None, stored: str | None) -> str | None:
-    if stored and Path(stored).exists():
-        return stored
-    if txt_path:
-        sibling = Path(txt_path).with_suffix(".docx")
-        if sibling.exists():
-            return str(sibling)
-    return None
-
-
-def gather_brief_health(pipeline_rc: int | None = None) -> dict:
-    """Snapshot DB counts for digest footers and ops visibility."""
-    conn = get_connection()
-    total = conn.execute("SELECT COUNT(*) FROM jobs").fetchone()[0]
-    scored = conn.execute(
-        "SELECT COUNT(*) FROM jobs WHERE fit_score IS NOT NULL"
-    ).fetchone()[0]
-    ready = conn.execute(
-        "SELECT COUNT(*) FROM jobs WHERE tailored_resume_path IS NOT NULL"
-    ).fetchone()[0]
-    pending_score = conn.execute(
-        "SELECT COUNT(*) FROM jobs WHERE full_description IS NOT NULL AND fit_score IS NULL"
-    ).fetchone()[0]
-    return {
-        "total_jobs": total,
-        "scored": scored,
-        "ready_materials": ready,
-        "pending_score": pending_score,
-        "pipeline_rc": pipeline_rc,
-    }
-
-
-def _digest_footer_lines(
-    job_count: int,
-    limit: int,
-    apply_enabled: bool,
-    health: dict | None,
-) -> list[str]:
-    """User-facing hints and optional pipeline health footer."""
-    lines: list[str] = []
-    if job_count == 0:
-        lines.extend([
-            "No matching roles above your score threshold today.",
-            "We will search again on the next scheduled run.",
-            'Reply "find jobs now" to refresh manually.',
-        ])
-    elif job_count == 1:
-        lines.append(
-            "Your editable resume + cover letter are attached below."
-        )
-        lines.append('(Reply "materials 1" if you need them resent.)')
-    else:
-        lines.append(
-            "Editable resume + cover letter for each job are attached below."
-        )
-        lines.append('(Reply "materials N", e.g. "materials 2", to resend any job.)')
-    if job_count > 0:
-        if apply_enabled:
-            lines.append(f'Reply *CONFIRM APPLY* to submit up to {limit} jobs (live).')
-        else:
-            lines.append(
-                "Find-only mode: applying is off for this profile. Reply if you want apply enabled."
-            )
-
-    if health:
-        rc = health.get("pipeline_rc")
-        rc_note = ""
-        if rc is not None and rc != 0:
-            rc_note = f" (pipeline exit {rc}; partial results below)"
-        lines.append("")
-        lines.append(
-            f"Run stats{rc_note}: {health.get('total_jobs', 0)} in DB, "
-            f"{health.get('scored', 0)} scored, "
-            f"{health.get('ready_materials', 0)} with tailored resume, "
-            f"{health.get('pending_score', 0)} still pending score."
-        )
-    return lines
-
-
-def write_morning_digest_and_manifest(
-    digest_path: Path,
-    manifest_path: Path,
-    min_score: int = 5,
-    limit: int = 5,
-    max_attempts: int | None = None,
-    apply_enabled: bool = True,
-    user_label: str | None = None,
-    pipeline_rc: int | None = None,
-    health: dict | None = None,
-) -> int:
-    """Write digest text, URL manifest, and MATERIALS_MANIFEST JSON.
-
-    If apply_enabled is False, omit the CONFIRM APPLY line (find-only mode).
-    """
-    from jobwright.network.per_job import load_job_contacts
-
-    jobs = list_ready_jobs(min_score=min_score, limit=limit, max_attempts=max_attempts)
-    manifest_path.write_text(
-        "\n".join(job["url"] for job in jobs) + ("\n" if jobs else ""),
-        encoding="utf-8",
-    )
-
-    contacts_blob = load_job_contacts()
-    contacts_by_url = (contacts_blob.get("jobs") or {}) if contacts_blob else {}
-
-    materials: list[dict] = []
-    who = f" ({user_label})" if user_label else ""
-    lines = [
-        f"=== Daily Brief{who} ===",
-        f"Date: {datetime.now().strftime('%Y-%m-%d %H:%M %Z')}",
-        "",
-        "Matched jobs (reply materials N for editable DOCX):",
-        "",
-    ]
-    for idx, job in enumerate(jobs, start=1):
-        company = _clean_text(job.get("company") or job.get("site") or "")
-        title = _clean_text(job.get("title") or "")
-        desc = _clean_text(job.get("full_description") or title)
-        desc = _truncate(desc, 90)
-        lines.append(f"{idx}. *{title}* @ {company} (score {job.get('fit_score', '')})")
-        if desc:
-            lines.append(f"   {desc}")
-        lines.append(f"   {job['url']}")
-
-        resume_docx = _docx_path(job.get("tailored_resume_path"), job.get("tailored_resume_docx_path"))
-        cover_docx = _docx_path(job.get("cover_letter_path"), job.get("cover_letter_docx_path"))
-        if resume_docx or cover_docx:
-            lines.append("   Materials: DOCX ready (reply materials %d)" % idx)
-
-        entry = contacts_by_url.get(job["url"]) or {}
-        csv_c = entry.get("csv_contacts") or []
-        web_c = entry.get("web_contacts") or []
-        contact_lines: list[str] = []
-        for c in csv_c[:3]:
-            name = _clean_text(
-                f"{c.get('first_name', '')} {c.get('last_name', '')}".strip()
-                or c.get("name", "")
-            )
-            if not name:
-                continue
-            position = _clean_text(c.get("position") or "")
-            why = _clean_text(c.get("why") or "")
-            head = f"{name} ({position})" if position else name
-            contact_lines.append(f"     - {head}: {why}" if why else f"     - {head}")
-        for c in web_c[:2]:
-            name = _clean_text(c.get("name") or "")
-            url = (c.get("source_url") or "").strip()
-            if not name or not url or not _looks_like_person_name(name):
-                continue
-            role = _clean_text(c.get("role") or "")
-            head = f"{name} ({role})" if role else name
-            contact_lines.append(f"     - {head}: {url}")
-        if contact_lines:
-            lines.append("   Connections:")
-            lines.extend(contact_lines)
-        lines.append("")
-
-        materials.append({
-            "index": idx,
-            "url": job["url"],
-            "title": job.get("title"),
-            "company": company,
-            "fit_score": job.get("fit_score"),
-            "resume_docx": resume_docx,
-            "cover_docx": cover_docx,
-            "resume_txt": job.get("tailored_resume_path"),
-            "cover_txt": job.get("cover_letter_path"),
-            "csv_contacts": csv_c,
-            "web_contacts": web_c,
-        })
-
-    lines.append("")
-    lines.extend(_digest_footer_lines(len(jobs), limit, apply_enabled, health))
-    digest_path.write_text("\n".join(lines), encoding="utf-8")
-
-    materials_path = digest_path.parent / f"MATERIALS_MANIFEST_{datetime.now().strftime('%Y%m%d')}.json"
-    materials_path.write_text(
-        json.dumps({"generated_at": datetime.now().isoformat(), "jobs": materials}, indent=2),
-        encoding="utf-8",
-    )
-    # Latest pointer
-    (digest_path.parent / "MATERIALS_MANIFEST_latest.json").write_text(
-        materials_path.read_text(encoding="utf-8"),
-        encoding="utf-8",
-    )
-    return len(jobs)
 
 # How often to poll the DB when the queue is empty (seconds)
 POLL_INTERVAL = config.DEFAULTS["poll_interval"]
@@ -639,12 +397,15 @@ def gen_prompt(target_url: str, min_score: int = 7,
     if not job:
         return None
 
-    # Read resume text
+    # Read resume markdown/text
     resume_path = job.get("tailored_resume_path")
-    txt_path = Path(resume_path).with_suffix(".txt") if resume_path else None
     resume_text = ""
-    if txt_path and txt_path.exists():
-        resume_text = txt_path.read_text(encoding="utf-8")
+    if resume_path:
+        from jobwright.scoring.materials_format import resolve_material_path
+
+        resolved = resolve_material_path(resume_path)
+        if resolved:
+            resume_text = resolved.read_text(encoding="utf-8")
 
     prompt = prompt_mod.build_prompt(
         job=job,
@@ -738,10 +499,13 @@ def run_job(job: dict, port: int, worker_id: int = 0,
         Tuple of (status_string, duration_ms).
     """
     resume_path = job.get("tailored_resume_path")
-    txt_path = Path(resume_path).with_suffix(".txt") if resume_path else None
     resume_text = ""
-    if txt_path and txt_path.exists():
-        resume_text = txt_path.read_text(encoding="utf-8")
+    if resume_path:
+        from jobwright.scoring.materials_format import resolve_material_path
+
+        resolved = resolve_material_path(resume_path)
+        if resolved:
+            resume_text = resolved.read_text(encoding="utf-8")
 
     mcp_config = _make_mcp_config(port)
     worker_dir = reset_worker_dir(worker_id)
@@ -978,26 +742,6 @@ def main(limit: int = 1, target_url: str | None = None,
 
     config.ensure_dirs()
     console = Console()
-
-    if not dry_run and not target_url:
-        apply_dir = Path(os.environ.get("JOBWRIGHT_DIR", config.APP_DIR))
-        confirm_file = apply_dir / "APPLY_CONFIRMED"
-        if not confirm_file.exists():
-            console.print(
-                "[red]Live apply blocked:[/red] missing confirmation file "
-                f"({confirm_file}). Reply CONFIRM APPLY after the morning digest."
-            )
-            raise SystemExit(1)
-        manifest_env = os.environ.get("JOBWRIGHT_APPLY_MANIFEST")
-        if not manifest_env or not Path(manifest_env).exists():
-            console.print(
-                "[red]Live apply blocked:[/red] JOBWRIGHT_APPLY_MANIFEST must point "
-                "to a non-empty manifest file."
-            )
-            raise SystemExit(1)
-        if not Path(manifest_env).read_text(encoding="utf-8").strip():
-            console.print("[red]Live apply blocked:[/red] manifest file is empty.")
-            raise SystemExit(1)
 
     if continuous:
         effective_limit = 0

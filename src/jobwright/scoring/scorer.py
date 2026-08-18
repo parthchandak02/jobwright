@@ -60,7 +60,7 @@ Return ONLY a JSON object:
 Include one object per job id. Do not omit jobs."""
 
 
-def _build_score_prompt(profile: dict | None) -> str:
+def _build_score_prompt(profile: dict | None, calibration: str = "") -> str:
     """Inject profile-driven target role / avoid guidance into the scoring prompt."""
     guidance_lines: list[str] = []
     if profile:
@@ -97,11 +97,51 @@ def _build_score_prompt(profile: dict | None) -> str:
             "- Weight the strongest themes in the resume (consulting, ops, impact, etc.).",
         ]
 
-    return (
+    prompt = (
         SCORE_PROMPT_BASE
         + "\n\nCANDIDATE TARGET-ROLE GUIDANCE:\n"
         + "\n".join(guidance_lines)
     )
+    if calibration:
+        prompt += calibration
+    return prompt
+
+
+_MAX_CALIBRATION_EXAMPLES = 12
+
+
+def _load_score_calibration(conn) -> str:
+    """Load recent human score corrections as few-shot calibration for the LLM."""
+    rows = conn.execute(
+        """
+        SELECT title, company, site, fit_score, user_fit_score, user_score_rationale
+        FROM jobs
+        WHERE user_fit_score IS NOT NULL
+          AND user_score_rationale IS NOT NULL
+          AND trim(user_score_rationale) != ''
+        ORDER BY user_score_at DESC
+        LIMIT ?
+        """,
+        (_MAX_CALIBRATION_EXAMPLES,),
+    ).fetchall()
+    if not rows:
+        return ""
+    lines = [
+        "\n\nHUMAN SCORE CALIBRATION (learn from these corrections; align future scores):"
+    ]
+    for i, row in enumerate(rows, 1):
+        d = dict(row)
+        title = d.get("title") or "Unknown role"
+        company = d.get("company") or d.get("site") or "Unknown"
+        ai = d.get("fit_score")
+        user = d.get("user_fit_score")
+        rationale = (d.get("user_score_rationale") or "").strip()[:400]
+        ai_part = f"AI scored {ai}" if ai is not None else "AI unscored"
+        lines.append(
+            f"{i}. {title} @ {company} — {ai_part}, human corrected to {user}. "
+            f"Rationale: {rationale}"
+        )
+    return "\n".join(lines)
 
 
 # Back-compat alias for imports/tests
@@ -177,12 +217,13 @@ def score_jobs_batch(
     resume_text: str,
     jobs: list[dict],
     profile: dict | None = None,
+    calibration: str = "",
 ) -> tuple[list[dict], list[dict]]:
     """Score a small batch of jobs in one LLM call. Missing jobs returned for retry."""
     if not jobs:
         return [], []
     if len(jobs) == 1:
-        one = score_job(resume_text, jobs[0], profile=profile)
+        one = score_job(resume_text, jobs[0], profile=profile, calibration=calibration)
         if one is None:
             return [], jobs
         one["url"] = jobs[0]["url"]
@@ -190,7 +231,7 @@ def score_jobs_batch(
 
     blocks = [_job_block(job, index=i, desc_chars=_BATCH_DESC_CHARS) for i, job in enumerate(jobs, start=1)]
     messages = [
-        {"role": "system", "content": _build_score_prompt(profile) + BATCH_SCORE_TAIL},
+        {"role": "system", "content": _build_score_prompt(profile, calibration) + BATCH_SCORE_TAIL},
         {
             "role": "user",
             "content": (
@@ -216,7 +257,12 @@ def score_jobs_batch(
         return [], jobs
 
 
-def score_job(resume_text: str, job: dict, profile: dict | None = None) -> dict | None:
+def score_job(
+    resume_text: str,
+    job: dict,
+    profile: dict | None = None,
+    calibration: str = "",
+) -> dict | None:
     """Score a single job against the resume.
 
     Args:
@@ -228,7 +274,7 @@ def score_job(resume_text: str, job: dict, profile: dict | None = None) -> dict 
         {"score": int, "keywords": str, "reasoning": str} or None on parse/LLM failure.
     """
     messages = [
-        {"role": "system", "content": _build_score_prompt(profile) + SINGLE_SCORE_TAIL},
+        {"role": "system", "content": _build_score_prompt(profile, calibration) + SINGLE_SCORE_TAIL},
         {
             "role": "user",
             "content": f"RESUME:\n{resume_text}\n\n---\n\nJOB POSTING:\n{_job_block(job)}",
@@ -286,6 +332,7 @@ def run_scoring(limit: int = 0, rescore: bool = False) -> dict:
     except FileNotFoundError:
         profile = None
     conn = get_connection()
+    calibration = _load_score_calibration(conn)
 
     if rescore:
         query = "SELECT * FROM jobs WHERE full_description IS NOT NULL"
@@ -318,7 +365,7 @@ def run_scoring(limit: int = 0, rescore: bool = False) -> dict:
     )
 
     for chunk in chunks:
-        scored, leftover = score_jobs_batch(resume_text, chunk, profile=profile)
+        scored, leftover = score_jobs_batch(resume_text, chunk, profile=profile, calibration=calibration)
         results.extend(scored)
         done += len(scored)
         for item in scored:
@@ -327,7 +374,7 @@ def run_scoring(limit: int = 0, rescore: bool = False) -> dict:
                 done, len(jobs), item["score"], (item.get("url") or "")[-50:],
             )
         for job in leftover:
-            result = score_job(resume_text, job, profile=profile)
+            result = score_job(resume_text, job, profile=profile, calibration=calibration)
             done += 1
             if result is None:
                 errors += 1

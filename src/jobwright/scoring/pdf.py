@@ -8,6 +8,7 @@ import logging
 from pathlib import Path
 
 import jobwright.config as config
+from jobwright.scoring.materials_format import normalize_for_structured_parse, resolve_material_path
 
 log = logging.getLogger(__name__)
 
@@ -360,10 +361,10 @@ def render_pdf(html: str, output_path: str) -> None:
 def convert_to_pdf(
     text_path: Path, output_path: Path | None = None, html_only: bool = False
 ) -> Path:
-    """Convert a text resume/cover letter to PDF.
+    """Convert a markdown/text resume or cover letter to PDF.
 
     Args:
-        text_path: Path to the .txt file to convert.
+        text_path: Path to the .md or legacy .txt file to convert.
         output_path: Optional override for the output path. Defaults to same
             name with .pdf extension.
         html_only: If True, output HTML instead of PDF.
@@ -371,19 +372,21 @@ def convert_to_pdf(
     Returns:
         Path to the generated PDF (or HTML) file.
     """
-    text_path = Path(text_path)
-    text = text_path.read_text(encoding="utf-8")
-    resume = parse_resume(text)
+    resolved = resolve_material_path(text_path)
+    if not resolved:
+        raise FileNotFoundError(f"Material file not found: {text_path}")
+    text = resolved.read_text(encoding="utf-8")
+    resume = parse_resume(normalize_for_structured_parse(text))
     html = build_html(resume)
 
     if html_only:
-        out = output_path or text_path.with_suffix(".html")
+        out = output_path or resolved.with_suffix(".html")
         out = Path(out)
         out.write_text(html, encoding="utf-8")
         log.info("HTML generated: %s", out)
         return out
 
-    out = output_path or text_path.with_suffix(".pdf")
+    out = output_path or resolved.with_suffix(".pdf")
     out = Path(out)
     render_pdf(html, str(out))
     log.info("PDF generated: %s", out)
@@ -391,9 +394,9 @@ def convert_to_pdf(
 
 
 def batch_convert(limit: int = 50) -> int:
-    """Convert .txt files in config.TAILORED_DIR that don't have corresponding PDFs.
+    """Convert markdown/text files in config.TAILORED_DIR that lack PDFs.
 
-    Scans for .txt files (excluding _JOB.txt and _REPORT.json), checks if a
+    Scans for .md and legacy .txt files (excluding _JOB.txt sidecars), checks if a
     .pdf with the same stem already exists, and converts any that are missing.
 
     Args:
@@ -406,12 +409,13 @@ def batch_convert(limit: int = 50) -> int:
         log.warning("Tailored directory does not exist: %s", config.TAILORED_DIR)
         return 0
 
+    md_files = sorted(config.TAILORED_DIR.glob("*.md"))
     txt_files = sorted(config.TAILORED_DIR.glob("*.txt"))
-    # Exclude _JOB.txt and _CL.txt files from resume conversion
-    # (they get their own conversion calls)
     candidates = [
-        f for f in txt_files
+        f for f in (*md_files, *txt_files)
         if not f.name.endswith("_JOB.txt")
+        and not f.name.endswith("_CL.txt")
+        and not f.name.endswith("_CL.md")
     ]
 
     # Filter to those without a corresponding PDF
@@ -424,7 +428,7 @@ def batch_convert(limit: int = 50) -> int:
             break
 
     if not to_convert:
-        log.info("All text files already have PDFs.")
+        log.info("All material files already have PDFs.")
         return 0
 
     log.info("Converting %d files to PDF...", len(to_convert))
