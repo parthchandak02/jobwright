@@ -4,17 +4,16 @@ import { SidebarActionButton } from '@/components/SidebarActionButton'
 import { useTheme } from '@/lib/theme'
 
 type Props = {
-  collapsed?: boolean
+  variant?: 'sidebar'
 }
 
-export function ThemeToggle({ collapsed }: Props) {
+export function ThemeToggle({ variant }: Props) {
   const { theme, toggleTheme } = useTheme()
   const isDark = theme === 'dark'
 
-  if (collapsed !== undefined) {
+  if (variant === 'sidebar') {
     return (
       <SidebarActionButton
-        collapsed={collapsed}
         icon={isDark ? Moon : Sun}
         label={isDark ? 'Dark theme' : 'Light theme'}
         onClick={toggleTheme}

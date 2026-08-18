@@ -28,7 +28,7 @@ export function UserSwitcher({ profile, onChanged }: Props) {
 
   if (users.length <= 1) {
     return (
-      <p className="truncate text-xs text-muted-foreground">
+      <p className="truncate text-xs font-semibold uppercase tracking-wider text-muted-foreground">
         {profile?.name || profile?.user_id || '…'}
       </p>
     )

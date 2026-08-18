@@ -1,21 +1,24 @@
-import { CircleUser, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { CircleUser } from 'lucide-react'
 import { BrandLogo, APP_SHELL_HEADER_HEIGHT } from '@/components/BrandLogo'
-import { CollapsedSidebarNav } from '@/components/CollapsedSidebarNav'
 import { SidebarActionButton } from '@/components/SidebarActionButton'
 import { SidebarNav } from '@/components/SidebarNav'
 import { ThemeToggle } from '@/components/ThemeToggle'
 import { BoardResponse, Profile } from '@/lib/api'
 import { cn } from '@/lib/utils'
 
+const HOVER_OPEN_MS = 80
+const HOVER_CLOSE_MS = 180
+
 type Props = {
   profile: Profile | null
   board: BoardResponse | null
   filterStage: string | 'all'
   onFilterStage: (stage: string | 'all') => void
-  collapsed: boolean
-  onToggleSidebar: () => void
   profileActive: boolean
   onOpenProfile: () => void
+  /** Unpin when a job drawer opens (more room for the board). */
+  jobOpen?: boolean
 }
 
 export function AppSidebar({
@@ -23,68 +26,116 @@ export function AppSidebar({
   board,
   filterStage,
   onFilterStage,
-  collapsed,
-  onToggleSidebar,
   profileActive,
   onOpenProfile,
+  jobOpen = false,
 }: Props) {
-  return (
-    <aside
-      className={cn(
-        'hidden h-full shrink-0 flex-col overflow-hidden border-r border-sidebar-border bg-sidebar/70 text-sidebar-foreground backdrop-blur-xl transition-[width] duration-200 md:flex',
-        collapsed ? 'w-14' : 'w-56',
-      )}
-      aria-hidden={false}
-    >
-      {collapsed ? (
-        <>
-          <div className={cn(APP_SHELL_HEADER_HEIGHT, 'justify-center')}>
-            <BrandLogo className="size-7" />
-          </div>
-          <CollapsedSidebarNav
-            className="min-h-0 flex-1 overflow-y-auto"
-            profile={profile}
-            board={board}
-            filterStage={filterStage}
-            onFilterStage={onFilterStage}
-          />
-        </>
-      ) : (
-        <>
-          <div className={cn(APP_SHELL_HEADER_HEIGHT, 'w-56 gap-2')}>
-            <BrandLogo className="size-7" />
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-semibold uppercase tracking-[0.14em]">
-                jobwright
-              </p>
-            </div>
-          </div>
-          <SidebarNav
-            className="min-h-0 flex-1 overflow-y-auto"
-            profile={profile}
-            board={board}
-            filterStage={filterStage}
-            onFilterStage={onFilterStage}
-          />
-        </>
-      )}
+  const [pinned, setPinned] = useState(false)
+  const [hovered, setHovered] = useState(false)
+  const rootRef = useRef<HTMLElement>(null)
+  const openTimer = useRef(0)
+  const closeTimer = useRef(0)
+  const expanded = pinned || hovered
 
-      <div className="mt-auto flex shrink-0 flex-col gap-0.5 border-t border-sidebar-border p-2">
-        <SidebarActionButton
-          collapsed={collapsed}
-          active={profileActive}
-          icon={CircleUser}
-          label={profile?.name || profile?.user_id || 'Profile'}
-          onClick={onOpenProfile}
+  function clearTimers() {
+    window.clearTimeout(openTimer.current)
+    window.clearTimeout(closeTimer.current)
+  }
+
+  function setHoverSoon(next: boolean, delay: number) {
+    clearTimers()
+    if (pinned) return
+    const id = window.setTimeout(() => setHovered(next), delay)
+    if (next) openTimer.current = id
+    else closeTimer.current = id
+  }
+
+  useEffect(() => () => clearTimers(), [])
+
+  useEffect(() => {
+    if (!jobOpen) return
+    clearTimers()
+    setPinned(false)
+    setHovered(false)
+  }, [jobOpen])
+
+  useEffect(() => {
+    if (!pinned) return
+    const onPointerDown = (event: PointerEvent) => {
+      if (rootRef.current?.contains(event.target as Node)) return
+      clearTimers()
+      setPinned(false)
+      setHovered(false)
+    }
+    document.addEventListener('pointerdown', onPointerDown)
+    return () => document.removeEventListener('pointerdown', onPointerDown)
+  }, [pinned])
+
+  useEffect(() => {
+    if (!expanded) return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      clearTimers()
+      setPinned(false)
+      setHovered(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [expanded])
+
+  return (
+    <>
+      <div
+        className="sidebar-spacer hidden h-full shrink-0 md:block"
+        data-pinned={pinned ? 'true' : 'false'}
+        aria-hidden
+      />
+      <aside
+        ref={rootRef}
+        data-expanded={expanded ? 'true' : 'false'}
+        data-pinned={pinned ? 'true' : 'false'}
+        onPointerEnter={() => setHoverSoon(true, HOVER_OPEN_MS)}
+        onPointerLeave={() => setHoverSoon(false, HOVER_CLOSE_MS)}
+        onFocusCapture={() => setHoverSoon(true, 0)}
+        onBlurCapture={(event) => {
+          if (!event.currentTarget.contains(event.relatedTarget as Node)) {
+            setHoverSoon(false, HOVER_CLOSE_MS)
+          }
+        }}
+        onClick={() => {
+          clearTimers()
+          setPinned(true)
+        }}
+        className={cn(
+          'group sidebar-shell absolute top-0 left-0 z-30 hidden h-full flex-col overflow-hidden border-r border-sidebar-border bg-sidebar/70 text-sidebar-foreground backdrop-blur-xl md:flex',
+          expanded && !pinned && 'shadow-lg',
+        )}
+      >
+        <div className={cn(APP_SHELL_HEADER_HEIGHT, 'w-[var(--sidebar-panel)] gap-2')}>
+          <BrandLogo className="size-7" />
+          <div className="sidebar-label min-w-0 flex-1">
+            <p className="truncate text-sm font-semibold uppercase tracking-[0.14em]">
+              jobwright
+            </p>
+          </div>
+        </div>
+        <SidebarNav
+          className="min-h-0 w-[var(--sidebar-panel)] flex-1 overflow-y-auto"
+          profile={profile}
+          board={board}
+          filterStage={filterStage}
+          onFilterStage={onFilterStage}
         />
-        <ThemeToggle collapsed={collapsed} />
-        <SidebarActionButton
-          collapsed={collapsed}
-          icon={collapsed ? PanelLeftOpen : PanelLeftClose}
-          label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          onClick={onToggleSidebar}
-        />
-      </div>
-    </aside>
+        <div className="mt-auto flex w-[var(--sidebar-panel)] shrink-0 flex-col gap-0.5 border-t border-sidebar-border p-2">
+          <SidebarActionButton
+            active={profileActive}
+            icon={CircleUser}
+            label={profile?.name || profile?.user_id || 'Profile'}
+            onClick={onOpenProfile}
+          />
+          <ThemeToggle variant="sidebar" />
+        </div>
+      </aside>
+    </>
   )
 }

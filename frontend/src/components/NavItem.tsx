@@ -30,7 +30,7 @@ export function NavItem({
       type="button"
       style={lane ? ({ '--lane': lane } as CSSProperties) : undefined}
       className={cn(
-        'flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors',
+        'flex items-center gap-2 overflow-hidden rounded-md px-3 py-2 text-sm transition-colors',
         active
           ? 'bg-sidebar-accent font-medium text-sidebar-accent-foreground'
           : 'hover:bg-sidebar-accent/60',
@@ -40,18 +40,20 @@ export function NavItem({
       <Icon className={cn('size-4 shrink-0', lane && 'text-[color:var(--lane)]')} />
       <span
         className={cn(
-          'min-w-0 flex-1 truncate text-left',
+          'sidebar-label flex-1 text-left',
           lane && 'text-xs font-bold uppercase tracking-wider text-[color:var(--lane)]',
         )}
       >
         {label}
       </span>
       {lane ? (
-        <span className="shrink-0 text-xs font-semibold tabular-nums text-[color:var(--lane)]/70">
+        <span className="sidebar-label shrink-0 text-xs font-semibold tabular-nums text-[color:var(--lane)]/70">
           {count}
         </span>
       ) : (
-        <Badge variant={countVariant}>{count}</Badge>
+        <span className="sidebar-label shrink-0">
+          <Badge variant={countVariant}>{count}</Badge>
+        </span>
       )}
     </button>
   )

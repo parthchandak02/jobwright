@@ -1,26 +1,22 @@
-import { useCallback, useEffect, useState } from 'react'
-import { ArrowLeft, Plus, Save, Trash2 } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { ArrowLeft, Save } from 'lucide-react'
 import { toast } from 'sonner'
+import { BoardToggles } from '@/components/BoardToggles'
+import { APP_SHELL_HEADER } from '@/components/BrandLogo'
+import { ChipInput } from '@/components/ChipInput'
+import { FormField } from '@/components/FormField'
+import { LocationChipInput } from '@/components/LocationChipInput'
+import { ProfileMaterials } from '@/components/ProfileMaterials'
+import { QueryChipInput } from '@/components/QueryChipInput'
+import { SectionLabel } from '@/components/SectionLabel'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Textarea } from '@/components/ui/textarea'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import { APP_SHELL_HEADER } from '@/components/BrandLogo'
-import { FormField } from '@/components/FormField'
-import { SectionLabel } from '@/components/SectionLabel'
 import { UserSwitcher } from '@/components/UserSwitcher'
 import {
   apiFetch,
+  apiUpload,
   Profile,
-  QueryEntry,
   SettingsData,
-  SettingsProfile,
   SettingsSearches,
 } from '@/lib/api'
 import { cn, errorMessage } from '@/lib/utils'
@@ -31,42 +27,14 @@ type Props = {
   onProfileChanged: () => void
 }
 
-const PANEL = 'space-y-4 rounded-lg border border-border/60 bg-muted/10 p-4'
-
-/** Textarea that edits a string[] as one item per line. Empties trimmed on save. */
-function LinesField({
-  label,
-  htmlFor,
-  value,
-  onChange,
-  placeholder,
-  rows = 4,
-}: {
-  label: string
-  htmlFor: string
-  value: string[]
-  onChange: (next: string[]) => void
-  placeholder?: string
-  rows?: number
-}) {
-  return (
-    <FormField label={label} htmlFor={htmlFor}>
-      <Textarea
-        id={htmlFor}
-        rows={rows}
-        value={(value || []).join('\n')}
-        placeholder={placeholder}
-        onChange={(e) => onChange(e.target.value.split('\n'))}
-      />
-      <p className="text-xs text-muted-foreground">One per line.</p>
-    </FormField>
-  )
-}
+const SECTION = 'space-y-3 border-b border-border/50 pb-6 last:border-b-0 last:pb-0'
 
 export function ProfilePage({ profile, onBack, onProfileChanged }: Props) {
   const [data, setData] = useState<SettingsData | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState<string | null>(null)
+  const resumeFileRef = useRef<HTMLInputElement>(null)
+  const coverFileRef = useRef<HTMLInputElement>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -83,26 +51,44 @@ export function ProfilePage({ profile, onBack, onProfileChanged }: Props) {
     void load()
   }, [load])
 
-  function patchProfile<K extends keyof SettingsProfile>(
-    section: K,
-    values: Partial<SettingsProfile[K]>,
-  ) {
-    setData((d) =>
-      d
-        ? { ...d, profile: { ...d.profile, [section]: { ...d.profile[section], ...values } } }
-        : d,
-    )
-  }
-
   function patchSearches(values: Partial<SettingsSearches>) {
     setData((d) => (d ? { ...d, searches: { ...d.searches, ...values } } : d))
   }
 
-  async function save(section: string, path: string, body: unknown) {
-    setSaving(section)
+  function searchesPayload() {
+    if (!data) return null
+    const s = data.searches
+    return {
+      queries: s.queries
+        .map((q) => ({
+          query: q.query.trim(),
+          tier: (q.tier || 1) >= 2 ? 2 : 1,
+        }))
+        .filter((q) => q.query),
+      locations: s.locations
+        .map((l) => {
+          const location = l.location.trim()
+          return {
+            location,
+            remote: location.toLowerCase() === 'remote',
+          }
+        })
+        .filter((l) => l.location),
+      boards: (s.boards || []).map((b) => b.trim()).filter(Boolean),
+      exclude_titles: (s.exclude_titles || []).map((t) => t.trim()).filter(Boolean),
+      min_salary: s.min_salary,
+      hours_old: s.hours_old,
+      results_per_site: s.results_per_site,
+    }
+  }
+
+  async function saveSearch() {
+    const body = searchesPayload()
+    if (!body) return
+    setSaving('search')
     try {
-      await apiFetch(path, { method: 'PUT', body: JSON.stringify(body) })
-      toast.success('Saved. Applies on the next run.')
+      await apiFetch('/settings/searches', { method: 'PUT', body: JSON.stringify(body) })
+      toast.success('Saved. Next Auto Search will use these keywords and boards.')
       onProfileChanged()
     } catch (e) {
       toast.error(errorMessage(e))
@@ -111,389 +97,138 @@ export function ProfilePage({ profile, onBack, onProfileChanged }: Props) {
     }
   }
 
-  function saveProfile() {
-    if (!data) return
-    const p = data.profile
-    const prefs = p.job_preferences || {}
-    void save('profile', '/settings/profile', {
-      personal: p.personal,
-      compensation: p.compensation,
-      experience: p.experience,
-      job_preferences: {
-        ...prefs,
-        ideal_roles: (prefs.ideal_roles || []).map((s) => s.trim()).filter(Boolean),
-        avoid_roles: (prefs.avoid_roles || []).map((s) => s.trim()).filter(Boolean),
-      },
-    })
+  function uploadResumePdf(file: File | undefined) {
+    if (!file) return
+    setSaving('resume')
+    void apiUpload('/settings/resume.pdf', file)
+      .then(async () => {
+        toast.success('Resume PDF saved.')
+        await load()
+        onProfileChanged()
+      })
+      .catch((e) => toast.error(errorMessage(e)))
+      .finally(() => setSaving(null))
   }
 
-  function saveSearches() {
-    if (!data) return
-    const s = data.searches
-    void save('searches', '/settings/searches', {
-      queries: s.queries
-        .map((q) => ({ query: q.query.trim(), tier: q.tier || 1 }))
-        .filter((q) => q.query),
-      locations: s.locations
-        .map((l) => ({ location: l.location.trim(), remote: !!l.remote }))
-        .filter((l) => l.location),
-      boards: (s.boards || []).map((b) => b.trim()).filter(Boolean),
-      exclude_titles: (s.exclude_titles || []).map((t) => t.trim()).filter(Boolean),
-      min_salary: s.min_salary,
-      hours_old: s.hours_old,
-      results_per_site: s.results_per_site,
-    })
+  async function uploadCoverPdfs(files: FileList | File[] | undefined) {
+    if (!files || files.length === 0) return
+    const pdfs = [...files].filter((f) => f.name.toLowerCase().endsWith('.pdf'))
+    if (!pdfs.length) {
+      toast.error('Upload PDF files.')
+      return
+    }
+    setSaving('cover')
+    try {
+      for (const file of pdfs) {
+        await apiUpload('/settings/cover-letters', file)
+      }
+      toast.success(
+        pdfs.length === 1
+          ? 'Cover letter PDF saved. Used on the next tailor.'
+          : `${pdfs.length} cover letter PDFs saved. Used on the next tailor.`,
+      )
+      await load()
+      onProfileChanged()
+    } catch (e) {
+      toast.error(errorMessage(e))
+    } finally {
+      setSaving(null)
+    }
   }
 
-  function saveResume() {
-    if (!data) return
-    void save('resume', '/settings/resume', { text: data.resume })
+  function removeCoverPdf(id: string) {
+    setSaving('cover')
+    void apiFetch(`/settings/cover-letters/${encodeURIComponent(id)}`, { method: 'DELETE' })
+      .then(async () => {
+        toast.success('Cover letter removed.')
+        await load()
+        onProfileChanged()
+      })
+      .catch((e) => toast.error(errorMessage(e)))
+      .finally(() => setSaving(null))
   }
 
   return (
     <div className="flex min-w-0 flex-1 flex-col">
-      <header className={cn('sticky top-0 z-20', APP_SHELL_HEADER)}>
+      <header
+        className={cn(
+          APP_SHELL_HEADER,
+          'sticky top-0 z-20 grid grid-cols-[auto_1fr_auto] items-center',
+        )}
+      >
         <Button type="button" size="icon-sm" variant="ghost" onClick={onBack} aria-label="Back to board">
           <ArrowLeft />
         </Button>
-        <h1 className="min-w-0 flex-1 text-base font-semibold tracking-tight">Profile</h1>
-        <div className="w-40">
+        <h1 className="justify-self-center text-xs font-bold uppercase tracking-wider">Profile</h1>
+        <div className="justify-self-end">
           <UserSwitcher profile={profile} onChanged={onProfileChanged} />
         </div>
       </header>
 
-      <main className="min-h-0 flex-1 overflow-auto p-4">
+      <main className="min-h-0 flex-1 overflow-auto p-4 md:p-6">
         {loading || !data ? (
           <p className="text-sm text-muted-foreground">Loading profile…</p>
         ) : (
-          <div className="mx-auto max-w-3xl space-y-6">
-            <p className="text-sm text-muted-foreground">
-              Edits drive tomorrow&apos;s job discovery and scoring.
-            </p>
-            {/* Identity + fit guidance -> profile.json */}
-            <section className={PANEL}>
+          <div className="mx-auto w-full max-w-6xl space-y-6">
+            <section className={SECTION}>
               <div className="flex items-center justify-between gap-3">
-                <SectionLabel>About you</SectionLabel>
-                <Button size="sm" onClick={saveProfile} disabled={saving === 'profile'}>
+                <SectionLabel hint="Each keyword chip is typed into the selected job boards. This is the list that finds new jobs.">
+                  Auto Search
+                </SectionLabel>
+                <Button size="sm" onClick={() => void saveSearch()} disabled={saving === 'search'}>
                   <Save /> Save
                 </Button>
               </div>
 
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <FormField label="Full name" htmlFor="full_name">
-                  <Input
-                    id="full_name"
-                    value={data.profile.personal.full_name || ''}
-                    onChange={(e) => patchProfile('personal', { full_name: e.target.value })}
-                  />
-                </FormField>
-                <FormField label="Email" htmlFor="email">
-                  <Input
-                    id="email"
-                    value={data.profile.personal.email || ''}
-                    onChange={(e) => patchProfile('personal', { email: e.target.value })}
-                  />
-                </FormField>
-                <FormField label="Phone" htmlFor="phone">
-                  <Input
-                    id="phone"
-                    value={data.profile.personal.phone || ''}
-                    onChange={(e) => patchProfile('personal', { phone: e.target.value })}
-                  />
-                </FormField>
-                <FormField label="LinkedIn URL" htmlFor="linkedin_url">
-                  <Input
-                    id="linkedin_url"
-                    value={data.profile.personal.linkedin_url || ''}
-                    onChange={(e) => patchProfile('personal', { linkedin_url: e.target.value })}
-                  />
-                </FormField>
-                <FormField label="City" htmlFor="city">
-                  <Input
-                    id="city"
-                    value={data.profile.personal.city || ''}
-                    onChange={(e) => patchProfile('personal', { city: e.target.value })}
-                  />
-                </FormField>
-                <FormField label="State / Province" htmlFor="province_state">
-                  <Input
-                    id="province_state"
-                    value={data.profile.personal.province_state || ''}
-                    onChange={(e) =>
-                      patchProfile('personal', { province_state: e.target.value })
-                    }
-                  />
-                </FormField>
-              </div>
-
-              <FormField label="Target role" htmlFor="target_role">
-                <Textarea
-                  id="target_role"
-                  rows={2}
-                  value={data.profile.experience.target_role || ''}
-                  onChange={(e) => patchProfile('experience', { target_role: e.target.value })}
-                />
-                <p className="text-xs text-muted-foreground">
-                  Used by the scorer to judge fit.
-                </p>
-              </FormField>
-
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <FormField label="Years of experience" htmlFor="yoe">
-                  <Input
-                    id="yoe"
-                    value={data.profile.experience.years_of_experience_total || ''}
-                    onChange={(e) =>
-                      patchProfile('experience', { years_of_experience_total: e.target.value })
-                    }
-                  />
-                </FormField>
-                <FormField label="Education" htmlFor="education_level">
-                  <Input
-                    id="education_level"
-                    value={data.profile.experience.education_level || ''}
-                    onChange={(e) =>
-                      patchProfile('experience', { education_level: e.target.value })
-                    }
-                  />
-                </FormField>
-                <FormField label="Current title" htmlFor="current_job_title">
-                  <Input
-                    id="current_job_title"
-                    value={data.profile.experience.current_job_title || ''}
-                    onChange={(e) =>
-                      patchProfile('experience', { current_job_title: e.target.value })
-                    }
-                  />
-                </FormField>
-                <FormField label="Current company" htmlFor="current_company">
-                  <Input
-                    id="current_company"
-                    value={data.profile.experience.current_company || ''}
-                    onChange={(e) =>
-                      patchProfile('experience', { current_company: e.target.value })
-                    }
-                  />
-                </FormField>
-              </div>
-
-              <FormField label="What you're seeking" htmlFor="seek">
-                <Textarea
-                  id="seek"
-                  rows={2}
-                  value={data.profile.job_preferences.seek || ''}
-                  onChange={(e) => patchProfile('job_preferences', { seek: e.target.value })}
+              <FormField
+                label="Find jobs like this"
+                hint="Daily keywords run on every Auto Search. Weekly keywords run on the deep crawl only. There is no third tier."
+              >
+                <QueryChipInput
+                  queries={data.searches.queries}
+                  onChange={(queries) => patchSearches({ queries })}
                 />
               </FormField>
-              <FormField label="Company types" htmlFor="company_types">
-                <Textarea
-                  id="company_types"
-                  rows={2}
-                  value={data.profile.job_preferences.company_types || ''}
-                  onChange={(e) =>
-                    patchProfile('job_preferences', { company_types: e.target.value })
-                  }
+
+              <FormField
+                label="Block titles"
+                hint="If a job title contains one of these phrases, it is dropped before scoring."
+              >
+                <ChipInput
+                  values={data.searches.exclude_titles || []}
+                  onChange={(exclude_titles) => patchSearches({ exclude_titles })}
+                  placeholder="software engineer, intern, account executive"
+                  addLabel="Add blocked title"
+                  tone="--destructive"
                 />
               </FormField>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <LinesField
-                  label="Ideal roles"
-                  htmlFor="ideal_roles"
-                  value={data.profile.job_preferences.ideal_roles || []}
-                  onChange={(v) => patchProfile('job_preferences', { ideal_roles: v })}
-                  placeholder="Chief of Staff"
+
+              <FormField
+                label="Where to look"
+                hint="Cities Auto Search queries. Add a chip named Remote for nationwide remote jobs."
+              >
+                <LocationChipInput
+                  locations={data.searches.locations}
+                  onChange={(locations) => patchSearches({ locations })}
                 />
-                <LinesField
-                  label="Roles to avoid"
-                  htmlFor="avoid_roles"
-                  value={data.profile.job_preferences.avoid_roles || []}
-                  onChange={(v) => patchProfile('job_preferences', { avoid_roles: v })}
-                  placeholder="Software engineer"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                <FormField label="Salary min (USD)" htmlFor="salary_min">
-                  <Input
-                    id="salary_min"
-                    value={data.profile.compensation.salary_range_min || ''}
-                    onChange={(e) =>
-                      patchProfile('compensation', { salary_range_min: e.target.value })
-                    }
-                  />
-                </FormField>
-                <FormField label="Salary target (USD)" htmlFor="salary_expectation">
-                  <Input
-                    id="salary_expectation"
-                    value={data.profile.compensation.salary_expectation || ''}
-                    onChange={(e) =>
-                      patchProfile('compensation', { salary_expectation: e.target.value })
-                    }
-                  />
-                </FormField>
-                <FormField label="Salary max (USD)" htmlFor="salary_max">
-                  <Input
-                    id="salary_max"
-                    value={data.profile.compensation.salary_range_max || ''}
-                    onChange={(e) =>
-                      patchProfile('compensation', { salary_range_max: e.target.value })
-                    }
-                  />
-                </FormField>
-              </div>
-            </section>
-
-            {/* Search criteria -> searches.yaml */}
-            <section className={PANEL}>
-              <div className="flex items-center justify-between gap-3">
-                <SectionLabel>Search criteria</SectionLabel>
-                <Button size="sm" onClick={saveSearches} disabled={saving === 'searches'}>
-                  <Save /> Save
-                </Button>
-              </div>
-
-              <FormField label="Search queries">
-                <div className="space-y-2">
-                  {data.searches.queries.map((q, i) => (
-                    <div key={i} className="flex items-center gap-2">
-                      <Input
-                        value={q.query}
-                        placeholder="chief of staff"
-                        onChange={(e) => {
-                          const next = [...data.searches.queries]
-                          next[i] = { ...next[i], query: e.target.value }
-                          patchSearches({ queries: next })
-                        }}
-                      />
-                      <Select
-                        value={String(q.tier || 1)}
-                        onValueChange={(v) => {
-                          const next = [...data.searches.queries]
-                          next[i] = { ...next[i], tier: Number(v) }
-                          patchSearches({ queries: next })
-                        }}
-                      >
-                        <SelectTrigger className="w-24 shrink-0">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="1">Tier 1</SelectItem>
-                          <SelectItem value="2">Tier 2</SelectItem>
-                          <SelectItem value="3">Tier 3</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <Button
-                        type="button"
-                        size="icon-sm"
-                        variant="ghost"
-                        aria-label="Remove query"
-                        onClick={() =>
-                          patchSearches({
-                            queries: data.searches.queries.filter((_, j) => j !== i),
-                          })
-                        }
-                      >
-                        <Trash2 />
-                      </Button>
-                    </div>
-                  ))}
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={() =>
-                      patchSearches({
-                        queries: [...data.searches.queries, { query: '', tier: 1 } as QueryEntry],
-                      })
-                    }
-                  >
-                    <Plus /> Add query
-                  </Button>
-                  <p className="text-xs text-muted-foreground">
-                    Tier 1 runs daily; tiers 2-3 run on the weekly deep crawl.
-                  </p>
-                </div>
               </FormField>
 
-              <FormField label="Locations">
-                <div className="space-y-2">
-                  {data.searches.locations.map((l, i) => (
-                    <div key={i} className="flex items-center gap-2">
-                      <Input
-                        value={l.location}
-                        placeholder="San Francisco, CA"
-                        onChange={(e) => {
-                          const next = [...data.searches.locations]
-                          next[i] = { ...next[i], location: e.target.value }
-                          patchSearches({ locations: next })
-                        }}
-                      />
-                      <label className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
-                        <input
-                          type="checkbox"
-                          checked={!!l.remote}
-                          onChange={(e) => {
-                            const next = [...data.searches.locations]
-                            next[i] = { ...next[i], remote: e.target.checked }
-                            patchSearches({ locations: next })
-                          }}
-                        />
-                        Remote
-                      </label>
-                      <Button
-                        type="button"
-                        size="icon-sm"
-                        variant="ghost"
-                        aria-label="Remove location"
-                        onClick={() =>
-                          patchSearches({
-                            locations: data.searches.locations.filter((_, j) => j !== i),
-                          })
-                        }
-                      >
-                        <Trash2 />
-                      </Button>
-                    </div>
-                  ))}
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={() =>
-                      patchSearches({
-                        locations: [
-                          ...data.searches.locations,
-                          { location: '', remote: false },
-                        ],
-                      })
-                    }
-                  >
-                    <Plus /> Add location
-                  </Button>
-                </div>
-              </FormField>
-
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <LinesField
-                  label="Job boards"
-                  htmlFor="boards"
+              <FormField
+                label="Job boards"
+                hint="Sites Auto Search scrapes."
+              >
+                <BoardToggles
                   value={data.searches.boards || []}
-                  onChange={(v) => patchSearches({ boards: v })}
-                  placeholder="indeed"
-                  rows={3}
+                  onChange={(boards) => patchSearches({ boards })}
                 />
-                <LinesField
-                  label="Exclude titles"
-                  htmlFor="exclude_titles"
-                  value={data.searches.exclude_titles || []}
-                  onChange={(v) => patchSearches({ exclude_titles: v })}
-                  placeholder="software engineer"
-                  rows={3}
-                />
-              </div>
+              </FormField>
 
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                <FormField label="Min salary (USD)" htmlFor="min_salary">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 sm:items-start">
+                <FormField
+                  label="Drop below (USD)"
+                  htmlFor="min_salary"
+                  hint="If a posting lists pay below this, Auto Search drops it. Unknown salary is kept."
+                >
                   <Input
                     id="min_salary"
                     inputMode="numeric"
@@ -505,7 +240,11 @@ export function ProfilePage({ profile, onBack, onProfileChanged }: Props) {
                     }
                   />
                 </FormField>
-                <FormField label="Freshness (hours)" htmlFor="hours_old">
+                <FormField
+                  label="Posted within (hours)"
+                  htmlFor="hours_old"
+                  hint="Auto Search only keeps jobs posted within this many hours."
+                >
                   <Input
                     id="hours_old"
                     inputMode="numeric"
@@ -517,7 +256,11 @@ export function ProfilePage({ profile, onBack, onProfileChanged }: Props) {
                     }
                   />
                 </FormField>
-                <FormField label="Results per site" htmlFor="results_per_site">
+                <FormField
+                  label="Results per site"
+                  htmlFor="results_per_site"
+                  hint="Max listings per board for each keyword and location pair."
+                >
                   <Input
                     id="results_per_site"
                     inputMode="numeric"
@@ -532,24 +275,45 @@ export function ProfilePage({ profile, onBack, onProfileChanged }: Props) {
               </div>
             </section>
 
-            {/* Base resume -> resume/base.txt */}
-            <section className={PANEL}>
-              <div className="flex items-center justify-between gap-3">
-                <SectionLabel>Base resume</SectionLabel>
-                <Button size="sm" onClick={saveResume} disabled={saving === 'resume'}>
-                  <Save /> Save
-                </Button>
-              </div>
-              <Textarea
-                aria-label="Base resume text"
-                rows={16}
-                className="font-mono text-xs"
-                value={data.resume}
-                onChange={(e) => setData((d) => (d ? { ...d, resume: e.target.value } : d))}
+            <section className={SECTION}>
+              <SectionLabel hint="Resume is used for scoring and tailoring. Cover letter PDFs are amalgamated when Auto Search writes materials. Auto Search does not search from these files.">
+                Resume and cover letters
+              </SectionLabel>
+              <input
+                ref={resumeFileRef}
+                type="file"
+                accept="application/pdf"
+                className="sr-only"
+                onChange={(e) => {
+                  uploadResumePdf(e.target.files?.[0])
+                  e.target.value = ''
+                }}
               />
-              <p className="text-xs text-muted-foreground">
-                Plain text used to score fit and tailor each application.
-              </p>
+              <input
+                ref={coverFileRef}
+                type="file"
+                accept="application/pdf"
+                multiple
+                className="sr-only"
+                onChange={(e) => {
+                  void uploadCoverPdfs(e.target.files ?? undefined)
+                  e.target.value = ''
+                }}
+              />
+              <ProfileMaterials
+                resume={{
+                  pdfUrl: data.has_resume_pdf
+                    ? `/api/settings/resume.pdf?t=${data.resume_pdf_mtime ?? 0}`
+                    : null,
+                  markdown: data.resume_markdown,
+                  replacing: saving === 'resume',
+                  onReplace: () => resumeFileRef.current?.click(),
+                }}
+                examples={data.cover_letter_examples || []}
+                uploading={saving === 'cover'}
+                onAddCovers={() => coverFileRef.current?.click()}
+                onRemoveCover={removeCoverPdf}
+              />
             </section>
           </div>
         )}

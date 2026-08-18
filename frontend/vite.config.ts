@@ -16,6 +16,7 @@ export default defineConfig({
       '/api': {
         target: `http://127.0.0.1:${process.env.PORT ?? 8002}`,
         changeOrigin: true,
+        timeout: 600_000,
       },
     },
     port: Number(process.env.VITE_PORT ?? 5120),

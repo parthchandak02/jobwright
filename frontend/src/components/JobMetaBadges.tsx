@@ -52,10 +52,10 @@ export function JobMetaBadges({ job }: Props) {
         <Chip icon={PenLine}>manual</Chip>
       )}
       {job.has_resume && (
-        <Chip icon={FileText}>resume</Chip>
+        <Chip icon={FileText} title="Tailored resume generated">resume</Chip>
       )}
       {job.has_cover && (
-        <Chip icon={Mail}>cover</Chip>
+        <Chip icon={Mail} title="Cover letter generated">cover</Chip>
       )}
       {job.whatsapp_notified_at && (
         <Chip
