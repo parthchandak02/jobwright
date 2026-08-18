@@ -86,7 +86,7 @@ Env: `FIREWORKS_API_KEY` (stages 3-5, preferred), `GEMINI_API_KEY` (runtime fail
 
 **User inputs (once per profile):** `resume/base.txt`, `profile.json`, `searches.yaml`, `cover-letter/examples/`, optional `connections.csv`.
 
-**Daily brief cron** (`jobwright-brief`, ~6:00): runs discover → connect, writes digest + DOCX. On completion, sends digest text then materials for job 1 via `hermes send` (`AUTO_DELIVER_CHAT=1`, `AUTO_MATERIALS_INDEX=1`; set `0` to disable either).
+**Daily brief cron** (`jobwright-brief`, ~6:00): runs discover → connect, writes digest + DOCX. On completion, sends digest text then editable DOCX for **every job shown** via `hermes send` (`AUTO_DELIVER_CHAT=1`, `AUTO_MATERIALS_ALL=1`; set `AUTO_MATERIALS_ALL=0` for legacy single-job `AUTO_MATERIALS_INDEX`). Users no longer need to reply `materials N` to receive materials; that reply is now an optional resend.
 
 **Digest cron** (`jobwright-send`, ~6:30): fallback if chat delivery was off during the brief; otherwise no-op once `DIGEST_DELIVERED_*` exists.
 

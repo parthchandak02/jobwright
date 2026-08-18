@@ -255,12 +255,14 @@ def _digest_footer_lines(
         ])
     elif job_count == 1:
         lines.append(
-            'Materials for job 1 are attached below (or reply "materials 1" to resend).'
+            "Your editable resume + cover letter are attached below."
         )
+        lines.append('(Reply "materials 1" if you need them resent.)')
     else:
         lines.append(
-            'Reply "materials 1" (or 2, 3, ...) for editable resume + cover letter.'
+            "Editable resume + cover letter for each job are attached below."
         )
+        lines.append('(Reply "materials N", e.g. "materials 2", to resend any job.)')
     if job_count > 0:
         if apply_enabled:
             lines.append(f'Reply *CONFIRM APPLY* to submit up to {limit} jobs (live).')

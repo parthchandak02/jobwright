@@ -184,9 +184,9 @@ Safety: dry-run is the default, LinkedIn apply is blocked, live workers are capp
 
 jobwright runs per-profile prep on a Hermes cron and delivers a digest to each user's chat (WhatsApp today; any channel Hermes supports):
 
-- **Morning brief:** discover through connect, write digest + DOCX, auto-send materials for the top job.
+- **Morning brief:** discover through connect, write digest + DOCX, auto-send editable materials for every job in the digest.
 - **Digest message:** top matches with scores and links.
-- **On demand:** `materials N` for other jobs in today's digest.
+- **On demand:** `materials N` to resend a job's DOCX if needed.
 - **Optional apply:** gated behind explicit `CONFIRM APPLY` when enabled for that user.
 
 See [The Daily Brief](#the-daily-brief-how-it-works-with-hermes) above for the full picture.
