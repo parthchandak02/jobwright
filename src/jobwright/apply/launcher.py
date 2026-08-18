@@ -93,15 +93,36 @@ def _load_blocked():
     return load_blocked_sites()
 
 
-def _ready_jobs_query(min_score: int, max_attempts: int) -> tuple[str, list]:
-    """SQL WHERE clause + params matching acquire_job queue filters (no manifest)."""
+def _load_apply_blocked():
+    from jobwright.config import load_apply_blocked
+    return load_apply_blocked()
+
+
+def _ready_jobs_query(
+    min_score: int,
+    max_attempts: int,
+    *,
+    include_apply_blocked: bool = False,
+) -> tuple[str, list]:
+    """SQL WHERE clause + params for ready jobs.
+
+    Discovery-blocked sites/patterns are always excluded. When
+    include_apply_blocked=True (apply acquire queue), also exclude
+    apply_blocked (LinkedIn). Digest/connect use include_apply_blocked=False
+    so LinkedIn materials surface in the brief.
+    """
     blocked_sites, blocked_patterns = _load_blocked()
+    if include_apply_blocked:
+        apply_sites, apply_patterns = _load_apply_blocked()
+        blocked_sites = set(blocked_sites) | set(apply_sites)
+        blocked_patterns = list(blocked_patterns) + list(apply_patterns)
+
     params: list = [max_attempts, min_score]
     site_clause = ""
     if blocked_sites:
         placeholders = ",".join("?" * len(blocked_sites))
         site_clause = f"AND site NOT IN ({placeholders})"
-        params.extend(blocked_sites)
+        params.extend(sorted(blocked_sites))
     url_clauses = ""
     if blocked_patterns:
         url_clauses = " ".join("AND url NOT LIKE ?" for _ in blocked_patterns)
@@ -122,11 +143,17 @@ def list_ready_jobs(
     limit: int = 5,
     max_attempts: int | None = None,
 ) -> list[dict]:
-    """Jobs matching acquire_job filters, excluding manual ATS (for digest/manifest)."""
+    """Jobs ready for digest/connect/materials (discovery-blocked excluded).
+
+    LinkedIn (apply_blocked) is included so the brief can show tailored DOCX
+    and warm intros; live apply uses a stricter query.
+    """
     from jobwright.config import is_manual_ats
 
     max_attempts = max_attempts or config.DEFAULTS["max_apply_attempts"]
-    where, params = _ready_jobs_query(min_score, max_attempts)
+    where, params = _ready_jobs_query(
+        min_score, max_attempts, include_apply_blocked=False
+    )
     conn = get_connection()
     rows = conn.execute(
         f"""
@@ -476,6 +503,21 @@ def acquire_job(target_url: str | None = None, min_score: int = 7,
                   AND (apply_status IS NULL OR apply_status NOT IN ('in_progress', 'applied'))
                 LIMIT 1
             """, (target_url, target_url, like, like)).fetchone()
+            if row:
+                from jobwright.config import (
+                    is_apply_blocked_job,
+                    is_discovery_blocked_job,
+                )
+                if is_discovery_blocked_job(row["site"], row["url"]) or is_apply_blocked_job(
+                    row["site"], row["url"]
+                ):
+                    conn.rollback()
+                    logger.warning(
+                        "Refusing apply for blocked site/url: site=%s url=%s",
+                        row["site"],
+                        (row["url"] or "")[:80],
+                    )
+                    return None
         else:
             manifest_env = os.environ.get("JOBWRIGHT_APPLY_MANIFEST")
             manifest_urls = _load_manifest_urls() if manifest_env else None
@@ -485,7 +527,9 @@ def acquire_job(target_url: str | None = None, min_score: int = 7,
                 return None
 
             where, params = _ready_jobs_query(
-                min_score, config.DEFAULTS["max_apply_attempts"]
+                min_score,
+                config.DEFAULTS["max_apply_attempts"],
+                include_apply_blocked=True,
             )
             manifest_clause = ""
             if manifest_urls:
