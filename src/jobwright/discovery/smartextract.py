@@ -29,6 +29,7 @@ from playwright.sync_api import sync_playwright
 from jobwright import config
 from jobwright.config import CONFIG_DIR
 from jobwright.database import init_db, get_stats
+from jobwright.discovery.location import location_ok as _location_ok
 from jobwright.llm import get_client
 
 log = logging.getLogger(__name__)
@@ -51,22 +52,6 @@ def _load_location_filter(search_cfg: dict | None = None):
     if search_cfg is None:
         search_cfg = config.load_search_config()
     return config.load_location_filters(search_cfg)
-
-
-def _location_ok(location: str | None, accept: list[str], reject: list[str]) -> bool:
-    """Check if a job location passes the user's location filter."""
-    if not location:
-        return True
-    loc = location.lower()
-    for r in reject:
-        if r.lower() in loc:
-            return False
-    if any(r in loc for r in ("remote", "anywhere", "work from home", "wfh", "distributed")):
-        return True
-    for a in accept:
-        if a.lower() in loc:
-            return True
-    return False
 
 
 # -- Site configuration from YAML --------------------------------------------

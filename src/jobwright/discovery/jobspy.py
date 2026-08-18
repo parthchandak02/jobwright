@@ -9,7 +9,6 @@ search configuration YAML (searches.yaml) rather than being hardcoded.
 
 import logging
 import os
-import re
 import sqlite3
 import time
 from datetime import datetime, timezone
@@ -19,6 +18,7 @@ from jobspy import scrape_jobs
 from jobwright import config
 from jobwright.config import load_location_filters
 from jobwright.database import get_connection, init_db
+from jobwright.discovery.location import location_ok as _location_ok
 
 log = logging.getLogger(__name__)
 
@@ -82,49 +82,6 @@ def _scrape_with_retry(kwargs: dict, max_retries: int = 2, backoff: float = 5.0)
 def _load_location_config(search_cfg: dict) -> tuple[list[str], list[str]]:
     """Extract accept/reject location lists from search config."""
     return load_location_filters(search_cfg)
-
-
-def _pattern_matches(loc: str, pattern: str) -> bool:
-    """Match a location pattern against a lowercased location string.
-
-    Short alphanumeric tokens (<= 3 chars, e.g. "US", "SF", "CA") are matched on
-    word boundaries so "US" does not match "Australia" and "CA" does not match
-    "Calgary". Longer or punctuated patterns (", CA", "San Francisco") use plain
-    substring matching.
-    """
-    p = pattern.lower().strip()
-    if not p:
-        return False
-    if len(p) <= 3 and p.isalnum():
-        return re.search(rf"\b{re.escape(p)}\b", loc) is not None
-    return p in loc
-
-
-def _location_ok(location: str | None, accept: list[str], reject: list[str]) -> bool:
-    """Check if a job location passes the user's location filter.
-
-    Remote jobs are always accepted. Non-remote jobs must match an accept
-    pattern and not match a reject pattern.
-    """
-    if not location:
-        return True  # unknown location -- keep it, let scorer decide
-
-    loc = location.lower()
-
-    for r in reject:
-        if _pattern_matches(loc, r):
-            return False
-
-    # Remote jobs OK after reject pass (avoids "Calgary Remote" slipping through)
-    if any(r in loc for r in ("remote", "anywhere", "work from home", "wfh", "distributed")):
-        return True
-
-    for a in accept:
-        if _pattern_matches(loc, a):
-            return True
-
-    # No match -- reject unknown
-    return False
 
 
 # -- DB storage (JobSpy DataFrame -> SQLite) ---------------------------------
@@ -551,6 +508,12 @@ def run_discovery(cfg: dict | None = None) -> dict:
         if override:
             sites = override
             log.info("JobSpy: board override = %s", sites)
+
+    # Optional LinkedIn discovery (default off). Never used for apply (blocked).
+    if os.environ.get("JOBWRIGHT_DISCOVER_LINKEDIN", "").strip() in ("1", "true", "yes"):
+        if "linkedin" not in sites:
+            sites = list(sites) + ["linkedin"]
+            log.info("JobSpy: LinkedIn discovery enabled via JOBWRIGHT_DISCOVER_LINKEDIN")
 
     return _full_crawl(
         search_cfg=cfg,
