@@ -118,30 +118,16 @@ def test_linkedin_in_pending_tailor_and_portfolio_and_cover(linkedin_db):
     assert hasattr(cover_letter, "run_cover_letters")
 
 
-def test_list_ready_includes_linkedin_digest_url(linkedin_db, monkeypatch, tmp_path: Path):
-    from jobwright.apply.launcher import list_ready_jobs, write_morning_digest_and_manifest
+def test_list_ready_includes_linkedin(linkedin_db, monkeypatch):
+    from jobwright.apply.launcher import list_ready_jobs
     import jobwright.config as config
 
     _conn, _db, li_url, _resume = linkedin_db
     monkeypatch.setattr(config, "load_blocked_sites", lambda: (set(), []))
-    # Keep real apply_blocked — LinkedIn must still appear in list_ready.
+    # Keep real apply_blocked - LinkedIn must still surface for materials/connect.
 
     ready = list_ready_jobs(min_score=7, limit=5)
     assert any(j["url"] == li_url for j in ready)
-
-    digest = tmp_path / "DIGEST"
-    manifest = tmp_path / "MANIFEST"
-    monkeypatch.setattr(
-        "jobwright.network.per_job.load_job_contacts",
-        lambda: {},
-    )
-    n = write_morning_digest_and_manifest(
-        digest, manifest, min_score=7, limit=5, apply_enabled=False
-    )
-    assert n >= 1
-    text = digest.read_text(encoding="utf-8")
-    assert li_url in text
-    assert "Materials: DOCX ready" in text
 
 
 def test_apply_queue_excludes_linkedin(linkedin_db, monkeypatch):

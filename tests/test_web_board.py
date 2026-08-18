@@ -63,6 +63,26 @@ def test_derive_work_model():
     assert _derive_work_model("") is None
 
 
+def test_derive_sponsorship_status():
+    from jobwright.enrichment.sponsorship import derive_sponsorship_status
+
+    assert derive_sponsorship_status(None) == "not_found"
+    assert derive_sponsorship_status("") == "not_found"
+    assert (
+        derive_sponsorship_status("Must be authorized to work without sponsorship.")
+        == "not_required"
+    )
+    assert (
+        derive_sponsorship_status("This position is not eligible for Visa sponsorship.")
+        == "not_required"
+    )
+    assert (
+        derive_sponsorship_status("We offer visa sponsorship for qualified candidates.")
+        == "required"
+    )
+    assert derive_sponsorship_status("Executive sponsor for partner programs.") == "not_found"
+
+
 def test_health(api_client):
     res = api_client.get("/api/health")
     assert res.status_code == 200
@@ -100,6 +120,7 @@ def test_job_subroutes_not_shadowed(api_client):
     body = res.json()
     assert body["url"] == url
     assert "resume_docx" in body
+    assert "resume_md" in body
     assert "resume_preview" in body
     assert "cover_preview" in body
 
@@ -109,6 +130,36 @@ def test_job_subroutes_not_shadowed(api_client):
     assert body["url"] == url
     assert body["csv_contacts"] == []
     assert body["web_contacts"] == []
+    assert body["manual_contacts"] == []
+
+
+def test_manual_connections_api(api_client, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    url = "https://example.com/web-smoke"
+    enc = __import__("urllib.parse").parse.quote(url, safe="")
+    network = tmp_path / "users" / "testdash" / "network"
+    network.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr("jobwright.network.manual_connections.config.NETWORK_DIR", network)
+
+    res = api_client.post(
+        f"/api/jobs/{enc}/connections",
+        json={
+            "first_name": "Pat",
+            "last_name": "Lee",
+            "url": "https://www.linkedin.com/in/pat-lee",
+        },
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert len(body["manual_contacts"]) == 1
+    contact_id = body["contact"]["id"]
+
+    res = api_client.get(f"/api/jobs/{enc}/connections")
+    assert res.status_code == 200
+    assert len(res.json()["manual_contacts"]) == 1
+
+    res = api_client.delete(f"/api/jobs/{enc}/connections/{contact_id}")
+    assert res.status_code == 200
+    assert res.json()["manual_contacts"] == []
 
 
 def test_users_and_session(api_client):
