@@ -9,12 +9,12 @@
 manual_ats:
   - "ibegin.tcsapps.com"       # TCS iBegin — unsolvable CAPTCHA every time
 
-# ── Blocked sites — too problematic for automation ───────────────────────
+# ── Discovery blocked — never surfaced in digest/materials/apply ─────────
+# (glassdoor/google/etc. stay out of the brief entirely)
 blocked:
   sites:
     - "glassdoor"
     - "google"
-    - "linkedin"
     - "accenture"
     - "AccentureCareers"
     - "Workopolis"
@@ -22,11 +22,17 @@ blocked:
     - "%glassdoor%"
     - "%google.com/about/careers%"
     - "%google.jobs%"
-    - "%linkedin.com/jobs%"
-    - "%linkedin.com%apply%"
     - "%zoox%"
     - "%accenture%"
     - "%workopolis.com/out%"
+
+# ── Apply blocked — full brief OK (materials + digest + connect), never auto-apply
+apply_blocked:
+  sites:
+    - "linkedin"
+  url_patterns:
+    - "%linkedin.com/jobs%"
+    - "%linkedin.com%apply%"
 
 # ── Blocked SSO domains — cannot authenticate through these ──────────────
 blocked_sso:

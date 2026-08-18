@@ -332,7 +332,10 @@ def is_manual_ats(url: str | None) -> bool:
 
 
 def load_blocked_sites() -> tuple[set[str], list[str]]:
-    """Load blocked sites and URL patterns from sites.yaml.
+    """Load discovery-blocked sites and URL patterns from sites.yaml.
+
+    These never surface in digest, materials, or apply. LinkedIn lives under
+    apply_blocked instead (brief OK, auto-apply never).
 
     Returns:
         (blocked_site_names, blocked_url_patterns)
@@ -340,8 +343,50 @@ def load_blocked_sites() -> tuple[set[str], list[str]]:
     cfg = load_sites_config()
     blocked = cfg.get("blocked", {})
     sites = set(blocked.get("sites", []))
-    patterns = blocked.get("url_patterns", [])
+    patterns = list(blocked.get("url_patterns", []) or [])
     return sites, patterns
+
+
+def load_apply_blocked() -> tuple[set[str], list[str]]:
+    """Load apply-blocked sites and URL patterns from sites.yaml.
+
+    Jobs matching these still get the full brief (tailor/cover/docx/connect/
+    digest) but must never enter the live apply acquire path.
+    """
+    cfg = load_sites_config()
+    blocked = cfg.get("apply_blocked", {}) or {}
+    sites = set(blocked.get("sites", []) or [])
+    patterns = list(blocked.get("url_patterns", []) or [])
+    return sites, patterns
+
+
+def is_apply_blocked_job(site: str | None, url: str | None) -> bool:
+    """True if site/url matches apply_blocked (e.g. LinkedIn)."""
+    sites, patterns = load_apply_blocked()
+    site_l = (site or "").strip()
+    if site_l in sites:
+        return True
+    url_l = (url or "").lower()
+    for pat in patterns:
+        # YAML patterns use SQL LIKE wildcards (%); treat as substring.
+        needle = pat.replace("%", "").lower()
+        if needle and needle in url_l:
+            return True
+    return False
+
+
+def is_discovery_blocked_job(site: str | None, url: str | None) -> bool:
+    """True if site/url matches discovery blocked (never surface)."""
+    sites, patterns = load_blocked_sites()
+    site_l = (site or "").strip()
+    if site_l in sites:
+        return True
+    url_l = (url or "").lower()
+    for pat in patterns:
+        needle = pat.replace("%", "").lower()
+        if needle and needle in url_l:
+            return True
+    return False
 
 
 def load_blocked_sso() -> list[str]:
