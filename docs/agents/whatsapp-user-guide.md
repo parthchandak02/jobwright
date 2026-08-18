@@ -46,7 +46,7 @@ Morning / periodic prep  →  Digest on WhatsApp  →  You review
 
 1. **Nothing submits without `CONFIRM APPLY`** (and only if apply is enabled on your profile).
 2. **One apply batch per day** after you confirm.
-3. **LinkedIn applications are never automated** (blocked by design).
+3. **LinkedIn applications are never automated** (blocked by design). LinkedIn jobs can still appear in the daily brief with tailored DOCX; you apply manually via the LinkedIn link.
 4. **Dry-run first:** Admin enables live apply only after test runs look good.
 
 ## What you will not get on WhatsApp

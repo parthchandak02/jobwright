@@ -18,7 +18,7 @@ Detailed paths for agents. Summary: [../../AGENTS.md](../../AGENTS.md).
 | `src/jobwright/apply/providers/` | `cursor-sdk` (default), `cursor-cli`, `claude` |
 | `src/jobwright/network/` | LinkedIn CSV ranking + per-job connect + Exa research |
 | `src/jobwright/targets/` | Target company list builder |
-| `src/jobwright/config/*.yaml` | Shipped employers, sites, search templates |
+| `src/jobwright/config/*.yaml` | Shipped employers, sites, search templates; in `sites.yaml`, `blocked` = discovery (never surface), `apply_blocked` = LinkedIn (brief OK, never auto-apply) |
 | `bin/job-apply-pp-cli` | Agent-native JSON wrapper over `jobwright` |
 | `scripts/` | Hermes cron installers, Daily Brief/send/check/confirm, repo resolution |
 | `tests/` | pytest |
@@ -76,6 +76,6 @@ Cron names: `jobwright-brief-<id>`, `jobwright-send-<id>`, `jobwright-check-<id>
 | `JOBWRIGHT_USERS_ROOT` | Registry root (default `<repo>/users`) |
 | `JOBWRIGHT_DIR` | Active user data directory |
 | `JOBWRIGHT_USER` | Set by Hermes wrappers after resolution |
-| `JOBWRIGHT_DISCOVER_LINKEDIN` | Opt-in LinkedIn discovery board (`1`/`true`; default off) |
+| `JOBWRIGHT_DISCOVER_LINKEDIN` | Opt-in LinkedIn discovery board (`1`/`true`; default off; brief/materials OK; auto-apply blocked via `apply_blocked` in `sites.yaml`) |
 
 Templates: `.env.example`, `config/live.env.example`.
