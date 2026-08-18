@@ -3,6 +3,20 @@
 Dashboard at `jobwright.parthchandak.info` (local API `:8002`, Vite HMR `:5120`).
 Same ops shape as litreview: **PM2** for api + ui + tunnel, plus a simple `./scripts/restart.sh`.
 
+## App surfaces (product)
+
+The public URL is the **Kanban board**, not a separate app. Agents should treat these as first-class:
+
+| Surface | Behavior |
+|---------|----------|
+| **Auto Search** | Full prep pipeline (`discover` → `enrich` → `score` → `portfolio` → `tailor` → `cover` → `docx` → `connect`). Progress + SSE logs. Closing the dialog does not stop the run; **Stop** sends SIGTERM/SIGKILL. Attaches to in-flight runs via `GET /api/runs` (`web_runs.json`). |
+| **Notify WhatsApp** | Same payload as cron `jobwright notify`. |
+| **Profile** | `/profile`. Auto Search chips (daily/weekly queries, locations, excludes, boards); resume PDF; cover-letter example PDFs. Identity stays in `profile.json`. |
+| **Job drawer** | Summary, stage, job description, connections, materials. **Auto Tailor** starts `jobwright tailor-job` (`POST /api/jobs/{url}/tailor`) with defaults from `GET /api/tailor/defaults`. Click again while running to open logs. **Custom Tailor** edits instructions first. Shared progress UI: `RunProgressDialog`. Deep links: `/jobs/:jobId`. |
+| **Apply** | Confirm gate on the card; never from cron. LinkedIn auto-apply blocked. |
+
+Public traffic is the Cloudflare tunnel → `:8002` serving `frontend/dist`. Vite HMR (`:5120`) is local only. Rebuild production UI with `./scripts/restart.sh --prod-ui` (or `./scripts/dashboard_deploy.sh`).
+
 ## Local hot-reload (recommended for testing)
 
 ```bash

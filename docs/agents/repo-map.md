@@ -6,16 +6,19 @@ Detailed paths for agents. Summary: [../../AGENTS.md](../../AGENTS.md).
 
 | Path | Purpose |
 |------|---------|
-| `src/jobwright/cli.py` | Typer CLI: `run`, `apply`, `notify`, `status`, `doctor`, `users`, `network`, `targets` |
+| `src/jobwright/cli.py` | Typer CLI: `run`, `tailor-job`, `apply`, `notify`, `status`, `doctor`, `users`, `network`, `targets` |
 | `src/jobwright/pipeline.py` | Stage orchestration (`STAGE_ORDER`, streaming mode) |
+| `src/jobwright/run_registry.py` | Durable Auto Search / CLI runs (`users/<id>/logs/web_runs.json`) |
+| `src/jobwright/resume.py` | PDF source of truth → cached `resume/base.md` |
+| `src/jobwright/notify.py` | Daily WhatsApp job list + deep links |
 | `src/jobwright/config.py` | `JOBWRIGHT_DIR` paths, environment loading, `set_active_user` |
 | `src/jobwright/users.py` | Multi-profile registry (`users/users.yaml`) |
 | `src/jobwright/database.py` | SQLite `jobs` table, Kanban `funnel_stage` / `stage_history`, pipeline state |
 | `src/jobwright/web/` | FastAPI Kanban dashboard (`app.py` + routers); serves `frontend/dist` |
-| `frontend/` | Vite + React Kanban SPA (dev `:5120`, proxies `/api` → `:8002`) |
-| `src/jobwright/discovery/` | JobSpy, Workday (known-URL skip), smart extract; `DISCOVER_MODE=fast|full` |
+| `frontend/` | Vite + React Kanban SPA (dev `:5120`, proxies `/api` → `:8002`). Profile: chips + `ProfileMaterials` (`ResumePreview`). Runs: `useAutoSearch` / `useTailorMaterials` + `RunProgressDialog` / `RunProgressButton`. Drawer: `CustomTailorDialog` |
+| `src/jobwright/discovery/` | JobSpy (`-w` / `JOBWRIGHT_DISCOVER_WORKERS`, known-URL skip), Workday (known-URL skip), smart extract; `DISCOVER_MODE=fast|full` |
 | `src/jobwright/enrichment/` | Full JD fetch (JSON-LD, CSS, LLM) |
-| `src/jobwright/scoring/` | Scorer, tailor, cover letter, portfolio, PDF, DOCX, validator |
+| `src/jobwright/scoring/` | Scorer, tailor, `tailor_instructions.py` (dashboard Auto/Custom prompts), cover letter, portfolio, PDF, DOCX, validator |
 | `src/jobwright/apply/` | Stage 6: launcher, Chrome workers, ATS helpers, providers |
 | `src/jobwright/apply/providers/` | `cursor-sdk` (default), `cursor-cli`, `claude` |
 | `src/jobwright/network/` | LinkedIn CSV ranking + per-job connect + Exa research |
@@ -64,6 +67,21 @@ Cron names: `jobwright-brief-<id>` (one daily brief per user, ~6:00). It runs th
 
 Kanban hosting: [dashboard-hosting.md](dashboard-hosting.md) (`jobwright.parthchandak.info`; local HMR `http://127.0.0.1:5120`).
 
+## Dashboard API (high level)
+
+| Method | Route | Role |
+|--------|-------|------|
+| `POST` | `/api/run` | Start pipeline (Auto Search); returns `run_id`, `pid`, `log_path` |
+| `GET` | `/api/runs`, `/api/runs/{run_id}` | List / status (memory + `web_runs.json`) |
+| `POST` | `/api/runs/{run_id}/stop` | SIGTERM then SIGKILL process group |
+| `GET` | `/api/stream/{run_id}` | SSE logs |
+| `POST` / `GET` | `/api/notify`, `/api/notify/preview` | Send or preview WhatsApp list |
+| `GET` | `/api/jobs/by-id/{job_id}` | Resolve deep link |
+| `POST` | `/api/jobs/{url}/tailor` | Spawn `jobwright tailor-job` (SSE handle; optional custom instructions) |
+| `GET` | `/api/tailor/defaults` | Default Auto Tailor instruction text |
+| `GET` / `PUT` | `/api/settings`, `/profile`, `/searches`, `/resume.pdf` | Searches, base resume PDF |
+| `PUT` / `GET` / `DELETE` | `/api/settings/cover-letters`, `/cover-letters/{id}/pdf` | Cover letter example PDFs |
+
 PM2 process names: `jobwright-api`, `jobwright-ui`, `jobwright-tunnel`.
 
 ## Environment variables
@@ -83,6 +101,10 @@ PM2 process names: `jobwright-api`, `jobwright-ui`, `jobwright-tunnel`.
 | `JOBWRIGHT_DASHBOARD_USER` | Kanban API profile (default `richa`) |
 | `JOBWRIGHT_PUBLIC_BASE_URL` | Deep-link base for `jobwright notify` (default `https://jobwright.parthchandak.info`) |
 | `JOBWRIGHT_CORS_ORIGINS` | Comma-separated CORS origins for dashboard |
+| `DISCOVER_MODE` | `fast` (tier-1, skip smart-extract) or `full` |
 | `JOBWRIGHT_DISCOVER_BOARDS` | Restrict JobSpy boards without editing searches.yaml (e.g. `indeed`) |
+| `JOBWRIGHT_DISCOVER_WORKERS` | JobSpy parallel worker cap (default 4) |
+| `JOBWRIGHT_WEB_RUN_ID` | Set by `/api/run` so CLI does not create a second registry row |
+| `JOBWRIGHT_LOG_LEVEL` | `DEBUG` when `jobwright run --verbose` (Auto Search always passes `--verbose`) |
 
 Templates: `.env.example`, `config/live.env.example`.

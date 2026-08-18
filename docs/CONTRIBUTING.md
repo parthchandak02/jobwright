@@ -45,7 +45,7 @@ Workday employer portals are configured in `src/jobwright/config/employers.yaml`
   url: "https://company.wd5.myworkdaysite.com/en-US/recruiting"
 ```
 
-4. Test discovery: `jobwright discover --employer "Company Name"`
+4. Test discovery: `jobwright --user <id> run discover` (employers live in `employers.yaml`; there is no `jobwright discover` subcommand)
 5. Submit a PR with the new entry
 
 ### Adding New Career Sites
@@ -66,7 +66,7 @@ Direct career site scrapers are configured in `src/jobwright/config/sites.yaml`.
     description: ".job-description"
 ```
 
-3. Test: `jobwright discover --site "Company Name"`
+3. Test: `jobwright --user <id> run discover` (sites live in `sites.yaml`; there is no `jobwright discover` subcommand)
 4. Submit a PR
 
 ### Bug Fixes and Features

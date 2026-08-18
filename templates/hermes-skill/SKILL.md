@@ -6,7 +6,7 @@ description: >-
   (aliases: jobwright, job-apply). Load when the user asks about jobwright, job
   search, this repo, or job crons. Canonical docs live in JOBWRIGHT_REPO
   (AGENTS.md, docs/agents/).
-version: 3.0.0
+version: 3.1.0
 author: parthchandak
 license: AGPL-3.0
 platforms: [macos, linux]
@@ -50,7 +50,7 @@ If missing, set `JOBWRIGHT_REPO` to the clone path and re-run `./scripts/install
 | Resolve user | `bash scripts/resolve_user_from_whatsapp.sh 'whatsapp:SENDER_JID'` -> `$USER_ID` **before** any profile command |
 | E2E demo | Follow Post-deploy demo in `whatsapp-group-jobwright.md` |
 | Replace resume / Connections.csv | `whatsapp-routing.md` -> File uploads (backup then write under `users/$USER_ID/`) |
-| Review jobs / materials | Open the dashboard at `jobwright.parthchandak.info/jobs/<job_id>` (deep links come from the daily notify) |
+| Review jobs / materials | Open the dashboard at `jobwright.parthchandak.info/jobs/<job_id>` (deep links come from the daily notify). Profile chips + Auto Search are dashboard-only. |
 | find jobs now | `JOBWRIGHT_USER=$USER_ID bash ~/.hermes/scripts/jobwright_brief.sh` (~20-30 min; sends the notify when done) |
 | send notify now | `jobwright --user $USER_ID notify` (one WhatsApp list of new jobs; `--dry-run` to preview) |
 | User reports bug / wants fix | `hermes-operator-guide.md` -> Continuous improvement (reproduce first) |

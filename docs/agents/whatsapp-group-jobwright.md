@@ -46,8 +46,9 @@ Put the durable prompt below into `~/.hermes/config.yaml` (do not commit secrets
         Every turn: load pp-job-apply; resolve WhatsApp sender -> user before profile commands.
         Daily Brief cron: jobwright-brief-richa (one per user; never job-apply-*, jobwright-send-*, or jobwright-check-*).
           Scripts: ~/.hermes/scripts/jobwright_*.sh
-        Attachments: copy -> users/richa/references/inbox/ -> file to resume/base.* or connections.csv
-          (backup first). See docs/agents/whatsapp-routing.md.
+        Attachments: copy -> users/richa/references/inbox/ -> file to resume/base.pdf or connections.csv
+          (backup first). Profile chips + Auto Search also live on the dashboard.
+          See docs/agents/whatsapp-routing.md.
         find jobs now -> jobwright_brief.sh (detached; sends the notify when done).
         notify / resend -> jobwright --user richa notify (one WhatsApp list of new jobs with dashboard deep links).
         Review + apply happen in the dashboard (jobwright.parthchandak.info/jobs/<job_id>), not over WhatsApp.

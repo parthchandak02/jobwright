@@ -18,8 +18,13 @@ Any UI change in `frontend/` must keep the dashboard visually and structurally c
 
 1. **shadcn primitives** — `components/ui/` (`Button`, `Tabs`, `Badge`, `Input`, …). Use default variants; do not fork styles inline unless the pattern is promoted (see below).
 2. **Domain layout components** — prefer these over ad-hoc flex/gap classes:
-   - Sidebar: `NavItem`, `SidebarActionButton`, `CollapsedSidebarNav`
+   - Sidebar: `NavItem`, `SidebarActionButton`, `AppSidebar` (hover flyout + click to pin)
    - Job cards: `JobCardLayout`, `JobMetaPanel`, `MetaField`, `Chip`
+   - Profile editors: `ChipInput`, `QueryChipInput`, `LocationChipInput`, `BoardToggles`
+   - Resume: `ResumePreview` (PDF iframe + markdown fallback)
+   - Materials: `ProfileMaterials` (resume + cover-letter document tabs wrapping `ResumePreview`)
+   - Pipeline/tailor progress: `RunProgressDialog` + `RunProgressButton` (`AutoSearchDialog` is a thin wrapper; `useTailorMaterials` for per-job runs)
+   - Custom tailor: `CustomTailorDialog`; field help: `FieldHint`
    - Views: `ViewModeTabs` (Board/Table)
    - Stage color: `laneTone()` / `STAGE_TONE` from `lib/api.ts` (match Kanban column headers)
 3. **CSS tokens** — add spacing/color to `:root` or `@layer components` (e.g. `--job-card-*`, `.job-card-*`), not scattered `text-[11px]`, `p-2.5`, `mt-0.5` mixes.
@@ -38,7 +43,7 @@ Any UI change in `frontend/` must keep the dashboard visually and structurally c
 | Sidebar actions | Same row pattern as `NavItem` (icon + label expanded; icon-only collapsed) |
 | Segmented controls | Default `TabsList` + `TabsTrigger` (rounded pill), not custom underline toggles |
 | Job card rhythm | `JobCardLayout` slots + `--job-card-*` tokens; `text-sm` title, `text-xs` meta/chips |
-| Chips / meta rows | `Chip` (`.job-card-chip`), `MetaField` (`.job-card-meta-row`) |
+| Chips / meta rows | `Chip` (`.job-card-chip`) and `MetaField` (`.job-card-meta-row`) on cards; Profile uses `ChipInput` / `QueryChipInput` / `LocationChipInput` |
 | Action buttons | `Button` from `ui/button` (`size="sm"`); `outline` for secondary, default for primary CTA |
 
 ## Examples

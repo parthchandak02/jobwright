@@ -1,6 +1,6 @@
 ---
 name: pipeline-operator
-description: Operates the jobwright pipeline and Hermes/WhatsApp flows - per-user commands, the daily brief cron, `jobwright notify`, apply gating, doctor and validate. Use for morning prep, the daily notify, inbound WhatsApp, onboarding, or triaging pipeline failures.
+description: Operates the jobwright pipeline and Hermes/WhatsApp flows - per-user commands, the daily brief cron, `jobwright notify`, dashboard Auto Search / run registry, PDF resume, apply gating, doctor and validate. Use for morning prep, the daily notify, inbound WhatsApp, onboarding, or triaging pipeline failures.
 ---
 
 # Pipeline operator (jobwright)
@@ -10,9 +10,10 @@ Hermes and Cursor agents running **jobwright ops** (not generic coding). Read [A
 ## Trigger cues
 
 - WhatsApp inbound, daily notify, morning cron
+- Dashboard Auto Search / `POST /api/run` / `web_runs.json` attach-or-stop
 - `jobwright --user`, multi-profile, user onboarding
 - Pipeline stage failures, `doctor`, `validate_pipeline.sh`
-- Resume/cover-letter folder hygiene after uploads
+- Resume PDF / `resume.load_resume_text` / cover-letter folder hygiene after uploads
 
 ## Progressive disclosure (read on demand)
 
@@ -23,6 +24,7 @@ Hermes and Cursor agents running **jobwright ops** (not generic coding). Read [A
 | Cron install / triage | [docs/agents/hermes-setup.md](../../docs/agents/hermes-setup.md) |
 | Hermes skill install | [docs/agents/install-hermes-skill.md](../../docs/agents/install-hermes-skill.md) |
 | Repo paths / scripts | [docs/agents/repo-map.md](../../docs/agents/repo-map.md) |
+| Kanban dashboard hosting | [docs/agents/dashboard-hosting.md](../../docs/agents/dashboard-hosting.md) |
 | Stage 6 apply / RESULT | [docs/agents/cursor-setup.md](../../docs/agents/cursor-setup.md) |
 | Human WhatsApp UX | [docs/agents/whatsapp-user-guide.md](../../docs/agents/whatsapp-user-guide.md) |
 

@@ -5,6 +5,22 @@ All notable changes to jobwright will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- Dashboard **Auto Search** runs the full prep pipeline (`discover` through `connect`) with live SSE logs, stop, and attach after reload (`run_registry` / `logs/web_runs.json`)
+- `jobwright notify` plus `POST /api/notify`: one WhatsApp list of new `prepare` jobs with `/jobs/<job_id>` deep links (`whatsapp_notified_at`)
+- Resume PDF source of truth (`resume.py`, pymupdf4llm → `resume/base.md`); `GET`/`PUT /api/settings/resume.pdf`
+- Per-job **Auto Tailor** / **Custom Tailor** (`POST /api/jobs/{url}/tailor` spawns `jobwright tailor-job` with SSE; defaults from `GET /api/tailor/defaults`)
+- Profile search editors: query tiers, locations, excludes, board toggles
+- Cover letter example PDFs on Profile (`PUT /api/settings/cover-letters`); amalgamated into tailor + cover prompts
+- JobSpy parallelism (`-w` / `JOBWRIGHT_DISCOVER_WORKERS`) and known-URL skip
+
+### Changed
+- WhatsApp is a pointer into the dashboard; no materials-N, digest, or CONFIRM-APPLY over chat
+- Daily cron is pipeline then notify (`jobwright-brief-<user>`); `jobwright-send` / `jobwright-check` retired
+- Profile page is Auto Search + resume + cover-letter examples (identity stays in `profile.json`)
+
 ## [0.2.0] - 2026-02-17
 
 ### Added

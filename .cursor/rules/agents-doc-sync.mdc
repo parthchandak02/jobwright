@@ -15,7 +15,7 @@ Update in the same change set if you touched:
 - Pipeline stages or order (`src/jobwright/pipeline.py`)
 - User registry, paths, or multi-profile behavior (`src/jobwright/users.py`, `src/jobwright/config.py`)
 - Hermes/cron scripts (`scripts/jobwright_*.sh`, installers)
-- Apply safety gates, providers, or CONFIRM APPLY flow
+- Apply safety gates, providers, or dashboard/CLI live-apply confirm
 - Agent doc locations (`docs/agents/`, `templates/hermes-skill/`)
 - Version in `pyproject.toml`
 

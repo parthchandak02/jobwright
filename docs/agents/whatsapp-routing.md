@@ -30,7 +30,7 @@ Or via Python: `jobwright users list`.
 | `notify`, `send jobs`, `resend list` | `jobwright --user $USER_ID notify` (one WhatsApp list of new prepare jobs with dashboard deep links; `--dry-run` to preview). Skips silently when nothing new. |
 | `smoke test`, `run smoke brief` | `BRIEF_SMOKE=1 JOBWRIGHT_USER=$USER_ID bash ~/.hermes/scripts/jobwright_smoke.sh` (narrow: 3 queries, SF+Remote; JobSpy only - **not** for daily cron) |
 | `materials`, `resume`, `open job` | Point the user to the dashboard deep link from the daily notify (`jobwright.parthchandak.info/jobs/<job_id>`); tailored DOCX + connections live on the card. |
-| `update resume`, resume attachment | File upload recipe -> `resume/base.txt` (+ `base.pdf` if PDF) |
+| `update resume`, resume attachment | File upload recipe -> `resume/base.pdf` (or user uploads PDF on dashboard Profile) |
 | `connections`, LinkedIn `Connections.csv` | File upload recipe -> `connections.csv`; smoke-test with `jobwright --user $USER_ID network --top 5` |
 | `bug: ...`, `this is broken` | Operator guide -> Continuous improvement (reproduce first; do not guess) |
 | `help jobs` | Summarize Daily Brief + one daily notify + dashboard + find-only vs apply |
@@ -60,7 +60,7 @@ Brief pipeline defaults (in `run_daily_brief.sh`):
 | `JOBWRIGHT_LLM_MODEL` | `accounts/fireworks/models/gpt-oss-120b` | Overrides global `.env` `LLM_MODEL` for scoring/tailor/cover |
 | `SCORE_BATCH_SIZE` | `10` | Jobs per scoring LLM call. Do not send the full jobs table in one shot. |
 | `DISCOVER_MODE` | `fast` | Tier-1 queries; weekly `full` for deep crawl |
-| `APPLY_MIN_SCORE` | `5` | Digest + tailor threshold (user `.env` may override) |
+| `APPLY_MIN_SCORE` | `5` | Min fit score for tailor/cover in the brief (user `.env` may override) |
 | `BRIEF_SMOKE` | unset | Set only via `jobwright_smoke.sh` - do not use for production brief |
 | `JOBWRIGHT_PUBLIC_BASE_URL` | `https://jobwright.parthchandak.info` | Deep-link base used by `jobwright notify` |
 
@@ -78,19 +78,14 @@ cp "$HERMES_ATTACHMENT_PATH" "$INBOX/"
 STAMP=$(date +%Y%m%d_%H%M%S)
 ```
 
-### Resume (PDF / DOCX / TXT)
+### Resume (PDF)
 
 ```bash
 # Backup existing
-cp -a "${DIR}/resume/base.txt" "${DIR}/resume/base.txt.bak.$STAMP" 2>/dev/null || true
 cp -a "${DIR}/resume/base.pdf" "${DIR}/resume/base.pdf.bak.$STAMP" 2>/dev/null || true
 
-# Place new file:
-# PDF: keep binary + extract text
+# Place new PDF (markdown is derived on the next pipeline/dashboard load):
 #   cp "$INBOX/Resume.pdf" "${DIR}/resume/base.pdf"
-#   pdftotext -layout "${DIR}/resume/base.pdf" "${DIR}/resume/base.txt"  # or python extract
-# TXT: copy to resume/base.txt
-# DOCX: convert to UTF-8 text into resume/base.txt (python-docx or textutil)
 
 jobwright --user "$USER_ID" doctor
 ```
@@ -115,7 +110,7 @@ Live apply is not driven over WhatsApp. It runs only from the dashboard apply bu
 
 1. Collect name, resume, role prefs, WhatsApp chat JID, apply preference (default: find-only).
 2. `jobwright users add <id> --name "..." --whatsapp "whatsapp:..." --template nontech-bay-area`
-3. Write `resume/base.txt`, tune `profile.json` and `searches.yaml` in `users/<id>/`.
+3. Write `resume/base.pdf`, tune `profile.json` and `searches.yaml` in `users/<id>/`.
 4. Ask Hermes to register crons per [docs/agents/hermes-setup.md](hermes-setup.md).
 5. `./scripts/install_hermes_scripts.sh` + `./scripts/install_skills.sh` after repo updates.
 6. Test: `jobwright --user <id> doctor` then `JOBWRIGHT_USER=<id> bash ~/.hermes/scripts/jobwright_brief.sh`.
