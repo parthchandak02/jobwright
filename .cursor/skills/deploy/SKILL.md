@@ -1,9 +1,9 @@
 ---
-name: commit-push-deploy
-description: Lands changes end-to-end: doc sync, quality gate, commit clusters, push when asked, and conditional dashboard deploy. Use when the user asks to commit, push, deploy, or /commit-push-deploy.
+name: deploy
+description: Lands changes end-to-end: doc sync, quality gate, commit clusters, push when asked, and conditional dashboard deploy. Use when the user asks to commit, push, deploy, ship, or /deploy.
 ---
 
-# Commit, Push, Deploy
+# Deploy
 
 End-to-end workflow for jobwright: probe, sync stale docs, run a **scoped** quality gate, commit in logical clusters, push when asked, then deploy only what changed.
 
@@ -15,7 +15,7 @@ End-to-end workflow for jobwright: probe, sync stale docs, run a **scoped** qual
 |-----------|--------|------|--------|
 | commit / land this | yes | no | no |
 | commit and push | yes | yes | no |
-| deploy / commit-push-deploy / ship it | yes | yes (unless commit-only) | yes |
+| deploy / ship it / /deploy | yes | yes (unless commit-only) | yes |
 | push only | no | yes | no |
 
 If push or deploy intent is ambiguous, ask once.

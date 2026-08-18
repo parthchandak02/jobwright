@@ -24,33 +24,23 @@ Or via Python: `jobwright users list`.
 
 | User message (case insensitive) | Agent action |
 |--------------------------------|--------------|
-| `CONFIRM APPLY` | Verify sender matches `whatsapp_target`. Then: `JOBWRIGHT_USER=$USER_ID bash ~/.hermes/scripts/jobwright_confirm.sh` then `jobwright_on_confirm.sh`. Report stdout. |
 | `job status`, `how are my jobs` | `jobwright --user $USER_ID status` |
 | `verify brief`, `health check` | `JOBWRIGHT_USER=$USER_ID bash ~/.hermes/scripts/jobwright_verify.sh` |
-| `find jobs now`, `run pipeline`, `run brief` | `JOBWRIGHT_USER=$USER_ID bash ~/.hermes/scripts/jobwright_brief.sh` (detached; ~20–30 min). Uses `run_daily_brief.sh`: discover→connect, `JOBWRIGHT_LLM_MODEL` default `gpt-oss-120b`, `--validation lenient`. Monitor: `users/$USER_ID/logs/brief_YYYYMMDD.log`, `BRIEF_STATUS_YYYYMMDD`. |
-| `send digest`, `post digest`, `show digest` | If digest ready: `JOBWRIGHT_USER=$USER_ID bash ~/.hermes/scripts/jobwright_send.sh` → paste stdout to WhatsApp. If pipeline still running, say so and point to log. |
-| `smoke test`, `run smoke brief` | `BRIEF_SMOKE=1 JOBWRIGHT_USER=$USER_ID bash ~/.hermes/scripts/jobwright_smoke.sh` (narrow: 3 queries, SF+Remote, top 3 digest; JobSpy only — **not** for daily cron) |
-| `materials N`, `send N`, `files N`, `deliver materials N` | `jobwright --user $USER_ID materials --index N --json` → send each path in `files` as a WhatsApp **document**. Or: `JOBWRIGHT_USER=$USER_ID bash ~/.hermes/scripts/jobwright_deliver_materials.sh N` (uses `hermes send` + `MEDIA:` paths). |
-| `update resume`, resume attachment | File upload recipe → `resume/base.txt` (+ `base.pdf` if PDF) |
-| `connections`, LinkedIn `Connections.csv` | File upload recipe → `connections.csv`; smoke-test with `jobwright --user $USER_ID network --top 5` |
-| `bug: …`, `this is broken`, `fix digest` | Operator guide → Continuous improvement (reproduce first; do not guess) |
-| `help jobs` | Summarize Daily Brief + materials N + find-only vs apply |
+| `find jobs now`, `run pipeline`, `run brief` | `JOBWRIGHT_USER=$USER_ID bash ~/.hermes/scripts/jobwright_brief.sh` (detached; ~20-30 min). Uses `run_daily_brief.sh`: discover->connect then `jobwright notify`, `JOBWRIGHT_LLM_MODEL` default `gpt-oss-120b`, `--validation lenient`. Monitor: `users/$USER_ID/logs/brief_YYYYMMDD.log`, `BRIEF_STATUS_YYYYMMDD`. |
+| `notify`, `send jobs`, `resend list` | `jobwright --user $USER_ID notify` (one WhatsApp list of new prepare jobs with dashboard deep links; `--dry-run` to preview). Skips silently when nothing new. |
+| `smoke test`, `run smoke brief` | `BRIEF_SMOKE=1 JOBWRIGHT_USER=$USER_ID bash ~/.hermes/scripts/jobwright_smoke.sh` (narrow: 3 queries, SF+Remote; JobSpy only - **not** for daily cron) |
+| `materials`, `resume`, `open job` | Point the user to the dashboard deep link from the daily notify (`jobwright.parthchandak.info/jobs/<job_id>`); tailored DOCX + connections live on the card. |
+| `update resume`, resume attachment | File upload recipe -> `resume/base.txt` (+ `base.pdf` if PDF) |
+| `connections`, LinkedIn `Connections.csv` | File upload recipe -> `connections.csv`; smoke-test with `jobwright --user $USER_ID network --top 5` |
+| `bug: ...`, `this is broken` | Operator guide -> Continuous improvement (reproduce first; do not guess) |
+| `help jobs` | Summarize Daily Brief + one daily notify + dashboard + find-only vs apply |
 | `turn off apply` | `jobwright users set $USER_ID --no-apply` (confirm first) |
-| `network`, `connections` (text only) | `jobwright --user $USER_ID network` → paste digest |
-| `targets`, `companies` | `jobwright --user $USER_ID targets` → paste digest |
+| `network`, `connections` (text only) | `jobwright --user $USER_ID network` -> paste digest |
+| `targets`, `companies` | `jobwright --user $USER_ID targets` -> paste digest |
 
-### Materials delivery (DOCX)
+### How jobs reach the user
 
-**Cron** (`jobwright-send-<user>`) posts the **text digest** only (stdout from `jobwright_send.sh`).
-
-**Agent** sends editable DOCX when the user asks `materials N`:
-
-1. Parse index N from the message.
-2. Run `jobwright --user $USER_ID materials --index N --json` (or `jobwright_deliver_materials.sh N`).
-3. For each path in JSON `files`, send as a WhatsApp document (or use `MEDIA:` via `jobwright_deliver_materials.sh`).
-4. If `files` is empty, say materials are not ready and suggest `find jobs now`.
-
-**Auto-materials:** When `run_daily_brief.sh` finishes, it auto-sends editable DOCX for **every job in the digest** via `jobwright_deliver_materials.sh` (`AUTO_MATERIALS_ALL=1` default, one send per job with a short gap). Users don't need to reply `materials N` to get materials; that reply is only an optional resend. Set `AUTO_MATERIALS_ALL=0` to fall back to legacy single-job delivery (`AUTO_MATERIALS_INDEX=1`, or `0` to disable).
+The daily brief (`run_daily_brief.sh`) runs the pipeline then `jobwright notify`, which sends ONE WhatsApp message listing the newly prepared jobs, each with a `jobwright.parthchandak.info/jobs/<job_id>` deep link. Each job is stamped `whatsapp_notified_at` so it is never re-sent. The user clicks a link to open the job in the dashboard, where the tailored resume + cover letter, ranked connections, and gated apply button live. To resend the current list on demand, run `jobwright --user $USER_ID notify`.
 
 ### Pipeline env (Hermes / cron)
 
@@ -71,7 +61,8 @@ Brief pipeline defaults (in `run_daily_brief.sh`):
 | `SCORE_BATCH_SIZE` | `10` | Jobs per scoring LLM call. Do not send the full jobs table in one shot. |
 | `DISCOVER_MODE` | `fast` | Tier-1 queries; weekly `full` for deep crawl |
 | `APPLY_MIN_SCORE` | `5` | Digest + tailor threshold (user `.env` may override) |
-| `BRIEF_SMOKE` | unset | Set only via `jobwright_smoke.sh` — do not use for production brief |
+| `BRIEF_SMOKE` | unset | Set only via `jobwright_smoke.sh` - do not use for production brief |
+| `JOBWRIGHT_PUBLIC_BASE_URL` | `https://jobwright.parthchandak.info` | Deep-link base used by `jobwright notify` |
 
 ## File uploads (resume, Connections.csv)
 
@@ -116,12 +107,9 @@ jobwright --user "$USER_ID" network --top 5   # smoke-test parse
 
 Optional: suggest `find jobs now` so the next Daily Brief uses the new resume/connections.
 
-## CONFIRM APPLY safety checklist
+## Apply safety
 
-1. Sender JID matches registry `whatsapp_target` for `$USER_ID`.
-2. `jobwright users show $USER_ID` → `apply_enabled: true`.
-3. Do **not** run `jobwright apply --live --url ...` for WhatsApp users.
-4. Use only `jobwright_confirm.sh` + `jobwright_on_confirm.sh`.
+Live apply is not driven over WhatsApp. It runs only from the dashboard apply button (confirm gate) or an explicit `jobwright --user $USER_ID apply --live`, and only when `jobwright users show $USER_ID` reports `apply_enabled: true`. Never run apply from cron, and never auto-apply LinkedIn jobs (blocked in code).
 
 ## Onboarding a new WhatsApp user
 
@@ -139,5 +127,6 @@ USER_ID=richa
 LOG="${JOBWRIGHT_REPO}/users/${USER_ID}/logs/brief_$(date +%Y%m%d).log"
 hermes cron list | grep jobwright-
 tail -50 "$LOG"
-ls "${JOBWRIGHT_REPO}/users/${USER_ID}/DIGEST_DELIVERED_"* 2>/dev/null
+# BRIEF_STATUS_YYYYMMDD ends with `done RC=` plus `notify_sent` or `notify_failed`.
+cat "${JOBWRIGHT_REPO}/users/${USER_ID}/BRIEF_STATUS_$(date +%Y%m%d)" 2>/dev/null
 ```

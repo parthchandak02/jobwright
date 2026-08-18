@@ -6,7 +6,7 @@ Detailed paths for agents. Summary: [../../AGENTS.md](../../AGENTS.md).
 
 | Path | Purpose |
 |------|---------|
-| `src/jobwright/cli.py` | Typer CLI: `run`, `apply`, `status`, `doctor`, `users`, `materials`, `network`, `targets` |
+| `src/jobwright/cli.py` | Typer CLI: `run`, `apply`, `notify`, `status`, `doctor`, `users`, `network`, `targets` |
 | `src/jobwright/pipeline.py` | Stage orchestration (`STAGE_ORDER`, streaming mode) |
 | `src/jobwright/config.py` | `JOBWRIGHT_DIR` paths, environment loading, `set_active_user` |
 | `src/jobwright/users.py` | Multi-profile registry (`users/users.yaml`) |
@@ -22,7 +22,7 @@ Detailed paths for agents. Summary: [../../AGENTS.md](../../AGENTS.md).
 | `src/jobwright/targets/` | Target company list builder |
 | `src/jobwright/config/*.yaml` | Shipped employers, sites, search templates; in `sites.yaml`, `blocked` = discovery (never surface), `apply_blocked` = LinkedIn (brief OK, never auto-apply) |
 | `bin/job-apply-pp-cli` | Agent-native JSON wrapper over `jobwright` |
-| `scripts/` | Hermes cron installers, Daily Brief/send/check/confirm, repo resolution |
+| `scripts/` | Hermes cron installers, Daily Brief (`run_daily_brief.sh` -> `jobwright notify`), repo resolution |
 | `tests/` | pytest |
 
 **Legacy:** `src/applypilot/` is unmaintained; do not extend.
@@ -52,20 +52,15 @@ WhatsApp resolve: `scripts/resolve_user_from_whatsapp.sh 'whatsapp:…'`.
 | `install_skills.sh` | Install thin Hermes/Cursor skill pointer |
 | `install_hermes_scripts.sh` | Copy cron scripts to `~/.hermes/scripts/` |
 | `setup_hermes_cron.sh` | Optional shell shortcut; prefer Hermes agent per `docs/agents/hermes-setup.md` |
-| `jobwright_brief.sh` | Daily Brief (discover → connect, detached) |
-| `jobwright_send.sh` | WhatsApp digest |
-| `jobwright_check.sh` | Stuck-pipeline checks |
-| `jobwright_send_materials.sh` | Print DOCX paths for materials N |
-| `run_daily_brief.sh` | Background pipeline + digest write |
-| `jobwright_confirm.sh` | CONFIRM APPLY gate |
-| `jobwright_on_confirm.sh` | Live apply batch |
+| `jobwright_brief.sh` | Daily Brief (detached wrapper → `run_daily_brief.sh`) |
+| `run_daily_brief.sh` | Background pipeline (discover → connect) then `jobwright notify` |
 | `resolve_user_from_whatsapp.sh` | JID → `user_id` |
 | `validate_pipeline.sh` | Doctor + unit checks |
 | `restart.sh` | **Primary:** PM2/tmux restart (`--backend-only`, `--frontend-only`, `--prod-ui`, `--tmux`) |
 | `ops_pm2.sh` | Alias → `restart.sh` |
 | `dashboard_deploy.sh` | Alias → `restart.sh --prod-ui` |
 
-Cron names: `jobwright-brief-<id>`, `jobwright-send-<id>`, `jobwright-check-<id>` (6:00 / 6:30 / 10:00 daily).
+Cron names: `jobwright-brief-<id>` (one daily brief per user, ~6:00). It runs the pipeline then `jobwright notify`, which sends ONE WhatsApp message listing newly prepared jobs with dashboard deep links (`jobwright.parthchandak.info/jobs/<job_id>`). No separate send/check crons.
 
 Kanban hosting: [dashboard-hosting.md](dashboard-hosting.md) (`jobwright.parthchandak.info`; local HMR `http://127.0.0.1:5120`).
 
@@ -86,6 +81,7 @@ PM2 process names: `jobwright-api`, `jobwright-ui`, `jobwright-tunnel`.
 | `JOBWRIGHT_DIR` | Active user data directory |
 | `JOBWRIGHT_USER` | Set by Hermes wrappers after resolution |
 | `JOBWRIGHT_DASHBOARD_USER` | Kanban API profile (default `richa`) |
+| `JOBWRIGHT_PUBLIC_BASE_URL` | Deep-link base for `jobwright notify` (default `https://jobwright.parthchandak.info`) |
 | `JOBWRIGHT_CORS_ORIGINS` | Comma-separated CORS origins for dashboard |
 | `JOBWRIGHT_DISCOVER_BOARDS` | Restrict JobSpy boards without editing searches.yaml (e.g. `indeed`) |
 

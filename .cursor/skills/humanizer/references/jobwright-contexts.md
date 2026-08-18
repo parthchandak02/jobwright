@@ -7,7 +7,7 @@ Apply humanizer whenever you produce or edit user-facing prose in this repo.
 | Context | Location / trigger | Notes |
 |---------|-------------------|-------|
 | Cover letters | `src/jobwright/scoring/cover_letter.py` output, tailored application text | Keep facts from resume and job posting; no invented employers or dates |
-| WhatsApp digests | `scripts/jobwright_send.sh` output, Daily Brief summaries | Short, specific, no chatbot closings |
+| WhatsApp notify | `src/jobwright/notify.py` output (daily list of new jobs) | Short, specific, plain text, hyphens only, no chatbot closings |
 | CLI messages | `src/jobwright/cli.py`, wizard prompts | Clear and direct; avoid sales tone |
 | README / docs | `README.md`, `docs/**`, `skills/**` | Technical accuracy first; personality only when appropriate |
 

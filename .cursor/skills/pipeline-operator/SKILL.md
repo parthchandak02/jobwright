@@ -1,6 +1,6 @@
 ---
 name: pipeline-operator
-description: Operates the jobwright pipeline and Hermes/WhatsApp flows — per-user commands, cron scripts, CONFIRM APPLY gates, doctor and validate. Use for morning prep, digests, inbound WhatsApp, onboarding, or triaging pipeline failures.
+description: Operates the jobwright pipeline and Hermes/WhatsApp flows - per-user commands, the daily brief cron, `jobwright notify`, apply gating, doctor and validate. Use for morning prep, the daily notify, inbound WhatsApp, onboarding, or triaging pipeline failures.
 ---
 
 # Pipeline operator (jobwright)
@@ -9,7 +9,7 @@ Hermes and Cursor agents running **jobwright ops** (not generic coding). Read [A
 
 ## Trigger cues
 
-- WhatsApp inbound, CONFIRM APPLY, digest, morning cron
+- WhatsApp inbound, daily notify, morning cron
 - `jobwright --user`, multi-profile, user onboarding
 - Pipeline stage failures, `doctor`, `validate_pipeline.sh`
 - Resume/cover-letter folder hygiene after uploads
@@ -30,7 +30,7 @@ Hermes and Cursor agents running **jobwright ops** (not generic coding). Read [A
 
 - Auto-apply from cron
 - LinkedIn apply
-- `jobwright apply --live` for WhatsApp users (use confirm scripts)
+- `jobwright apply --live` from cron (apply only from the dashboard or an explicit manual command)
 - Commit `.env`, `users/`, secrets
 
 ## Quick commands
@@ -46,4 +46,4 @@ bash scripts/validate_pipeline.sh
 pytest tests/ -v && ruff check src/
 ```
 
-Live apply path: see hermes-operator-guide **CONFIRM APPLY** section only when user explicitly confirms and `apply_enabled` is true.
+Live apply path: see hermes-operator-guide **Live apply** section. Apply runs only from the dashboard apply button (confirm gate) or an explicit `jobwright apply --live`, and only when `apply_enabled` is true.

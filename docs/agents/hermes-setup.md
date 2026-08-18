@@ -15,7 +15,7 @@ Set up jobwright Hermes crons on this machine.
 2. Follow the playbook: ${JOBWRIGHT_REPO}/docs/agents/hermes-setup.md — sections "Prerequisites" through "Register crons".
 3. Use jobwright users list for registry users, schedules, and whatsapp_target.
 4. Before creating each cron, check hermes cron list for an existing job with the same Name; edit if found, create only if missing.
-5. Pause or remove any old job-apply-* crons for the same users (replaced by jobwright-brief/send/check).
+5. Pause or remove any old job-apply-*, jobwright-send-*, or jobwright-check-* crons for the same users (replaced by a single jobwright-brief-<user>).
 6. Report back: cron names, schedules, deliver targets, and next run times.
 ```
 
@@ -51,35 +51,32 @@ Answer: load **pp-job-apply** / **jobwright** (this skill), plus **hermes-cron-j
 
 | Cron name | Script | Mode | Purpose |
 |-----------|--------|------|---------|
-| `jobwright-brief-<user_id>` | `wrap_jobwright-brief-<user_id>.sh` | `--no-agent` | Daily Brief: discover → cover → docx → connect (detached) |
-| `jobwright-send-<user_id>` | `wrap_jobwright-send-<user_id>.sh` | `--no-agent` | WhatsApp digest delivery |
-| `jobwright-check-<user_id>` | `wrap_jobwright-check-<user_id>.sh` | `--no-agent` | Stuck pipeline / delivery check |
+| `jobwright-brief-<user_id>` | `wrap_jobwright-brief-<user_id>.sh` | `--no-agent` | Daily Brief: pipeline (discover -> connect) then `jobwright notify` (one WhatsApp list, detached) |
+
+There is now **one** cron per user. The old `jobwright-send-*` (digest delivery) and `jobwright-check-*` (watchdog) crons are retired: the brief sends the notify itself.
 
 **Never** register `job-apply-discover` or `job-apply-submit` (deprecated).
 
-**Never** keep `job-apply-morning-*` / `job-apply-digest-*` / `job-apply-watchdog-*` alongside the new names (duplicates digests). Pause or delete them.
+**Never** keep `job-apply-morning-*` / `job-apply-digest-*` / `job-apply-watchdog-*` / `jobwright-send-*` / `jobwright-check-*` alongside the brief cron. Pause or delete them.
 
 **Never** use agent mode for these jobs. Always `--no-agent` + `--script`.
 
-Schedules and deliver targets come from `users/users.yaml` per user (`schedule`, `digest_schedule`, `whatsapp_target`). Default if missing:
+Schedule and deliver target come from `users/users.yaml` per user (`schedule`, `whatsapp_target`). Default if missing:
 
 - brief: `0 6 * * *` (6:00 AM every day)
-- send: `30 6 * * *` (6:30 AM every day)
-- check: `0 10 * * *` (10:00 AM every day)
 
 ---
 
 ## Step 1: Create per-user wrapper scripts
 
-For each registry user `<id>`, write `~/.hermes/scripts/wrap_jobwright-brief-<id>.sh` (and send/check variants) that export user env then exec the real script:
+For each registry user `<id>`, write `~/.hermes/scripts/wrap_jobwright-brief-<id>.sh` that exports user env then execs the real script:
 
 ```bash
 USER_ID=richa   # example
 REPO="${JOBWRIGHT_REPO}"
 USERS_ROOT="${JOBWRIGHT_USERS_ROOT}"
 
-for kind in brief send check; do
-  cat > "${HOME}/.hermes/scripts/wrap_jobwright-${kind}-${USER_ID}.sh" <<EOF
+cat > "${HOME}/.hermes/scripts/wrap_jobwright-brief-${USER_ID}.sh" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
 export JOBWRIGHT_USER="${USER_ID}"
@@ -87,10 +84,9 @@ export JOBWRIGHT_USERS_ROOT="${USERS_ROOT}"
 export JOBWRIGHT_DIR="${USERS_ROOT}/${USER_ID}"
 export JOBWRIGHT_REPO="${REPO}"
 export PATH="\${HOME}/.local/bin:\${PATH}"
-exec bash "\${HOME}/.hermes/scripts/jobwright_${kind}.sh"
+exec bash "\${HOME}/.hermes/scripts/jobwright_brief.sh"
 EOF
-  chmod 755 "${HOME}/.hermes/scripts/wrap_jobwright-${kind}-${USER_ID}.sh"
-done
+chmod 755 "${HOME}/.hermes/scripts/wrap_jobwright-brief-${USER_ID}.sh"
 ```
 
 Hermes: loop over all users from `jobwright users list` and run the equivalent for each `user_id`.
@@ -125,7 +121,6 @@ Values from registry (Hermes should read live from `jobwright users show richa`)
 
 - `whatsapp_target`: `whatsapp:120363427224277278@g.us`
 - `schedule`: `0 6 * * *` (or whatever is in users.yaml)
-- `digest_schedule`: `30 6 * * *`
 
 ```bash
 REPO="${JOBWRIGHT_REPO}"
@@ -156,11 +151,9 @@ upsert_cron() {
 }
 
 upsert_cron "jobwright-brief-${UID}" "0 6 * * *" "wrap_jobwright-brief-${UID}.sh"
-upsert_cron "jobwright-send-${UID}" "30 6 * * *" "wrap_jobwright-send-${UID}.sh"
-upsert_cron "jobwright-check-${UID}" "0 10 * * *" "wrap_jobwright-check-${UID}.sh"
 ```
 
-Repeat for every user in the registry. Pause any `job-apply-*` crons for the same user.
+Repeat for every user in the registry. Pause any `job-apply-*`, `jobwright-send-*`, or `jobwright-check-*` crons for the same user.
 
 ---
 
@@ -179,8 +172,8 @@ Confirm exactly **one** cron per new name. Report next run times to the user on 
 
 | Surface | Mode |
 |---------|------|
-| Cron ticks (brief, send, check) | `--no-agent` (script stdout → WhatsApp) |
-| WhatsApp chat (CONFIRM APPLY, status, find jobs now, materials N) | Hermes agent + skill `pp-job-apply` / `jobwright` + terminal |
+| Cron tick (brief) | `--no-agent` (pipeline + `jobwright notify` sends the WhatsApp list) |
+| WhatsApp chat (status, find jobs now, notify, file uploads) | Hermes agent + skill `pp-job-apply` / `jobwright` + terminal |
 
 Inbound WhatsApp routing: [whatsapp-routing.md](whatsapp-routing.md).
 
@@ -214,13 +207,13 @@ Show me Daily Brief end to end for user richa in this WhatsApp group.
 1. cd /Volumes/ExternalSSD/Projects/jobwright
 2. ./scripts/install_hermes_scripts.sh && ./scripts/install_skills.sh
 3. Confirm ~/.hermes/scripts/jobwright_brief.sh exists
-4. Follow docs/agents/hermes-setup.md: register jobwright-brief/send/check-richa at 6:00 / 6:30 / 10:00 daily
-5. Delete any job-apply-* crons for richa
+4. Follow docs/agents/hermes-setup.md: register a single jobwright-brief-richa at 6:00 daily
+5. Delete any job-apply-*, jobwright-send-*, or jobwright-check-* crons for richa
 6. Update this group's channel_overrides system_prompt (see docs/agents/whatsapp-group-jobwright.md). Bind cursor-agent. Restart gateway if needed.
 7. jobwright --user richa doctor && jobwright --user richa status
 8. Trigger now: JOBWRIGHT_USER=richa bash ~/.hermes/scripts/jobwright_brief.sh
-9. When DIGEST is ready, post it here. I will reply materials 1 — send DOCX as documents.
-10. Report: cron names, next run times, job count, DOCX paths, failures.
+9. When it finishes, the brief sends ONE WhatsApp list of new jobs with dashboard deep links. Confirm it landed here.
+10. Report: cron name, next run time, job count, notify result, failures.
 
 Also confirm you know: resolve sender→richa, file uploads to users/richa/ with backup, continuous improvement in hermes-operator-guide.md.
 ```
