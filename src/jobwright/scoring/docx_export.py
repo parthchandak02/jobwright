@@ -1,4 +1,4 @@
-"""Text-to-DOCX conversion for tailored resumes and cover letters.
+"""Markdown/text-to-DOCX conversion for tailored resumes and cover letters.
 
 Produces editable Word documents for WhatsApp review. Reuses the same
 structured-text parser as the PDF pipeline.
@@ -10,6 +10,7 @@ import logging
 from pathlib import Path
 
 from jobwright.database import get_connection
+from jobwright.scoring.materials_format import normalize_for_structured_parse, resolve_material_path
 from jobwright.scoring.pdf import parse_entries, parse_resume, parse_skills
 
 log = logging.getLogger(__name__)
@@ -33,7 +34,7 @@ def _write_structured_docx(text: str, output_path: Path) -> Path:
     from docx import Document
     from docx.shared import Pt
 
-    resume = parse_resume(text)
+    resume = parse_resume(normalize_for_structured_parse(text))
     doc = Document()
 
     if resume.get("name"):
@@ -102,26 +103,31 @@ def _write_structured_docx(text: str, output_path: Path) -> Path:
     return output_path
 
 
-def txt_to_docx(txt_path: Path, output_path: Path | None = None) -> Path:
-    """Convert a .txt resume or cover letter to DOCX."""
-    txt_path = Path(txt_path)
-    if not txt_path.exists():
-        raise FileNotFoundError(f"Text file not found: {txt_path}")
-    out = Path(output_path) if output_path else txt_path.with_suffix(".docx")
-    text = txt_path.read_text(encoding="utf-8")
+def material_to_docx(source_path: Path, output_path: Path | None = None) -> Path:
+    """Convert a markdown or legacy text resume/cover letter to DOCX."""
+    resolved = resolve_material_path(source_path)
+    if not resolved:
+        raise FileNotFoundError(f"Material file not found: {source_path}")
+    out = Path(output_path) if output_path else resolved.with_suffix(".docx")
+    text = resolved.read_text(encoding="utf-8")
     return _write_structured_docx(text, out)
 
 
-def _sibling_docx(txt_path: str | None) -> str | None:
-    if not txt_path:
+def txt_to_docx(txt_path: Path, output_path: Path | None = None) -> Path:
+    """Backward-compatible alias for material_to_docx."""
+    return material_to_docx(txt_path, output_path)
+
+
+def _sibling_docx(material_path: str | None) -> str | None:
+    if not material_path:
         return None
-    p = Path(txt_path)
-    if not p.exists():
+    resolved = resolve_material_path(material_path)
+    if not resolved:
         return None
     try:
-        return str(txt_to_docx(p))
+        return str(material_to_docx(resolved))
     except Exception as e:
-        log.error("DOCX conversion failed for %s: %s", p, e)
+        log.error("DOCX conversion failed for %s: %s", resolved, e)
         return None
 
 
@@ -171,19 +177,19 @@ def batch_convert_docx(limit: int = 50, min_score: int = 5) -> dict:
     errors = 0
     for row in rows:
         job = dict(row)
-        resume_txt = job.get("tailored_resume_path")
-        cover_txt = job.get("cover_letter_path")
-        need_resume = bool(resume_txt) and (
+        resume_md = job.get("tailored_resume_path")
+        cover_md = job.get("cover_letter_path")
+        need_resume = bool(resume_md) and (
             not job.get("tailored_resume_docx_path")
             or not Path(job["tailored_resume_docx_path"]).exists()
         )
-        need_cover = bool(cover_txt) and (
+        need_cover = bool(cover_md) and (
             not job.get("cover_letter_docx_path")
             or not Path(job["cover_letter_docx_path"]).exists()
         )
         if not need_resume and not need_cover:
-            # Still ensure sibling files exist if columns empty
-            if resume_txt and Path(resume_txt).with_suffix(".docx").exists() and not job.get(
+            resolved = resolve_material_path(resume_md) if resume_md else None
+            if resolved and resolved.with_suffix(".docx").exists() and not job.get(
                 "tailored_resume_docx_path"
             ):
                 need_resume = True

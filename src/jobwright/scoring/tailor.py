@@ -23,7 +23,6 @@ from jobwright.llm_json import LLMJsonError, parse_json_object
 from jobwright.scoring.portfolio import get_selected_projects
 from jobwright.scoring.validator import (
     BANNED_WORDS,
-    sanitize_text,
     validate_json_fields,
 )
 
@@ -184,80 +183,10 @@ def extract_json(raw: str) -> dict:
 # ── Resume Assembly (profile-driven header) ──────────────────────────────
 
 def assemble_resume_text(data: dict, profile: dict) -> str:
-    """Convert JSON resume data to formatted plain text.
+    """Convert JSON resume data to markdown (alias for assemble_resume_markdown)."""
+    from jobwright.scoring.materials_format import assemble_resume_markdown
 
-    Header (name, location, contact) is ALWAYS code-injected from the profile,
-    never LLM-generated. All text fields are sanitized.
-
-    Args:
-        data: Parsed JSON resume from the LLM.
-        profile: User profile dict from load_profile().
-
-    Returns:
-        Formatted resume text.
-    """
-    personal = profile.get("personal", {})
-    lines: list[str] = []
-
-    # Header -- always code-injected from profile
-    lines.append(personal.get("full_name", ""))
-    lines.append(sanitize_text(data.get("title", "Software Engineer")))
-
-    # Location from search config or profile -- leave blank if not available
-    # The location line is optional; the original used a hardcoded city.
-    # We omit it here; the LLM prompt can include it if the user sets it.
-
-    # Contact line
-    contact_parts: list[str] = []
-    if personal.get("email"):
-        contact_parts.append(personal["email"])
-    if personal.get("phone"):
-        contact_parts.append(personal["phone"])
-    if personal.get("github_url"):
-        contact_parts.append(personal["github_url"])
-    if personal.get("linkedin_url"):
-        contact_parts.append(personal["linkedin_url"])
-    if contact_parts:
-        lines.append(" | ".join(contact_parts))
-    lines.append("")
-
-    # Summary
-    lines.append("SUMMARY")
-    lines.append(sanitize_text(data["summary"]))
-    lines.append("")
-
-    # Technical Skills
-    lines.append("TECHNICAL SKILLS")
-    if isinstance(data["skills"], dict):
-        for cat, val in data["skills"].items():
-            lines.append(f"{cat}: {sanitize_text(str(val))}")
-    lines.append("")
-
-    # Experience
-    lines.append("EXPERIENCE")
-    for entry in data.get("experience", []):
-        lines.append(sanitize_text(entry.get("header", "")))
-        if entry.get("subtitle"):
-            lines.append(sanitize_text(entry["subtitle"]))
-        for b in entry.get("bullets", []):
-            lines.append(f"- {sanitize_text(b)}")
-        lines.append("")
-
-    # Projects
-    lines.append("PROJECTS")
-    for entry in data.get("projects", []):
-        lines.append(sanitize_text(entry.get("header", "")))
-        if entry.get("subtitle"):
-            lines.append(sanitize_text(entry["subtitle"]))
-        for b in entry.get("bullets", []):
-            lines.append(f"- {sanitize_text(b)}")
-        lines.append("")
-
-    # Education
-    lines.append("EDUCATION")
-    lines.append(sanitize_text(str(data.get("education", ""))))
-
-    return "\n".join(lines)
+    return assemble_resume_markdown(data, profile)
 
 
 # ── LLM Judge ────────────────────────────────────────────────────────────
@@ -489,9 +418,9 @@ def run_tailoring(min_score: int = 7, limit: int = 20,
             safe_site = re.sub(r"[^\w\s-]", "", job.get("site") or "manual")[:20].strip().replace(" ", "_")
             prefix = f"{safe_site}_{safe_title}"
 
-            # Save tailored resume text
-            txt_path = config.TAILORED_DIR / f"{prefix}.txt"
-            txt_path.write_text(tailored, encoding="utf-8")
+            # Save tailored resume markdown
+            md_path = config.TAILORED_DIR / f"{prefix}.md"
+            md_path.write_text(tailored, encoding="utf-8")
 
             # Save job description for traceability
             job_path = config.TAILORED_DIR / f"{prefix}_JOB.txt"
@@ -515,13 +444,13 @@ def run_tailoring(min_score: int = 7, limit: int = 20,
             if report["status"] in ("approved", "approved_with_judge_warning"):
                 try:
                     from jobwright.scoring.pdf import convert_to_pdf
-                    pdf_path = str(convert_to_pdf(txt_path))
+                    pdf_path = str(convert_to_pdf(md_path))
                 except Exception:
-                    log.debug("PDF generation failed for %s", txt_path, exc_info=True)
+                    log.debug("PDF generation failed for %s", md_path, exc_info=True)
 
             result = {
                 "url": job["url"],
-                "path": str(txt_path),
+                "path": str(md_path),
                 "pdf_path": pdf_path,
                 "title": job["title"],
                 "site": job["site"],

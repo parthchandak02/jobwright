@@ -152,9 +152,13 @@ def store_jobspy_results(conn: sqlite3.Connection, df, source_label: str) -> tup
         # If JobSpy gave us a full description, promote it directly
         full_description = None
         detail_scraped_at = None
+        sponsorship_status = None
         if description and len(description) > 200:
             full_description = description
             detail_scraped_at = now
+            from jobwright.enrichment.sponsorship import classify_sponsorship
+
+            sponsorship_status = classify_sponsorship(full_description)
 
         # Extract apply URL if JobSpy provided it
         apply_url = str(row.get("job_url_direct", "")) if str(row.get("job_url_direct", "")) != "nan" else None
@@ -162,10 +166,10 @@ def store_jobspy_results(conn: sqlite3.Connection, df, source_label: str) -> tup
         try:
             conn.execute(
                 "INSERT INTO jobs (url, title, salary, description, location, site, company, strategy, discovered_at, "
-                "full_description, application_url, detail_scraped_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "full_description, application_url, detail_scraped_at, sponsorship_status) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (url, title, salary, description, location_str, site_label, company, strategy, now,
-                 full_description, apply_url, detail_scraped_at),
+                 full_description, apply_url, detail_scraped_at, sponsorship_status),
             )
             new += 1
         except sqlite3.IntegrityError:

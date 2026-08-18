@@ -283,13 +283,16 @@ def run_cover_letters(min_score: int = 7, limit: int = 20,
         try:
             letter = generate_cover_letter(resume_text, job, profile,
                                           validation_mode=validation_mode)
+            from jobwright.scoring.materials_format import format_cover_letter_markdown
+
+            letter = format_cover_letter_markdown(letter)
 
             # Build safe filename prefix
             safe_title = re.sub(r"[^\w\s-]", "", job.get("title") or "untitled")[:50].strip().replace(" ", "_")
             safe_site = re.sub(r"[^\w\s-]", "", job.get("site") or "manual")[:20].strip().replace(" ", "_")
             prefix = f"{safe_site}_{safe_title}"
 
-            cl_path = config.COVER_LETTER_DIR / f"{prefix}_CL.txt"
+            cl_path = config.COVER_LETTER_DIR / f"{prefix}_CL.md"
             cl_path.write_text(letter, encoding="utf-8")
 
             # Generate PDF (best-effort)

@@ -26,7 +26,7 @@ users_app = typer.Typer(help="Manage multi-profile users (local registry).")
 app.add_typer(users_app, name="users")
 console = Console()
 # Diagnostics banner goes to stderr so it never pollutes stdout consumed by
-# `--json` callers (e.g. jobwright_deliver_materials.sh parses stdout as JSON).
+# `--json` callers (e.g. agent CLI shims that parse stdout as JSON).
 err_console = Console(stderr=True)
 log = logging.getLogger(__name__)
 
@@ -38,11 +38,43 @@ VALID_STAGES = ("discover", "enrich", "score", "portfolio", "tailor", "cover", "
 # Helpers
 # ---------------------------------------------------------------------------
 
+_LOGGING_CONFIGURED = False
+
+
+def _configure_logging() -> None:
+    """Configure verbose stdout logging when JOBWRIGHT_LOG_LEVEL is set.
+
+    This makes module-level ``log.info/debug`` from pipeline/discovery/scoring
+    appear in captured output (e.g. the web run log). Invalid levels fall back
+    to INFO. Runs at most once per process.
+    """
+    global _LOGGING_CONFIGURED
+    if _LOGGING_CONFIGURED:
+        return
+    import os
+    import sys
+
+    raw = os.environ.get("JOBWRIGHT_LOG_LEVEL", "").strip()
+    if not raw:
+        return
+    level = getattr(logging, raw.upper(), None)
+    if not isinstance(level, int):
+        level = logging.INFO
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        stream=sys.stdout,
+        force=True,
+    )
+    _LOGGING_CONFIGURED = True
+
+
 def _bootstrap() -> None:
-    """Common setup: load env, create dirs, init DB."""
+    """Common setup: configure logging, load env, create dirs, init DB."""
     from jobwright.config import load_env, ensure_dirs
     from jobwright.database import init_db
 
+    _configure_logging()
     load_env()
     ensure_dirs()
     init_db()
@@ -108,7 +140,7 @@ def users_add(
     ),
     apply_enabled: bool = typer.Option(
         False, "--apply/--no-apply",
-        help="Allow live apply after CONFIRM APPLY (default: off / find-only).",
+        help="Enable gated live apply for this user (default: off / find-only).",
     ),
     schedule: str = typer.Option(
         "0 */3 * * 1-5", "--schedule",
@@ -314,6 +346,10 @@ def run(
     workers: int = typer.Option(1, "--workers", "-w", help="Parallel threads for discovery/enrichment stages."),
     stream: bool = typer.Option(False, "--stream", help="Run stages concurrently (streaming mode)."),
     dry_run: bool = typer.Option(False, "--dry-run", help="Preview stages without executing."),
+    verbose: bool = typer.Option(
+        False, "--verbose", "-v",
+        help="Force JOBWRIGHT_LOG_LEVEL=DEBUG for maximum backend log detail.",
+    ),
     validation: str = typer.Option(
         "normal",
         "--validation",
@@ -326,6 +362,9 @@ def run(
     ),
 ) -> None:
     """Run pipeline stages: discover, enrich, score, tailor, cover, pdf."""
+    if verbose:
+        import os
+        os.environ["JOBWRIGHT_LOG_LEVEL"] = "DEBUG"
     _bootstrap()
 
     from jobwright.pipeline import run_pipeline
@@ -784,69 +823,37 @@ def doctor() -> None:
 
 
 @app.command()
-def materials(
-    index: int = typer.Option(1, "--index", "-i", help="1-based job index from today's digest."),
-    json_out: bool = typer.Option(
-        True, "--json/--text",
-        help="Print JSON (default) or human text for Hermes file delivery.",
+def notify(
+    dry_run: bool = typer.Option(
+        False, "--dry-run",
+        help="Build and preview the message without sending or marking jobs.",
     ),
 ) -> None:
-    """Show DOCX paths for a digest job (reply materials N on WhatsApp)."""
+    """Send a WhatsApp digest of newly prepared jobs (deduped one-shot per job)."""
     _bootstrap()
-    import json as _json
-    from pathlib import Path
-    from datetime import datetime
-    import jobwright.config as cfg
+    from jobwright.notify import run_notify
 
-    today = datetime.now().strftime("%Y%m%d")
-    candidates = [
-        cfg.APP_DIR / f"MATERIALS_MANIFEST_{today}.json",
-        cfg.APP_DIR / "MATERIALS_MANIFEST_latest.json",
-    ]
-    path = next((p for p in candidates if p.exists()), None)
-    if path is None:
-        console.print("[red]No materials manifest found. Run the daily brief first.[/red]")
+    try:
+        result = run_notify(dry_run=dry_run)
+    except ValueError as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(code=1)
+    except RuntimeError as e:
+        console.print(f"[red]Delivery failed:[/red] {e}")
         raise typer.Exit(code=1)
 
-    data = _json.loads(path.read_text(encoding="utf-8"))
-    jobs = data.get("jobs") or []
-    match = next((j for j in jobs if int(j.get("index", 0)) == index), None)
-    if match is None:
-        console.print(f"[red]No job at index {index}. Manifest has {len(jobs)} jobs.[/red]")
-        raise typer.Exit(code=1)
+    if result.get("skipped"):
+        console.print(f"[yellow]Nothing to send:[/yellow] {result.get('reason', 'no new jobs')}")
+        return
 
-    # Refresh sibling DOCX if columns empty
-    resume = match.get("resume_docx")
-    cover = match.get("cover_docx")
-    if not resume and match.get("resume_txt"):
-        sibling = Path(match["resume_txt"]).with_suffix(".docx")
-        if sibling.exists():
-            resume = str(sibling)
-    if not cover and match.get("cover_txt"):
-        sibling = Path(match["cover_txt"]).with_suffix(".docx")
-        if sibling.exists():
-            cover = str(sibling)
+    if result.get("dry_run"):
+        console.print(f"[bold]Preview[/bold] ({len(result['jobs'])} job(s)):\n")
+        console.print(result["message"])
+        return
 
-    payload = {
-        "index": index,
-        "title": match.get("title"),
-        "company": match.get("company"),
-        "url": match.get("url"),
-        "resume_docx": resume,
-        "cover_docx": cover,
-        "files": [p for p in (resume, cover) if p and Path(p).exists()],
-    }
-    if json_out:
-        # Plain print: Rich console soft-wraps long paths and injects newlines
-        # into JSON string values, breaking downstream json.loads.
-        print(_json.dumps(payload, indent=2))
-    else:
-        console.print(f"{payload['title']} @ {payload.get('company') or '?'}")
-        for f in payload["files"]:
-            console.print(f)
-        if not payload["files"]:
-            console.print("[yellow]No DOCX files on disk yet.[/yellow]")
-            raise typer.Exit(code=1)
+    console.print(f"[green]Sent {result['sent']} job(s) to WhatsApp.[/green]")
+    for j in result["jobs"]:
+        console.print(f"  {j['title']} @ {j.get('company') or '?'}  [dim]{j['job_id']}[/dim]")
 
 
 @app.command()

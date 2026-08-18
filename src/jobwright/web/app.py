@@ -19,10 +19,11 @@ from jobwright.web.bootstrap import bootstrap_dashboard_user
 from jobwright.web.routers import (
     board_router,
     connections_router,
-    digest_router,
     jobs_router,
     materials_router,
+    notify_router,
     runs_router,
+    settings_router,
     system_router,
 )
 from jobwright.web.session import DashboardUserMiddleware
@@ -57,8 +58,9 @@ app.include_router(board_router)
 app.include_router(materials_router)
 app.include_router(connections_router)
 app.include_router(jobs_router)
-app.include_router(digest_router)
+app.include_router(notify_router)
 app.include_router(runs_router)
+app.include_router(settings_router)
 
 _static_dir = pathlib.Path(__file__).resolve().parents[3] / "frontend" / "dist"
 

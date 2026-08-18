@@ -13,7 +13,10 @@ from jobwright.database import (
     FUNNEL_STAGES,
     advance_funnel,
     get_connection,
+    get_job_by_id,
+    job_id_for_url,
 )
+from jobwright.enrichment.sponsorship import derive_sponsorship_status
 
 router = APIRouter(prefix="/api", tags=["board"])
 
@@ -29,18 +32,37 @@ def _derive_work_model(location: str | None, description: str | None = None) -> 
     return None
 
 
+def _effective_fit_score(d: dict) -> int | None:
+    user_score = d.get("user_fit_score")
+    if user_score is not None:
+        return int(user_score)
+    ai_score = d.get("fit_score")
+    return int(ai_score) if ai_score is not None else None
+
+
 def _row_to_card(row) -> dict:
     d = dict(row)
     reasoning = (d.get("score_reasoning") or "").split("\n", 1)
+    user_rationale = (d.get("user_score_rationale") or "").strip()
+    url = d.get("url")
     return {
-        "url": d.get("url"),
+        "url": url,
+        "job_id": job_id_for_url(url) if url else None,
+        "whatsapp_notified_at": d.get("whatsapp_notified_at"),
         "title": d.get("title"),
         "company": d.get("company") or d.get("site"),
         "site": d.get("site"),
         "location": d.get("location"),
         "salary": d.get("salary"),
         "work_model": _derive_work_model(d.get("location")),
-        "fit_score": d.get("fit_score"),
+        "sponsorship_status": d.get("sponsorship_status")
+        or derive_sponsorship_status(d.get("full_description") or d.get("description")),
+        "fit_score": _effective_fit_score(d),
+        "ai_fit_score": d.get("fit_score"),
+        "user_fit_score": d.get("user_fit_score"),
+        "user_score_rationale": user_rationale or None,
+        "user_score_at": d.get("user_score_at"),
+        "score_user_modified": d.get("user_fit_score") is not None,
         "keywords": reasoning[0][:120] if reasoning else "",
         "reasoning": reasoning[1][:240] if len(reasoning) > 1 else "",
         "funnel_stage": d.get("funnel_stage") or "backlog",
@@ -65,7 +87,7 @@ def _row_to_card(row) -> dict:
 def get_board() -> dict:
     conn = get_connection()
     rows = conn.execute(
-        "SELECT * FROM jobs ORDER BY fit_score DESC NULLS LAST, discovered_at DESC"
+        "SELECT * FROM jobs ORDER BY COALESCE(user_fit_score, fit_score) DESC NULLS LAST, discovered_at DESC"
     ).fetchall()
     columns = {stage: [] for stage in FUNNEL_STAGES}
     for row in rows:
@@ -77,6 +99,15 @@ def get_board() -> dict:
         "columns": columns,
         "total": sum(len(v) for v in columns.values()),
     }
+
+
+@router.get("/jobs/by-id/{job_id}")
+def get_job_by_short_id(job_id: str) -> dict:
+    """Resolve a card by its deep-link short id (blake2b of the url)."""
+    row = get_job_by_id(job_id)
+    if row is None:
+        raise HTTPException(404, "Job not found")
+    return _row_to_card(row)
 
 
 class MoveBody(BaseModel):
@@ -133,6 +164,9 @@ class PatchBody(BaseModel):
     outcome: str | None = None
     title: str | None = None
     company: str | None = None
+    user_fit_score: int | None = None
+    user_score_rationale: str | None = None
+    clear_user_score: bool = False
 
 
 @router.patch("/jobs/{url:path}")
@@ -162,6 +196,29 @@ def patch_job(url: str, body: PatchBody) -> dict:
     if body.company is not None:
         sets.append("company = ?")
         params.append(body.company)
+    if body.clear_user_score:
+        sets.extend(
+            [
+                "user_fit_score = NULL",
+                "user_score_rationale = NULL",
+                "user_score_at = NULL",
+            ]
+        )
+    elif body.user_fit_score is not None:
+        if not (1 <= body.user_fit_score <= 10):
+            raise HTTPException(400, "user_fit_score must be between 1 and 10")
+        rationale = (body.user_score_rationale or "").strip()
+        if not rationale:
+            raise HTTPException(400, "user_score_rationale is required when setting a score")
+        now = datetime.now(timezone.utc).isoformat()
+        sets.extend(
+            [
+                "user_fit_score = ?",
+                "user_score_rationale = ?",
+                "user_score_at = ?",
+            ]
+        )
+        params.extend([body.user_fit_score, rationale, now])
 
     if sets:
         now = datetime.now(timezone.utc).isoformat()

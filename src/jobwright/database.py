@@ -5,6 +5,7 @@ pipeline stage are created up front so any stage can run independently
 without migration ordering issues.
 """
 
+import hashlib
 import sqlite3
 import threading
 from datetime import datetime, timezone
@@ -144,7 +145,10 @@ def init_db(db_path: Path | str | None = None) -> sqlite3.Connection:
             follow_up_at          TEXT,
             first_response_at     TEXT,
             board_updated_by      TEXT,
-            board_updated_at      TEXT
+            board_updated_at      TEXT,
+
+            -- WhatsApp daily notify (deduped one-shot per prepare job)
+            whatsapp_notified_at  TEXT
         )
     """)
     conn.execute("""
@@ -167,6 +171,7 @@ def init_db(db_path: Path | str | None = None) -> sqlite3.Connection:
 
     # Run migrations for any columns added after initial schema
     ensure_columns(conn)
+    backfill_sponsorship_status(conn)
     backfill_funnel_stages(conn)
 
     return conn
@@ -191,10 +196,14 @@ _ALL_COLUMNS: dict[str, str] = {
     "application_url": "TEXT",
     "detail_scraped_at": "TEXT",
     "detail_error": "TEXT",
+    "sponsorship_status": "TEXT",
     # Scoring
     "fit_score": "INTEGER",
     "score_reasoning": "TEXT",
     "scored_at": "TEXT",
+    "user_fit_score": "INTEGER",
+    "user_score_rationale": "TEXT",
+    "user_score_at": "TEXT",
     "portfolio_project_ids": "TEXT",
     # Tailoring
     "tailored_resume_path": "TEXT",
@@ -226,6 +235,8 @@ _ALL_COLUMNS: dict[str, str] = {
     "first_response_at": "TEXT",
     "board_updated_by": "TEXT",
     "board_updated_at": "TEXT",
+    # WhatsApp daily notify
+    "whatsapp_notified_at": "TEXT",
 }
 
 # Canonical Kanban lanes (single shared axis).
@@ -460,14 +471,19 @@ def insert_manual_job(
         conn = get_connection()
 
     now = datetime.now(timezone.utc).isoformat()
+    full_description = description
+    from jobwright.enrichment.sponsorship import classify_sponsorship
+
+    sponsorship_status = classify_sponsorship(full_description)
     try:
         conn.execute(
             """
             INSERT INTO jobs (
                 url, title, company, location, description, application_url,
                 site, strategy, source, discovered_at, funnel_stage,
-                board_updated_by, board_updated_at, notes, full_description
-            ) VALUES (?, ?, ?, ?, ?, ?, 'manual', 'manual', 'manual', ?, ?, 'human', ?, ?, ?)
+                board_updated_by, board_updated_at, notes, full_description,
+                sponsorship_status
+            ) VALUES (?, ?, ?, ?, ?, ?, 'manual', 'manual', 'manual', ?, ?, 'human', ?, ?, ?, ?)
             """,
             (
                 url,
@@ -481,6 +497,7 @@ def insert_manual_job(
                 now,
                 notes,
                 description,
+                sponsorship_status,
             ),
         )
     except sqlite3.IntegrityError as exc:
@@ -532,6 +549,15 @@ def ensure_columns(conn: sqlite3.Connection | None = None) -> list[str]:
         conn.commit()
 
     return added
+
+
+def backfill_sponsorship_status(conn: sqlite3.Connection | None = None) -> int:
+    """Populate sponsorship_status for rows missing a stored value."""
+    from jobwright.enrichment.sponsorship import backfill_sponsorship_status as _backfill
+
+    if conn is None:
+        conn = get_connection()
+    return _backfill(conn)
 
 
 def get_stats(conn: sqlite3.Connection | None = None) -> dict:
@@ -746,3 +772,78 @@ def get_jobs_by_stage(conn: sqlite3.Connection | None = None,
         columns = rows[0].keys()
         return [dict(zip(columns, row)) for row in rows]
     return []
+
+
+def job_id_for_url(url: str) -> str:
+    """Deterministic short id for a job URL (12 hex chars, no storage needed)."""
+    return hashlib.blake2b(url.encode("utf-8"), digest_size=6).hexdigest()
+
+
+def get_unnotified_prepare_jobs(conn: sqlite3.Connection | None = None) -> list[dict]:
+    """Return prepare-stage jobs that have not been WhatsApp-notified yet.
+
+    Ordered by effective fit score (user override preferred) descending.
+    """
+    if conn is None:
+        conn = get_connection()
+
+    rows = conn.execute(
+        "SELECT * FROM jobs "
+        "WHERE funnel_stage = 'prepare' AND whatsapp_notified_at IS NULL "
+        "ORDER BY COALESCE(user_fit_score, fit_score) DESC NULLS LAST, discovered_at DESC"
+    ).fetchall()
+
+    out: list[dict] = []
+    for row in rows:
+        d = dict(row)
+        effective = d.get("user_fit_score")
+        if effective is None:
+            effective = d.get("fit_score")
+        out.append(
+            {
+                "url": d.get("url"),
+                "title": d.get("title"),
+                "company": d.get("company") or d.get("site"),
+                "location": d.get("location"),
+                "salary": d.get("salary"),
+                "fit_score": int(effective) if effective is not None else None,
+                "funnel_stage": d.get("funnel_stage") or "prepare",
+            }
+        )
+    return out
+
+
+def mark_whatsapp_notified(urls: list[str], conn: sqlite3.Connection | None = None) -> int:
+    """Stamp whatsapp_notified_at for the given urls (only where currently NULL).
+
+    Returns the number of rows updated (idempotent: re-marking returns 0).
+    """
+    if not urls:
+        return 0
+
+    owns_conn = conn is None
+    if owns_conn:
+        conn = get_connection()
+
+    now = datetime.now(timezone.utc).isoformat()
+    placeholders = ", ".join("?" for _ in urls)
+    updated = conn.execute(
+        f"UPDATE jobs SET whatsapp_notified_at = ? "
+        f"WHERE url IN ({placeholders}) AND whatsapp_notified_at IS NULL",
+        [now, *urls],
+    ).rowcount
+    if owns_conn:
+        conn.commit()
+    return max(updated, 0)
+
+
+def get_job_by_id(job_id: str, conn: sqlite3.Connection | None = None) -> dict | None:
+    """Return the full job row whose url hashes to job_id, or None."""
+    if conn is None:
+        conn = get_connection()
+
+    for row in conn.execute("SELECT * FROM jobs").fetchall():
+        url = row["url"]
+        if url and job_id_for_url(url) == job_id:
+            return dict(row)
+    return None
