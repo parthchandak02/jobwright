@@ -32,4 +32,5 @@ while IFS= read -r line || [[ -n "${line}" ]]; do
 done < "${LIVE_SNIPPET}"
 
 chmod 600 "${ENV_FILE}" 2>/dev/null || true
-echo "Live apply enabled. Hermes job-apply-submit will submit up to APPLY_LIMIT=5 per run."
+echo "Live apply enabled in .env. For WhatsApp users also: jobwright users set <id> --apply"
+echo "Then CONFIRM APPLY → jobwright_confirm.sh + jobwright_on_confirm.sh (never a submit cron)."

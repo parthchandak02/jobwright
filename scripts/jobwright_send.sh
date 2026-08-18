@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Digest delivery: reads the digest file written by the background morning
-# pipeline and delivers it. Runs as a no_agent cron later.
+# Digest delivery: reads DIGEST_YYYYMMDD from the daily brief pipeline.
 # Multi-profile: JOBWRIGHT_USER / JOBWRIGHT_DIR.
+# Prefer AUTO_DELIVER_CHAT from run_daily_brief.sh; this script is for manual
+# "send digest" and the optional staggered cron fallback.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -21,24 +22,22 @@ fi
 
 export PATH="${HOME}/.local/bin:${PATH}"
 DOTENV="$(printf '\x2eenv')"
-# API keys live in one global .env (repo root); per-user dir may add non-secret overrides.
 GLOBAL_ENV="${JOBWRIGHT_ENV:-${JOBWRIGHT_REPO:-${REPO_ROOT:-}}/${DOTENV}}"
 [[ -f "${GLOBAL_ENV}" ]] && set -a && source "${GLOBAL_ENV}" && set +a
 [[ -f "${JOBWRIGHT_DIR}/${DOTENV}" ]] && set -a && source "${JOBWRIGHT_DIR}/${DOTENV}" && set +a
 
 TODAY="$(date +%Y%m%d)"
 DIGEST_FILE="${JOBWRIGHT_DIR}/DIGEST_${TODAY}"
-STATUS_FILE="${JOBWRIGHT_DIR}/MORNING_STATUS_${TODAY}"
+STATUS_FILE="${JOBWRIGHT_DIR}/BRIEF_STATUS_${TODAY}"
 DELIVERED_MARKER="${JOBWRIGHT_DIR}/DIGEST_DELIVERED_${TODAY}"
-MORNING_PID_FILE="${JOBWRIGHT_DIR}/MORNING_PID_${TODAY}"
+BRIEF_PID_FILE="${JOBWRIGHT_DIR}/BRIEF_PID_${TODAY}"
 
-# If no run today or already delivered → silent
 [ -f "${STATUS_FILE}" ] || exit 0
 [ -f "${DELIVERED_MARKER}" ] && exit 0
 
 pipeline_running() {
-  if [ -f "${MORNING_PID_FILE}" ]; then
-    pid="$(cat "${MORNING_PID_FILE}" 2>/dev/null || true)"
+  if [ -f "${BRIEF_PID_FILE}" ]; then
+    pid="$(cat "${BRIEF_PID_FILE}" 2>/dev/null || true)"
     if [ -n "${pid}" ] && kill -0 "${pid}" 2>/dev/null; then
       return 0
     fi
@@ -46,25 +45,23 @@ pipeline_running() {
   return 1
 }
 
-# Pipeline finished successfully and digest exists → deliver
 if grep -q "digest_written" "${STATUS_FILE}" 2>/dev/null && [ -f "${DIGEST_FILE}" ]; then
   cat "${DIGEST_FILE}"
   touch "${DELIVERED_MARKER}"
   exit 0
 fi
 
-# Pipeline finished (done) but digest missing → error (do not mark delivered if still running)
 if grep -q "done" "${STATUS_FILE}" 2>/dev/null; then
   if pipeline_running; then
+    echo "Your daily brief is still running. I will send the digest when it finishes."
     exit 0
   fi
   if [ ! -f "${DIGEST_FILE}" ]; then
-    echo "Job digest unavailable. The morning pipeline finished with an error."
-    echo "Check: ${JOBWRIGHT_DIR}/logs/morning_${TODAY}.log"
+    echo "Your daily brief did not complete successfully today."
+    echo 'Reply "find jobs now" to retry, or ask for job status.'
     touch "${DELIVERED_MARKER}"
     exit 0
   fi
 fi
 
-# Still running or not finished → silent
 exit 0

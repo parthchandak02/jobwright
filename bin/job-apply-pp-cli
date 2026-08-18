@@ -113,7 +113,7 @@ case "${CMD}" in
     done
     extra=()
     $dry_run && extra+=(--dry-run)
-    $dry_run || { echo "Live apply blocked: use CONFIRM APPLY + job_apply_on_confirm.sh" >&2; exit 1; }
+    $dry_run || { echo "Live apply blocked: use CONFIRM APPLY + jobwright_on_confirm.sh" >&2; exit 1; }
     if [[ "${sub}" == "next" ]]; then
       url=$(sqlite3 "${JOBWRIGHT_DIR}/jobwright.db" \
         "SELECT url FROM jobs WHERE tailored_resume_path IS NOT NULL AND applied_at IS NULL AND fit_score>=7 ORDER BY fit_score DESC LIMIT 1;")
@@ -147,20 +147,55 @@ case "${CMD}" in
       JOBWRIGHT_DIR="${JOBWRIGHT_DIR}" \
       uv run python3 - <<PY
 import json
+import logging
+import sys
+from pathlib import Path
+
+logging.basicConfig(level=logging.ERROR, stream=sys.stderr, force=True)
+
 import jobwright.config as config
-from jobwright.network.rank import run_network_rank
+from jobwright.network.rank import format_network_digest, run_network_rank
 
 config.load_env()
-result = run_network_rank(top_n=${top})
-print(json.dumps({
-    "status": "ok",
-    "command": "network",
-    "contacts": result["contacts"],
-    "ranked": result["ranked"],
-    "txt_path": result["txt_path"],
-    "json_path": result["json_path"],
-    "digest": result["digest"],
-}))
+top_n = ${top}
+txt_path = config.NETWORK_DIR / "ranked_contacts.txt"
+json_path = config.NETWORK_DIR / "ranked_contacts.json"
+
+if txt_path.exists() and json_path.exists():
+    ranked = json.loads(json_path.read_text(encoding="utf-8"))
+    ranked = ranked[:top_n]
+    label = ""
+    try:
+        from jobwright.config import load_profile
+        personal = (load_profile().get("personal") or {})
+        label = personal.get("preferred_name") or ""
+    except Exception:
+        pass
+    digest = format_network_digest(ranked, user_label=label)
+    payload = {
+        "status": "ok",
+        "command": "network",
+        "cached": True,
+        "contacts": None,
+        "ranked": len(ranked),
+        "txt_path": str(txt_path),
+        "json_path": str(json_path),
+        "digest": digest,
+    }
+else:
+    result = run_network_rank(top_n=top_n)
+    payload = {
+        "status": "ok",
+        "command": "network",
+        "cached": False,
+        "contacts": result["contacts"],
+        "ranked": result["ranked"],
+        "txt_path": result["txt_path"],
+        "json_path": result["json_path"],
+        "digest": result["digest"],
+    }
+
+print(json.dumps(payload))
 PY
     else
       jobwright "${JW_USER[@]}" network --top "${top}"
@@ -179,6 +214,11 @@ PY
       JOBWRIGHT_DIR="${JOBWRIGHT_DIR}" \
       uv run python3 - <<PY
 import json
+import logging
+import sys
+
+logging.basicConfig(level=logging.ERROR, stream=sys.stderr, force=True)
+
 import jobwright.config as config
 from jobwright.targets.build import run_targets
 

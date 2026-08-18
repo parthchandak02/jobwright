@@ -77,15 +77,24 @@ trap finish_status EXIT
 python3 -m jobwright.cli "${USER_FLAG[@]}" run discover enrich score portfolio tailor cover docx connect \
   -w "${WORKERS}" --min-score "${MIN_SCORE}" --validation lenient >> "${LOG}" 2>&1 || RC=$?
 
-if [ "${RC}" -eq 0 ]; then
-  export DIGEST_FILE MANIFEST_FILE MIN_SCORE APPLY_LIMIT MAX_ATTEMPTS
-  JOBWRIGHT_USER="${JOBWRIGHT_USER:-}" JOBWRIGHT_DIR="${JOBWRIGHT_DIR}" \
-  PYTHONPATH="${REPO_ROOT}/src${PYTHONPATH:+:$PYTHONPATH}" python3 -c "
+# Always attempt the digest/manifest, even on a non-zero pipeline RC. A partial
+# failure (e.g. some jobs failed to score) must not suppress the WhatsApp brief
+# when other jobs are ready. The writer no-ops gracefully when nothing is ready.
+if [ "${RC}" -ne 0 ]; then
+  echo "pipeline_rc=${RC} (writing digest from ready jobs anyway)" >> "${STATUS_FILE}"
+fi
+
+export DIGEST_FILE MANIFEST_FILE MIN_SCORE APPLY_LIMIT MAX_ATTEMPTS PIPELINE_RC="${RC}"
+JOBWRIGHT_USER="${JOBWRIGHT_USER:-}" JOBWRIGHT_DIR="${JOBWRIGHT_DIR}" \
+PYTHONPATH="${REPO_ROOT}/src${PYTHONPATH:+:$PYTHONPATH}" python3 -c "
 import os
 from pathlib import Path
 from jobwright.config import load_env, ensure_dirs, set_active_user, set_app_dir
 from jobwright.database import init_db
-from jobwright.apply.launcher import write_morning_digest_and_manifest
+from jobwright.apply.launcher import (
+    gather_brief_health,
+    write_morning_digest_and_manifest,
+)
 from jobwright.users import is_apply_enabled, get_user
 
 user_id = os.environ.get('JOBWRIGHT_USER') or None
@@ -97,6 +106,9 @@ else:
 load_env()
 ensure_dirs()
 init_db()
+
+pipeline_rc = int(os.environ.get('PIPELINE_RC', '0'))
+health = gather_brief_health(pipeline_rc=pipeline_rc)
 
 apply_on = is_apply_enabled(user_id) if user_id else True
 label = None
@@ -112,15 +124,23 @@ write_morning_digest_and_manifest(
     max_attempts=int(os.environ['MAX_ATTEMPTS']),
     apply_enabled=apply_on,
     user_label=label,
+    pipeline_rc=pipeline_rc,
+    health=health,
 )
 " >> "${LOG}" 2>&1
-  echo 'digest_written' >> "${STATUS_FILE}"
+echo 'digest_written' >> "${STATUS_FILE}"
 
-  # Auto-deliver materials for digest job N (official: hermes send + MEDIA: paths).
-  # Set AUTO_MATERIALS_INDEX=0 to disable. Default: job 1.
-  if [[ "${AUTO_MATERIALS_INDEX:-1}" != "0" ]]; then
-    bash "${REPO_ROOT}/scripts/jobwright_deliver_materials.sh" "${AUTO_MATERIALS_INDEX:-1}" \
-      >> "${LOG}" 2>&1 && echo "materials_delivered index=${AUTO_MATERIALS_INDEX:-1}" >> "${STATUS_FILE}" \
-      || echo "materials_delivery_failed index=${AUTO_MATERIALS_INDEX:-1}" >> "${STATUS_FILE}"
+# Chat delivery: digest text first, then materials for job 1 (single coordinated send).
+if [[ "${AUTO_DELIVER_CHAT:-1}" != "0" ]]; then
+  if bash "${REPO_ROOT}/scripts/jobwright_deliver_digest.sh" >> "${LOG}" 2>&1; then
+    echo "digest_delivered" >> "${STATUS_FILE}"
+  else
+    echo "digest_delivery_failed" >> "${STATUS_FILE}"
   fi
+fi
+
+if [[ "${AUTO_MATERIALS_INDEX:-1}" != "0" ]]; then
+  bash "${REPO_ROOT}/scripts/jobwright_deliver_materials.sh" "${AUTO_MATERIALS_INDEX:-1}" \
+    >> "${LOG}" 2>&1 && echo "materials_delivered index=${AUTO_MATERIALS_INDEX:-1}" >> "${STATUS_FILE}" \
+    || echo "materials_delivery_failed index=${AUTO_MATERIALS_INDEX:-1}" >> "${STATUS_FILE}"
 fi
