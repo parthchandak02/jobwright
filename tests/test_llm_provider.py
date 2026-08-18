@@ -1,11 +1,18 @@
 """LLM provider detection tests."""
 
 import os
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
+import httpx
 import pytest
 
-from jobwright.llm import _detect_provider, _resolve_fireworks_model
+from jobwright.llm import (
+    LLMClient,
+    _detect_provider,
+    _gemini_thinking_level,
+    _resolve_fireworks_model,
+    _GEMINI_COMPAT_BASE,
+)
 
 
 def test_fireworks_takes_priority_over_gemini():
@@ -76,3 +83,82 @@ def test_no_provider_raises():
     ):
         with pytest.raises(RuntimeError, match="No LLM provider"):
             _detect_provider()
+
+
+def test_gemini_thinking_level_defaults_to_low():
+    with patch.dict(os.environ, {"GEMINI_THINKING_LEVEL": ""}, clear=False):
+        assert _gemini_thinking_level() == "low"
+
+
+def test_gemini_thinking_level_invalid_falls_back():
+    with patch.dict(os.environ, {"GEMINI_THINKING_LEVEL": "ultra"}, clear=False):
+        assert _gemini_thinking_level() == "low"
+
+
+def test_gemini_compat_payload_includes_reasoning_effort_low():
+    """Fallback / Gemini 3.x compat path must send reasoning_effort=low by default."""
+    captured: dict = {}
+
+    def fake_post(url, json=None, headers=None, **_kwargs):
+        captured["url"] = url
+        captured["json"] = json
+        resp = MagicMock(spec=httpx.Response)
+        resp.status_code = 200
+        resp.raise_for_status = MagicMock()
+        resp.json.return_value = {
+            "choices": [{"message": {"content": '{"ok": true}'}, "finish_reason": "stop"}],
+            "usage": {},
+        }
+        return resp
+
+    client = LLMClient(_GEMINI_COMPAT_BASE, "gemini-3.7-flash", "gem-test")
+    client._client.post = fake_post  # type: ignore[method-assign]
+    with patch.dict(os.environ, {"GEMINI_THINKING_LEVEL": "low"}, clear=False):
+        text = client.chat([{"role": "user", "content": "hi"}], temperature=0.0, json_mode=False)
+    assert text == '{"ok": true}'
+    assert captured["json"]["reasoning_effort"] == "low"
+    # Gemini 3.x: do not force temperature=0.0 into the payload
+    assert "temperature" not in captured["json"]
+
+
+def test_fallback_builds_gemini_37_with_thinking_low():
+    """Fireworks empty -> Gemini fallback uses GEMINI_FALLBACK_MODEL + thinking low."""
+    primary = LLMClient(
+        "https://api.fireworks.ai/inference/v1",
+        "accounts/fireworks/models/gpt-oss-120b",
+        "fw",
+    )
+    captured: dict = {}
+
+    def fake_post(url, json=None, headers=None, **_kwargs):
+        captured["json"] = json
+        resp = MagicMock(spec=httpx.Response)
+        resp.status_code = 200
+        resp.raise_for_status = MagicMock()
+        resp.json.return_value = {
+            "choices": [{"message": {"content": "fallback-ok"}, "finish_reason": "stop"}],
+            "usage": {},
+        }
+        return resp
+
+    with patch.dict(
+        os.environ,
+        {
+            "GEMINI_API_KEY": "gem-test",
+            "GEMINI_FALLBACK_MODEL": "gemini-3.7-flash",
+            "GEMINI_THINKING_LEVEL": "low",
+        },
+        clear=False,
+    ):
+        # Pre-install fallback client so we can stub its HTTP before chat runs.
+        fb = LLMClient(_GEMINI_COMPAT_BASE, "gemini-3.7-flash", "gem-test")
+        fb._is_fallback = True
+        fb._client.post = fake_post  # type: ignore[method-assign]
+        primary._fallback = fb
+        out = primary._try_fallback(
+            [{"role": "user", "content": "hi"}], temperature=0.0, max_tokens=64
+        )
+    assert out == "fallback-ok"
+    assert primary._fallback.model == "gemini-3.7-flash"
+    assert captured["json"]["reasoning_effort"] == "low"
+    primary.close()
