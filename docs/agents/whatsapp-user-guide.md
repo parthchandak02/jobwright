@@ -98,4 +98,4 @@ Bot:  Confirmed. Submitting up to 5 jobs from today's list...
 
 ## Admin / power users
 
-See `references/whatsapp-routing.md` (Hermes agent) and `references/hermes-setup.md` (cron install).
+See `docs/agents/whatsapp-routing.md` (Hermes agent) and `docs/agents/hermes-setup.md` (cron install).
