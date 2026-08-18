@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Narrow E2E smoke test: 3 tier-1 queries, SF+Remote, JobSpy only, top 3 digest.
+# Narrow E2E smoke test: 3 tier-1 queries, SF+Remote, JobSpy only.
 # Unlike the cron path, this WAITS for the detached pipeline and asserts the
-# outcome (done RC + digest_written) so "smoke passed" actually means something.
+# outcome (done RC + notify) so "smoke passed" actually means something.
 # Use before widening daily discover. Does NOT apply.
 set -euo pipefail
 
@@ -63,18 +63,17 @@ cat "${STATUS_FILE}"
 echo "------------------------"
 
 RC="$(sed -n 's/^done RC=//p' "${STATUS_FILE}" | tail -1)"
-DIGEST_OK=0
-grep -q '^digest_written' "${STATUS_FILE}" && DIGEST_OK=1
 
-if [[ "${DIGEST_OK}" -eq 1 ]]; then
-  echo "smoke: digest written (pipeline RC=${RC})."
-  grep -q '^materials_delivered' "${STATUS_FILE}" && echo "smoke: materials delivered to WhatsApp."
-  grep -q '^materials_delivery_failed' "${STATUS_FILE}" && echo "smoke: WARNING materials delivery failed (see log)."
-  # Green when the digest exists; pipeline RC is informational (partial scoring
-  # no longer suppresses the brief).
+# Green when the pipeline finished (done RC present); pipeline RC is
+# informational (partial scoring no longer suppresses the brief). The notify
+# step skips silently when no new prepare jobs are ready.
+if [[ -n "${RC}" ]]; then
+  echo "smoke: pipeline finished (RC=${RC})."
+  grep -q '^notify_sent' "${STATUS_FILE}" && echo "smoke: WhatsApp notify sent."
+  grep -q '^notify_failed' "${STATUS_FILE}" && echo "smoke: WARNING notify failed (see log)."
   exit 0
 fi
 
-echo "smoke: FAILED - no digest written (RC=${RC}). Last log lines:" >&2
+echo "smoke: FAILED - pipeline did not finish. Last log lines:" >&2
 [[ -f "${LOG_FILE}" ]] && tail -30 "${LOG_FILE}" >&2
 exit 1

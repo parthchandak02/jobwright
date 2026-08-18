@@ -32,5 +32,5 @@ while IFS= read -r line || [[ -n "${line}" ]]; do
 done < "${LIVE_SNIPPET}"
 
 chmod 600 "${ENV_FILE}" 2>/dev/null || true
-echo "Live apply enabled in .env. For WhatsApp users also: jobwright users set <id> --apply"
-echo "Then CONFIRM APPLY → jobwright_confirm.sh + jobwright_on_confirm.sh (never a submit cron)."
+echo "Live apply enabled in .env. Per profile also: jobwright users set <id> --apply"
+echo "Then apply from the dashboard (confirm gate) or run: jobwright --user <id> apply --live (never a cron)."

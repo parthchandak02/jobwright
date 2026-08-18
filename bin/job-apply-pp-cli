@@ -113,7 +113,7 @@ case "${CMD}" in
     done
     extra=()
     $dry_run && extra+=(--dry-run)
-    $dry_run || { echo "Live apply blocked: use CONFIRM APPLY + jobwright_on_confirm.sh" >&2; exit 1; }
+    $dry_run || { echo "Live apply blocked in agent CLI: use the dashboard apply button or 'jobwright apply --live'" >&2; exit 1; }
     if [[ "${sub}" == "next" ]]; then
       url=$(sqlite3 "${JOBWRIGHT_DIR}/jobwright.db" \
         "SELECT url FROM jobs WHERE tailored_resume_path IS NOT NULL AND applied_at IS NULL AND fit_score>=7 ORDER BY fit_score DESC LIMIT 1;")

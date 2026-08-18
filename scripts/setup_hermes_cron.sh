@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Register Hermes cron jobs for multi-profile Daily Brief.
-# Creates brief + send + check cron per registry user.
+# Creates ONE daily brief cron per registry user (jobwright-brief-<uid>).
+# The brief runs the pipeline then `jobwright notify` (single WhatsApp list).
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -31,9 +32,10 @@ pause_or_delete_legacy() {
   fi
 }
 
-# Remove all old naming
+# Remove all old naming (incl. retired send/check crons from the old flow)
 for name in job-apply-discover job-apply-submit \
-  job-apply-morning job-apply-digest job-apply-watchdog; do
+  job-apply-morning job-apply-digest job-apply-watchdog \
+  jobwright-send jobwright-check; do
   pause_or_delete_legacy "${name}"
 done
 
@@ -46,7 +48,6 @@ users = [
         'user_id': u.user_id,
         'whatsapp_target': u.whatsapp_target,
         'schedule': u.schedule,
-        'digest_schedule': u.digest_schedule,
     }
     for u in list_users()
 ]
@@ -57,10 +58,8 @@ print(json.dumps(users))
 USER_COUNT="$(python3 -c "import json,sys; print(len(json.loads(sys.argv[1])))" "${USERS_JSON}")"
 
 if [[ "${USER_COUNT}" -eq 0 ]]; then
-  echo "No registry users — registering single-user crons."
+  echo "No registry users - registering single-user brief cron."
   bash "${UPSERT}" "jobwright-brief" "0 6 * * *" "jobwright_brief.sh" "${DEFAULT_DELIVER}" ""
-  bash "${UPSERT}" "jobwright-send" "30 6 * * *" "jobwright_send.sh" "${DEFAULT_DELIVER}" ""
-  bash "${UPSERT}" "jobwright-check" "0 10 * * *" "jobwright_check.sh" "${DEFAULT_DELIVER}" ""
 else
   python3 - <<PY
 import json, subprocess, sys
@@ -74,19 +73,17 @@ for u in users:
         print(f"SKIP {uid}: no whatsapp_target", file=sys.stderr)
         continue
     sched = u.get("schedule") or "0 6 * * *"
-    dig = u.get("digest_schedule") or "30 6 * * *"
     env = f"JOBWRIGHT_USER={uid}"
-    for name, schedule, script in [
-        (f"jobwright-brief-{uid}", sched, "jobwright_brief.sh"),
-        (f"jobwright-send-{uid}", dig, "jobwright_send.sh"),
-        (f"jobwright-check-{uid}", "0 10 * * *", "jobwright_check.sh"),
-    ]:
-        subprocess.check_call(["bash", upsert, name, schedule, script, deliver, env])
+    subprocess.check_call(
+        ["bash", upsert, f"jobwright-brief-{uid}", sched, "jobwright_brief.sh", deliver, env]
+    )
 PY
   for uid in $(python3 -c "import json,sys; print(' '.join(u['user_id'] for u in json.loads(sys.argv[1])))" "${USERS_JSON}"); do
-    pause_or_delete_legacy "job-apply-morning-${uid}"
-    pause_or_delete_legacy "job-apply-digest-${uid}"
-    pause_or_delete_legacy "job-apply-watchdog-${uid}"
+    # Retire per-user crons from the old dual-delivery / watchdog flow.
+    for legacy in "job-apply-morning-${uid}" "job-apply-digest-${uid}" \
+      "job-apply-watchdog-${uid}" "jobwright-send-${uid}" "jobwright-check-${uid}"; do
+      pause_or_delete_legacy "${legacy}"
+    done
   done
 fi
 

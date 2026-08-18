@@ -22,7 +22,10 @@ done
 for legacy in \
   job_apply_morning.sh job_apply_digest.sh job_apply_watchdog.sh \
   job_apply_confirm.sh job_apply_on_confirm.sh job_apply_stages_1_5.sh \
-  job_apply_stage6.sh run_morning_pipeline.sh; do
+  job_apply_stage6.sh run_morning_pipeline.sh \
+  jobwright_send.sh jobwright_check.sh jobwright_deliver_digest.sh \
+  jobwright_deliver_materials.sh jobwright_send_materials.sh \
+  jobwright_confirm.sh jobwright_on_confirm.sh; do
   rm -f "${HERMES_SCRIPTS}/${legacy}"
 done
 
