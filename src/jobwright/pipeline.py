@@ -33,7 +33,7 @@ console = Console()
 # Stage definitions
 # ---------------------------------------------------------------------------
 
-STAGE_ORDER = ("discover", "enrich", "score", "portfolio", "tailor", "cover", "pdf")
+STAGE_ORDER = ("discover", "enrich", "score", "portfolio", "tailor", "cover", "pdf", "docx", "connect")
 
 STAGE_META: dict[str, dict] = {
     "discover": {"desc": "Job discovery (JobSpy + Workday + smart extract)"},
@@ -43,6 +43,8 @@ STAGE_META: dict[str, dict] = {
     "tailor":   {"desc": "Resume tailoring (LLM + validation)"},
     "cover":    {"desc": "Cover letter generation"},
     "pdf":      {"desc": "PDF conversion (tailored resumes + cover letters)"},
+    "docx":     {"desc": "DOCX conversion (editable resume + cover letter)"},
+    "connect":  {"desc": "Per-job connection ranking (CSV + web research)"},
 }
 
 # Upstream dependency: a stage only finishes when its upstream is done AND
@@ -55,6 +57,8 @@ _UPSTREAM: dict[str, str | None] = {
     "tailor":   "portfolio",
     "cover":    "tailor",
     "pdf":      "cover",
+    "docx":     "cover",
+    "connect":  "docx",
 }
 
 
@@ -63,8 +67,21 @@ _UPSTREAM: dict[str, str | None] = {
 # ---------------------------------------------------------------------------
 
 def _run_discover(workers: int = 1) -> dict:
-    """Stage: Job discovery — JobSpy, Workday, and smart-extract scrapers."""
-    stats: dict = {"jobspy": None, "workday": None, "smartextract": None}
+    """Stage: Job discovery — JobSpy, Workday, and (full mode) smart-extract.
+
+    DISCOVER_MODE env:
+      fast (default) — JobSpy + Workday tier-1 only; skip smart-extract
+      full — all configured queries + smart-extract
+    """
+    discover_mode = os.environ.get("DISCOVER_MODE", "fast").strip().lower()
+    if discover_mode not in ("fast", "full"):
+        log.warning("Unknown DISCOVER_MODE=%r; using fast", discover_mode)
+        discover_mode = "fast"
+
+    stats: dict = {"jobspy": None, "workday": None, "smartextract": None, "mode": discover_mode}
+    console.print(f"  [dim]DISCOVER_MODE={discover_mode}[/dim]")
+    if os.environ.get("BRIEF_SMOKE", "").strip() == "1":
+        console.print("  [dim]BRIEF_SMOKE=1 (narrow discover, top 3 digest)[/dim]")
 
     # JobSpy
     console.print("  [cyan]JobSpy full crawl...[/cyan]")
@@ -77,27 +94,36 @@ def _run_discover(workers: int = 1) -> dict:
         console.print(f"  [red]JobSpy error:[/red] {e}")
         stats["jobspy"] = f"error: {e}"
 
-    # Workday corporate scraper
-    console.print("  [cyan]Workday corporate scraper...[/cyan]")
-    try:
-        from jobwright.discovery.workday import run_workday_discovery
-        run_workday_discovery(workers=workers)
-        stats["workday"] = "ok"
-    except Exception as e:
-        log.error("Workday scraper failed: %s", e)
-        console.print(f"  [red]Workday error:[/red] {e}")
-        stats["workday"] = f"error: {e}"
+    skip_workday = os.environ.get("DISCOVER_WORKDAY", "1").strip().lower() in ("0", "false", "no")
+    if skip_workday:
+        console.print("  [dim]Workday skipped (DISCOVER_WORKDAY=0)[/dim]")
+        stats["workday"] = "skipped"
+    else:
+        # Workday corporate scraper
+        console.print("  [cyan]Workday corporate scraper...[/cyan]")
+        try:
+            from jobwright.discovery.workday import run_workday_discovery
+            run_workday_discovery(workers=workers)
+            stats["workday"] = "ok"
+        except Exception as e:
+            log.error("Workday scraper failed: %s", e)
+            console.print(f"  [red]Workday error:[/red] {e}")
+            stats["workday"] = f"error: {e}"
 
-    # Smart extract
-    console.print("  [cyan]Smart extract (AI-powered scraping)...[/cyan]")
-    try:
-        from jobwright.discovery.smartextract import run_smart_extract
-        run_smart_extract(workers=workers)
-        stats["smartextract"] = "ok"
-    except Exception as e:
-        log.error("Smart extract failed: %s", e)
-        console.print(f"  [red]Smart extract error:[/red] {e}")
-        stats["smartextract"] = f"error: {e}"
+    # Smart extract (full mode only — expensive LLM + Playwright)
+    if discover_mode == "full":
+        console.print("  [cyan]Smart extract (AI-powered scraping)...[/cyan]")
+        try:
+            from jobwright.discovery.smartextract import run_smart_extract
+            run_smart_extract(workers=workers)
+            stats["smartextract"] = "ok"
+        except Exception as e:
+            log.error("Smart extract failed: %s", e)
+            console.print(f"  [red]Smart extract error:[/red] {e}")
+            stats["smartextract"] = f"error: {e}"
+    else:
+        console.print("  [dim]Smart extract skipped (DISCOVER_MODE=fast)[/dim]")
+        stats["smartextract"] = "skipped"
 
     return stats
 
@@ -117,8 +143,12 @@ def _run_score() -> dict:
     """Stage: LLM scoring — assign fit scores 1-10."""
     try:
         from jobwright.scoring.scorer import run_scoring
-        run_scoring()
-        return {"status": "ok"}
+        result = run_scoring()
+        scored = int(result.get("scored") or 0)
+        errors = int(result.get("errors") or 0)
+        if scored == 0 and errors > 0:
+            return {"status": f"error: {errors} scoring failures", **result}
+        return {"status": "ok", **result}
     except Exception as e:
         log.error("Scoring failed: %s", e)
         return {"status": f"error: {e}"}
@@ -173,6 +203,27 @@ def _run_pdf() -> dict:
         return {"status": f"error: {e}"}
 
 
+def _run_docx(min_score: int = 7) -> dict:
+    """Stage: DOCX conversion — editable Word docs for WhatsApp review."""
+    try:
+        from jobwright.scoring.docx_export import batch_convert_docx
+        return batch_convert_docx(limit=_prep_limit(), min_score=min_score)
+    except Exception as e:
+        log.error("DOCX conversion failed: %s", e)
+        return {"status": f"error: {e}"}
+
+
+def _run_connect(min_score: int = 7) -> dict:
+    """Stage: Per-job connection ranking (CSV + optional Exa web research)."""
+    try:
+        from jobwright.network.per_job import run_per_job_connect
+        apply_limit = int(os.environ.get("APPLY_LIMIT", "5"))
+        return run_per_job_connect(min_score=min_score, limit=apply_limit)
+    except Exception as e:
+        log.error("Connect stage failed: %s", e)
+        return {"status": f"error: {e}"}
+
+
 # Map stage names to their runner functions
 _STAGE_RUNNERS: dict[str, callable] = {
     "discover": _run_discover,
@@ -182,6 +233,8 @@ _STAGE_RUNNERS: dict[str, callable] = {
     "tailor":   _run_tailor,
     "cover":    _run_cover,
     "pdf":      _run_pdf,
+    "docx":     _run_docx,
+    "connect":  _run_connect,
 }
 
 
@@ -262,6 +315,10 @@ _PENDING_SQL: dict[str, str] = {
         "SELECT COUNT(*) FROM jobs WHERE tailored_resume_path IS NOT NULL "
         "AND tailored_resume_path LIKE '%.txt'"
     ),
+    "docx": (
+        "SELECT COUNT(*) FROM jobs WHERE tailored_resume_path IS NOT NULL "
+        "AND (tailored_resume_docx_path IS NULL OR tailored_resume_docx_path = '')"
+    ),
 }
 
 # How long to sleep between polling loops in streaming mode (seconds)
@@ -295,7 +352,7 @@ def _run_stage_streaming(
     """
     runner = _STAGE_RUNNERS[stage]
     kwargs: dict = {}
-    if stage in ("tailor", "cover", "portfolio"):
+    if stage in ("tailor", "cover", "portfolio", "docx", "connect"):
         kwargs["min_score"] = min_score
         if stage in ("tailor", "cover"):
             kwargs["validation_mode"] = validation_mode
@@ -367,7 +424,7 @@ def _run_sequential(ordered: list[str], min_score: int, workers: int = 1,
 
         try:
             kwargs: dict = {}
-            if name in ("tailor", "cover", "portfolio"):
+            if name in ("tailor", "cover", "portfolio", "docx", "connect"):
                 kwargs["min_score"] = min_score
             if name in ("tailor", "cover"):
                 kwargs["validation_mode"] = validation_mode
@@ -394,7 +451,7 @@ def _run_sequential(ordered: list[str], min_score: int, workers: int = 1,
             console.print(f"\n  [red]STAGE FAILED:[/red] {e}")
 
         results.append({"stage": name, "status": status, "elapsed": elapsed})
-        if status not in ("ok", "partial"):
+        if status not in ("ok", "partial", "skipped"):
             errors[name] = status
 
         console.print(f"\n  Stage '{name}' completed in {elapsed:.1f}s — {status}")

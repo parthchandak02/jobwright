@@ -409,6 +409,16 @@ def load_env():
     if ENV_PATH.exists() and ENV_PATH.resolve() != global_env.resolve():
         load_dotenv(ENV_PATH, override=True)
 
+    # Brief / operator override (run_daily_brief.sh sets this before pipeline).
+    brief_model = os.environ.get("JOBWRIGHT_LLM_MODEL", "").strip()
+    if brief_model:
+        os.environ["LLM_MODEL"] = brief_model
+        try:
+            import jobwright.llm as llm_mod
+            llm_mod._instance = None
+        except ImportError:
+            pass
+
 
 # ---------------------------------------------------------------------------
 # Tier system — feature gating by installed dependencies

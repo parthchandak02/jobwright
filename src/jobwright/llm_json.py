@@ -29,9 +29,12 @@ def parse_json_object(text: str, *, json_mode: bool = True) -> dict[str, Any]:
     try:
         data = json.loads(stripped)
     except json.JSONDecodeError as exc:
-        if json_mode:
-            raise LLMJsonError(f"json_mode response was not valid JSON: {exc}") from exc
-        data = _legacy_parse_object(stripped)
+        try:
+            data = _legacy_parse_object(stripped)
+        except LLMJsonError:
+            if json_mode:
+                raise LLMJsonError(f"json_mode response was not valid JSON: {exc}") from exc
+            raise
 
     if not isinstance(data, dict):
         raise LLMJsonError(f"Expected JSON object, got {type(data).__name__}")
