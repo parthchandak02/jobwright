@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Morning prep: discover → cover letter. Does NOT apply.
-# Launches run_morning_pipeline.sh detached so cron exits instantly (300s limit).
+# Daily Brief: discover → cover → docx → connect. Does NOT apply.
+# Launches run_daily_brief.sh detached so cron exits instantly (300s limit).
 # Multi-profile: set JOBWRIGHT_USER + JOBWRIGHT_DIR (wrappers do this).
 set -euo pipefail
 
@@ -14,9 +14,9 @@ else
   source "${SCRIPT_DIR}/../scripts/_jobwright_repo.sh"
 fi
 REPO_ROOT="$(_jobwright_resolve_repo)"
-PIPELINE="${REPO_ROOT}/scripts/run_morning_pipeline.sh"
+PIPELINE="${REPO_ROOT}/scripts/run_daily_brief.sh"
 if [[ ! -f "${PIPELINE}" ]]; then
-  PIPELINE="${SCRIPT_DIR}/run_morning_pipeline.sh"
+  PIPELINE="${SCRIPT_DIR}/run_daily_brief.sh"
 fi
 
 if [[ -n "${JOBWRIGHT_USER:-}" ]]; then
@@ -28,18 +28,19 @@ export JOBWRIGHT_REPO="${REPO_ROOT}"
 
 export PATH="${HOME}/.local/bin:${PATH}"
 DOTENV="$(printf '\x2eenv')"
-# API keys live in one global .env (repo root); per-user dir may add non-secret overrides.
 GLOBAL_ENV="${JOBWRIGHT_ENV:-${JOBWRIGHT_REPO:-${REPO_ROOT:-}}/${DOTENV}}"
 [[ -f "${GLOBAL_ENV}" ]] && set -a && source "${GLOBAL_ENV}" && set +a
 [[ -f "${JOBWRIGHT_DIR}/${DOTENV}" ]] && set -a && source "${JOBWRIGHT_DIR}/${DOTENV}" && set +a
 
-export LLM_MODEL="${LLM_MODEL:-gemini-2.5-flash}"
+# Single source of truth for the brief model (run_daily_brief.sh re-applies this).
+# gpt-oss-120b returns non-empty JSON for scoring; avoid gemini-* names here since
+# they silently remap to Fireworks DeepSeek when only a Fireworks key is present.
+export LLM_MODEL="${JOBWRIGHT_LLM_MODEL:-${LLM_MODEL:-accounts/fireworks/models/gpt-oss-120b}}"
 export APPLY_DRY_RUN=true
 unset APPLY_LIVE 2>/dev/null || true
 
 TODAY="$(date +%Y%m%d)"
-LOG="${JOBWRIGHT_DIR}/logs/morning_${TODAY}.log"
-STATUS_FILE="${JOBWRIGHT_DIR}/MORNING_STATUS_${TODAY}"
+STATUS_FILE="${JOBWRIGHT_DIR}/BRIEF_STATUS_${TODAY}"
 mkdir -p "${JOBWRIGHT_DIR}/logs"
 
 rm -f "${JOBWRIGHT_DIR}/DIGEST_DELIVERED_${TODAY}"
@@ -55,10 +56,9 @@ if [[ ! -f "${CONFIRM_FILE}" ]]; then
   rm -f "${JOBWRIGHT_DIR}/APPLY_CONFIRMED_DONE_${TODAY}"
 fi
 
-if [ -f "${JOBWRIGHT_DIR}/MORNING_PID" ]; then
-  OLD_PID=$(cat "${JOBWRIGHT_DIR}/MORNING_PID" 2>/dev/null || echo "")
+if [ -f "${JOBWRIGHT_DIR}/BRIEF_PID" ]; then
+  OLD_PID=$(cat "${JOBWRIGHT_DIR}/BRIEF_PID" 2>/dev/null || echo "")
   if [ -n "${OLD_PID}" ] && kill -0 "${OLD_PID}" 2>/dev/null; then
-    # Kill process group if possible (pipeline uses start_new_session)
     kill -- "-${OLD_PID}" 2>/dev/null || kill "${OLD_PID}" 2>/dev/null || true
   fi
 fi
@@ -80,6 +80,6 @@ p = subprocess.Popen(
 )
 print(p.pid)
 " "${REPO_ROOT}" "${PIPELINE}")"
-echo "${PID}" > "${JOBWRIGHT_DIR}/MORNING_PID"
-echo "${PID}" > "${JOBWRIGHT_DIR}/MORNING_PID_${TODAY}"
-echo "Detached morning pipeline pid=${PID} dir=${JOBWRIGHT_DIR}"
+echo "${PID}" > "${JOBWRIGHT_DIR}/BRIEF_PID"
+echo "${PID}" > "${JOBWRIGHT_DIR}/BRIEF_PID_${TODAY}"
+echo "Detached daily brief pipeline pid=${PID} dir=${JOBWRIGHT_DIR}"

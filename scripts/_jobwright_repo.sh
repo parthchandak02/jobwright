@@ -16,9 +16,10 @@ _jobwright_resolve_repo() {
     return 0
   fi
   local cand
+  # Prefer the ExternalSSD dev clone when both exist (Hermes manual runs omit JOBWRIGHT_REPO).
   for cand in \
-    "${HOME}/projects/jobwright" \
-    "/Volumes/ExternalSSD/Projects/jobwright"
+    "/Volumes/ExternalSSD/Projects/jobwright" \
+    "${HOME}/projects/jobwright"
   do
     if [[ -f "${cand}/pyproject.toml" ]]; then
       echo "${cand}"

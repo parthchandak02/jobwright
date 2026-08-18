@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Register Hermes cron jobs for multi-profile job pipeline.
-# Creates morning + digest + watchdog cron per registry user.
-# Legacy single-user (~/.jobwright) kept if no registry users exist.
+# Register Hermes cron jobs for multi-profile Daily Brief.
+# Creates brief + send + check cron per registry user.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -12,7 +11,7 @@ UPSERT="${SCRIPT_DIR}/_upsert_one_cron.sh"
 "${SCRIPT_DIR}/install_hermes_scripts.sh"
 chmod +x "${UPSERT}"
 
-pause_legacy_job() {
+pause_or_delete_legacy() {
   local name="$1"
   local job_id
   job_id="$(hermes cron list 2>/dev/null | awk -v name="${name}" '
@@ -27,12 +26,16 @@ pause_legacy_job() {
   ')"
   if [[ -n "${job_id}" ]]; then
     hermes cron pause "${job_id}" 2>/dev/null || true
-    echo "Paused legacy cron: ${name} (${job_id})"
+    hermes cron delete "${job_id}" 2>/dev/null || true
+    echo "Removed legacy cron: ${name} (${job_id})"
   fi
 }
 
-pause_legacy_job "job-apply-discover"
-pause_legacy_job "job-apply-submit"
+# Remove all old naming
+for name in job-apply-discover job-apply-submit \
+  job-apply-morning job-apply-digest job-apply-watchdog; do
+  pause_or_delete_legacy "${name}"
+done
 
 USERS_JSON="$(
   cd "${REPO_ROOT}" && PYTHONPATH="${REPO_ROOT}/src${PYTHONPATH:+:$PYTHONPATH}" python3 -c "
@@ -54,21 +57,11 @@ print(json.dumps(users))
 USER_COUNT="$(python3 -c "import json,sys; print(len(json.loads(sys.argv[1])))" "${USERS_JSON}")"
 
 if [[ "${USER_COUNT}" -eq 0 ]]; then
-  echo "No registry users — registering legacy single-user crons."
-  bash "${UPSERT}" "job-apply-morning" "0 5 * * 1-5" "job_apply_morning.sh" "${DEFAULT_DELIVER}" ""
-  bash "${UPSERT}" "job-apply-digest" "0 6-10 * * 1-5" "job_apply_digest.sh" "${DEFAULT_DELIVER}" ""
-  bash "${UPSERT}" "job-apply-watchdog" "0 11 * * 1-5" "job_apply_watchdog.sh" "${DEFAULT_DELIVER}" ""
+  echo "No registry users — registering single-user crons."
+  bash "${UPSERT}" "jobwright-brief" "0 6 * * *" "jobwright_brief.sh" "${DEFAULT_DELIVER}" ""
+  bash "${UPSERT}" "jobwright-send" "30 6 * * *" "jobwright_send.sh" "${DEFAULT_DELIVER}" ""
+  bash "${UPSERT}" "jobwright-check" "0 10 * * *" "jobwright_check.sh" "${DEFAULT_DELIVER}" ""
 else
-  # Keep legacy crons running unless explicitly paused (Parth's ~/.jobwright).
-  # Multi-user crons are namespaced: job-apply-morning-<id>, etc.
-  if [[ "${PAUSE_LEGACY:-0}" == "1" ]]; then
-    pause_legacy_job "job-apply-morning"
-    pause_legacy_job "job-apply-digest"
-    pause_legacy_job "job-apply-watchdog"
-  else
-    echo "Keeping legacy job-apply-* crons active (set PAUSE_LEGACY=1 to pause them)."
-  fi
-
   python3 - <<PY
 import json, subprocess, sys
 users = json.loads("""${USERS_JSON}""")
@@ -80,16 +73,21 @@ for u in users:
     if not deliver:
         print(f"SKIP {uid}: no whatsapp_target", file=sys.stderr)
         continue
-    sched = u.get("schedule") or "0 */3 * * 1-5"
-    dig = u.get("digest_schedule") or "15 */3 * * 1-5"
+    sched = u.get("schedule") or "0 6 * * *"
+    dig = u.get("digest_schedule") or "30 6 * * *"
     env = f"JOBWRIGHT_USER={uid}"
     for name, schedule, script in [
-        (f"job-apply-morning-{uid}", sched, "job_apply_morning.sh"),
-        (f"job-apply-digest-{uid}", dig, "job_apply_digest.sh"),
-        (f"job-apply-watchdog-{uid}", "0 11 * * 1-5", "job_apply_watchdog.sh"),
+        (f"jobwright-brief-{uid}", sched, "jobwright_brief.sh"),
+        (f"jobwright-send-{uid}", dig, "jobwright_send.sh"),
+        (f"jobwright-check-{uid}", "0 10 * * *", "jobwright_check.sh"),
     ]:
         subprocess.check_call(["bash", upsert, name, schedule, script, deliver, env])
 PY
+  for uid in $(python3 -c "import json,sys; print(' '.join(u['user_id'] for u in json.loads(sys.argv[1])))" "${USERS_JSON}"); do
+    pause_or_delete_legacy "job-apply-morning-${uid}"
+    pause_or_delete_legacy "job-apply-digest-${uid}"
+    pause_or_delete_legacy "job-apply-watchdog-${uid}"
+  done
 fi
 
 echo "Hermes cron jobs registered (scripts in ${HOME}/.hermes/scripts):"
