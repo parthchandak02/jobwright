@@ -8,7 +8,7 @@ Entry point for **Cursor, Claude Code, Hermes, and cron wrappers**. Read this fi
 
 ## What this is
 
-Six-stage job pipeline (`jobwright` CLI, `src/jobwright/`): discover → enrich → score → portfolio → tailor → cover → optional **apply** (browser agent). Stages 1-5 are cron-safe. Stage 6 is opt-in, dry-run by default, never auto-submit from cron.
+Daily Brief pipeline (`jobwright` CLI, `src/jobwright/`): discover → enrich → score → portfolio → tailor → cover → **docx** → **connect** → WhatsApp digest. Optional **apply** (browser agent) is opt-in. Brief stages are cron-safe. Apply is dry-run by default, never auto-submit from cron.
 
 Version: `pyproject.toml` / `jobwright --version`.
 
@@ -53,8 +53,13 @@ pytest tests/ -v
 ruff check src/
 bash scripts/validate_pipeline.sh
 
-# Pipeline (multi-profile)
-jobwright --user <id> run discover enrich score portfolio tailor cover -w 4 --min-score 7
+# Daily Brief pipeline (multi-profile)
+# DISCOVER_MODE=fast (default for cron): JobSpy + Workday tier-1 only; skip smart-extract
+# DISCOVER_MODE=full: all query tiers + smart-extract (weekly deep crawl)
+DISCOVER_MODE=fast jobwright --user <id> run discover enrich score portfolio tailor cover docx connect -w 4 --min-score 7
+
+# Materials for WhatsApp (DOCX paths)
+jobwright --user <id> materials --index 1
 
 # Agent JSON
 ./bin/job-apply-pp-cli status --agent --user <id>
@@ -69,13 +74,13 @@ jobwright users add <id> --name "Name" --whatsapp "whatsapp:..." --template nont
 # Crons: ask Hermes agent — docs/agents/hermes-setup.md (paste block at top)
 ```
 
-Env: `FIREWORKS_API_KEY` (stages 3-5, preferred), `GEMINI_API_KEY` (fallback), `CURSOR_API_KEY` + `AGENT_PROVIDER=cursor-sdk` (stage 6). Templates: `.env.example`.
+Env: `FIREWORKS_API_KEY` (stages 3-5, preferred), `GEMINI_API_KEY` (fallback), optional `EXA_API_KEY` (per-job web connections), `CURSOR_API_KEY` + `AGENT_PROVIDER=cursor-sdk` (stage 6), `DISCOVER_MODE=fast|full` (default `fast`: skip smart-extract, tier-1 queries; Workday skips detail fetch for known URLs), `SCORE_BATCH_SIZE` (default `10`: jobs per scoring LLM call; set `1` for sequential), `BRIEF_SMOKE=1` (narrow E2E: 3 queries, SF+Remote, JobSpy only, top 3 digest). Templates: `.env.example`.
 
 ---
 
 ## End-to-end flow (Hermes + WhatsApp)
 
-Prep cron runs stages 1-5 → digest cron → WhatsApp. Live apply only if user sends `CONFIRM APPLY` and `apply_enabled: true` → `job_apply_confirm.sh` + `job_apply_on_confirm.sh`.
+`jobwright-brief` cron (6:00 daily) runs discover → connect, writes digest + DOCX, then auto-delivers materials for job 1 via `hermes send` (`AUTO_MATERIALS_INDEX=1`, set `0` to disable). `jobwright-send` (6:30) posts the text digest to WhatsApp. User can still reply `materials N` for other jobs. Live apply only if user sends `CONFIRM APPLY` and `apply_enabled: true` → `jobwright_confirm.sh` + `jobwright_on_confirm.sh`.
 
 Detail: [docs/agents/hermes-operator-guide.md](docs/agents/hermes-operator-guide.md), [docs/agents/whatsapp-routing.md](docs/agents/whatsapp-routing.md).
 
@@ -87,6 +92,7 @@ Detail: [docs/agents/hermes-operator-guide.md](docs/agents/hermes-operator-guide
 |------|-----|
 | Hermes skill setup | [docs/agents/install-hermes-skill.md](docs/agents/install-hermes-skill.md) |
 | Hermes / WhatsApp ops | [docs/agents/hermes-operator-guide.md](docs/agents/hermes-operator-guide.md) |
+| WhatsApp group / skills checklist | [docs/agents/whatsapp-group-jobwright.md](docs/agents/whatsapp-group-jobwright.md) |
 | WhatsApp phrases | [docs/agents/whatsapp-routing.md](docs/agents/whatsapp-routing.md) |
 | Cron / scripts | [docs/agents/hermes-setup.md](docs/agents/hermes-setup.md) |
 | Paths / scripts map | [docs/agents/repo-map.md](docs/agents/repo-map.md) |
@@ -110,10 +116,10 @@ Full agent doc index: [docs/agents/README.md](docs/agents/README.md). Cursor ski
 | Code, tests, scripts | This git clone (`JOBWRIGHT_REPO`) |
 | Agent docs | `AGENTS.md`, `docs/agents/` (in clone) |
 | Hermes skill | `~/.hermes/skills/autonomous-ai-agents/pp-job-apply/` (thin loader + `JOBWRIGHT_REPO` file) |
-| Hermes cron scripts | `~/.hermes/scripts/job_apply_*.sh` |
+| Hermes cron scripts | `~/.hermes/scripts/jobwright_*.sh` |
 
 Cloning this repo does **not** register Hermes skills automatically. Run `./scripts/install_skills.sh` from your clone path.
 
 ---
 
-**Last verified:** `0.4.0`, Fireworks LLM provider, `users/` registry, `cursor-sdk` default apply provider.
+**Last verified:** `0.4.0`, Daily Brief (docx + connect), `SCORE_BATCH_SIZE=10`, `DISCOVER_MODE=fast|full`, Fireworks LLM provider, `users/` registry, `cursor-sdk` default apply provider.
