@@ -467,7 +467,24 @@ def run_tailoring(min_score: int = 7, limit: int = 20,
             tailored, report = tailor_resume(resume_text, job, profile,
                                              validation_mode=validation_mode)
 
-            # Build safe filename prefix
+            status = report["status"]
+            _success_statuses = {"approved", "approved_with_judge_warning"}
+            if status not in _success_statuses:
+                result = {
+                    "url": job["url"], "title": job["title"], "site": job["site"],
+                    "status": status, "attempts": report["attempts"],
+                    "path": None, "pdf_path": None,
+                }
+                results.append(result)
+                stats[status] = stats.get(status, 0) + 1
+                log.info(
+                    "%d/%d [%s] attempts=%s | %s",
+                    completed, len(jobs), status.upper(),
+                    report["attempts"], job["title"][:40],
+                )
+                continue
+
+            # Build safe filename prefix (approved only — no orphan files for failures)
             safe_title = re.sub(r"[^\w\s-]", "", job["title"])[:50].strip().replace(" ", "_")
             safe_site = re.sub(r"[^\w\s-]", "", job["site"])[:20].strip().replace(" ", "_")
             prefix = f"{safe_site}_{safe_title}"

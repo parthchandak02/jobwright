@@ -207,7 +207,7 @@ def score_jobs_batch(
         data = chat_json_object(
             client,
             messages,
-            max_tokens=min(256 * len(jobs) + 512, 4096),
+            max_tokens=min(400 * len(jobs) + 1024, 8192),
             temperature=0.2,
         )
         return _map_batch_scores(jobs, data)
@@ -240,12 +240,33 @@ def score_job(resume_text: str, job: dict, profile: dict | None = None) -> dict 
         data = chat_json_object(
             client,
             messages,
-            max_tokens=1024,
+            max_tokens=2048,
             temperature=0.2,
+            max_parse_retries=2,
         )
         return _parse_score_response(data)
     except (LLMJsonError, Exception) as e:
         log.error("LLM error scoring job '%s': %s", job.get("title", "?"), e)
+        if os.environ.get("GEMINI_API_KEY"):
+            try:
+                from jobwright.llm import reset_client
+
+                reset_client()
+                client = get_client()
+                data = chat_json_object(
+                    client,
+                    messages,
+                    max_tokens=2048,
+                    temperature=0.2,
+                    max_parse_retries=2,
+                )
+                return _parse_score_response(data)
+            except (LLMJsonError, Exception) as retry_exc:
+                log.error(
+                    "Score retry failed for '%s': %s",
+                    job.get("title", "?"),
+                    retry_exc,
+                )
         return None
 
 

@@ -3,7 +3,7 @@ Unified LLM client for jobwright.
 
 Auto-detects provider from environment (first match wins):
   FIREWORKS_API_KEY -> Fireworks AI (default: deepseek-v4-flash-0731)
-  GEMINI_API_KEY    -> Google Gemini (default: gemini-2.5-flash)
+  GEMINI_API_KEY    -> Google Gemini (default: gemini-3.7-flash)
   OPENAI_API_KEY    -> OpenAI (default: gpt-4o-mini)
   LLM_URL           -> Local llama.cpp / Ollama compatible endpoint
 
@@ -101,7 +101,7 @@ def _detect_provider() -> tuple[str, str, str]:
     if gemini_key and not local_url:
         return (
             "https://generativelanguage.googleapis.com/v1beta/openai",
-            model_override or "gemini-2.5-flash",
+            model_override or "gemini-3.7-flash",
             gemini_key,
         )
 
@@ -130,6 +130,7 @@ def _detect_provider() -> tuple[str, str, str]:
 # ---------------------------------------------------------------------------
 
 _MAX_RETRIES = 5
+_EMPTY_RETRIES = 2  # extra in-place retries when a provider returns empty content
 _TIMEOUT = 120  # seconds
 
 # Base wait on first 429/503 (doubles each retry, caps at 60s).
@@ -158,6 +159,9 @@ class LLMClient:
         # True once we've confirmed the native Gemini API works for this model
         self._use_native_gemini: bool = False
         self._is_gemini: bool = base_url.startswith(_GEMINI_COMPAT_BASE)
+        # Lazily-built cross-provider fallback (e.g. Fireworks -> Gemini on empty).
+        self._fallback: LLMClient | None = None
+        self._is_fallback: bool = False
 
     # -- Native Gemini API --------------------------------------------------
 
@@ -213,7 +217,16 @@ class LLMClient:
         )
         resp.raise_for_status()
         data = resp.json()
-        return data["candidates"][0]["content"]["parts"][0]["text"]
+        candidate = (data.get("candidates") or [{}])[0]
+        parts = (candidate.get("content") or {}).get("parts") or [{}]
+        text = parts[0].get("text")
+        if not (text or "").strip():
+            log.warning(
+                "Empty native Gemini content (finishReason=%s)",
+                candidate.get("finishReason"),
+            )
+            raise _EmptyLLMResponse("Empty LLM response")
+        return text
 
     # -- OpenAI-compat API --------------------------------------------------
 
@@ -254,9 +267,20 @@ class LLMClient:
     def _handle_compat_response(resp: httpx.Response) -> str:
         resp.raise_for_status()
         data = resp.json()
-        content = data["choices"][0]["message"]["content"]
+        choice = (data.get("choices") or [{}])[0]
+        message = choice.get("message") or {}
+        content = message.get("content")
         if not (content or "").strip():
-            raise RuntimeError("Empty LLM response")
+            # Diagnose empty completions: reasoning models can burn the whole
+            # token budget on hidden thinking, or json_mode can truncate.
+            finish = choice.get("finish_reason")
+            usage = data.get("usage")
+            has_reasoning = bool((message.get("reasoning_content") or "").strip())
+            log.warning(
+                "Empty LLM content (finish_reason=%s, usage=%s, reasoning_content=%s)",
+                finish, usage, "present" if has_reasoning else "none",
+            )
+            raise _EmptyLLMResponse("Empty LLM response")
         return content
 
     # -- public API ---------------------------------------------------------
@@ -283,6 +307,7 @@ class LLMClient:
             if first.get("role") == "user" and not first["content"].startswith("/no_think"):
                 messages = [{"role": first["role"], "content": f"/no_think\n{first['content']}"}] + messages[1:]
 
+        empty_attempts = 0
         for attempt in range(_MAX_RETRIES):
             try:
                 # Route to native Gemini if we've already confirmed it's needed
@@ -292,6 +317,23 @@ class LLMClient:
                     )
 
                 return self._chat_compat(messages, temperature, max_tokens, json_mode=json_mode)
+
+            except _EmptyLLMResponse:
+                empty_attempts += 1
+                if empty_attempts <= _EMPTY_RETRIES:
+                    log.warning(
+                        "Empty response from %s; retrying (%d/%d)",
+                        self.model, empty_attempts, _EMPTY_RETRIES,
+                    )
+                    continue
+                fallback_text = self._try_fallback(
+                    messages, temperature, max_tokens, json_mode=json_mode
+                )
+                if fallback_text is not None:
+                    return fallback_text
+                raise RuntimeError(
+                    f"Empty LLM response from {self.model} after {empty_attempts} attempts"
+                )
 
             except _GeminiCompatForbidden:
                 # Model not available on OpenAI-compat layer — switch to native.
@@ -353,12 +395,48 @@ class LLMClient:
 
         raise RuntimeError("LLM request failed after all retries")
 
+    def _try_fallback(
+        self,
+        messages: list[dict],
+        temperature: float,
+        max_tokens: int,
+        json_mode: bool = False,
+    ) -> str | None:
+        """Retry once on a secondary provider when the primary returns empty.
+
+        Only triggers Fireworks/OpenAI -> Gemini today (the documented fallback).
+        Returns the response text, or None if no usable fallback is configured.
+        """
+        if self._is_fallback or self._is_gemini:
+            return None  # already Gemini, or we are the fallback client itself
+        gemini_key = os.environ.get("GEMINI_API_KEY", "")
+        if not gemini_key:
+            return None
+        if self._fallback is None:
+            model = os.environ.get("GEMINI_FALLBACK_MODEL", "gemini-3.7-flash")
+            log.warning(
+                "Primary provider (%s) returned empty; falling back to Gemini model '%s'",
+                self.model, model,
+            )
+            fb = LLMClient(_GEMINI_COMPAT_BASE, model, gemini_key)
+            fb._is_fallback = True
+            self._fallback = fb
+        try:
+            return self._fallback.chat(
+                messages, temperature=temperature, max_tokens=max_tokens, json_mode=json_mode
+            )
+        except Exception as exc:  # noqa: BLE001 - fallback is best-effort
+            log.error("Gemini fallback also failed: %s", exc)
+            return None
+
     def ask(self, prompt: str, **kwargs) -> str:
         """Convenience: single user prompt -> assistant response."""
         return self.chat([{"role": "user", "content": prompt}], **kwargs)
 
     def close(self) -> None:
         self._client.close()
+        if self._fallback is not None:
+            self._fallback.close()
 
 
 class _GeminiCompatForbidden(Exception):
@@ -368,11 +446,23 @@ class _GeminiCompatForbidden(Exception):
         super().__init__(f"Gemini compat 403: {response.text[:200]}")
 
 
+class _EmptyLLMResponse(RuntimeError):
+    """The provider returned a 2xx with empty/blank content (retryable)."""
+
+
 # ---------------------------------------------------------------------------
 # Singleton
 # ---------------------------------------------------------------------------
 
 _instance: LLMClient | None = None
+
+
+def reset_client() -> None:
+    """Drop the singleton so the next get_client() re-reads env (e.g. after failover)."""
+    global _instance
+    if _instance is not None:
+        _instance.close()
+        _instance = None
 
 
 def get_client() -> LLMClient:
