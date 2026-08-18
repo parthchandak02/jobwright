@@ -12,7 +12,7 @@ You talk to Hermes on WhatsApp. Hermes runs jobwright on the server.
 
 1. Ask the admin to register you (name, resume, target roles, WhatsApp chat).
 2. Once registered, you get **one WhatsApp message each morning** listing new jobs that are ready to review.
-3. Each line has a link. Tap it to open that job in your dashboard, where the tailored resume, cover letter, and networking suggestions live.
+3. Each line has a link. Tap it to open that job in your dashboard, where the tailored resume, cover letter, and networking suggestions live. You can also open the dashboard anytime to run **Auto Search**, edit search chips (titles, locations, boards), and upload a resume or cover-letter PDFs on Profile.
 
 No app to install. Just message Hermes in WhatsApp, and open the links you receive in a browser.
 
@@ -63,7 +63,7 @@ Ask Hermes:
 
 Requires a LinkedIn **Connections.csv** export at `users/<id>/connections.csv` (admin helps upload once; dummy OK for testing).
 
-Cover letter examples go in `cover-letter/examples/`. Resume source: `resume/base.txt`.
+Cover letter examples are PDFs in `cover-letter/examples/` (upload them on the dashboard Profile page). Resume source: `resume/base.pdf` (same Profile page).
 
 ## Troubleshooting
 

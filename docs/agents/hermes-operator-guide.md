@@ -29,11 +29,10 @@ Each user lives at `users/<user_id>/`:
 ├── searches.yaml             # job discovery filters
 ├── connections.csv           # LinkedIn export (1st-degree network)
 ├── resume/
-│   ├── base.txt              # source resume for AI stages
-│   └── base.pdf              # formatted resume (optional)
+│   ├── base.pdf              # source of truth
+│   └── base.md               # derived markdown for AI stages
 ├── cover-letter/
-│   ├── template.txt          # cover letter skeleton
-│   └── examples/             # real sent letters (.txt)
+│   └── examples/             # real sent letters (PDF uploads)
 ├── references/
 │   └── inbox/                # UNSORTED uploads only — file into resume/ or cover-letter/
 ├── tailored_resumes/         # generated per job
@@ -41,11 +40,14 @@ Each user lives at `users/<user_id>/`:
 ├── target_companies.yaml     # from `targets` command
 ├── jobwright.db
 └── logs/
+    ├── brief_YYYYMMDD.log
+    ├── web_run_<id>.log          # Auto Search / POST /api/run
+    └── web_runs.json             # run registry (attach/stop after reload)
 ```
 
 **Rule:** When a user uploads a file on WhatsApp, save to `references/inbox/` first, then **move** to the correct structured folder. Do not leave organized assets in `references/`.
 
-Legacy symlinks `resume.txt` / `resume.pdf` at user root may exist; prefer `resume/base.*`.
+Legacy PDF at user root `resume.pdf` may exist; prefer `resume/base.pdf`.
 
 ## Step 0: Resolve WhatsApp sender → user
 
@@ -68,14 +70,14 @@ export JOBWRIGHT_DIR="${JOBWRIGHT_USERS_ROOT}/${USER_ID}"
 | User: "materials" / open job | Point to the dashboard deep link from the notify (`jobwright.parthchandak.info/jobs/<job_id>`) |
 | User: "job status" | `jobwright --user $USER_ID status` |
 
-Pipeline stages: discover -> enrich -> score -> portfolio -> tailor -> cover -> docx -> connect, then `jobwright notify`.
+Pipeline stages: discover -> enrich -> score -> portfolio -> tailor -> cover -> docx -> connect, then `jobwright notify`. (CLI also has `pdf`; brief and Auto Search skip it.) Dashboard Auto Search is the same prep pipeline via `POST /api/run`. Profile searches, resume PDF, and cover-letter example PDFs can be edited in the dashboard.
 
 ### B. Resume tailoring (per job)
 
 ```bash
 jobwright --user $USER_ID run tailor --validation lenient
 # or full pipeline:
-jobwright --user $USER_ID run discover enrich score portfolio tailor cover -w 4 --min-score 5 --validation lenient
+jobwright --user $USER_ID run discover enrich score portfolio tailor cover docx connect -w 4 --min-score 5 --validation lenient
 ```
 
 Output: `users/<id>/tailored_resumes/`
@@ -84,10 +86,7 @@ Check `profile.json` → `tailor_mode` (`keyword_swap` = same-length keyword edi
 
 ### C. Cover letters (template + examples)
 
-Input materials:
-
-- `cover-letter/template.txt`
-- `cover-letter/examples/*.txt`
+Input materials: `cover-letter/examples/*.pdf` (upload on the dashboard Profile page).
 
 ```bash
 jobwright --user $USER_ID run cover --validation lenient
@@ -95,7 +94,7 @@ jobwright --user $USER_ID run cover --validation lenient
 
 Output: `users/<id>/cover_letters/`
 
-When user sends new examples, save as `cover-letter/examples/<short-name>.txt`.
+When the user sends new examples, save as `cover-letter/examples/<short-name>.pdf` or ask them to upload on Profile.
 
 ### D. LinkedIn network ranking (1st degree only)
 
@@ -131,8 +130,8 @@ Dry-run remains the default; `--live` is required to submit, and LinkedIn apply 
 cd "${JOBWRIGHT_REPO}"
 jobwright users add <id> --name "Full Name" --whatsapp "whatsapp:..." --template nontech-bay-area
 # Creates resume/, cover-letter/, references/inbox/ skeleton
-# Write resume/base.txt, profile.json, searches.yaml
-# Optional: connections.csv, cover-letter/template.txt, examples/
+# Write resume/base.pdf, profile.json, searches.yaml
+# Optional: connections.csv, cover-letter/examples/*.pdf
 ./scripts/install_hermes_scripts.sh
 # Crons: Hermes agent registers via docs/agents/hermes-setup.md
 jobwright --user <id> doctor
@@ -144,9 +143,8 @@ Apply stays OFF unless: `jobwright users set <id> --apply`
 
 | File type | Move to |
 |-----------|---------|
-| Resume PDF/DOC | Extract text → `resume/base.txt`; PDF → `resume/base.pdf` |
-| Cover letter examples | `cover-letter/examples/<name>.txt` |
-| Cover letter template | `cover-letter/template.txt` |
+| Resume PDF | Copy to `resume/base.pdf` (markdown is derived automatically) |
+| Cover letter examples | `cover-letter/examples/<name>.pdf` (or dashboard Profile upload) |
 | LinkedIn Connections export | `connections.csv` (user root) |
 | Unknown / misc | `references/inbox/` then ask user or infer |
 
@@ -154,7 +152,7 @@ After filing, confirm with user on WhatsApp.
 
 ## Continuous improvement (user reports issue / wants change)
 
-1. **Classify:** profile/prefs (`profile.json`, `searches.yaml`) vs data (`resume/`, `connections.csv`) vs pipeline bug (`src/jobwright/`) vs Hermes ops (cron/scripts/`config.yaml`).
+1. **Classify:** profile/prefs (`profile.json`, `searches.yaml`, or dashboard Profile chips) vs data (`resume/base.pdf`, `connections.csv`) vs pipeline bug (`src/jobwright/`) vs Hermes ops (cron/scripts/`config.yaml`). Dashboard Auto Search logs: `logs/web_run_*.log` and `logs/web_runs.json`.
 2. **Reproduce:**
    ```bash
    jobwright --user $USER_ID doctor
@@ -226,8 +224,8 @@ test -f ~/.hermes/skills/autonomous-ai-agents/pp-job-apply/SKILL.md && cat ~/.he
 
 | She wants | Hermes does |
 |-----------|-------------|
-| Fresh jobs | Daily brief cron (pipeline + notify) or "find jobs now" |
-| Tailored resume | Pipeline tailor stage (check tailor_mode) |
+| Fresh jobs | Daily brief cron (pipeline + notify), "find jobs now", or dashboard Auto Search |
+| Tailored resume | Pipeline tailor stage, or job-drawer Tailor button (subtle) |
 | Cover letter | Ensure examples in `cover-letter/examples/`; run cover stage |
 | Network help | `jobwright --user richa network` (needs real connections.csv) |
 | Target companies | `jobwright --user richa targets` |

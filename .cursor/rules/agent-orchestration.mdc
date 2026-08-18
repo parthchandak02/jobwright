@@ -43,6 +43,7 @@ alwaysApply: true
 | Hard bug, regression, slowness | [.cursor/skills/diagnosing-bugs/SKILL.md](.cursor/skills/diagnosing-bugs/SKILL.md) |
 | Stuck, costly fork, repeated failure | [.cursor/skills/advisor/SKILL.md](.cursor/skills/advisor/SKILL.md) |
 | Default implementation bias | [.cursor/skills/ponytail/SKILL.md](.cursor/skills/ponytail/SKILL.md) |
+| Dashboard visual polish | [.cursor/skills/frontend-tasteful/SKILL.md](.cursor/skills/frontend-tasteful/SKILL.md) |
 | Large refactor | [.cursor/skills/improve-codebase-architecture/SKILL.md](.cursor/skills/improve-codebase-architecture/SKILL.md) |
 | Stage 6 / browser apply debug | [.cursor/skills/playwright-cli/SKILL.md](.cursor/skills/playwright-cli/SKILL.md) |
 
@@ -62,7 +63,7 @@ alwaysApply: true
 
 | Trigger | Skill |
 |---------|-------|
-| Hermes / WhatsApp / pipeline / CONFIRM APPLY | [.cursor/skills/pipeline-operator/SKILL.md](.cursor/skills/pipeline-operator/SKILL.md) |
+| Hermes / WhatsApp / pipeline / notify / Auto Search | [.cursor/skills/pipeline-operator/SKILL.md](.cursor/skills/pipeline-operator/SKILL.md) |
 | User-facing prose | [.cursor/skills/humanizer/SKILL.md](.cursor/skills/humanizer/SKILL.md) |
 | Learn over many sessions (`/teach`) | `~/.cursor/skills/teach/SKILL.md` (dedicated workspace, not this repo) |
 

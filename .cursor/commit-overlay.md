@@ -12,6 +12,8 @@ Used by [.cursor/skills/deploy/SKILL.md](.cursor/skills/deploy/SKILL.md) and [.c
 | `docs/agents/whatsapp-routing.md` | Inbound phrases, daily notify, apply safety |
 | `docs/agents/hermes-setup.md` | Cron names, install steps |
 | `docs/agents/install-hermes-skill.md` | Hermes skill install model |
+| `docs/agents/dashboard-hosting.md` | Dashboard ops, Auto Search / Profile / tailor surfaces |
+| `.cursor/skills/deploy/SKILL.md` | Commit / push / deploy workflow (replaces deleted standalone commit skills) |
 | `src/jobwright/AGENTS.md` | Package module map or conventions |
 | `README.md` | Human setup, stage table, install steps |
 | `docs/README.md` | New docs under `docs/` |
@@ -34,11 +36,12 @@ Used by [.cursor/skills/deploy/SKILL.md](.cursor/skills/deploy/SKILL.md) and [.c
 
 | Order | Cluster | Paths |
 |-------|---------|-------|
-| 1 | Agent docs / rules | `AGENTS.md`, `CLAUDE.md`, `docs/agents/`, `.cursor/` |
-| 2 | Core package | `src/jobwright/` |
+| 1 | Agent docs / rules | `AGENTS.md`, `CLAUDE.md`, `docs/`, `.cursor/` |
+| 2 | Core package | `src/jobwright/`, `pyproject.toml`, `uv.lock` |
 | 3 | Templates / skills readme | `templates/`, `skills/README.md` |
-| 4 | Scripts / bin | `scripts/`, `bin/` |
-| 5 | Tests | `tests/` |
+| 4 | Dashboard UI | `frontend/` |
+| 5 | Scripts / bin | `scripts/`, `bin/` |
+| 6 | Tests | `tests/` |
 
 ## Message style
 
