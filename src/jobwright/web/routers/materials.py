@@ -14,6 +14,9 @@ from jobwright.database import get_connection
 
 router = APIRouter(prefix="/api", tags=["materials"])
 
+# Cap preview text so the drawer stays scannable (~6–8 KB).
+_PREVIEW_MAX_CHARS = 8000
+
 
 def _allowed_roots() -> list[Path]:
     return [
@@ -44,6 +47,25 @@ def _load_manifest() -> dict | None:
         return None
 
 
+def _read_preview(path: str | None) -> str | None:
+    """Read a text file for drawer preview; return None if missing/unreadable."""
+    if not path:
+        return None
+    p = Path(path)
+    if not p.is_file():
+        return None
+    try:
+        text = p.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    text = text.strip()
+    if not text:
+        return None
+    if len(text) > _PREVIEW_MAX_CHARS:
+        return text[:_PREVIEW_MAX_CHARS].rstrip() + "\n…"
+    return text
+
+
 @router.get("/jobs/{url:path}/materials")
 def job_materials(url: str) -> dict:
     url = unquote(url)
@@ -69,15 +91,20 @@ def job_materials(url: str) -> dict:
     def _exists(p: str | None) -> bool:
         return bool(p) and Path(p).is_file()
 
+    resume_txt = d.get("tailored_resume_path") if _exists(d.get("tailored_resume_path")) else None
+    cover_txt = d.get("cover_letter_path") if _exists(d.get("cover_letter_path")) else None
+
     return {
         "url": url,
         "title": d.get("title"),
         "company": d.get("company"),
         "fit_score": d.get("fit_score"),
-        "resume_txt": d.get("tailored_resume_path") if _exists(d.get("tailored_resume_path")) else None,
+        "resume_txt": resume_txt,
         "resume_docx": d.get("tailored_resume_docx_path") if _exists(d.get("tailored_resume_docx_path")) else None,
-        "cover_txt": d.get("cover_letter_path") if _exists(d.get("cover_letter_path")) else None,
+        "cover_txt": cover_txt,
         "cover_docx": d.get("cover_letter_docx_path") if _exists(d.get("cover_letter_docx_path")) else None,
+        "resume_preview": _read_preview(resume_txt),
+        "cover_preview": _read_preview(cover_txt),
         "manifest": manifest_entry,
     }
 

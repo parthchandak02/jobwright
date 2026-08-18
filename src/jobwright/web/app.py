@@ -25,6 +25,7 @@ from jobwright.web.routers import (
     runs_router,
     system_router,
 )
+from jobwright.web.session import DashboardUserMiddleware
 
 
 @asynccontextmanager
@@ -44,9 +45,11 @@ _cors = os.environ.get(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[o.strip() for o in _cors.split(",") if o.strip()],
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(DashboardUserMiddleware)
 
 app.include_router(system_router)
 app.include_router(board_router)

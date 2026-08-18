@@ -1,7 +1,7 @@
 # Project Overlay Template
 
 Fill this in once per project (or point the agent at an existing equivalent doc)
-so `commit-and-push` does not have to re-derive project specifics every time.
+so `commit-push-deploy` does not have to re-derive project specifics every time.
 Copy this file into the project (for example as `.cursor/commit-overlay.md`) and
 fill in the blanks.
 

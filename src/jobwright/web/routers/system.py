@@ -1,27 +1,25 @@
-"""Health and profile endpoints."""
+"""Health, profile, and session endpoints."""
 
 from __future__ import annotations
 
-import os
+from fastapi import APIRouter, HTTPException, Request, Response
+from pydantic import BaseModel
 
-from fastapi import APIRouter
-
-from jobwright import config
 from jobwright import __version__
+from jobwright import config
 from jobwright.database import FUNNEL_STAGES, get_connection, get_stats
-from jobwright.users import get_user
+from jobwright.users import get_user, list_users
+from jobwright.web.session import (
+    COOKIE_NAME,
+    activate_user,
+    default_dashboard_user,
+    resolve_dashboard_user,
+)
 
 router = APIRouter(prefix="/api", tags=["system"])
 
 
-@router.get("/health")
-def health() -> dict:
-    return {"ok": True, "version": __version__}
-
-
-@router.get("/profile")
-def profile() -> dict:
-    user_id = os.environ.get("JOBWRIGHT_DASHBOARD_USER", "richa")
+def _profile_payload(user_id: str) -> dict:
     user = get_user(user_id)
     conn = get_connection()
     stats = get_stats(conn)
@@ -48,3 +46,43 @@ def profile() -> dict:
         "stage_counts": stage_counts,
         "source": "https://github.com/parthchandak02/jobwright",
     }
+
+
+@router.get("/health")
+def health() -> dict:
+    return {"ok": True, "version": __version__}
+
+
+@router.get("/profile")
+def profile(request: Request) -> dict:
+    user_id = resolve_dashboard_user(request)
+    return _profile_payload(user_id)
+
+
+@router.get("/users")
+def users_list() -> dict:
+    users = [{"user_id": u.user_id, "name": u.name or u.user_id} for u in list_users()]
+    return {"users": users, "default": default_dashboard_user()}
+
+
+class SessionBody(BaseModel):
+    user_id: str
+
+
+@router.post("/session")
+def set_session(body: SessionBody, response: Response) -> dict:
+    user_id = body.user_id.strip()
+    try:
+        activate_user(user_id)
+    except (ValueError, SystemExit) as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+    response.set_cookie(
+        key=COOKIE_NAME,
+        value=user_id,
+        httponly=True,
+        samesite="lax",
+        max_age=60 * 60 * 24 * 365,
+        path="/",
+    )
+    return _profile_payload(user_id)

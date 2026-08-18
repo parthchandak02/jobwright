@@ -8,16 +8,14 @@ import {
   type ReactNode,
 } from 'react'
 
-export type Theme = 'light' | 'dark' | 'system'
-export type ResolvedTheme = 'light' | 'dark'
+export type Theme = 'light' | 'dark'
 
 const STORAGE_KEY = 'jobwright-theme'
 
 type ThemeContextValue = {
   theme: Theme
-  resolved: ResolvedTheme
   setTheme: (theme: Theme) => void
-  cycleTheme: () => void
+  toggleTheme: () => void
 }
 
 const ThemeContext = createContext<ThemeContextValue | null>(null)
@@ -25,30 +23,22 @@ const ThemeContext = createContext<ThemeContextValue | null>(null)
 function readStoredTheme(): Theme {
   try {
     const v = localStorage.getItem(STORAGE_KEY)
-    if (v === 'light' || v === 'dark' || v === 'system') return v
+    if (v === 'light' || v === 'dark') return v
   } catch {
     /* ignore */
   }
-  return 'system'
+  return 'dark'
 }
 
-function resolveTheme(theme: Theme): ResolvedTheme {
-  if (theme === 'light' || theme === 'dark') return theme
-  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
-}
-
-function applyDomTheme(resolved: ResolvedTheme) {
+function applyDomTheme(theme: Theme) {
   const root = document.documentElement
-  root.classList.toggle('dark', resolved === 'dark')
-  root.style.colorScheme = resolved
+  root.classList.toggle('dark', theme === 'dark')
+  root.style.colorScheme = theme
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setThemeState] = useState<Theme>(() =>
-    typeof window === 'undefined' ? 'system' : readStoredTheme(),
-  )
-  const [resolved, setResolved] = useState<ResolvedTheme>(() =>
-    typeof window === 'undefined' ? 'light' : resolveTheme(readStoredTheme()),
+    typeof window === 'undefined' ? 'dark' : readStoredTheme(),
   )
 
   const setTheme = useCallback((next: Theme) => {
@@ -60,29 +50,17 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  const cycleTheme = useCallback(() => {
-    setTheme(theme === 'light' ? 'dark' : theme === 'dark' ? 'system' : 'light')
+  const toggleTheme = useCallback(() => {
+    setTheme(theme === 'dark' ? 'light' : 'dark')
   }, [setTheme, theme])
 
   useEffect(() => {
-    const next = resolveTheme(theme)
-    setResolved(next)
-    applyDomTheme(next)
-
-    if (theme !== 'system') return
-    const mq = window.matchMedia('(prefers-color-scheme: dark)')
-    const onChange = () => {
-      const r = resolveTheme('system')
-      setResolved(r)
-      applyDomTheme(r)
-    }
-    mq.addEventListener('change', onChange)
-    return () => mq.removeEventListener('change', onChange)
+    applyDomTheme(theme)
   }, [theme])
 
   const value = useMemo(
-    () => ({ theme, resolved, setTheme, cycleTheme }),
-    [theme, resolved, setTheme, cycleTheme],
+    () => ({ theme, setTheme, toggleTheme }),
+    [theme, setTheme, toggleTheme],
   )
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>

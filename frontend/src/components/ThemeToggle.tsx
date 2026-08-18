@@ -1,27 +1,21 @@
-import { Moon, Sun, Monitor } from 'lucide-react'
+import { Moon, Sun } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { useTheme, type Theme } from '@/lib/theme'
-
-const LABELS: Record<Theme, string> = {
-  light: 'Light',
-  dark: 'Dark',
-  system: 'System',
-}
+import { useTheme } from '@/lib/theme'
 
 export function ThemeToggle() {
-  const { theme, cycleTheme } = useTheme()
-  const Icon = theme === 'dark' ? Moon : theme === 'light' ? Sun : Monitor
+  const { theme, toggleTheme } = useTheme()
+  const isDark = theme === 'dark'
 
   return (
     <Button
       type="button"
       size="icon-sm"
       variant="ghost"
-      onClick={cycleTheme}
-      title={`Theme: ${LABELS[theme]} (click to cycle)`}
-      aria-label={`Theme ${LABELS[theme]}. Click to cycle light, dark, system.`}
+      onClick={toggleTheme}
+      title={isDark ? 'Dark theme (click for light)' : 'Light theme (click for dark)'}
+      aria-label={isDark ? 'Switch to light theme' : 'Switch to dark theme'}
     >
-      <Icon />
+      {isDark ? <Moon /> : <Sun />}
     </Button>
   )
 }

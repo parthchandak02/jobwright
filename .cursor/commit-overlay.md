@@ -1,6 +1,6 @@
 # Commit overlay (jobwright)
 
-Used by [.cursor/skills/commit-and-push/SKILL.md](.cursor/skills/commit-and-push/SKILL.md) and [.cursor/rules/agents-doc-sync.mdc](.cursor/rules/agents-doc-sync.mdc).
+Used by [.cursor/skills/commit-push-deploy/SKILL.md](.cursor/skills/commit-push-deploy/SKILL.md) and [.cursor/rules/agents-doc-sync.mdc](.cursor/rules/agents-doc-sync.mdc).
 
 ## Doc-sync matrix
 
@@ -48,3 +48,16 @@ Used by [.cursor/skills/commit-and-push/SKILL.md](.cursor/skills/commit-and-push
 ## Path scoping
 
 Repo root is `jobwright/`. Stage with explicit paths when the working tree has unrelated dirty files.
+
+## Deploy (commit-push-deploy)
+
+Public dashboard: `jobwright.parthchandak.info` (API `:8002` serves `frontend/dist`; tunnel via PM2).
+
+| Diff | Deploy action |
+|------|----------------|
+| `frontend/**` | `./scripts/restart.sh --prod-ui` |
+| `src/jobwright/**` (no frontend) | skip if uvicorn `--reload` + health OK; else `--backend-only` |
+| tunnel config / ecosystem API | `--tunnel-only` or `--backend-only` as appropriate |
+| docs / tests only | skip deploy |
+
+Do **not** restart `jobwright-ui` for production (Vite HMR is local dev only).
