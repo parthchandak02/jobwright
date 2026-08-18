@@ -132,7 +132,7 @@ def score_job(resume_text: str, job: dict, profile: dict | None = None) -> dict 
         data = chat_json_object(
             client,
             messages,
-            max_tokens=512,
+            max_tokens=1024,
             temperature=0.2,
         )
         return _parse_score_response(data)

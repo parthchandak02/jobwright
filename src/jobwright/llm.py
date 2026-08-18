@@ -56,12 +56,40 @@ def _detect_provider() -> tuple[str, str, str]:
 
     Reads env at call time (not module import time) so that load_env() called
     in _bootstrap() is always visible here.
+
+    When LLM_MODEL names a provider-specific model (e.g. gemini-*), route to that
+    provider if its API key is set — avoids Fireworks winning over an explicit
+    Gemini model in per-user or brief-script env.
     """
     fireworks_key = os.environ.get("FIREWORKS_API_KEY", "")
     gemini_key = os.environ.get("GEMINI_API_KEY", "")
     openai_key = os.environ.get("OPENAI_API_KEY", "")
     local_url = os.environ.get("LLM_URL", "")
     model_override = os.environ.get("LLM_MODEL", "")
+
+    if model_override.startswith("gemini-") and gemini_key and not local_url:
+        return (
+            "https://generativelanguage.googleapis.com/v1beta/openai",
+            model_override,
+            gemini_key,
+        )
+
+    if (
+        model_override.startswith("accounts/fireworks/models/")
+        or model_override in _FIREWORKS_SHORT_MODELS
+    ) and fireworks_key and not local_url:
+        return (
+            _FIREWORKS_BASE,
+            _resolve_fireworks_model(model_override),
+            fireworks_key,
+        )
+
+    if model_override.startswith(("gpt-4", "gpt-3", "o1", "o3", "o4")) and openai_key and not local_url:
+        return (
+            "https://api.openai.com/v1",
+            model_override,
+            openai_key,
+        )
 
     if fireworks_key and not local_url:
         return (
@@ -226,7 +254,10 @@ class LLMClient:
     def _handle_compat_response(resp: httpx.Response) -> str:
         resp.raise_for_status()
         data = resp.json()
-        return data["choices"][0]["message"]["content"]
+        content = data["choices"][0]["message"]["content"]
+        if not (content or "").strip():
+            raise RuntimeError("Empty LLM response")
+        return content
 
     # -- public API ---------------------------------------------------------
 
