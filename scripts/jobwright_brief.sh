@@ -43,19 +43,6 @@ TODAY="$(date +%Y%m%d)"
 STATUS_FILE="${JOBWRIGHT_DIR}/BRIEF_STATUS_${TODAY}"
 mkdir -p "${JOBWRIGHT_DIR}/logs"
 
-rm -f "${JOBWRIGHT_DIR}/DIGEST_DELIVERED_${TODAY}"
-
-CONFIRM_FILE="${JOBWRIGHT_DIR}/APPLY_CONFIRMED"
-if [[ -f "${CONFIRM_FILE}" ]]; then
-  CONFIRM_DAY="$(date -r "${CONFIRM_FILE}" +%Y%m%d 2>/dev/null || stat -f %Sm -t %Y%m%d "${CONFIRM_FILE}" 2>/dev/null || echo "")"
-  [[ "${CONFIRM_DAY}" != "${TODAY}" ]] && rm -f "${CONFIRM_FILE}"
-fi
-
-if [[ ! -f "${CONFIRM_FILE}" ]]; then
-  rm -f "${JOBWRIGHT_DIR}/APPLY_MANIFEST_${TODAY}"
-  rm -f "${JOBWRIGHT_DIR}/APPLY_CONFIRMED_DONE_${TODAY}"
-fi
-
 if [ -f "${JOBWRIGHT_DIR}/BRIEF_PID" ]; then
   OLD_PID=$(cat "${JOBWRIGHT_DIR}/BRIEF_PID" 2>/dev/null || echo "")
   if [ -n "${OLD_PID}" ] && kill -0 "${OLD_PID}" 2>/dev/null; then

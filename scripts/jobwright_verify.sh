@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Hermes-friendly health check: doctor, status, brief status, digest preview.
+# Hermes-friendly health check: doctor, status, brief status, notify preview.
 # Usage: JOBWRIGHT_USER=richa bash scripts/jobwright_verify.sh
 set -euo pipefail
 
@@ -21,7 +21,6 @@ export PYTHONPATH="${REPO_ROOT}/src${PYTHONPATH:+:$PYTHONPATH}"
 
 TODAY="$(date +%Y%m%d)"
 STATUS_FILE="${JOBWRIGHT_DIR}/BRIEF_STATUS_${TODAY}"
-DIGEST_FILE="${JOBWRIGHT_DIR}/DIGEST_${TODAY}"
 LOG="${JOBWRIGHT_DIR}/logs/brief_${TODAY}.log"
 
 echo "=== jobwright verify user=${JOBWRIGHT_USER:-legacy} ==="
@@ -44,12 +43,10 @@ else
   echo ""
 fi
 
-if [[ -f "${DIGEST_FILE}" ]]; then
-  echo "--- DIGEST preview (first 40 lines) ---"
-  head -40 "${DIGEST_FILE}"
-  echo ""
-  echo "Full digest: ${DIGEST_FILE}"
+echo "--- notify preview (dry-run) ---"
+if jobwright "${USER_FLAG[@]}" notify --dry-run; then
+  :
 else
-  echo "No DIGEST_${TODAY} yet."
+  echo "notify preview failed (see above)."
   [[ -f "${LOG}" ]] && echo "Log: ${LOG}" && tail -5 "${LOG}"
 fi
