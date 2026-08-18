@@ -133,13 +133,41 @@ def init_db(db_path: Path | str | None = None) -> sqlite3.Connection:
             last_attempted_at     TEXT,
             apply_duration_ms     INTEGER,
             apply_task_id         TEXT,
-            verification_confidence TEXT
+            verification_confidence TEXT,
+
+            -- Kanban board (stored funnel stage; pipeline eligibility stays timestamp-based)
+            funnel_stage          TEXT DEFAULT 'backlog',
+            outcome               TEXT,
+            source                TEXT DEFAULT 'discovered',
+            applied_manually      INTEGER DEFAULT 0,
+            notes                 TEXT,
+            follow_up_at          TEXT,
+            first_response_at     TEXT,
+            board_updated_by      TEXT,
+            board_updated_at      TEXT
         )
     """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS stage_history (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            job_url    TEXT NOT NULL,
+            from_stage TEXT,
+            to_stage   TEXT NOT NULL,
+            actor      TEXT NOT NULL,
+            at         TEXT NOT NULL,
+            note       TEXT,
+            FOREIGN KEY (job_url) REFERENCES jobs(url)
+        )
+    """)
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_stage_history_job_at "
+        "ON stage_history(job_url, at)"
+    )
     conn.commit()
 
     # Run migrations for any columns added after initial schema
     ensure_columns(conn)
+    backfill_funnel_stages(conn)
 
     return conn
 
@@ -188,7 +216,286 @@ _ALL_COLUMNS: dict[str, str] = {
     "apply_duration_ms": "INTEGER",
     "apply_task_id": "TEXT",
     "verification_confidence": "TEXT",
+    # Kanban board
+    "funnel_stage": "TEXT DEFAULT 'backlog'",
+    "outcome": "TEXT",
+    "source": "TEXT DEFAULT 'discovered'",
+    "applied_manually": "INTEGER DEFAULT 0",
+    "notes": "TEXT",
+    "follow_up_at": "TEXT",
+    "first_response_at": "TEXT",
+    "board_updated_by": "TEXT",
+    "board_updated_at": "TEXT",
 }
+
+# Canonical Kanban lanes (single shared axis).
+FUNNEL_STAGES = (
+    "backlog",
+    "prepare",
+    "applied",
+    "in_progress",
+    "offer",
+    "closed",
+)
+AGENT_MAX_STAGE = "prepare"
+HUMAN_HELD_STAGES = ("applied", "in_progress", "offer", "closed")
+CLOSED_OUTCOMES = (
+    "accepted",
+    "rejected",
+    "withdrawn",
+    "ghosted",
+    "cancelled",
+)
+
+# Skip agent pipeline work on human-held cards and post-handoff stages.
+# Also excludes manual source from digest/auto-apply (added separately where needed).
+ANTI_CLOBBER_SQL = (
+    " AND (board_updated_by IS NULL OR board_updated_by != 'human')"
+    " AND COALESCE(funnel_stage, 'backlog') NOT IN "
+    "('applied', 'in_progress', 'offer', 'closed')"
+)
+MANUAL_SOURCE_EXCLUSION_SQL = " AND COALESCE(source, 'discovered') != 'manual'"
+
+
+def backfill_funnel_stages(conn: sqlite3.Connection | None = None) -> int:
+    """One-time backfill of funnel_stage + seed stage_history for existing rows.
+
+    Idempotent: only updates rows where funnel_stage is NULL (pre-migration) or
+    seeds history when a job has no stage_history rows yet after a stage was set
+    by DEFAULT without history.
+
+    Returns:
+        Number of jobs whose funnel_stage was set by this backfill.
+    """
+    if conn is None:
+        conn = get_connection()
+
+    # Rows that still have NULL funnel_stage (column added without default applied)
+    # or that need inferred stage from pipeline timestamps.
+    updated = conn.execute("""
+        UPDATE jobs SET funnel_stage = CASE
+            WHEN applied_at IS NOT NULL THEN 'applied'
+            WHEN tailored_resume_path IS NOT NULL THEN 'prepare'
+            ELSE 'backlog'
+        END
+        WHERE funnel_stage IS NULL
+           OR (
+                funnel_stage = 'backlog'
+                AND board_updated_at IS NULL
+                AND (
+                    applied_at IS NOT NULL
+                    OR tailored_resume_path IS NOT NULL
+                )
+           )
+    """).rowcount
+
+    # Seed one history row per job that has none yet.
+    conn.execute("""
+        INSERT INTO stage_history (job_url, from_stage, to_stage, actor, at, note)
+        SELECT
+            j.url,
+            NULL,
+            COALESCE(j.funnel_stage, 'backlog'),
+            'system',
+            COALESCE(
+                j.applied_at, j.tailored_at, j.scored_at, j.discovered_at,
+                datetime('now')
+            ),
+            'backfill'
+        FROM jobs j
+        WHERE NOT EXISTS (
+            SELECT 1 FROM stage_history h WHERE h.job_url = j.url
+        )
+    """)
+    conn.commit()
+    return max(updated, 0)
+
+
+def advance_funnel(
+    url: str,
+    to_stage: str,
+    actor: str,
+    note: str | None = None,
+    *,
+    conn: sqlite3.Connection | None = None,
+    applied_manually: bool | None = None,
+    outcome: str | None = None,
+) -> str | None:
+    """Atomically move a job's funnel_stage and append stage_history.
+
+    This is the only supported way to change funnel_stage. Agent callers must
+    not advance past AGENT_MAX_STAGE ('prepare'). Human/system may move freely.
+
+    Args:
+        url: Job primary key.
+        to_stage: Target lane in FUNNEL_STAGES.
+        actor: 'agent', 'human', or 'system'.
+        note: Optional freeform note for history.
+        conn: Optional open connection (uses get_connection if None).
+        applied_manually: If set, updates the applied_manually flag.
+        outcome: If set (typically on closed), stores outcome enum.
+
+    Returns:
+        Previous funnel_stage, or None if the job was not found / no-op same stage.
+
+    Raises:
+        ValueError: Invalid stage or agent attempting to cross the handoff.
+    """
+    if to_stage not in FUNNEL_STAGES:
+        raise ValueError(f"Invalid funnel_stage: {to_stage!r}")
+    if actor == "agent" and to_stage not in ("backlog", "prepare"):
+        raise ValueError(
+            f"Agent cannot advance past '{AGENT_MAX_STAGE}' (tried {to_stage!r})"
+        )
+    if outcome is not None and outcome not in CLOSED_OUTCOMES:
+        raise ValueError(f"Invalid outcome: {outcome!r}")
+
+    owns_conn = conn is None
+    if owns_conn:
+        conn = get_connection()
+
+    row = conn.execute(
+        "SELECT funnel_stage FROM jobs WHERE url = ?", (url,)
+    ).fetchone()
+    if row is None:
+        return None
+
+    from_stage = row["funnel_stage"] if row["funnel_stage"] is not None else "backlog"
+    if from_stage == to_stage and applied_manually is None and outcome is None:
+        return from_stage
+
+    now = datetime.now(timezone.utc).isoformat()
+    sets = [
+        "funnel_stage = ?",
+        "board_updated_by = ?",
+        "board_updated_at = ?",
+    ]
+    params: list = [to_stage, actor, now]
+    if applied_manually is not None:
+        sets.append("applied_manually = ?")
+        params.append(1 if applied_manually else 0)
+    if outcome is not None:
+        sets.append("outcome = ?")
+        params.append(outcome)
+    elif to_stage != "closed":
+        # Clear stale outcome when moving out of Closed.
+        sets.append("outcome = NULL")
+
+    params.append(url)
+    conn.execute(
+        f"UPDATE jobs SET {', '.join(sets)} WHERE url = ?",
+        params,
+    )
+    if from_stage != to_stage:
+        conn.execute(
+            "INSERT INTO stage_history (job_url, from_stage, to_stage, actor, at, note) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (url, from_stage, to_stage, actor, now, note),
+        )
+    if owns_conn:
+        conn.commit()
+    return from_stage
+
+
+def maybe_agent_advance_to_prepare(url: str, *, conn: sqlite3.Connection | None = None) -> bool:
+    """Advance to prepare when materials are ready, if the agent still owns the card.
+
+    Caps at prepare. Skips human-held cards and post-handoff stages.
+    Returns True if a transition was made.
+    """
+    owns_conn = conn is None
+    if owns_conn:
+        conn = get_connection()
+
+    row = conn.execute(
+        "SELECT funnel_stage, board_updated_by, tailored_resume_path, cover_letter_path "
+        "FROM jobs WHERE url = ?",
+        (url,),
+    ).fetchone()
+    if row is None:
+        return False
+
+    stage = row["funnel_stage"] or "backlog"
+    if row["board_updated_by"] == "human":
+        return False
+    if stage in HUMAN_HELD_STAGES:
+        return False
+    if stage == "prepare":
+        return False
+    if not row["tailored_resume_path"]:
+        return False
+    # Prefer cover letter ready, but allow prepare once tailored (cover may lag).
+    advance_funnel(url, "prepare", "agent", note="materials ready", conn=conn)
+    if owns_conn:
+        conn.commit()
+    return True
+
+
+def insert_manual_job(
+    url: str,
+    *,
+    title: str | None = None,
+    company: str | None = None,
+    location: str | None = None,
+    description: str | None = None,
+    application_url: str | None = None,
+    funnel_stage: str = "backlog",
+    notes: str | None = None,
+    conn: sqlite3.Connection | None = None,
+) -> dict:
+    """Insert a human-added job with manual source sentinels.
+
+    Isolated from digest and auto-apply via source='manual'.
+
+    Raises:
+        ValueError: Missing url, invalid stage, or duplicate url.
+    """
+    if not url:
+        raise ValueError("url is required")
+    if funnel_stage not in FUNNEL_STAGES:
+        raise ValueError(f"Invalid funnel_stage: {funnel_stage!r}")
+
+    owns_conn = conn is None
+    if owns_conn:
+        conn = get_connection()
+
+    now = datetime.now(timezone.utc).isoformat()
+    try:
+        conn.execute(
+            """
+            INSERT INTO jobs (
+                url, title, company, location, description, application_url,
+                site, strategy, source, discovered_at, funnel_stage,
+                board_updated_by, board_updated_at, notes, full_description
+            ) VALUES (?, ?, ?, ?, ?, ?, 'manual', 'manual', 'manual', ?, ?, 'human', ?, ?, ?)
+            """,
+            (
+                url,
+                title,
+                company,
+                location,
+                description,
+                application_url or url,
+                now,
+                funnel_stage,
+                now,
+                notes,
+                description,
+            ),
+        )
+    except sqlite3.IntegrityError as exc:
+        raise ValueError(f"Job already exists: {url}") from exc
+
+    conn.execute(
+        "INSERT INTO stage_history (job_url, from_stage, to_stage, actor, at, note) "
+        "VALUES (?, NULL, ?, 'human', ?, ?)",
+        (url, funnel_stage, now, "manual add"),
+    )
+    if owns_conn:
+        conn.commit()
+
+    row = conn.execute("SELECT * FROM jobs WHERE url = ?", (url,)).fetchone()
+    return dict(row) if row else {"url": url}
 
 
 def ensure_columns(conn: sqlite3.Connection | None = None) -> list[str]:
@@ -361,8 +668,9 @@ def store_jobs(conn: sqlite3.Connection, jobs: list[dict],
             continue
         try:
             conn.execute(
-                "INSERT INTO jobs (url, title, salary, description, location, site, strategy, discovered_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO jobs (url, title, salary, description, location, site, strategy, "
+                "discovered_at, source, funnel_stage) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'discovered', 'backlog')",
                 (url, job.get("title"), job.get("salary"), job.get("description"),
                  job.get("location"), site, strategy, now),
             )
@@ -394,18 +702,22 @@ def get_jobs_by_stage(conn: sqlite3.Connection | None = None,
 
     conditions = {
         "discovered": "1=1",
-        "pending_detail": "detail_scraped_at IS NULL",
+        "pending_detail": f"detail_scraped_at IS NULL{ANTI_CLOBBER_SQL}",
         "enriched": "full_description IS NOT NULL",
-        "pending_score": "full_description IS NOT NULL AND fit_score IS NULL",
+        "pending_score": (
+            f"full_description IS NOT NULL AND fit_score IS NULL{ANTI_CLOBBER_SQL}"
+        ),
         "scored": "fit_score IS NOT NULL",
         "pending_tailor": (
             "fit_score >= ? AND full_description IS NOT NULL "
-            "AND tailored_resume_path IS NULL AND COALESCE(tailor_attempts, 0) < 5"
+            "AND tailored_resume_path IS NULL AND COALESCE(tailor_attempts, 0) < 5 "
+            f"{ANTI_CLOBBER_SQL}"
         ),
         "tailored": "tailored_resume_path IS NOT NULL",
         "pending_apply": (
             "tailored_resume_path IS NOT NULL AND applied_at IS NULL "
             "AND application_url IS NOT NULL"
+            f"{ANTI_CLOBBER_SQL}{MANUAL_SOURCE_EXCLUSION_SQL}"
         ),
         "applied": "applied_at IS NOT NULL",
     }

@@ -298,7 +298,7 @@ def search_jobs(
 ) -> dict:
     """Run a single job search via JobSpy and store results in DB."""
     if sites is None:
-        sites = ["indeed", "zip_recruiter"]
+        sites = ["indeed", "linkedin", "zip_recruiter"]
 
     proxy_config = parse_proxy(proxy) if proxy else None
 
@@ -366,7 +366,7 @@ def _full_crawl(
 ) -> dict:
     """Run all search queries from search config across all locations."""
     if sites is None:
-        sites = ["indeed", "zip_recruiter"]
+        sites = ["indeed", "linkedin", "zip_recruiter"]
 
     # Build search combinations from config
     queries = search_cfg.get("queries", [])
@@ -468,7 +468,7 @@ def run_discovery(cfg: dict | None = None) -> dict:
     proxy = cfg.get("proxy")
     sites = cfg.get("boards") or cfg.get("sites")
     if not sites:
-        sites = ["indeed", "zip_recruiter"]
+        sites = ["indeed", "linkedin", "zip_recruiter"]
     results_per_site = cfg.get("defaults", {}).get("results_per_site", 100)
     hours_old = cfg.get("defaults", {}).get("hours_old", 72)
     tiers = cfg.get("tiers")
@@ -508,12 +508,6 @@ def run_discovery(cfg: dict | None = None) -> dict:
         if override:
             sites = override
             log.info("JobSpy: board override = %s", sites)
-
-    # Optional LinkedIn discovery (default off). Never used for apply (blocked).
-    if os.environ.get("JOBWRIGHT_DISCOVER_LINKEDIN", "").strip() in ("1", "true", "yes"):
-        if "linkedin" not in sites:
-            sites = list(sites) + ["linkedin"]
-            log.info("JobSpy: LinkedIn discovery enabled via JOBWRIGHT_DISCOVER_LINKEDIN")
 
     return _full_crawl(
         search_cfg=cfg,

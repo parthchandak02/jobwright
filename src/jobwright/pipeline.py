@@ -299,30 +299,55 @@ class _StageTracker:
 
 # SQL to count pending work for each stage
 _PENDING_SQL: dict[str, str] = {
-    "enrich": "SELECT COUNT(*) FROM jobs WHERE detail_scraped_at IS NULL",
-    "score":  "SELECT COUNT(*) FROM jobs WHERE full_description IS NOT NULL AND fit_score IS NULL",
+    "enrich": (
+        "SELECT COUNT(*) FROM jobs WHERE detail_scraped_at IS NULL"
+        " AND (board_updated_by IS NULL OR board_updated_by != 'human')"
+        " AND COALESCE(funnel_stage, 'backlog') NOT IN "
+        "('applied', 'in_progress', 'offer', 'closed')"
+    ),
+    "score": (
+        "SELECT COUNT(*) FROM jobs WHERE full_description IS NOT NULL AND fit_score IS NULL"
+        " AND (board_updated_by IS NULL OR board_updated_by != 'human')"
+        " AND COALESCE(funnel_stage, 'backlog') NOT IN "
+        "('applied', 'in_progress', 'offer', 'closed')"
+    ),
     "portfolio": (
         "SELECT COUNT(*) FROM jobs WHERE fit_score >= ? "
         "AND full_description IS NOT NULL AND portfolio_project_ids IS NULL"
+        " AND (board_updated_by IS NULL OR board_updated_by != 'human')"
+        " AND COALESCE(funnel_stage, 'backlog') NOT IN "
+        "('applied', 'in_progress', 'offer', 'closed')"
     ),
     "tailor": (
         "SELECT COUNT(*) FROM jobs WHERE fit_score >= ? "
         "AND full_description IS NOT NULL "
         "AND tailored_resume_path IS NULL "
         "AND COALESCE(tailor_attempts, 0) < 5"
+        " AND (board_updated_by IS NULL OR board_updated_by != 'human')"
+        " AND COALESCE(funnel_stage, 'backlog') NOT IN "
+        "('applied', 'in_progress', 'offer', 'closed')"
     ),
     "cover": (
         "SELECT COUNT(*) FROM jobs WHERE tailored_resume_path IS NOT NULL "
         "AND (cover_letter_path IS NULL OR cover_letter_path = '') "
         "AND COALESCE(cover_attempts, 0) < 5"
+        " AND (board_updated_by IS NULL OR board_updated_by != 'human')"
+        " AND COALESCE(funnel_stage, 'backlog') NOT IN "
+        "('applied', 'in_progress', 'offer', 'closed')"
     ),
     "pdf": (
         "SELECT COUNT(*) FROM jobs WHERE tailored_resume_path IS NOT NULL "
         "AND tailored_resume_path LIKE '%.txt'"
+        " AND (board_updated_by IS NULL OR board_updated_by != 'human')"
+        " AND COALESCE(funnel_stage, 'backlog') NOT IN "
+        "('applied', 'in_progress', 'offer', 'closed')"
     ),
     "docx": (
         "SELECT COUNT(*) FROM jobs WHERE tailored_resume_path IS NOT NULL "
         "AND (tailored_resume_docx_path IS NULL OR tailored_resume_docx_path = '')"
+        " AND (board_updated_by IS NULL OR board_updated_by != 'human')"
+        " AND COALESCE(funnel_stage, 'backlog') NOT IN "
+        "('applied', 'in_progress', 'offer', 'closed')"
     ),
 }
 

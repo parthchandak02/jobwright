@@ -246,12 +246,15 @@ def run_cover_letters(min_score: int = 7, limit: int = 20,
     conn = get_connection()
 
     # Fetch jobs that have tailored resumes but no cover letter yet
+    from jobwright.database import ANTI_CLOBBER_SQL
+
     jobs = conn.execute(
         "SELECT * FROM jobs "
         "WHERE fit_score >= ? AND tailored_resume_path IS NOT NULL "
         "AND full_description IS NOT NULL "
         "AND (cover_letter_path IS NULL OR cover_letter_path = '') "
         "AND COALESCE(cover_attempts, 0) < ? "
+        f"{ANTI_CLOBBER_SQL} "
         "ORDER BY fit_score DESC LIMIT ?",
         (min_score, MAX_ATTEMPTS, limit),
     ).fetchall()
@@ -282,8 +285,8 @@ def run_cover_letters(min_score: int = 7, limit: int = 20,
                                           validation_mode=validation_mode)
 
             # Build safe filename prefix
-            safe_title = re.sub(r"[^\w\s-]", "", job["title"])[:50].strip().replace(" ", "_")
-            safe_site = re.sub(r"[^\w\s-]", "", job["site"])[:20].strip().replace(" ", "_")
+            safe_title = re.sub(r"[^\w\s-]", "", job.get("title") or "untitled")[:50].strip().replace(" ", "_")
+            safe_site = re.sub(r"[^\w\s-]", "", job.get("site") or "manual")[:20].strip().replace(" ", "_")
             prefix = f"{safe_site}_{safe_title}"
 
             cl_path = config.COVER_LETTER_DIR / f"{prefix}_CL.txt"
@@ -322,6 +325,8 @@ def run_cover_letters(min_score: int = 7, limit: int = 20,
             log.error("%d/%d [ERROR] %s -- %s", completed, len(jobs), job["title"][:40], e)
 
     # Persist to DB: increment attempt counter for ALL, save path only for successes
+    from jobwright.database import maybe_agent_advance_to_prepare
+
     now = datetime.now(timezone.utc).isoformat()
     saved = 0
     for r in results:
@@ -331,6 +336,7 @@ def run_cover_letters(min_score: int = 7, limit: int = 20,
                 "cover_attempts=COALESCE(cover_attempts,0)+1 WHERE url=?",
                 (r["path"], now, r["url"]),
             )
+            maybe_agent_advance_to_prepare(r["url"], conn=conn)
             saved += 1
         else:
             conn.execute(

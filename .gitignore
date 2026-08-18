@@ -46,6 +46,12 @@ Thumbs.db
 # Cloudflare Wrangler scratch
 .wrangler/
 
+# jobwright dashboard (machine-specific)
+ecosystem.config.js
+cloudflared-config-jobwright.yml
+frontend/node_modules/
+frontend/dist/
+
 # Local debug captures (may contain PII)
 *-snapshot.yml
 *-form-review.png

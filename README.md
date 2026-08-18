@@ -145,7 +145,12 @@ Board and site definitions ship inside the package at `src/jobwright/config/` (`
 jobwright run discover enrich score portfolio tailor cover -w 4 --min-score 7
 
 jobwright status      # pipeline statistics
-jobwright dashboard   # open the HTML results dashboard
+jobwright dashboard   # open the local HTML results snapshot
+
+# Hosted Kanban (optional): install .[web], then:
+# ./scripts/restart.sh          # API :8002 + Vite HMR :5120
+# open http://127.0.0.1:5120
+# See docs/agents/dashboard-hosting.md for jobwright.parthchandak.info
 ```
 
 If tailoring is flaky on the Gemini free tier, add `--validation lenient`.

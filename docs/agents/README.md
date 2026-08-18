@@ -10,6 +10,7 @@ Canonical agent-facing docs live **in this repo**, not inside Hermes or Cursor s
 | Deep ops (Hermes) | [hermes-operator-guide.md](hermes-operator-guide.md) | WhatsApp, cron, multi-user |
 | Hermes install | [install-hermes-skill.md](install-hermes-skill.md) | Point Hermes at your clone |
 | Repo map | [repo-map.md](repo-map.md) | Paths, scripts, source layout |
+| Kanban dashboard hosting | [dashboard-hosting.md](dashboard-hosting.md) | cloudflared + PM2 + Zero Trust |
 | WhatsApp group (Richa) | [whatsapp-group-jobwright.md](whatsapp-group-jobwright.md) | Skills checklist for this WhatsApp group |
 | WhatsApp routing | [whatsapp-routing.md](whatsapp-routing.md) | Inbound phrase → action |
 | Cron / scripts | [hermes-setup.md](hermes-setup.md) (Hermes agent creates crons) | `install_hermes_scripts.sh`, crons |

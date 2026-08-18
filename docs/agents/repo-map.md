@@ -10,7 +10,9 @@ Detailed paths for agents. Summary: [../../AGENTS.md](../../AGENTS.md).
 | `src/jobwright/pipeline.py` | Stage orchestration (`STAGE_ORDER`, streaming mode) |
 | `src/jobwright/config.py` | `JOBWRIGHT_DIR` paths, environment loading, `set_active_user` |
 | `src/jobwright/users.py` | Multi-profile registry (`users/users.yaml`) |
-| `src/jobwright/database.py` | SQLite `jobs` table and pipeline state |
+| `src/jobwright/database.py` | SQLite `jobs` table, Kanban `funnel_stage` / `stage_history`, pipeline state |
+| `src/jobwright/web/` | FastAPI Kanban dashboard (`app.py` + routers); serves `frontend/dist` |
+| `frontend/` | Vite + React Kanban SPA (dev `:5120`, proxies `/api` → `:8002`) |
 | `src/jobwright/discovery/` | JobSpy, Workday (known-URL skip), smart extract; `DISCOVER_MODE=fast|full` |
 | `src/jobwright/enrichment/` | Full JD fetch (JSON-LD, CSS, LLM) |
 | `src/jobwright/scoring/` | Scorer, tailor, cover letter, portfolio, PDF, DOCX, validator |
@@ -59,8 +61,15 @@ WhatsApp resolve: `scripts/resolve_user_from_whatsapp.sh 'whatsapp:…'`.
 | `jobwright_on_confirm.sh` | Live apply batch |
 | `resolve_user_from_whatsapp.sh` | JID → `user_id` |
 | `validate_pipeline.sh` | Doctor + unit checks |
+| `restart.sh` | **Primary:** PM2/tmux restart (`--backend-only`, `--frontend-only`, `--prod-ui`, `--tmux`) |
+| `ops_pm2.sh` | Alias → `restart.sh` |
+| `dashboard_deploy.sh` | Alias → `restart.sh --prod-ui` |
 
 Cron names: `jobwright-brief-<id>`, `jobwright-send-<id>`, `jobwright-check-<id>` (6:00 / 6:30 / 10:00 daily).
+
+Kanban hosting: [dashboard-hosting.md](dashboard-hosting.md) (`jobwright.parthchandak.info`; local HMR `http://127.0.0.1:5120`).
+
+PM2 process names: `jobwright-api`, `jobwright-ui`, `jobwright-tunnel`.
 
 ## Environment variables
 
@@ -76,6 +85,8 @@ Cron names: `jobwright-brief-<id>`, `jobwright-send-<id>`, `jobwright-check-<id>
 | `JOBWRIGHT_USERS_ROOT` | Registry root (default `<repo>/users`) |
 | `JOBWRIGHT_DIR` | Active user data directory |
 | `JOBWRIGHT_USER` | Set by Hermes wrappers after resolution |
-| `JOBWRIGHT_DISCOVER_LINKEDIN` | Opt-in LinkedIn discovery board (`1`/`true`; default off; brief/materials OK; auto-apply blocked via `apply_blocked` in `sites.yaml`) |
+| `JOBWRIGHT_DASHBOARD_USER` | Kanban API profile (default `richa`) |
+| `JOBWRIGHT_CORS_ORIGINS` | Comma-separated CORS origins for dashboard |
+| `JOBWRIGHT_DISCOVER_BOARDS` | Restrict JobSpy boards without editing searches.yaml (e.g. `indeed`) |
 
 Templates: `.env.example`, `config/live.env.example`.

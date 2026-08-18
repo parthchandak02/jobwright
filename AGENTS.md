@@ -8,9 +8,11 @@ Entry point for **Cursor, Claude Code, Hermes, and cron wrappers**. Read this fi
 
 ## What this is
 
-**Product model:** jobwright is a daily career advisor. Each user supplies a base resume, profile, and search criteria. The pipeline discovers jobs, scores fit with an LLM, tailors resume + cover letter per strong match (from base materials only), exports DOCX, and ranks LinkedIn connections per job. Hermes (or another agent) delivers the digest and materials to the user's chat app. The user reviews and applies; optional browser apply is gated and never runs from cron. When LinkedIn discovery is enabled, LinkedIn jobs may appear in discovery, materials, digest, and connections; only auto-apply is blocked (`apply_blocked` in `sites.yaml`).
+**Product model:** jobwright is a daily career advisor. Each user supplies a base resume, profile, and search criteria. The pipeline discovers jobs, scores fit with an LLM, tailors resume + cover letter per strong match (from base materials only), exports DOCX, and ranks LinkedIn connections per job. Hermes (or another agent) delivers the digest and materials to the user's chat app. The user reviews and applies; optional browser apply is gated and never runs from cron. When LinkedIn jobs are discovered (included in default boards), they may appear in materials, digest, and connections; only auto-apply is blocked (`apply_blocked` in `sites.yaml`).
 
 **Pipeline:** discover → enrich → score → portfolio → tailor → cover → **docx** → **connect** → digest. Optional **apply** (browser agent) is opt-in. Brief stages are cron-safe. Apply is dry-run by default, never auto-submit from cron.
+
+**Kanban dashboard (optional):** FastAPI + React board at `jobwright.parthchandak.info` (local `:8002`). Single-axis lanes `backlog → prepare → applied → in_progress → offer → closed`; agent auto-advances to prepare; human owns Applied+. See [docs/agents/dashboard-hosting.md](docs/agents/dashboard-hosting.md) and [docs/adr/ADR-004-kanban-funnel-stage.md](docs/adr/ADR-004-kanban-funnel-stage.md).
 
 **Human-readable overview:** [README.md#the-daily-brief-how-it-works-with-hermes](README.md#the-daily-brief-how-it-works-with-hermes).
 
@@ -49,6 +51,7 @@ Version: `pyproject.toml` / `jobwright --version`.
 ```bash
 # Setup
 pip install -e ".[dev]"
+pip install -e ".[web]"          # Kanban dashboard (FastAPI + uvicorn)
 playwright install chromium   # stage 6 only
 
 # Health
@@ -65,6 +68,13 @@ DISCOVER_MODE=fast jobwright --user <id> run discover enrich score portfolio tai
 # Materials for WhatsApp (DOCX paths)
 jobwright --user <id> materials --index 1
 
+# Kanban dashboard (local hot reload)
+cp ecosystem.config.example.js ecosystem.config.js   # once
+./scripts/restart.sh                                 # api :8002 + Vite :5120
+# open http://127.0.0.1:5120
+# ./scripts/restart.sh --backend-only | --frontend-only | --prod-ui | --tmux
+# Prod on this host: ./scripts/dashboard_deploy.sh  (docs/agents/dashboard-hosting.md)
+
 # Agent JSON
 ./bin/job-apply-pp-cli status --agent --user <id>
 
@@ -78,7 +88,7 @@ jobwright users add <id> --name "Name" --whatsapp "whatsapp:..." --template nont
 # Crons: ask Hermes agent — docs/agents/hermes-setup.md (paste block at top)
 ```
 
-Env: `FIREWORKS_API_KEY` (stages 3-5, preferred), `GEMINI_API_KEY` (runtime failover: retried automatically when Fireworks returns empty content), `GEMINI_FALLBACK_MODEL` (default `gemini-3.7-flash`), `GEMINI_THINKING_LEVEL` (default `low`; `minimal|low|medium|high` for Gemini 3.x), optional `EXA_API_KEY` (per-job web connections), `CURSOR_API_KEY` + `AGENT_PROVIDER=cursor-sdk` (stage 6), `DISCOVER_MODE=fast|full` (default `fast`: skip smart-extract, tier-1 queries; Workday skips detail fetch for known URLs), `SCORE_BATCH_SIZE` (default `10`: jobs per scoring LLM call; set `1` for sequential), `JOBWRIGHT_HOURS_OLD` (override discover freshness window; default 72 in the non-tech template), `JOBWRIGHT_DISCOVER_BOARDS` (restrict JobSpy boards, e.g. `indeed`, without editing searches.yaml), `JOBWRIGHT_DISCOVER_LINKEDIN=1` (optional LinkedIn discovery board; default off; brief/materials OK; auto-apply blocked via `apply_blocked` in `sites.yaml`), `BRIEF_SMOKE=1` (narrow E2E: 3 queries, SF+Remote, Indeed-only, 168h, top 3 digest; `jobwright_smoke.sh` pins gpt-oss-120b, waits for `done RC=`, and asserts `digest_written`). Templates: `.env.example`.
+Env: `FIREWORKS_API_KEY` (stages 3-5, preferred), `GEMINI_API_KEY` (runtime failover: retried automatically when Fireworks returns empty content), `GEMINI_FALLBACK_MODEL` (default `gemini-3.7-flash`), `GEMINI_THINKING_LEVEL` (default `low`; `minimal|low|medium|high` for Gemini 3.x), optional `EXA_API_KEY` (per-job web connections), `CURSOR_API_KEY` + `AGENT_PROVIDER=cursor-sdk` (stage 6), `DISCOVER_MODE=fast|full` (default `fast`: skip smart-extract, tier-1 queries; Workday skips detail fetch for known URLs), `SCORE_BATCH_SIZE` (default `10`: jobs per scoring LLM call; set `1` for sequential), `JOBWRIGHT_HOURS_OLD` (override discover freshness window; default 72 in the non-tech template), `JOBWRIGHT_DISCOVER_BOARDS` (restrict JobSpy boards, e.g. `indeed`, without editing searches.yaml), `BRIEF_SMOKE=1` (narrow E2E: 3 queries, SF+Remote, Indeed-only, 168h, top 3 digest; `jobwright_smoke.sh` pins gpt-oss-120b, waits for `done RC=`, and asserts `digest_written`), `JOBWRIGHT_DASHBOARD_USER` (Kanban API active profile; default `richa`). Templates: `.env.example`.
 
 ---
 
@@ -108,6 +118,7 @@ Detail: [docs/agents/hermes-operator-guide.md](docs/agents/hermes-operator-guide
 | WhatsApp phrases | [docs/agents/whatsapp-routing.md](docs/agents/whatsapp-routing.md) |
 | Cron / scripts | [docs/agents/hermes-setup.md](docs/agents/hermes-setup.md) |
 | Paths / scripts map | [docs/agents/repo-map.md](docs/agents/repo-map.md) |
+| Kanban dashboard hosting | [docs/agents/dashboard-hosting.md](docs/agents/dashboard-hosting.md) |
 | Cursor stage 6 | [docs/agents/cursor-setup.md](docs/agents/cursor-setup.md) |
 | Human WhatsApp UX | [docs/agents/whatsapp-user-guide.md](docs/agents/whatsapp-user-guide.md) |
 | Package code | [src/jobwright/AGENTS.md](src/jobwright/AGENTS.md) |
@@ -134,4 +145,4 @@ Cloning this repo does **not** register Hermes skills automatically. Run `./scri
 
 ---
 
-**Last verified:** `0.4.0`, Daily Brief product model in README, LinkedIn materials + `apply_blocked` split (brief OK, auto-apply blocked), docx + connect, `SCORE_BATCH_SIZE=10`, `DISCOVER_MODE=fast|full`, Fireworks LLM with Gemini failover (`gemini-3.7-flash` + `GEMINI_THINKING_LEVEL=low`), shared location filter, Canada Workday skip when reject includes canada, `users/` registry, `cursor-sdk` default apply provider. Full smoke E2E (discover -> digest + WhatsApp materials) validated for `richa`; Indeed-only + 72-168h window + diversified tier-1 queries yields ~50+ fresh roles per narrow run.
+**Last verified:** `0.5.0`, Kanban dashboard (`src/jobwright/web/`, funnel_stage + stage_history, ADR-004), Daily Brief product model in README, LinkedIn on default discover boards + `apply_blocked` (brief OK, auto-apply blocked), docx + connect, `SCORE_BATCH_SIZE=10`, `DISCOVER_MODE=fast|full`, Fireworks LLM with Gemini failover (`gemini-3.7-flash` + `GEMINI_THINKING_LEVEL=low`), shared location filter, Canada Workday skip when reject includes canada, `users/` registry, `cursor-sdk` default apply provider. Full smoke E2E (discover -> digest + WhatsApp materials) validated for `richa`; Indeed-only + 72-168h window + diversified tier-1 queries yields ~50+ fresh roles per narrow run.

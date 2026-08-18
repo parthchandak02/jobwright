@@ -1,0 +1,112 @@
+# jobwright Kanban dashboard hosting
+
+Dashboard at `jobwright.parthchandak.info` (local API `:8002`, Vite HMR `:5120`).
+Same ops shape as litreview: **PM2** for api + ui + tunnel, plus a simple `./scripts/restart.sh`.
+
+## Local hot-reload (recommended for testing)
+
+```bash
+cd /Volumes/ExternalSSD/Projects/jobwright
+pip install -e ".[web]"          # once
+cd frontend && pnpm install && cd ..
+
+# First time: copy PM2 config
+cp ecosystem.config.example.js ecosystem.config.js
+
+# Start / restart API (:8002, --reload) + Vite (:5120, HMR)
+./scripts/restart.sh
+
+# Open the hot-reloading UI
+open http://127.0.0.1:5120
+```
+
+| Command | What it does |
+|---------|----------------|
+| `./scripts/restart.sh` | Restart `jobwright-api` + `jobwright-ui` |
+| `./scripts/restart.sh --backend-only` | API only (after `src/` changes if not using `--reload`) |
+| `./scripts/restart.sh --frontend-only` | Vite only |
+| `./scripts/restart.sh --tunnel-only` | cloudflared only |
+| `./scripts/restart.sh --all` | api + ui + tunnel |
+| `./scripts/restart.sh --prod-ui` | `pnpm build` + restart API + health check |
+| `./scripts/restart.sh --tmux` | **No PM2:** tmux session with uvicorn `--reload` + Vite |
+| `./scripts/restart.sh --status` | `pm2 list` |
+| `./scripts/restart.sh stop` | Stop PM2 apps |
+| `./scripts/restart.sh stop --tmux` | Kill tmux session `jobwright-dash` |
+
+Alias: `./scripts/ops_pm2.sh` → same script. Deploy helper: `./scripts/dashboard_deploy.sh` (= `--prod-ui`).
+
+### Ports
+
+| Service | Port | Notes |
+|---------|------|--------|
+| API | `8002` | litreview uses `8001` |
+| Vite UI | `5120` | litreview uses `5173`; proxies `/api` → `8002` |
+| Prod SPA | same `8002` | FastAPI serves `frontend/dist` after `--prod-ui` |
+
+### Hot reload notes
+
+- **Frontend:** Vite HMR on `:5120` updates instantly. Use this URL while developing.
+- **Backend:** ecosystem example includes uvicorn `--reload`. After editing Python, wait a second for reload (or `./scripts/restart.sh --backend-only`).
+- **Production URL** (`:8002` serving `dist/`): rebuild with `./scripts/restart.sh --prod-ui`.
+
+### tmux alternative (no PM2)
+
+```bash
+./scripts/restart.sh --tmux
+tmux attach -t jobwright-dash   # windows: api | ui
+./scripts/restart.sh stop --tmux
+```
+
+---
+
+## Production: Cloudflare tunnel + Zero Trust
+
+### 1. Create tunnel + DNS
+
+```bash
+cloudflared tunnel create jobwright
+cloudflared tunnel route dns jobwright jobwright.parthchandak.info
+```
+
+### 2. Project tunnel config
+
+```bash
+cp cloudflared-config-jobwright.example.yml cloudflared-config-jobwright.yml
+# Edit tunnel UUID + credentials-file under ~/.cloudflared/
+```
+
+### 3. PM2 (prod)
+
+For production, edit `ecosystem.config.js` and **remove `--reload`** from `jobwright-api` args. Prefer not running `jobwright-ui` in prod (API serves `frontend/dist`).
+
+```bash
+./scripts/restart.sh start          # or: pm2 start ecosystem.config.js
+./scripts/restart.sh --prod-ui      # build + restart api + health
+pm2 save
+# Optional tunnel:
+./scripts/restart.sh --tunnel-only
+```
+
+### 4. Cloudflare Zero Trust (dashboard only)
+
+1. Zero Trust → Access → Applications → Self-hosted
+2. Domain: `jobwright.parthchandak.info`
+3. Policy: Allow + email OTP (same as litreview)
+
+### 5. Verify
+
+```bash
+curl -sf http://127.0.0.1:8002/api/health
+# Browser: https://jobwright.parthchandak.info  → email OTP → Kanban
+# Or local HMR: http://127.0.0.1:5120
+```
+
+---
+
+## Process names
+
+| PM2 name | Role |
+|----------|------|
+| `jobwright-api` | FastAPI / uvicorn `:8002` |
+| `jobwright-ui` | Vite dev `:5120` (local only) |
+| `jobwright-tunnel` | cloudflared → `jobwright.parthchandak.info` |
