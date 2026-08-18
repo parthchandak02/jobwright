@@ -1,0 +1,14 @@
+# Copy to cloudflared-config-jobwright.yml and fill in tunnel id + credentials path.
+#
+#   cloudflared tunnel create jobwright
+#   cloudflared tunnel route dns jobwright jobwright.parthchandak.info
+#
+# Then set tunnel: <id> and credentials-file to ~/.cloudflared/<id>.json
+
+tunnel: REPLACE_WITH_TUNNEL_UUID
+credentials-file: /Users/REPLACE_USER/.cloudflared/REPLACE_WITH_TUNNEL_UUID.json
+
+ingress:
+  - hostname: jobwright.parthchandak.info
+    service: http://localhost:8002
+  - service: http_status:404

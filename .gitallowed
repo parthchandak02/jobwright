@@ -21,3 +21,6 @@ env = f"JOBWRIGHT_USER
 deliver, env]
 target: env > user registry
 env\["PYTHONUNBUFFERED"\]
+# Benign PM2/venv config tokens (no secret values)
+env: \{
+venv
