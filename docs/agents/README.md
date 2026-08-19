@@ -33,4 +33,4 @@ See [install-hermes-skill.md](install-hermes-skill.md) for manual setup or custo
 
 ## Cursor / Claude Code
 
-Open the repo in your editor. Read [../AGENTS.md](../AGENTS.md) first. Optional: `./scripts/install_skills.sh` adds the same thin loader to `~/.cursor/skills/pp-job-apply`.
+Open the repo in your editor. Read [../AGENTS.md](../AGENTS.md) first. Dashboard UI: [../../.cursor/skills/frontend-tasteful/SKILL.md](../../.cursor/skills/frontend-tasteful/SKILL.md). Optional: `./scripts/install_skills.sh` adds the same thin loader to `~/.cursor/skills/pp-job-apply`.

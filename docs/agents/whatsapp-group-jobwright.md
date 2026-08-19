@@ -23,6 +23,7 @@ bash /Volumes/ExternalSSD/Projects/jobwright/scripts/resolve_user_from_whatsapp.
 |-------|------|
 | **pp-job-apply** / **jobwright** | Primary operator loader |
 | **hermes-cron-jobs** | Schedule/edit crons |
+| **graphify** | Codebase knowledge graph (`graphify query` / `path` / `explain`) |
 | **cursor-agent** | Repo fixes when users report bugs |
 
 ## Live `config.yaml` (whatsapp section)
@@ -35,6 +36,7 @@ Put the durable prompt below into `~/.hermes/config.yaml` (do not commit secrets
       skills:
         - pp-job-apply
         - hermes-cron-jobs
+        - graphify
         - cursor-agent
   channel_overrides:
     120363427224277278@g.us:

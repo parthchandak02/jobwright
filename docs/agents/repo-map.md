@@ -11,12 +11,13 @@ Detailed paths for agents. Summary: [../../AGENTS.md](../../AGENTS.md).
 | `src/jobwright/run_registry.py` | Durable Auto Search / CLI runs (`users/<id>/logs/web_runs.json`) |
 | `src/jobwright/resume.py` | PDF source of truth → cached `resume/base.md` |
 | `src/jobwright/notify.py` | Daily WhatsApp job list + deep links |
+| `src/jobwright/hermes_cron.py` | Edit existing `jobwright-brief-<user>` via `hermes cron`; pause legacy send/check crons |
 | `src/jobwright/config.py` | `JOBWRIGHT_DIR` paths, environment loading, `set_active_user` |
 | `src/jobwright/users.py` | Multi-profile registry (`users/users.yaml`) |
 | `src/jobwright/database.py` | SQLite `jobs` table, Kanban `funnel_stage` / `stage_history`, pipeline state |
 | `src/jobwright/web/` | FastAPI Kanban dashboard (`app.py` + routers); serves `frontend/dist` |
-| `frontend/` | Vite + React Kanban SPA (dev `:5120`, proxies `/api` → `:8002`). Profile: chips + `ProfileMaterials` (`ResumePreview`). Runs: `useAutoSearch` / `useTailorMaterials` + `RunProgressDialog` / `RunProgressButton`. Drawer: `CustomTailorDialog` |
-| `src/jobwright/discovery/` | JobSpy (`-w` / `JOBWRIGHT_DISCOVER_WORKERS`, known-URL skip), Workday (known-URL skip), smart extract; `DISCOVER_MODE=fast|full` |
+| `frontend/` | Vite + React Kanban SPA (dev `:5120`, proxies `/api` → `:8002`). UI catalog: `.cursor/skills/frontend-tasteful/`. Profile: chips + `ProfileMaterials`. WhatsApp: `DailyBriefDialog`. Runs: `useAutoSearch` / `useTailorMaterials` + `RunProgressDialog`. Drawer: `CustomTailorDialog` |
+| `src/jobwright/discovery/` | JobSpy (`-w` / `JOBWRIGHT_DISCOVER_WORKERS`, known-URL skip), Workday (known-URL skip, `exclude_companies`, path fallback when location is blank), smart extract; `DISCOVER_MODE=fast|full` |
 | `src/jobwright/enrichment/` | Full JD fetch (JSON-LD, CSS, LLM) |
 | `src/jobwright/scoring/` | Scorer, tailor, `tailor_instructions.py` (dashboard Auto/Custom prompts), cover letter, portfolio, PDF, DOCX, validator |
 | `src/jobwright/apply/` | Stage 6: launcher, Chrome workers, ATS helpers, providers |
@@ -79,6 +80,8 @@ Kanban hosting: [dashboard-hosting.md](dashboard-hosting.md) (`jobwright.parthch
 | `GET` | `/api/jobs/by-id/{job_id}` | Resolve deep link |
 | `POST` | `/api/jobs/{url}/tailor` | Spawn `jobwright tailor-job` (SSE handle; optional custom instructions) |
 | `GET` | `/api/tailor/defaults` | Default Auto Tailor instruction text |
+| `GET` | `/api/profile` | Active user, `apply_enabled`, `schedule` / `schedule_label` / `timezone`, `whatsapp_target` |
+| `PUT` | `/api/profile` | Save `schedule` + `whatsapp_target`; best-effort `hermes cron edit` on `jobwright-brief-<user>` |
 | `GET` / `PUT` | `/api/settings`, `/profile`, `/searches`, `/resume.pdf` | Searches, base resume PDF |
 | `PUT` / `GET` / `DELETE` | `/api/settings/cover-letters`, `/cover-letters/{id}/pdf` | Cover letter example PDFs |
 

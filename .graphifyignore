@@ -1,0 +1,6 @@
+# Product map only. Agent skills and UI primitives drown hubs (cn, playwright "Core").
+.cursor/skills/
+frontend/src/components/ui/
+frontend/src/lib/utils.ts
+frontend/package.json
+ecosystem.config.example.js
