@@ -456,6 +456,24 @@ def _full_crawl(
                 "tier": q.get("tier", 0),
             })
 
+    extra_companies = []
+    for raw in search_cfg.get("target_companies") or []:
+        name = raw.get("name") if isinstance(raw, dict) else raw
+        name = str(name or "").strip()
+        if name:
+            extra_companies.append(name)
+    extra_companies = extra_companies[:8]
+    for name in extra_companies:
+        for loc in locs:
+            searches.append({
+                "query": name,
+                "location": loc["location"],
+                "remote": loc.get("remote", False),
+                "tier": 1,
+            })
+    if extra_companies:
+        log.info("JobSpy: +%d target-company searches", len(extra_companies))
+
     proxy_config = parse_proxy(proxy) if proxy else None
 
     # Cap concurrency to avoid LinkedIn/Indeed soft-bans. Env override lets

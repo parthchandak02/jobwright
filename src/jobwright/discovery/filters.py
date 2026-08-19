@@ -5,7 +5,6 @@ from __future__ import annotations
 import re
 from typing import Any
 
-
 _SALARY_NUM = re.compile(
     r"(?P<currency>\$|USD|CAD|EUR|GBP)?\s*(?P<amount>\d{1,3}(?:,\d{3})+|\d{2,7})\s*(?P<k>[kK])?",
     re.IGNORECASE,
@@ -60,6 +59,30 @@ def parse_salary_to_annual(salary: str | None) -> float | None:
     return max(amounts)
 
 
+# Title/company/JD must mention one of these for CoS (and similar) to score as a match.
+_IMPACT_MARKERS = (
+    "social impact",
+    "corporate social",
+    "corporate purpose",
+    "philanthrop",
+    "nonprofit",
+    "non-profit",
+    "non profit",
+    "community impact",
+    "community investment",
+    "data for good",
+    "for good",
+    "grantmaking",
+    "grant-making",
+    "venture philanthropy",
+    "impact invest",
+    "cdfi",
+    "economic mobility",
+    "workforce development",
+    "csr",
+)
+
+
 def title_excluded(title: str | None, exclude_titles: list[str] | None) -> bool:
     """True if title matches an exclude pattern with word boundaries.
 
@@ -86,7 +109,7 @@ def title_excluded(title: str | None, exclude_titles: list[str] | None) -> bool:
 
 def salary_below_floor(
     salary: str | None,
-    min_salary: int | float | None,
+    min_salary: float | None,
     description: str | None = None,
 ) -> bool:
     """True if we can parse a salary and it is clearly below min_salary.
@@ -120,6 +143,56 @@ def passes_discovery_filters(
     if min_sal is None:
         defaults = search_cfg.get("defaults") or {}
         min_sal = defaults.get("min_salary")
-    if salary_below_floor(salary, min_sal, description):
-        return False
-    return True
+    return not salary_below_floor(salary, min_sal, description)
+
+
+def fit_score_ceiling(
+    title: str | None,
+    company: str | None,
+    description: str | None,
+    exclude_titles: list[str] | None,
+) -> int | None:
+    """Hard max fit score, or None if the LLM score should stand.
+
+    Caps roles that are outside the social-impact / CSR / foundation track even
+    when the model overrates transferable ops experience.
+    """
+    if title_excluded(title, exclude_titles):
+        return 4
+    t = (title or "").lower()
+    company_l = (company or "").lower()
+    desc = (description or "").strip()
+    blob = f"{t} {company_l} {desc[:1500].lower()}"
+    if any(n in company_l for n in ("foundation", "nonprofit", "non-profit", "philanthrop")):
+        return None
+    needs_mission = any(
+        p in t for p in ("chief of staff", "business advisor", "business operations")
+    )
+    if needs_mission and desc and not any(m in blob for m in _IMPACT_MARKERS):
+        return 4
+    return None
+
+
+def apply_fit_score_guards(
+    job: dict[str, Any],
+    parsed: dict[str, Any],
+    search_cfg: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Lower an LLM fit score when hard avoid patterns match."""
+    search_cfg = search_cfg or {}
+    ceiling = fit_score_ceiling(
+        job.get("title"),
+        job.get("company") or job.get("site"),
+        job.get("full_description") or job.get("description"),
+        (search_cfg or {}).get("exclude_titles"),
+    )
+    score = int(parsed["score"])
+    if ceiling is None or score <= ceiling:
+        return parsed
+    out = dict(parsed)
+    out["score"] = ceiling
+    reason = (out.get("reasoning") or "").rstrip()
+    out["reasoning"] = (
+        f"{reason} [capped at {ceiling}: outside social-impact / CSR / foundation track]"
+    )
+    return out
