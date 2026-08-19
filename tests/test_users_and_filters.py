@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from jobwright.discovery.filters import (
+    apply_fit_score_guards,
+    fit_score_ceiling,
     parse_salary_to_annual,
     passes_discovery_filters,
     salary_below_floor,
@@ -23,6 +25,100 @@ def test_title_excluded_word_boundary():
     assert title_excluded("Summer Intern", ["intern"])
     assert not title_excluded("International Partnerships Manager", ["intern"])
     assert title_excluded("Internship Coordinator", ["internship"])
+
+
+def test_title_excluded_impact_noise_patterns():
+    """Keep applied-style impact titles; drop bizops / clinical / major gifts."""
+    excludes = [
+        "business operations",
+        "go-to-market",
+        "home health",
+        "major gifts",
+        "principal gifts",
+        "intern",
+    ]
+    keep = [
+        "Sr. Program Manager, Data for Good",
+        "Senior Specialist, Social & Community Impact",
+        "Market Engagement Lead, Community Impact & Investment",
+        "Portfolio Director",
+        "Manager, Corporate Social Responsibility",
+        "Director, Corporate Purpose & Learning",
+        "Lean In Girls, Senior Partnerships Manager",
+        "Deputy Director, Catalyze479 Fund",
+        "FUSE Fellow, San Francisco",
+        "Analyst or Associate, DRK Foundation",
+        "CCS Fundraising Consultant",
+        "AI for Social Good Program Manager",
+        "International Partnerships Manager",
+    ]
+    for title in keep:
+        assert not title_excluded(title, excludes), title
+    assert title_excluded("Principal Business Operations and Programs Lead", excludes)
+    assert title_excluded("Home Health Agency Director", excludes)
+    assert title_excluded("Director of Principal & Major Gifts", excludes)
+
+
+def test_fit_score_ceiling_caps_generic_ops():
+    excludes = ["business operations", "home health"]
+    assert fit_score_ceiling(
+        "Principal Business Operations and Programs Lead",
+        "Adobe",
+        "OKRs and headcount planning",
+        excludes,
+    ) == 4
+    assert fit_score_ceiling(
+        "Chief of Staff",
+        "Thesis Care",
+        "Scale an AI-powered clinical care platform and ops cadence.",
+        excludes,
+    ) == 4
+    assert fit_score_ceiling(
+        "Business Advisor",
+        "Innovation Norway",
+        "Investor outreach and startup ecosystem advisory in San Francisco.",
+        excludes,
+    ) == 4
+    assert fit_score_ceiling(
+        "Chief of Staff",
+        "The OpenAI Foundation",
+        "Lead the CEO office and board cadence.",
+        excludes,
+    ) is None
+    assert fit_score_ceiling(
+        "Chief of Staff",
+        "Thesis Care",
+        "Scale foundation models for clinical AI operations.",
+        excludes,
+    ) == 4
+    assert fit_score_ceiling(
+        "Chief of Staff",
+        "Blue Star Families",
+        "Lead community programs at a mission-driven nonprofit serving military families.",
+        excludes,
+    ) is None
+    assert fit_score_ceiling(
+        "Sr. Program Manager, Data for Good",
+        "Databricks",
+        "Build Databricks for Good with nonprofits.",
+        excludes,
+    ) is None
+    # No JD yet: do not cap CoS (enrichment still pending)
+    assert fit_score_ceiling("Chief of Staff", "Acme", "", excludes) is None
+
+
+def test_apply_fit_score_guards_appends_reason():
+    parsed = apply_fit_score_guards(
+        {
+            "title": "Home Health Agency Director",
+            "company": "Cardea Health",
+            "full_description": "Run a home health agency.",
+        },
+        {"score": 9, "keywords": "director", "reasoning": "Strong leadership fit."},
+        search_cfg={"exclude_titles": ["home health"]},
+    )
+    assert parsed["score"] == 4
+    assert "capped at 4" in parsed["reasoning"]
 
 
 def test_salary_below_floor():
@@ -60,6 +156,28 @@ def test_passes_discovery_filters():
         description="Great role",
         search_cfg=cfg,
     )
+
+
+def test_describe_cron_schedule():
+    from jobwright.users import describe_cron_schedule
+
+    assert describe_cron_schedule("0 6 * * *") == "Every day at 6:00 AM"
+    assert describe_cron_schedule("30 18 * * *") == "Every day at 6:30 PM"
+    assert describe_cron_schedule("0 6 * * 1-5") == "Weekdays at 6:00 AM"
+    assert describe_cron_schedule("0 */3 * * 1-5") == "0 */3 * * 1-5"
+
+
+def test_apply_clock_to_cron():
+    from jobwright.users import apply_clock_to_cron, validate_brief_schedule
+
+    assert apply_clock_to_cron("0 6 * * *", 7, 30) == "30 7 * * *"
+    assert apply_clock_to_cron("0 6 * * 1-5", 8, 0) == "0 8 * * 1-5"
+    assert validate_brief_schedule("15 9 * * *") == "15 9 * * *"
+    try:
+        validate_brief_schedule("0 */3 * * 1-5")
+        raise AssertionError("expected ValueError")
+    except ValueError:
+        pass
 
 
 def test_users_registry_roundtrip(tmp_path, monkeypatch):
