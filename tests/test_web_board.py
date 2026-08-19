@@ -19,7 +19,8 @@ def api_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     users_root = tmp_path / "users"
     users_root.mkdir()
     (users_root / "users.yaml").write_text(
-        "users:\n  - user_id: testdash\n    name: Test\n    apply_enabled: false\n",
+        "users:\n  - user_id: testdash\n    name: Test\n    apply_enabled: false\n"
+        "    schedule: 0 6 * * *\n",
         encoding="utf-8",
     )
     data_dir = users_root / "testdash"
@@ -87,6 +88,42 @@ def test_health(api_client):
     res = api_client.get("/api/health")
     assert res.status_code == 200
     assert res.json()["ok"] is True
+
+
+def test_profile_includes_schedule(api_client):
+    res = api_client.get("/api/profile")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["schedule"] == "0 6 * * *"
+    assert body["schedule_label"] == "Every day at 6:00 AM"
+    assert body["timezone"]
+    assert body["brief_cron_name"] == "jobwright-brief-testdash"
+    assert "whatsapp_target" in body
+
+
+def test_put_profile_saves_schedule(api_client, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(
+        "jobwright.web.routers.system.sync_brief_cron",
+        lambda uid, sched, deliver: {
+            "synced": True,
+            "name": f"jobwright-brief-{uid}",
+            "cron_id": "abc123",
+            "error": None,
+        },
+    )
+    res = api_client.put(
+        "/api/profile",
+        json={"schedule": "30 7 * * *", "whatsapp_target": "15551212"},
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["schedule"] == "30 7 * * *"
+    assert body["schedule_label"] == "Every day at 7:30 AM"
+    assert body["whatsapp_target"] == "whatsapp:15551212"
+    assert body["cron_synced"] is True
+
+    res = api_client.put("/api/profile", json={"schedule": "0 */3 * * 1-5"})
+    assert res.status_code == 400
 
 
 def test_board_lists_job(api_client):

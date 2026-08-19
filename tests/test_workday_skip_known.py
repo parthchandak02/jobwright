@@ -182,3 +182,90 @@ def test_canada_employers_filtered_when_reject_includes_canada(monkeypatch):
     assert "rbc" not in captured["employers"]
     assert "nvidia" in captured["employers"]
     assert out["queries"] == 1
+
+
+def test_location_text_for_filter_falls_back_to_path():
+    from jobwright.discovery.location import location_ok
+    from jobwright.discovery.workday import location_text_for_filter
+
+    accept = ["San Francisco", "Remote", "US"]
+    reject = ["India"]
+    path = "/job/India-Mumbai-Maharashtra/Programme-Coordinator--Trustlaw_R1"
+    assert location_text_for_filter("San Francisco, CA", path) == "San Francisco, CA"
+    assert location_text_for_filter("", path) == path
+    assert location_ok(location_text_for_filter("", path), accept, reject) is False
+    assert location_ok(location_text_for_filter("", ""), accept, reject) is True
+
+
+def test_search_employer_skips_india_path_when_location_empty(monkeypatch):
+    from jobwright.discovery import workday as wd
+
+    employer = {
+        "name": "Thomson Reuters",
+        "base_url": "https://thomsonreuters.wd5.myworkdayjobs.com",
+        "site_id": "External_Career_Site",
+        "tenant": "thomsonreuters",
+    }
+    postings = [
+        {
+            "title": "Programme Coordinator, Trustlaw",
+            "locationsText": "",
+            "postedOn": "Posted Today",
+            "externalPath": "/job/India-Mumbai-Maharashtra/Programme-Coordinator_R1",
+        },
+        {
+            "title": "Programme Coordinator, US",
+            "locationsText": "San Francisco, CA",
+            "postedOn": "Posted Today",
+            "externalPath": "/job/San-Francisco/Programme-Coordinator_R2",
+        },
+    ]
+
+    monkeypatch.setattr(
+        wd,
+        "workday_search",
+        lambda *_a, **_k: {"total": 2, "jobPostings": postings},
+    )
+    jobs = wd.search_employer(
+        "thomson_reuters",
+        employer,
+        "philanthropy manager",
+        location_filter=True,
+        accept_locs=["San Francisco", "Remote", "US"],
+        reject_locs=["India"],
+    )
+    assert [j["title"] for j in jobs] == ["Programme Coordinator, US"]
+
+
+def test_exclude_companies_skips_workday_employers(monkeypatch):
+    from jobwright.discovery import workday
+
+    employers = {
+        "nvidia": {"name": "NVIDIA"},
+        "salesforce": {"name": "Salesforce"},
+    }
+    monkeypatch.setattr(workday, "load_employers", lambda: employers)
+    monkeypatch.setattr(
+        workday.config,
+        "load_search_config",
+        lambda: {
+            "queries": [{"query": "community impact", "tier": 1}],
+            "exclude_companies": ["NVIDIA"],
+            "location": {"reject_patterns": []},
+        },
+    )
+    monkeypatch.setattr(workday, "_load_location_filter", lambda _cfg=None: ([], []))
+    monkeypatch.setattr(workday, "init_db", lambda: None)
+    monkeypatch.setattr(workday, "get_connection", lambda: None)
+    monkeypatch.setattr(workday, "load_known_urls", lambda _c: set())
+
+    captured: dict = {}
+
+    def capture_scrape(**kwargs):
+        captured["employers"] = kwargs.get("employers")
+        return {"found": 0, "new": 0, "existing": 0, "skipped_known": 0, "errors": 0}
+
+    monkeypatch.setattr(workday, "scrape_employers", capture_scrape)
+    workday.run_workday_discovery()
+    assert "nvidia" not in captured["employers"]
+    assert "salesforce" in captured["employers"]
