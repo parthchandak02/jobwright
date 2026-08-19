@@ -18,6 +18,9 @@ logs/
 # MCP configs (per-machine)
 .mcp*.json
 
+# graphify knowledge graph (regenerate: graphify update .)
+graphify-out/
+
 # Python
 __pycache__/
 *.py[cod]
