@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { ChevronDown, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Textarea } from '@/components/ui/textarea'
 import { DrawerSection } from '@/components/DrawerSection'
@@ -29,40 +28,13 @@ type Connections = {
 const AUTOSAVE_MS = 400
 
 function JobDescriptionPane({ text }: { text: string }) {
-  const scrollRef = useRef<HTMLDivElement>(null)
-  const [showHint, setShowHint] = useState(false)
-
-  useEffect(() => {
-    const el = scrollRef.current
-    if (!el) return
-
-    const update = () => {
-      const overflows = el.scrollHeight > el.clientHeight + 1
-      const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 4
-      setShowHint(overflows && !atBottom)
-    }
-
-    update()
-    el.addEventListener('scroll', update, { passive: true })
-    const ro = new ResizeObserver(update)
-    ro.observe(el)
-    return () => {
-      el.removeEventListener('scroll', update)
-      ro.disconnect()
-    }
-  }, [text])
-
   return (
     <div className="job-drawer-jd">
-      <div ref={scrollRef} className="job-drawer-jd-scroll">
-        {text}
+      <div className="job-drawer-jd-scroll">{text}</div>
+      <div className="job-drawer-jd-hint" aria-hidden="true">
+        <span>Scroll</span>
+        <ChevronDown className="size-2.5 opacity-70" />
       </div>
-      {showHint ? (
-        <div className="job-drawer-jd-hint" aria-hidden="true">
-          <span>Scroll</span>
-          <ChevronDown className="size-2.5 opacity-70" />
-        </div>
-      ) : null}
     </div>
   )
 }
@@ -175,14 +147,14 @@ export function JobDrawer({ jobUrl, onClose, onChanged, onRequestClose }: Props)
     <Sheet open={open} onOpenChange={(v) => !v && onClose()}>
       <SheetContent
         showClose={false}
-        className="flex flex-col gap-0 border-l-border/60 bg-background/90 p-0 backdrop-blur-xl sm:w-3/5 sm:max-w-[60vw]"
+        className="flex h-dvh min-h-0 flex-col gap-0 overflow-hidden border-l-border/60 bg-background p-0 sm:w-3/5 sm:max-w-[60vw]"
       >
         <SheetHeader className="sr-only">
           <SheetTitle>{job?.title || 'Job details'}</SheetTitle>
           <SheetDescription>{job?.company || job?.site || 'Job drawer'}</SheetDescription>
         </SheetHeader>
 
-        <ScrollArea className="min-h-0 flex-1">
+        <div className="job-drawer-scroll">
           <div className="min-w-0 px-4 pb-6 pt-4">
             {!job ? (
               <div className="flex items-center gap-2 py-8 text-sm text-muted-foreground">
@@ -193,7 +165,7 @@ export function JobDrawer({ jobUrl, onClose, onChanged, onRequestClose }: Props)
                 <DrawerSection first>
                   <div
                     style={lane ? ({ '--lane': lane } as CSSProperties) : undefined}
-                    className={cn('glass job-card-pad relative rounded-xl', lane && 'lane-card')}
+                    className={cn('job-drawer-summary job-card-pad relative rounded-xl', lane && 'lane-card')}
                   >
                     <JobSummary
                       job={job}
@@ -261,7 +233,7 @@ export function JobDrawer({ jobUrl, onClose, onChanged, onRequestClose }: Props)
               </>
             )}
           </div>
-        </ScrollArea>
+        </div>
       </SheetContent>
     </Sheet>
   )

@@ -33,6 +33,7 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-tailor: var(--tailor);
   --color-tailor-muted: var(--tailor-muted);
+  --color-whatsapp: var(--whatsapp);
 }
 
 :root {
@@ -108,6 +109,7 @@
   --linkedin: oklch(0.52 0.14 250);
   --linkedin-muted: oklch(0.52 0.14 250 / 0.07);
   --linkedin-subtle: oklch(0.52 0.14 250 / 0.14);
+  --whatsapp: oklch(0.72 0.19 145);
   /* Custom Tailor (AI) */
   --tailor: oklch(0.5 0.16 305);
   --tailor-muted: oklch(0.5 0.16 305 / 0.12);
@@ -165,6 +167,7 @@
   --linkedin: oklch(0.62 0.12 250);
   --linkedin-muted: oklch(0.62 0.12 250 / 0.1);
   --linkedin-subtle: oklch(0.62 0.12 250 / 0.18);
+  --whatsapp: oklch(0.78 0.18 145);
   --tailor: oklch(0.78 0.14 305);
   --tailor-muted: oklch(0.78 0.14 305 / 0.16);
   --tailor-subtle: oklch(0.78 0.14 305 / 0.28);
@@ -193,6 +196,12 @@
       radial-gradient(60rem 60rem at 12% -8%, var(--mesh-1), transparent 60%),
       radial-gradient(48rem 48rem at 108% 12%, var(--mesh-2), transparent 55%);
     background-attachment: fixed;
+  }
+  @media (max-width: 767px) {
+    body {
+      /* iOS WKWebView (WhatsApp) janks hard on background-attachment: fixed */
+      background-attachment: scroll;
+    }
   }
 }
 
@@ -227,6 +236,11 @@
       var(--glass-shadow-hover),
       inset 0 1px 0 0 var(--glass-highlight);
     transform: translateY(-1px);
+  }
+  .app-shell-header {
+    background-color: color-mix(in oklch, var(--background) 70%, transparent);
+    -webkit-backdrop-filter: blur(24px);
+    backdrop-filter: blur(24px);
   }
 
   .sidebar-shell {
@@ -350,6 +364,21 @@
     gap: var(--job-card-icon-gap);
   }
 
+  .job-drawer-scroll {
+    min-height: 0;
+    flex: 1 1 auto;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
+  }
+  .job-drawer-summary {
+    background-color: var(--card);
+    border: 1px solid var(--glass-border);
+    box-shadow:
+      var(--glass-shadow),
+      inset 0 1px 0 0 var(--glass-highlight);
+  }
   .job-drawer-jd {
     position: relative;
     border-radius: var(--radius);
@@ -382,6 +411,37 @@
       color-mix(in oklch, var(--background) 55%, transparent) 55%,
       transparent 100%
     );
+  }
+  /* One native scroller on small screens: nested overflow + backdrop-filter
+     is what makes WhatsApp/iOS in-app browsers feel like they barely scroll. */
+  @media (max-width: 767px) {
+    .glass,
+    .glass-strong {
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+      background-color: var(--card);
+    }
+    .app-shell-header {
+      background-color: var(--background);
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+    }
+    .job-drawer-jd-scroll {
+      max-height: none;
+      overflow: visible;
+    }
+    .job-drawer-jd-hint {
+      display: none;
+    }
+    .job-drawer-scroll .materials-preview {
+      max-height: none;
+      overflow: visible;
+    }
+    .job-drawer-scroll,
+    .job-drawer-scroll * {
+      -webkit-backdrop-filter: none !important;
+      backdrop-filter: none !important;
+    }
   }
   .jobs-table {
     width: 100%;

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { CircleUser } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { BrandLogo, APP_SHELL_HEADER_HEIGHT } from '@/components/BrandLogo'
 import { SidebarActionButton } from '@/components/SidebarActionButton'
 import { SidebarNav } from '@/components/SidebarNav'
@@ -112,12 +113,19 @@ export function AppSidebar({
         )}
       >
         <div className={cn(APP_SHELL_HEADER_HEIGHT, 'w-[var(--sidebar-panel)] gap-2')}>
-          <BrandLogo className="size-7" />
-          <div className="sidebar-label min-w-0 flex-1">
-            <p className="truncate text-sm font-semibold uppercase tracking-[0.14em]">
-              jobwright
-            </p>
-          </div>
+          <Link
+            to="/"
+            className="flex min-w-0 flex-1 items-center gap-2 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+            aria-label="Back to board"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <BrandLogo className="size-7" />
+            <div className="sidebar-label min-w-0 flex-1">
+              <p className="truncate text-sm font-semibold uppercase tracking-[0.14em]">
+                jobwright
+              </p>
+            </div>
+          </Link>
         </div>
         <SidebarNav
           className="min-h-0 w-[var(--sidebar-panel)] flex-1 overflow-y-auto"

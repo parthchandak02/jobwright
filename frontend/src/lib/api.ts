@@ -94,6 +94,14 @@ export type Profile = {
   user_id: string
   name: string
   apply_enabled: boolean
+  schedule?: string
+  schedule_label?: string
+  timezone?: string
+  whatsapp_target?: string
+  brief_cron_name?: string
+  cron_synced?: boolean
+  cron_id?: string | null
+  cron_error?: string | null
   stats: Record<string, number>
   stage_counts: Record<string, number>
   source: string
@@ -260,4 +268,11 @@ export type NotifyResponse = {
 /** Trigger the WhatsApp notify digest for newly surfaced jobs. */
 export function notifyWhatsApp(): Promise<NotifyResponse> {
   return apiFetch<NotifyResponse>('/notify', { method: 'POST' })
+}
+
+export function updateProfile(body: {
+  schedule?: string
+  whatsapp_target?: string
+}): Promise<Profile> {
+  return apiFetch<Profile>('/profile', { method: 'PUT', body: JSON.stringify(body) })
 }

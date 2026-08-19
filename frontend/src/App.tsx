@@ -15,7 +15,6 @@ import { useNavigate, useParams, useLocation } from 'react-router-dom'
 import {
   CircleUser,
   Menu,
-  MessageCircle,
   Plus,
   Search,
 } from 'lucide-react'
@@ -27,7 +26,6 @@ import {
   apiFetch,
   BoardResponse,
   JobCard,
-  notifyWhatsApp,
   Profile,
   STAGE_LABELS,
 } from '@/lib/api'
@@ -35,6 +33,8 @@ import { cn, errorMessage } from '@/lib/utils'
 import { AppSidebar } from '@/components/AppSidebar'
 import { APP_SHELL_HEADER } from '@/components/BrandLogo'
 import { AutoSearchDialog } from '@/components/AutoSearchDialog'
+import { DailyBriefDialog } from '@/components/DailyBriefDialog'
+import { WhatsAppIcon } from '@/components/WhatsAppIcon'
 import { RunProgressButton } from '@/components/RunProgressButton'
 import { useAutoSearch, STAGE_LABELS as AUTO_STAGE_LABELS } from '@/lib/useAutoSearch'
 import { CloseJobDialog } from '@/components/CloseJobDialog'
@@ -78,7 +78,7 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('')
   const [showAdd, setShowAdd] = useState(false)
   const [showAutoSearch, setShowAutoSearch] = useState(false)
-  const [notifying, setNotifying] = useState(false)
+  const [showSchedule, setShowSchedule] = useState(false)
   const [loading, setLoading] = useState(true)
   const resolvedJobId = useRef<string | null>(null)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
@@ -134,6 +134,11 @@ export default function App() {
     return board.stages.flatMap((s) => board.columns[s] || [])
   }, [board])
 
+  const pendingNotify = useMemo(
+    () => allJobs.filter((j) => j.funnel_stage === 'prepare' && !j.whatsapp_notified_at).length,
+    [allJobs],
+  )
+
   function openJob(job: JobCard) {
     setSelectedUrl(job.url)
     if (job.job_id) {
@@ -173,23 +178,6 @@ export default function App() {
       .then((j) => setSelectedUrl(j.url))
       .catch((e) => toast.error(errorMessage(e)))
   }, [jobId, board, allJobs])
-
-  async function handleNotify() {
-    setNotifying(true)
-    try {
-      const res = await notifyWhatsApp()
-      if (res.skipped) {
-        toast.info(res.message || 'No new jobs to notify')
-      } else {
-        toast.success(`Sent ${res.sent} jobs to WhatsApp`)
-      }
-      void refresh()
-    } catch (e) {
-      toast.error(errorMessage(e))
-    } finally {
-      setNotifying(false)
-    }
-  }
 
   const filteredJobs = useMemo(
     () => allJobs.filter((j) => jobMatchesQuery(j, search)),
@@ -365,7 +353,7 @@ export default function App() {
           onProfileChanged={() => void refresh()}
         />
       ) : (
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className={cn('flex min-w-0 flex-1 flex-col', selectedUrl && 'max-md:hidden')}>
         <header className={cn('sticky top-0 z-20', APP_SHELL_HEADER)}>
           <Button
             type="button"
@@ -396,8 +384,9 @@ export default function App() {
             <RunProgressButton
               run={autoSearch}
               idleLabel="Auto Search"
+              variant="prepare"
               stageLabels={AUTO_STAGE_LABELS}
-              titleIdle="Run auto search"
+              titleIdle="Run auto search. Prepared jobs land in Prepare."
               titleActive="Auto search in progress. Click to view logs"
               onClick={() => {
                 autoSearch.start()
@@ -406,12 +395,14 @@ export default function App() {
             />
 
             <Button
+              type="button"
               size="sm"
               variant="outline"
-              disabled={notifying}
-              onClick={() => void handleNotify()}
+              onClick={() => setShowSchedule(true)}
+              title="Daily WhatsApp schedule and notify"
             >
-              <MessageCircle /> Notify WhatsApp
+              <WhatsAppIcon className="text-whatsapp" /> WhatsApp
+              {pendingNotify > 0 ? ` (${pendingNotify})` : ''}
             </Button>
 
             <Button size="sm" variant="outline" onClick={() => setShowAdd(true)}>
@@ -497,6 +488,13 @@ export default function App() {
         open={showAutoSearch}
         onClose={() => setShowAutoSearch(false)}
         run={autoSearch}
+      />
+      <DailyBriefDialog
+        open={showSchedule}
+        onClose={() => setShowSchedule(false)}
+        profile={profile}
+        pendingCount={pendingNotify}
+        onSaved={() => void refresh()}
       />
 
       <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>

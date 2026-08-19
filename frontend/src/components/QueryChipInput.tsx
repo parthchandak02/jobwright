@@ -33,7 +33,6 @@ function emit(daily: QueryEntry[], weekly: QueryEntry[]): QueryEntry[] {
 
 type BucketProps = {
   label: string
-  hint: string
   entries: QueryEntry[]
   tone: string
   moveLabel: string
@@ -46,7 +45,6 @@ type BucketProps = {
 
 function QueryBucket({
   label,
-  hint,
   entries,
   tone,
   moveLabel,
@@ -67,10 +65,7 @@ function QueryBucket({
 
   return (
     <div className="space-y-1.5">
-      <div>
-        <p className="text-xs font-medium text-foreground">{label}</p>
-        <p className="text-xs text-muted-foreground">{hint}</p>
-      </div>
+      <p className="text-xs font-medium text-foreground">{label}</p>
       {entries.length > 0 && (
         <div className="job-card-chips">
           {entries.map((entry, index) => (
@@ -157,7 +152,6 @@ export function QueryChipInput({ queries, onChange, className }: Props) {
     <div className={cn('space-y-4', className)}>
       <QueryBucket
         label="Daily"
-        hint="Every Auto Search and the morning brief."
         entries={daily}
         tone="--query-daily"
         moveLabel="Weekly"
@@ -169,7 +163,6 @@ export function QueryChipInput({ queries, onChange, className }: Props) {
       />
       <QueryBucket
         label="Weekly"
-        hint="Extra keywords on the weekly deep crawl only."
         entries={weekly}
         tone="--query-weekly"
         moveLabel="Daily"

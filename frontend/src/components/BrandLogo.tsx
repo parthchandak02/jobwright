@@ -8,7 +8,7 @@ type Props = {
 /** Shared top-bar height for sidebar brand + main header (56px). */
 export const APP_SHELL_HEADER_HEIGHT = 'flex h-14 shrink-0 items-center gap-3 px-4'
 
-export const APP_SHELL_HEADER = `${APP_SHELL_HEADER_HEIGHT} bg-background/70 backdrop-blur-xl`
+export const APP_SHELL_HEADER = `${APP_SHELL_HEADER_HEIGHT} app-shell-header`
 
 /**
  * jobwright mark (option 3, simplified): doc + check, stroke-only.
