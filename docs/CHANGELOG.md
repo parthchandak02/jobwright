@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Daily brief default `--min-score` is 7 (`APPLY_MIN_SCORE`, same as Auto Search)
 - Workday discovery honors `exclude_companies` and uses the posting path when location is blank (drops India-path leaks)
 - Fit scores for generic ops / CoS without a social-impact mission cap at 4; JobSpy also searches `target_companies`
+- Auto Search no longer redraws the Kanban on every log tick; Board view no longer falls through to an empty table while the board is loading
 - Mobile job deep links (`/jobs/:id`, WhatsApp in-app browser): native drawer scroll, opaque sheet, board unpainted while open
 - WhatsApp is a pointer into the dashboard; no materials-N, digest, or CONFIRM-APPLY over chat
 - Daily cron is pipeline then notify (`jobwright-brief-<user>`); `jobwright-send` / `jobwright-check` retired

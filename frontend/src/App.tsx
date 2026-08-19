@@ -32,11 +32,9 @@ import {
 import { cn, errorMessage } from '@/lib/utils'
 import { AppSidebar } from '@/components/AppSidebar'
 import { APP_SHELL_HEADER } from '@/components/BrandLogo'
-import { AutoSearchDialog } from '@/components/AutoSearchDialog'
+import { AutoSearchControls } from '@/components/AutoSearchControls'
 import { DailyBriefDialog } from '@/components/DailyBriefDialog'
 import { WhatsAppIcon } from '@/components/WhatsAppIcon'
-import { RunProgressButton } from '@/components/RunProgressButton'
-import { useAutoSearch, STAGE_LABELS as AUTO_STAGE_LABELS } from '@/lib/useAutoSearch'
 import { CloseJobDialog } from '@/components/CloseJobDialog'
 import { JobCardView } from '@/components/JobCardView'
 import { JobDrawer } from '@/components/JobDrawer'
@@ -77,7 +75,6 @@ export default function App() {
   const [filterStage, setFilterStage] = useState<string | 'all'>('all')
   const [searchQuery, setSearchQuery] = useState('')
   const [showAdd, setShowAdd] = useState(false)
-  const [showAutoSearch, setShowAutoSearch] = useState(false)
   const [showSchedule, setShowSchedule] = useState(false)
   const [loading, setLoading] = useState(true)
   const resolvedJobId = useRef<string | null>(null)
@@ -106,8 +103,6 @@ export default function App() {
   useEffect(() => {
     void refresh()
   }, [refresh])
-
-  const autoSearch = useAutoSearch(() => void refresh())
 
   function selectStage(stage: string | 'all') {
     setFilterStage(stage)
@@ -381,18 +376,7 @@ export default function App() {
               />
             </div>
 
-            <RunProgressButton
-              run={autoSearch}
-              idleLabel="Auto Search"
-              variant="prepare"
-              stageLabels={AUTO_STAGE_LABELS}
-              titleIdle="Run auto search. Prepared jobs land in Prepare."
-              titleActive="Auto search in progress. Click to view logs"
-              onClick={() => {
-                autoSearch.start()
-                setShowAutoSearch(true)
-              }}
-            />
+            <AutoSearchControls onRunDone={() => void refresh()} />
 
             <Button
               type="button"
@@ -412,9 +396,12 @@ export default function App() {
         </header>
 
         <main className="min-h-0 flex-1 overflow-auto p-3 md:p-4">
-          {loading && !board ? (
-            <p className="text-sm text-muted-foreground">Loading board…</p>
-          ) : view === 'board' && board ? (
+          {view === 'board' ? (
+            !board ? (
+              <p className="text-sm text-muted-foreground">
+                {loading ? 'Loading board…' : 'Could not load the board. Refresh the page.'}
+              </p>
+            ) : (
             <DndContext
               sensors={sensors}
               collisionDetection={collisionDetection}
@@ -447,6 +434,7 @@ export default function App() {
                 ) : null}
               </DragOverlay>
             </DndContext>
+            )
           ) : (
             <JobsTable
               jobs={tableJobs}
@@ -483,11 +471,6 @@ export default function App() {
           setShowAdd(false)
           void refresh()
         }}
-      />
-      <AutoSearchDialog
-        open={showAutoSearch}
-        onClose={() => setShowAutoSearch(false)}
-        run={autoSearch}
       />
       <DailyBriefDialog
         open={showSchedule}

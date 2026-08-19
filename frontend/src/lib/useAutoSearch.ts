@@ -144,11 +144,25 @@ export function useAutoSearch(onDone: () => void): AutoSearch {
       }
     }
 
+    let flushTimer: number | null = null
+    let pending = ''
+    const flushLog = () => {
+      flushTimer = null
+      if (!pending) return
+      const chunk = pending
+      pending = ''
+      setLog((prev) => prev + chunk)
+    }
     es.onmessage = (ev) => {
-      setLog((prev) => prev + ev.data + '\n')
+      pending += ev.data + '\n'
       handleLine(ev.data)
+      if (flushTimer == null) {
+        flushTimer = window.setTimeout(flushLog, 200)
+      }
     }
     es.addEventListener('done', (ev) => {
+      if (flushTimer != null) window.clearTimeout(flushTimer)
+      flushLog()
       es.close()
       if (esRef.current === es) esRef.current = null
       const parsed = parseRC((ev as MessageEvent).data || '')
@@ -171,6 +185,7 @@ export function useAutoSearch(onDone: () => void): AutoSearch {
       })
     }
     return () => {
+      if (flushTimer != null) window.clearTimeout(flushTimer)
       es.close()
       if (esRef.current === es) esRef.current = null
     }
