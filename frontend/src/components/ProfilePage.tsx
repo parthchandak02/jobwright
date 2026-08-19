@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ArrowLeft, Save } from 'lucide-react'
+import { ArrowLeft } from 'lucide-react'
 import { toast } from 'sonner'
 import { BoardToggles } from '@/components/BoardToggles'
 import { APP_SHELL_HEADER } from '@/components/BrandLogo'
@@ -28,16 +28,46 @@ type Props = {
 }
 
 const SECTION = 'space-y-3 border-b border-border/50 pb-6 last:border-b-0 last:pb-0'
+const SEARCH_SAVE_MS = 500
+
+function searchesPayload(s: SettingsSearches) {
+  return {
+    queries: s.queries
+      .map((q) => ({
+        query: q.query.trim(),
+        tier: (q.tier || 1) >= 2 ? 2 : 1,
+      }))
+      .filter((q) => q.query),
+    locations: s.locations
+      .map((l) => {
+        const location = l.location.trim()
+        return {
+          location,
+          remote: location.toLowerCase() === 'remote',
+        }
+      })
+      .filter((l) => l.location),
+    boards: (s.boards || []).map((b) => b.trim()).filter(Boolean),
+    exclude_titles: (s.exclude_titles || []).map((t) => t.trim()).filter(Boolean),
+    min_salary: s.min_salary,
+    hours_old: s.hours_old,
+    results_per_site: s.results_per_site,
+  }
+}
 
 export function ProfilePage({ profile, onBack, onProfileChanged }: Props) {
   const [data, setData] = useState<SettingsData | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState<string | null>(null)
+  const [searchSaveState, setSearchSaveState] = useState<'idle' | 'saving' | 'saved'>('idle')
   const resumeFileRef = useRef<HTMLInputElement>(null)
   const coverFileRef = useRef<HTMLInputElement>(null)
+  const skipSearchAutosave = useRef(true)
+  const pendingSearches = useRef<SettingsSearches | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
+    skipSearchAutosave.current = true
     try {
       setData(await apiFetch<SettingsData>('/settings'))
     } catch (e) {
@@ -51,50 +81,53 @@ export function ProfilePage({ profile, onBack, onProfileChanged }: Props) {
     void load()
   }, [load])
 
-  function patchSearches(values: Partial<SettingsSearches>) {
-    setData((d) => (d ? { ...d, searches: { ...d.searches, ...values } } : d))
-  }
-
-  function searchesPayload() {
-    if (!data) return null
-    const s = data.searches
-    return {
-      queries: s.queries
-        .map((q) => ({
-          query: q.query.trim(),
-          tier: (q.tier || 1) >= 2 ? 2 : 1,
-        }))
-        .filter((q) => q.query),
-      locations: s.locations
-        .map((l) => {
-          const location = l.location.trim()
-          return {
-            location,
-            remote: location.toLowerCase() === 'remote',
-          }
-        })
-        .filter((l) => l.location),
-      boards: (s.boards || []).map((b) => b.trim()).filter(Boolean),
-      exclude_titles: (s.exclude_titles || []).map((t) => t.trim()).filter(Boolean),
-      min_salary: s.min_salary,
-      hours_old: s.hours_old,
-      results_per_site: s.results_per_site,
-    }
-  }
-
-  async function saveSearch() {
-    const body = searchesPayload()
-    if (!body) return
+  const persistSearches = useCallback(async (searches: SettingsSearches) => {
     setSaving('search')
+    setSearchSaveState('saving')
     try {
-      await apiFetch('/settings/searches', { method: 'PUT', body: JSON.stringify(body) })
-      toast.success('Saved. Next Auto Search will use these keywords and boards.')
-      onProfileChanged()
+      await apiFetch('/settings/searches', {
+        method: 'PUT',
+        body: JSON.stringify(searchesPayload(searches)),
+      })
+      setSearchSaveState('saved')
     } catch (e) {
+      setSearchSaveState('idle')
       toast.error(errorMessage(e))
     } finally {
-      setSaving(null)
+      setSaving((cur) => (cur === 'search' ? null : cur))
     }
+  }, [])
+
+  useEffect(() => {
+    if (!data) return
+    if (skipSearchAutosave.current) {
+      skipSearchAutosave.current = false
+      return
+    }
+    pendingSearches.current = data.searches
+    setSearchSaveState('saving')
+    const timer = window.setTimeout(() => {
+      const next = pendingSearches.current
+      pendingSearches.current = null
+      if (next) void persistSearches(next)
+    }, SEARCH_SAVE_MS)
+    return () => window.clearTimeout(timer)
+  }, [data?.searches, persistSearches])
+
+  useEffect(() => {
+    return () => {
+      const leftover = pendingSearches.current
+      if (!leftover) return
+      pendingSearches.current = null
+      void apiFetch('/settings/searches', {
+        method: 'PUT',
+        body: JSON.stringify(searchesPayload(leftover)),
+      }).catch(() => undefined)
+    }
+  }, [])
+
+  function patchSearches(values: Partial<SettingsSearches>) {
+    setData((d) => (d ? { ...d, searches: { ...d.searches, ...values } } : d))
   }
 
   function uploadResumePdf(file: File | undefined) {
@@ -172,12 +205,16 @@ export function ProfilePage({ profile, onBack, onProfileChanged }: Props) {
           <div className="mx-auto w-full max-w-6xl space-y-6">
             <section className={SECTION}>
               <div className="flex items-center justify-between gap-3">
-                <SectionLabel hint="Each keyword chip is typed into the selected job boards. This is the list that finds new jobs.">
+                <SectionLabel hint="Changes save as you edit. Next Auto Search uses the latest keywords and boards.">
                   Auto Search
                 </SectionLabel>
-                <Button size="sm" onClick={() => void saveSearch()} disabled={saving === 'search'}>
-                  <Save /> Save
-                </Button>
+                <p className="text-xs text-muted-foreground" aria-live="polite">
+                  {searchSaveState === 'saving'
+                    ? 'Saving…'
+                    : searchSaveState === 'saved'
+                      ? 'Saved'
+                      : ''}
+                </p>
               </div>
 
               <FormField
