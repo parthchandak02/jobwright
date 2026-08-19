@@ -1,74 +1,59 @@
 ---
 name: frontend-tasteful
-description: Audits and polishes frontend UI for token discipline and anti-slop while preserving density, shared primitives, and behavior. Use for visual consistency or UI polish.
+description: Build and polish the jobwright Kanban dashboard UI. Use when editing frontend/, adding or changing dashboard screens, components, tokens, shadcn, job cards, sidebar, drawer, profile, tables, dialogs, or visual consistency. Not for landing pages, marketing redesigns, or Python/pipeline work.
 ---
 
-# Frontend Tasteful
+# Frontend Tasteful (jobwright dashboard)
 
-Use this skill to improve frontend visual quality without changing behavior,
-contracts, accessibility, or the product's established visual language.
+Dense operator UI: Kanban board, table, job drawer, profile. Visual language is already set (IBM Plex Sans, glass surfaces, stage/lane tokens). This is not a marketing redesign skill.
 
-This is not a marketing redesign skill. Preserve information density and
-operator or workflow efficiency where the product needs it.
+**Do not** load `design-taste-frontend` / leonxlnx taste-skill / Three Dials for this product.
 
 ## Read first
 
-Identify the project's:
-
-1. Design tokens and theme definitions.
-2. Shared component library and route-level primitives.
-3. Existing peer screens that solve comparable layout, state, and interaction
-   problems.
-4. Accessibility, responsive, and frontend contribution conventions.
-
-The project supplies its own paths for its design tokens and shared component
-library. Prefer those sources over generic UI patterns.
+1. [references/catalog.md](references/catalog.md) (must-reuse primitives, token families, little things).
+2. Peer screens that solve the same problem (sidebar vs drawer vs card vs table vs profile vs dialog).
+3. `frontend/src/index.css` and `frontend/src/components/ui/` for the exact token or primitive you will extend.
+4. Graphify, when the graph exists: `graphify query` / `explain` the nearest primitive before inventing a new one.
 
 ## Workflow
 
 ### 1. Scan
 
-Inventory before editing:
-
-- The touched screen and comparable peers.
-- Shared primitives already used in the area.
-- Existing tokens for color, spacing, typography, radius, elevation, and motion.
-- Whether the need is screen-level, shared-component-level, or theme-level.
-- User-visible states: loading, empty, error, disabled, hover, focus, active,
-  success, and responsive layouts.
+- Touched screen + comparable peers.
+- Catalog primitive that already covers this.
+- Token family (stage, glass, job-card, sidebar, linkedin, tailor) vs a new hardcoded value.
+- Scope: screen, shared component, or theme token.
+- States: loading, empty, error, disabled, hover, focus, active.
 
 ### 2. Diagnose
 
-Use [references/audit-checklist.md](references/audit-checklist.md). Identify the
-highest-risk regressions first, especially action gating, status meaning,
-keyboard behavior, dense scanning, and user-facing terminology.
+Use [references/audit-checklist.md](references/audit-checklist.md). Highest-risk first: action gating, status meaning, keyboard, dense scanning, user-facing terms.
 
-State the visual and behavioral constraints before changing code.
+### 3. Smallest change
 
-### 3. Make the smallest fix
+- Extend an existing primitive or token.
+- Keep labels, contracts, gating, and accessibility unchanged.
+- Subtle motion only when it clarifies state (`--ease-glass`, respect `prefers-reduced-motion`).
+- Do not swap fonts, add heroes, or open up whitespace.
 
-- Extend an existing primitive or token before adding a one-off style.
-- Prefer a small local correction to broad restyling.
-- Keep labels, data meaning, control semantics, and request behavior unchanged.
-- Use subtle, short motion only when it clarifies state or continuity.
-- Remove dead styles or duplicated ad-hoc values when safely in the edited area.
+### 4. Promote (same PR, only when needed)
 
-Do not replace frameworks, swap fonts, add decorative animation, or expand
-whitespace substantially without explicit product direction.
+Update [references/catalog.md](references/catalog.md) when you:
 
-### 4. Pre-flight
+- Add or rename a **reusable** domain component (not a page-local helper).
+- Add a **reusable** CSS token or class family.
+- Change a convention (Chip vs Badge, stage casing, button variants).
 
-Before finishing, confirm:
+Do not rewrite the catalog for copy tweaks, bugfixes, or one-off page layout.
 
-- Tokens and shared primitives are used where appropriate.
-- No hardcoded color, spacing, typography, or interaction drift was introduced.
-- Focus-visible behavior is clear for interactive controls.
-- Keyboard, screen-reader, loading, error, empty, disabled, and responsive
-  behavior still work.
-- Dense screens remain fast to scan.
-- UI changes did not alter business behavior, data contracts, or action gating.
+### 5. Pre-flight
+
+- Catalog primitive used where it fits; no new `text-[10px]` / `text-[11px]` / duplicated lane colors.
+- Focus-visible on interactive controls.
+- Keyboard, loading, empty, error, disabled, and narrow layouts still work.
+- Density preserved. Behavior and gating unchanged.
 
 ## Output
 
-Report what changed, the user-visible benefit, what behavior was deliberately
-preserved, and any follow-up debt that should remain separate.
+What changed, user-visible benefit, what behavior was preserved, whether the catalog was promoted, leftover drift to keep separate.
