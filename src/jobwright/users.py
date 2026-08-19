@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 import re
 from dataclasses import asdict, dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -27,6 +28,63 @@ USERS_ROOT = _default_users_root()
 REGISTRY_PATH = USERS_ROOT / "users.yaml"
 
 _USER_ID_RE = re.compile(r"^[a-z][a-z0-9_-]{1,31}$")
+
+
+def describe_cron_schedule(expr: str) -> str:
+    """Turn a 5-field cron into a short label, or return the expression as-is."""
+    parts = (expr or "").split()
+    if len(parts) != 5:
+        return expr or ""
+    minute, hour, dom, month, dow = parts
+    clock = _cron_clock(minute, hour)
+    if not clock or dom != "*" or month != "*":
+        return expr
+    if dow == "*":
+        return f"Every day at {clock}"
+    if dow in {"1-5", "MON-FRI", "mon-fri"}:
+        return f"Weekdays at {clock}"
+    return expr
+
+
+def host_timezone_name() -> str:
+    """Abbreviation for the machine that runs Hermes cron (e.g. PDT)."""
+    return datetime.now().astimezone().tzname() or "local time"
+
+
+def _cron_clock(minute: str, hour: str) -> str | None:
+    if not minute.isdigit() or not hour.isdigit():
+        return None
+    h, m = int(hour), int(minute)
+    if not (0 <= h <= 23 and 0 <= m <= 59):
+        return None
+    suffix = "AM" if h < 12 else "PM"
+    h12 = h % 12 or 12
+    return f"{h12}:{m:02d} {suffix}"
+
+
+def apply_clock_to_cron(expr: str, hour: int, minute: int) -> str:
+    """Set hour/minute on a 5-field cron; keep day-of-week and other fields."""
+    if not (0 <= hour <= 23 and 0 <= minute <= 59):
+        raise ValueError("Time must be a valid hour and minute.")
+    parts = (expr or "").split()
+    if len(parts) != 5:
+        return f"{minute} {hour} * * *"
+    parts[0] = str(minute)
+    parts[1] = str(hour)
+    return " ".join(parts)
+
+
+def validate_brief_schedule(expr: str) -> str:
+    """Require a 5-field cron with a fixed clock time (dashboard time picker)."""
+    parts = (expr or "").split()
+    if len(parts) != 5:
+        raise ValueError("Schedule must be a 5-field cron expression.")
+    if not parts[0].isdigit() or not parts[1].isdigit():
+        raise ValueError("Schedule hour and minute must be fixed numbers.")
+    hour, minute = int(parts[1]), int(parts[0])
+    if not (0 <= hour <= 23 and 0 <= minute <= 59):
+        raise ValueError("Schedule time is out of range.")
+    return " ".join(parts)
 
 
 @dataclass

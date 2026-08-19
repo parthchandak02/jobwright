@@ -41,6 +41,33 @@ _CANADA_EMPLOYER_KEYS = frozenset({
 })
 
 
+def location_text_for_filter(locations_text: str | None, external_path: str | None) -> str | None:
+    """Prefer Workday locationsText; fall back to the posting path.
+
+    Empty locationsText otherwise bypasses reject patterns (e.g. India in
+    `/job/India-Mumbai-Maharashtra/...`).
+    """
+    loc = (locations_text or "").strip()
+    if loc:
+        return loc
+    path = (external_path or "").strip()
+    return path or None
+
+
+def employers_without_excludes(employers: dict, exclude_companies: list | None) -> dict:
+    """Drop Workday tenants whose name matches searches.yaml exclude_companies."""
+    needles = [e.lower() for e in (exclude_companies or []) if e]
+    if not needles:
+        return employers
+    kept = {}
+    for key, emp in employers.items():
+        name = (emp.get("name") or "").lower()
+        if any(needle in name for needle in needles):
+            continue
+        kept[key] = emp
+    return kept
+
+
 # -- Employer registry from YAML --------------------------------------------
 
 def load_employers() -> dict:
@@ -221,11 +248,11 @@ def search_employer(
         stop_early = False
         for j in postings:
             loc = j.get("locationsText", "")
-            if location_filter and accept_locs is not None and reject_locs is not None:
-                if not _location_ok(loc, accept_locs, reject_locs):
-                    continue
-
             external_path = j.get("externalPath", "") or ""
+            if location_filter and accept_locs is not None and reject_locs is not None:
+                loc_for_filter = location_text_for_filter(loc, external_path)
+                if not _location_ok(loc_for_filter, accept_locs, reject_locs):
+                    continue
             job = {
                 "title": j.get("title", ""),
                 "location": loc,
@@ -352,6 +379,21 @@ def store_results(conn: sqlite3.Connection, jobs: list[dict], employers: dict) -
         site = job.get("employer_name", "Corporate")
         company = job.get("employer_name") or None
         strategy = "workday_api"
+
+        excluded_company = False
+        for exc in search_cfg.get("exclude_companies") or []:
+            if not exc:
+                continue
+            el = exc.lower()
+            if company and el in company.lower():
+                excluded_company = True
+                break
+            title = job.get("title") or ""
+            if title and el in title.lower():
+                excluded_company = True
+                break
+        if excluded_company:
+            continue
 
         if not passes_discovery_filters(
             title=job.get("title"),
@@ -591,6 +633,17 @@ def run_workday_discovery(employers: dict | None = None, workers: int = 1) -> di
                 "Workday: skipped %d Canada-primary employers (reject includes canada)",
                 skipped,
             )
+
+    before_co = len(employers)
+    employers = employers_without_excludes(
+        employers, search_cfg.get("exclude_companies") or [],
+    )
+    skipped_co = before_co - len(employers)
+    if skipped_co:
+        log.info(
+            "Workday: skipped %d employers matching exclude_companies",
+            skipped_co,
+        )
 
     # DISCOVER_MODE=fast → tier 1 only; full → workday_max_tier (default 2)
     discover_mode = os.environ.get("DISCOVER_MODE", "fast").strip().lower()

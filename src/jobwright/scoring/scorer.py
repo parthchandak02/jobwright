@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 
 from jobwright.config import load_profile
 from jobwright.database import get_connection, get_jobs_by_stage
+from jobwright.discovery.filters import apply_fit_score_guards
 from jobwright.llm import get_client
 from jobwright.llm_json import LLMJsonError, chat_json_object, get_list_field
 
@@ -39,10 +40,9 @@ SCORING CRITERIA:
 
 IMPORTANT FACTORS:
 - Weight skills and experience that match the candidate's TARGET ROLE guidance (below) - not a generic engineering checklist.
-- Prefer consulting, entrepreneurship, partnerships, strategy, operations, CSR, and leadership experience when the target role is non-technical.
-- When the target role includes social impact, CSR, philanthropy, or community investment, boost those program/foundation roles and penalize generic tech GTM, developer relations, partner engineering, and IT/technical program manager tracks.
+- When the target role includes social impact, CSR, philanthropy, or community investment: score 9-10 only for program, foundation, grantmaking, CSR/corporate purpose, community investment, or impact-fund roles. Score generic tech business operations, GTM partnerships, clinical/home-health ops, and Chief of Staff at companies with no social-impact mission at most 4.
+- Prefer consulting, partnerships, and program leadership when those skills show up IN an impact/CSR/foundation role. Do not treat transferable ops skills as enough for a high score.
 - Penalize roles that are primarily technical (software engineering, data science, deep ESG/climate science, heavy finance/IB) when the guidance says to avoid them.
-- Consider transferable experience and project/program leadership.
 - Be realistic about experience level vs. job requirements (years of experience, seniority).
 - If salary is listed and clearly below the candidate's floor, score lower (max 4)."""
 
@@ -181,7 +181,11 @@ def _job_block(job: dict, index: int | None = None, desc_chars: int = _SINGLE_DE
     )
 
 
-def _map_batch_scores(jobs: list[dict], data: dict) -> tuple[list[dict], list[dict]]:
+def _map_batch_scores(
+    jobs: list[dict],
+    data: dict,
+    search_cfg: dict | None = None,
+) -> tuple[list[dict], list[dict]]:
     """Map LLM batch JSON onto jobs. Returns (scored, missing)."""
     items = get_list_field(data, "scores", "jobs")
     by_id: dict[int, dict] = {}
@@ -204,7 +208,7 @@ def _map_batch_scores(jobs: list[dict], data: dict) -> tuple[list[dict], list[di
             missing.append(job)
             continue
         try:
-            parsed = _parse_score_response(raw)
+            parsed = apply_fit_score_guards(job, _parse_score_response(raw), search_cfg)
         except LLMJsonError:
             missing.append(job)
             continue
@@ -218,12 +222,15 @@ def score_jobs_batch(
     jobs: list[dict],
     profile: dict | None = None,
     calibration: str = "",
+    search_cfg: dict | None = None,
 ) -> tuple[list[dict], list[dict]]:
     """Score a small batch of jobs in one LLM call. Missing jobs returned for retry."""
     if not jobs:
         return [], []
     if len(jobs) == 1:
-        one = score_job(resume_text, jobs[0], profile=profile, calibration=calibration)
+        one = score_job(
+            resume_text, jobs[0], profile=profile, calibration=calibration, search_cfg=search_cfg,
+        )
         if one is None:
             return [], jobs
         one["url"] = jobs[0]["url"]
@@ -251,7 +258,7 @@ def score_jobs_batch(
             max_tokens=min(400 * len(jobs) + 1024, 8192),
             temperature=0.2,
         )
-        return _map_batch_scores(jobs, data)
+        return _map_batch_scores(jobs, data, search_cfg)
     except (LLMJsonError, Exception) as e:
         log.warning("Batch score failed (%d jobs): %s — falling back to sequential", len(jobs), e)
         return [], jobs
@@ -262,6 +269,7 @@ def score_job(
     job: dict,
     profile: dict | None = None,
     calibration: str = "",
+    search_cfg: dict | None = None,
 ) -> dict | None:
     """Score a single job against the resume.
 
@@ -290,7 +298,7 @@ def score_job(
             temperature=0.2,
             max_parse_retries=2,
         )
-        return _parse_score_response(data)
+        return apply_fit_score_guards(job, _parse_score_response(data), search_cfg)
     except (LLMJsonError, Exception) as e:
         log.error("LLM error scoring job '%s': %s", job.get("title", "?"), e)
         if os.environ.get("GEMINI_API_KEY"):
@@ -306,7 +314,7 @@ def score_job(
                     temperature=0.2,
                     max_parse_retries=2,
                 )
-                return _parse_score_response(data)
+                return apply_fit_score_guards(job, _parse_score_response(data), search_cfg)
             except (LLMJsonError, Exception) as retry_exc:
                 log.error(
                     "Score retry failed for '%s': %s",
@@ -333,6 +341,12 @@ def run_scoring(limit: int = 0, rescore: bool = False) -> dict:
         profile = load_profile()
     except FileNotFoundError:
         profile = None
+    try:
+        from jobwright.config import load_search_config
+
+        search_cfg = load_search_config()
+    except Exception:
+        search_cfg = {}
     conn = get_connection()
     calibration = _load_score_calibration(conn)
 
@@ -367,7 +381,9 @@ def run_scoring(limit: int = 0, rescore: bool = False) -> dict:
     )
 
     for chunk in chunks:
-        scored, leftover = score_jobs_batch(resume_text, chunk, profile=profile, calibration=calibration)
+        scored, leftover = score_jobs_batch(
+            resume_text, chunk, profile=profile, calibration=calibration, search_cfg=search_cfg,
+        )
         results.extend(scored)
         done += len(scored)
         for item in scored:
@@ -376,7 +392,9 @@ def run_scoring(limit: int = 0, rescore: bool = False) -> dict:
                 done, len(jobs), item["score"], (item.get("url") or "")[-50:],
             )
         for job in leftover:
-            result = score_job(resume_text, job, profile=profile, calibration=calibration)
+            result = score_job(
+                resume_text, job, profile=profile, calibration=calibration, search_cfg=search_cfg,
+            )
             done += 1
             if result is None:
                 errors += 1

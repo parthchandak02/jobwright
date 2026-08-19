@@ -54,7 +54,7 @@ if [[ "${BRIEF_SMOKE:-}" == "1" ]]; then
   WORKERS="${APPLY_WORKERS:-2}"
 fi
 
-MIN_SCORE="${APPLY_MIN_SCORE:-5}"
+MIN_SCORE="${APPLY_MIN_SCORE:-7}"
 WORKERS="${WORKERS:-${APPLY_WORKERS:-4}}"
 TODAY="$(date +%Y%m%d)"
 LOG="${JOBWRIGHT_DIR}/logs/brief_${TODAY}.log"

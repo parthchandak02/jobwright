@@ -12,10 +12,11 @@ Nested agent notes for the Python package. Root context: [../../AGENTS.md](../..
 | `resume.py` | PDF source of truth; pymupdf4llm markdown cache at `resume/base.md` for LLM stages |
 | `notify.py` | One WhatsApp list of new `prepare` jobs + dashboard deep links |
 | `config.py` | `set_active_user`, `set_app_dir`, path constants (`RESUME_PDF_PATH`, `RESUME_MD_PATH`) |
-| `users.py` | Registry at `<repo>/users/users.yaml` |
+| `users.py` | Registry at `<repo>/users/users.yaml`; cron label/clock helpers for dashboard schedule |
+| `hermes_cron.py` | Find/edit existing `jobwright-brief-<user>` via `hermes cron` |
 | `database.py` | SQLite schema, `jobs` + `stage_history`, `job_id` (blake2b of URL), `whatsapp_notified_at`, `advance_funnel`, stats |
 | `web/` | FastAPI Kanban: board, materials (incl. `POST .../tailor`), runs + SSE, settings (searches/resume.pdf/cover-letter PDFs), notify, gated apply |
-| `discovery/` | `jobspy.py` (`-w` / `JOBWRIGHT_DISCOVER_WORKERS`, known-URL skip), `workday.py`, `known_urls.py`, `smartextract.py` (`DISCOVER_MODE`) |
+| `discovery/` | `jobspy.py` (`-w` / `JOBWRIGHT_DISCOVER_WORKERS`, known-URL skip), `workday.py`, `filters.py`, `known_urls.py`, `smartextract.py` (`DISCOVER_MODE`) |
 | `enrichment/` | `detail.py` (full JD), `sponsorship.py` (LLM, not on discover hot path) |
 | `scoring/` | `scorer`, `tailor`, `tailor_instructions` (dashboard Auto/Custom prompts), `cover_letter`, `portfolio`, `pdf`, `docx_export`, `validator` |
 | `network/` | CSV rank, per-job connect, Exa research |
@@ -54,5 +55,6 @@ Single-user doctor: `jobwright doctor`. Multi-profile: `jobwright --user <id> do
 | `tests/test_materials_tailor_api.py` | `POST /api/jobs/{url}/tailor` (spawns `tailor-job`) |
 | `tests/test_subtle_tailor.py` | Dashboard instruction prompts |
 | `tests/test_cover_letter_examples.py` | Cover-letter example PDF settings API |
+| `tests/test_hermes_cron.py` | Parse `hermes cron list`; edit existing brief cron |
 
 Add tests for new provider behavior, user-resolution logic, or dashboard APIs.

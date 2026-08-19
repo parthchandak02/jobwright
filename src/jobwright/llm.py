@@ -404,8 +404,8 @@ class LLMClient:
 
                     log.warning(
                         "LLM rate limited (HTTP %s). Waiting %ds before retry %d/%d. "
-                        "Tip: Gemini free tier = 15 RPM. Consider a paid account "
-                        "or switching to a local model.",
+                        "Provider may be throttled (Fireworks/Gemini). "
+                        "Set GEMINI_API_KEY for empty-response failover.",
                         resp.status_code, wait, attempt + 1, _MAX_RETRIES,
                     )
                     time.sleep(wait)
