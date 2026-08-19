@@ -24,6 +24,8 @@ Used by [.cursor/skills/deploy/SKILL.md](.cursor/skills/deploy/SKILL.md) and [.c
 | `.cursor/rules/agents-doc-sync.mdc` | Doc-sync policy itself |
 | `.cursor/rules/agent-orchestration.mdc` | Agent workflow, skill routing, execution discipline |
 | `.cursor/skills/pipeline-operator/SKILL.md` | Hermes/pipeline skill entry points change |
+| `.cursor/rules/frontend-ui-consistency.mdc` | Skip-gate, reuse ladder, or taste-skill forbid changes |
+| `.cursor/skills/frontend-tasteful/` | Promote a reusable domain component, token/class family, or UI convention |
 
 ## Quality gate
 

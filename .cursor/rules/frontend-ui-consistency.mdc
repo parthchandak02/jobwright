@@ -1,80 +1,31 @@
 ---
-description: Kanban dashboard UI consistency — reuse tokens and shared components; standardize new patterns
+description: Kanban dashboard UI skip-gate. Load frontend-tasteful for frontend/ work; never landing-page taste
 alwaysApply: true
 ---
 
 # Frontend UI consistency (jobwright dashboard)
 
-Any UI change in `frontend/` must keep the dashboard visually and structurally consistent.
+## Skip gate
 
-## Before editing
+If this turn does **not** build, change, or polish dashboard UI (`frontend/`), ignore the rest of this rule.
 
-1. Read peer screens that solve the same problem (sidebar vs drawer vs card vs table).
-2. Check tokens in `frontend/src/index.css` (`:root`, `@layer components`).
-3. Check shared primitives in `frontend/src/components/ui/` and domain components below.
-4. Load [.cursor/skills/frontend-tasteful/SKILL.md](.cursor/skills/frontend-tasteful/SKILL.md) for polish passes.
+If it does, **load** [.cursor/skills/frontend-tasteful/SKILL.md](.cursor/skills/frontend-tasteful/SKILL.md) **before editing**. That skill holds the living catalog (primitives, tokens, little things). Do not invent a parallel inventory here.
 
-## Reuse order (do not skip)
+## Reuse ladder (do not skip)
 
-1. **shadcn primitives** — `components/ui/` (`Button`, `Tabs`, `Badge`, `Input`, …). Use default variants; do not fork styles inline unless the pattern is promoted (see below).
-2. **Domain layout components** — prefer these over ad-hoc flex/gap classes:
-   - Sidebar: `NavItem`, `SidebarActionButton`, `AppSidebar` (hover flyout + click to pin)
-   - Job cards: `JobCardLayout`, `JobMetaPanel`, `MetaField`, `Chip`
-   - Profile editors: `ChipInput`, `QueryChipInput`, `LocationChipInput`, `BoardToggles`
-   - Resume: `ResumePreview` (PDF iframe + markdown fallback)
-   - Materials: `ProfileMaterials` (resume + cover-letter document tabs wrapping `ResumePreview`)
-   - Pipeline/tailor progress: `RunProgressDialog` + `RunProgressButton` (`AutoSearchDialog` is a thin wrapper; `useTailorMaterials` for per-job runs)
-   - Custom tailor: `CustomTailorDialog`; field help: `FieldHint`
-   - Views: `ViewModeTabs` (Board/Table)
-   - Stage color: `laneTone()` / `STAGE_TONE` from `lib/api.ts` (match Kanban column headers)
-3. **CSS tokens** — add spacing/color to `:root` or `@layer components` (e.g. `--job-card-*`, `.job-card-*`), not scattered `text-[11px]`, `p-2.5`, `mt-0.5` mixes.
+1. shadcn in `frontend/src/components/ui/` (default variants; do not fork inline).
+2. Domain primitives in `frontend/src/components/` (see the skill catalog).
+3. Tokens / classes in `frontend/src/index.css` (`:root`, `@layer components`).
 
-## New UI requests
-
-- **Default:** extend an existing component or token. Briefly recommend the existing pattern before building something new.
-- **If the user still wants a new control:** implement once as a **reusable** component (or token + class) in `components/`, wire all call sites, and note it in the PR/summary so future agents reuse it.
-- **Do not** leave one-off markup/styles in `App.tsx` or page files when a shared primitive fits.
-
-## Consistency rules (this project)
-
-| Area | Standard |
-|------|----------|
-| Stage labels (sidebar) | ALL CAPS, `laneTone` color on label + count |
-| Sidebar actions | Same row pattern as `NavItem` (icon + label expanded; icon-only collapsed) |
-| Segmented controls | Default `TabsList` + `TabsTrigger` (rounded pill), not custom underline toggles |
-| Job card rhythm | `JobCardLayout` slots + `--job-card-*` tokens; `text-sm` title, `text-xs` meta/chips |
-| Chips / meta rows | `Chip` (`.job-card-chip`) and `MetaField` (`.job-card-meta-row`) on cards; Profile uses `ChipInput` / `QueryChipInput` / `LocationChipInput` |
-| Action buttons | `Button` from `ui/button` (`size="sm"`); `outline` for secondary, default for primary CTA |
-
-## Examples
-
-```tsx
-// BAD — inline spacing/typography drift
-<div className="space-y-2"><span className="text-[11px]">…</span></div>
-
-// GOOD — shared layout + tokens
-<JobCardBody><JobCardMeta><MetaField … /></JobCardMeta></JobCardBody>
-```
-
-```tsx
-// BAD — custom header toggle
-<TabsList className="rounded-none bg-transparent …">
-
-// GOOD — project segmented control
-<ViewModeTabs value={view} onChange={setView} />
-```
-
-```tsx
-// BAD — text link posing as a button
-<button className="text-xs text-muted-foreground hover:text-foreground">Download</button>
-
-// GOOD — shared Button primitive
-<Button size="sm" variant="outline"><Download /> Download DOCX</Button>
-```
+Extend an existing primitive or token before adding a one-off. If the user still wants a new control, implement it once as a reusable component (or token + class), wire call sites, and **promote** it into the skill catalog in the same change.
 
 ## Do not
 
-- Introduce hardcoded colors that duplicate lane/stage tokens.
-- Add duplicate badge/chip/meta markup when `Chip` / `MetaField` / `NavItem` already fit.
-- Use raw `<button>` with custom utility classes for actions; use `Button` (nav items and list rows are exceptions).
-- Change behavior, data contracts, or accessibility to “fix” visuals.
+- Load global landing-page / portfolio taste skills (`design-taste-frontend`, Three Dials, heroes, airy marketing layouts) for this product.
+- Leave one-off markup in `App.tsx` or page files when a shared primitive fits.
+- Change behavior, data contracts, or accessibility to "fix" visuals.
+- Duplicate lane/stage colors; use `laneTone()` / `--stage-*`.
+
+## Promote
+
+Update `.cursor/skills/frontend-tasteful/references/catalog.md` only when you add or rename a **reusable** domain component, add a **reusable** token/class family, or change a consistency convention. Skip copy tweaks, bugfixes, and page-local layout.

@@ -1,6 +1,8 @@
 # Frontend Polish Audit Checklist
 
-Use this checklist after scanning peers, tokens, and shared primitives.
+Use this checklist after [catalog.md](catalog.md) and peer screens.
+
+Do not load landing-page / portfolio taste skills for this dashboard.
 
 ## Structure and primitives
 

@@ -18,6 +18,7 @@ Update in the same change set if you touched:
 - Apply safety gates, providers, or dashboard/CLI live-apply confirm
 - Agent doc locations (`docs/agents/`, `templates/hermes-skill/`)
 - Version in `pyproject.toml`
+- Dashboard UI catalog: reusable `frontend/src/components/` primitive (not `ui/`), reusable token/class family, or consistency convention (same change as `.cursor/skills/frontend-tasteful/references/catalog.md`)
 
 Also update [docs/agents/repo-map.md](docs/agents/repo-map.md) when paths or scripts change materially.
 
