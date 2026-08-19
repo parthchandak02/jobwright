@@ -15,6 +15,7 @@ alwaysApply: true
 ## Understand before acting
 
 - Prefer repo reads over guesses.
+- Codebase / architecture exploration: follow [.cursor/rules/graphify.mdc](.cursor/rules/graphify.mdc) (`graphify query` / `path` / `explain` first). Pass that rule to every explore subagent.
 - Stop aligning when the user says go, implement, good enough, or stop grilling.
 
 ## Track multi-step work
@@ -43,7 +44,7 @@ alwaysApply: true
 | Hard bug, regression, slowness | [.cursor/skills/diagnosing-bugs/SKILL.md](.cursor/skills/diagnosing-bugs/SKILL.md) |
 | Stuck, costly fork, repeated failure | [.cursor/skills/advisor/SKILL.md](.cursor/skills/advisor/SKILL.md) |
 | Default implementation bias | [.cursor/skills/ponytail/SKILL.md](.cursor/skills/ponytail/SKILL.md) |
-| Dashboard visual polish | [.cursor/skills/frontend-tasteful/SKILL.md](.cursor/skills/frontend-tasteful/SKILL.md) |
+| Dashboard UI (build, change, or polish `frontend/`) | [.cursor/skills/frontend-tasteful/SKILL.md](.cursor/skills/frontend-tasteful/SKILL.md) |
 | Large refactor | [.cursor/skills/improve-codebase-architecture/SKILL.md](.cursor/skills/improve-codebase-architecture/SKILL.md) |
 | Stage 6 / browser apply debug | [.cursor/skills/playwright-cli/SKILL.md](.cursor/skills/playwright-cli/SKILL.md) |
 

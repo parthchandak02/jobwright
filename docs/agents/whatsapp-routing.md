@@ -60,7 +60,7 @@ Brief pipeline defaults (in `run_daily_brief.sh`):
 | `JOBWRIGHT_LLM_MODEL` | `accounts/fireworks/models/gpt-oss-120b` | Overrides global `.env` `LLM_MODEL` for scoring/tailor/cover |
 | `SCORE_BATCH_SIZE` | `10` | Jobs per scoring LLM call. Do not send the full jobs table in one shot. |
 | `DISCOVER_MODE` | `fast` | Tier-1 queries; weekly `full` for deep crawl |
-| `APPLY_MIN_SCORE` | `5` | Min fit score for tailor/cover in the brief (user `.env` may override) |
+| `APPLY_MIN_SCORE` | `7` | Min fit score for tailor/cover in the brief (user `.env` may override) |
 | `BRIEF_SMOKE` | unset | Set only via `jobwright_smoke.sh` - do not use for production brief |
 | `JOBWRIGHT_PUBLIC_BASE_URL` | `https://jobwright.parthchandak.info` | Deep-link base used by `jobwright notify` |
 
