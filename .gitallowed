@@ -33,3 +33,7 @@ env\.setdefault\("JOBWRIGHT_LOG_LEVEL"
 env\.setdefault\("APPLY_PREP_LIMIT"
 env\.setdefault\("APPLY_MIN_SCORE"
 env\.setdefault\("HERMES_ACCEPT_HOOKS"
+# Deploy skill documents git-secrets workflow (no secret values)
+skills/deploy/SKILL
+git-secrets hook
+mirror existing `JOBWRIGHT_

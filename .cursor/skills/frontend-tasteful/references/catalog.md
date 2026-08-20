@@ -47,7 +47,7 @@ Reuse order: shadcn defaults → domain primitive → new token/class. Tailwind 
 | Use | Primitive |
 |-----|-----------|
 | Drawer section chrome / prev-next stage | `DrawerSection`, `DrawerStageNav` |
-| Per-job resume/cover + Auto/Custom Tailor | `MaterialsPanel` |
+| Per-job resume/cover + Auto/Custom Tailor | `JobResumeMaterials`, `JobCoverMaterials`, `JobMaterialsPreview` |
 | Profile documents (PDF iframe + markdown) | `ProfileMaterials` + `ResumePreview` |
 | Live pipeline / tailor logs | `RunProgressDialog` + `RunProgressButton` |
 | Board Auto Search dialog | `AutoSearchDialog` (wrapper over `RunProgressDialog`) |
@@ -80,8 +80,8 @@ Reuse order: shadcn defaults → domain primitive → new token/class. Tailwind 
 | Job card | `--job-card-*`, `.job-card-*` |
 | Table | `--jobs-table-*`, `.jobs-table*` |
 | Sidebar | `--sidebar-rail` 3.5rem, `--sidebar-panel` 14rem, `.sidebar-label` |
-| LinkedIn | `--linkedin*` , `.connections-*` |
-| Tailor | `--tailor*` (also `Button variant="ai"`) |
+| LinkedIn | `--linkedin*` , `.connections-section`, `.connections-*` |
+| Tailor | `--tailor*` , `.materials-preview-frame*` , `Button variant="ai"` |
 | Motion | `--ease-glass`; honor `prefers-reduced-motion` |
 
 Theme: `lib/theme.tsx` + `.dark` on `<html>` (`jobwright-theme`). Dark neutrals are greyscale; stage / LinkedIn / tailor keep chroma.
@@ -105,6 +105,6 @@ Prefer extending the closest primitive. Do **not** promote these until they are 
 - Header search field in `App.tsx`
 - Empty / loading copy (board, table, drawer, connections each differ)
 - `JobsTable` local `FilterChip` (not `Chip`)
-- `MaterialsPanel` markdown preview vs `ResumePreview` PDF+md
+- Job drawer materials use `JobMaterialsPreview` (version dropdown + PDF/md); Profile keeps `ResumePreview`
 
 `ui/Card` and `ui/ScrollArea` exist but are unused; do not start using them without a reason (Sheet/Dialog already cover overlays).
