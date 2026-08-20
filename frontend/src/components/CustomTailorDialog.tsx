@@ -11,65 +11,73 @@ import {
 } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { tailorDefaults, type TailorInstructions } from '@/lib/api'
+import { tailorDefaults } from '@/lib/api'
+import type { TailorScope } from '@/lib/useTailorMaterials'
 import { errorMessage } from '@/lib/utils'
 
 type Props = {
   open: boolean
   onClose: () => void
-  onStart: (instructions: TailorInstructions) => void
+  onStart: (instructions: string) => void
   starting: boolean
+  scope: TailorScope
 }
 
-export function CustomTailorDialog({ open, onClose, onStart, starting }: Props) {
-  const [resume, setResume] = useState('')
-  const [cover, setCover] = useState('')
+const COPY: Record<
+  TailorScope,
+  { title: string; description: string; label: string; emptyError: string }
+> = {
+  resume: {
+    title: 'Custom Tailor (Resume)',
+    description:
+      'These are the Auto Tailor resume instructions. Edit them, then start. The base resume stays the source of truth.',
+    label: 'Resume instructions',
+    emptyError: 'Resume instructions required',
+  },
+  cover: {
+    title: 'Custom Tailor (Cover Letter)',
+    description:
+      'These are the Auto Tailor cover letter instructions. Edit them, then start. Your profile samples are not changed.',
+    label: 'Cover letter instructions',
+    emptyError: 'Cover letter instructions required',
+  },
+}
+
+export function CustomTailorDialog({ open, onClose, onStart, starting, scope }: Props) {
+  const [text, setText] = useState('')
   const [loaded, setLoaded] = useState(false)
+  const copy = COPY[scope]
 
   useEffect(() => {
     if (!open) return
     setLoaded(false)
     void tailorDefaults()
       .then((d) => {
-        setResume(d.resume_instructions)
-        setCover(d.cover_instructions)
+        setText(scope === 'resume' ? d.resume_instructions : d.cover_instructions)
         setLoaded(true)
       })
       .catch((e) => {
         toast.error(errorMessage(e))
         setLoaded(true)
       })
-  }, [open])
+  }, [open, scope])
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
       <DialogContent className="flex max-h-[85vh] max-w-2xl flex-col gap-4 overflow-hidden sm:max-w-2xl">
         <DialogHeader className="shrink-0 pr-8">
-          <DialogTitle>Custom Tailor</DialogTitle>
-          <DialogDescription>
-            These are the Auto Tailor instructions. Edit them, then start. The base resume stays
-            the source of truth.
-          </DialogDescription>
+          <DialogTitle>{copy.title}</DialogTitle>
+          <DialogDescription>{copy.description}</DialogDescription>
         </DialogHeader>
-        <div className="min-h-0 flex-1 space-y-3 overflow-auto">
+        <div className="min-h-0 flex-1 overflow-auto">
           <div className="space-y-1.5">
-            <Label htmlFor="custom-tailor-resume">Resume instructions</Label>
+            <Label htmlFor={`custom-tailor-${scope}`}>{copy.label}</Label>
             <Textarea
-              id="custom-tailor-resume"
-              value={resume}
-              rows={10}
+              id={`custom-tailor-${scope}`}
+              value={text}
+              rows={scope === 'resume' ? 12 : 10}
               disabled={!loaded || starting}
-              onChange={(e) => setResume(e.target.value)}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="custom-tailor-cover">Cover letter instructions</Label>
-            <Textarea
-              id="custom-tailor-cover"
-              value={cover}
-              rows={8}
-              disabled={!loaded || starting}
-              onChange={(e) => setCover(e.target.value)}
+              onChange={(e) => setText(e.target.value)}
             />
           </div>
         </div>
@@ -81,13 +89,8 @@ export function CustomTailorDialog({ open, onClose, onStart, starting }: Props) 
             type="button"
             size="sm"
             variant="ai"
-            disabled={!loaded || starting || !resume.trim()}
-            onClick={() =>
-              onStart({
-                resume_instructions: resume.trim(),
-                cover_instructions: cover.trim(),
-              })
-            }
+            disabled={!loaded || starting || !text.trim()}
+            onClick={() => onStart(text.trim())}
           >
             <Sparkles />
             Start tailor

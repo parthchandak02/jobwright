@@ -19,7 +19,7 @@ export function DrawerSection({ title, children, className, first }: Props) {
       )}
     >
       {title ? (
-        <h3 className="text-sm font-medium text-foreground">{title}</h3>
+        <h3 className="text-sm font-medium">{title}</h3>
       ) : null}
       {children}
     </section>

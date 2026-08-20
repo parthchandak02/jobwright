@@ -1,9 +1,22 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { startJobTailor, stopRun, type RunHandle, type TailorInstructions } from '@/lib/api'
+import {
+  startJobTailorCover,
+  startJobTailorResume,
+  stopRun,
+  type RunHandle,
+} from '@/lib/api'
 import { type AutoSearch, type AutoSearchState } from '@/lib/useAutoSearch'
 import { errorMessage } from '@/lib/utils'
 
-export const TAILOR_STAGES = ['tailor', 'cover', 'docx'] as const
+export type TailorScope = 'resume' | 'cover'
+
+export const RESUME_TAILOR_STAGES = ['tailor', 'docx'] as const
+export const COVER_TAILOR_STAGES = ['cover', 'docx'] as const
+
+const STAGES_BY_SCOPE: Record<TailorScope, readonly string[]> = {
+  resume: RESUME_TAILOR_STAGES,
+  cover: COVER_TAILOR_STAGES,
+}
 
 function parseRC(line: string): number | null {
   const m = line.match(/RC=(-?\d+)/)
@@ -11,9 +24,13 @@ function parseRC(line: string): number | null {
 }
 
 /**
- * Per-job tailor run with SSE logs. Same progress model as Auto Search.
+ * Per-job resume or cover tailor run with SSE logs.
  */
-export function useTailorMaterials(jobUrl: string | undefined, onDone: () => void): AutoSearch {
+export function useTailorMaterials(
+  jobUrl: string | undefined,
+  scope: TailorScope,
+  onDone: () => void,
+): AutoSearch {
   const [state, setState] = useState<AutoSearchState>('idle')
   const [handle, setHandle] = useState<RunHandle | null>(null)
   const [log, setLog] = useState('')
@@ -29,6 +46,7 @@ export function useTailorMaterials(jobUrl: string | undefined, onDone: () => voi
   const stoppedRef = useRef(false)
   onDoneRef.current = onDone
 
+  const stages = STAGES_BY_SCOPE[scope]
   const runId = handle?.run_id ?? null
   const active = state === 'starting' || state === 'running'
 
@@ -43,7 +61,7 @@ export function useTailorMaterials(jobUrl: string | undefined, onDone: () => voi
     setStopping(false)
     stoppedRef.current = false
     startedAtRef.current = null
-  }, [jobUrl])
+  }, [jobUrl, scope])
 
   useEffect(() => {
     if (!active || startedAtRef.current == null) return
@@ -105,29 +123,35 @@ export function useTailorMaterials(jobUrl: string | undefined, onDone: () => voi
     }
   }, [runId])
 
-  const start = useCallback((arg?: unknown) => {
-    const instructions = arg as Partial<TailorInstructions> | undefined
-    if (!jobUrl || state === 'starting' || state === 'running') return
-    stoppedRef.current = false
-    setState('starting')
-    setLog('')
-    setRc(null)
-    setCurrentStage(null)
-    setCompletedCount(0)
-    setElapsedMs(0)
-    startedAtRef.current = Date.now()
-    void (async () => {
-      try {
-        const res = await startJobTailor(jobUrl, instructions)
-        setHandle(res)
-        setState('running')
-      } catch (e) {
-        const { toast } = await import('sonner')
-        toast.error(errorMessage(e))
-        setState('error')
-      }
-    })()
-  }, [jobUrl, state])
+  const start = useCallback(
+    (arg?: unknown) => {
+      const instructions = typeof arg === 'string' ? arg : undefined
+      if (!jobUrl || state === 'starting' || state === 'running') return
+      stoppedRef.current = false
+      setState('starting')
+      setLog('')
+      setRc(null)
+      setCurrentStage(null)
+      setCompletedCount(0)
+      setElapsedMs(0)
+      startedAtRef.current = Date.now()
+      void (async () => {
+        try {
+          const res =
+            scope === 'resume'
+              ? await startJobTailorResume(jobUrl, instructions)
+              : await startJobTailorCover(jobUrl, instructions)
+          setHandle(res)
+          setState('running')
+        } catch (e) {
+          const { toast } = await import('sonner')
+          toast.error(errorMessage(e))
+          setState('error')
+        }
+      })()
+    },
+    [jobUrl, scope, state],
+  )
 
   const stop = useCallback(async () => {
     if (!runId) {
@@ -156,7 +180,7 @@ export function useTailorMaterials(jobUrl: string | undefined, onDone: () => voi
     }
   }, [runId])
 
-  const total = TAILOR_STAGES.length
+  const total = stages.length
   const done = Math.min(completedCount, total)
   const partial = active && currentStage && done < total ? 0.4 : 0
   const progress =
@@ -168,7 +192,7 @@ export function useTailorMaterials(jobUrl: string | undefined, onDone: () => voi
     handle,
     log,
     rc,
-    stages: [...TAILOR_STAGES],
+    stages: [...stages],
     currentStage,
     completedCount: done,
     progress,

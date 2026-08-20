@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ExternalLink, Loader2, Plus, Trash2, UserRound } from 'lucide-react'
-import { LinkedInLogo } from '@/components/LinkedInLogo'
+import { ExternalLink, Loader2, Plus, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -69,10 +68,6 @@ function ContactRow({
 
   return (
     <li className="connection-row">
-      <div className="connection-avatar" aria-hidden>
-        {href?.includes('linkedin.com') ? <LinkedInLogo /> : <UserRound />}
-      </div>
-
       <div className="connection-body">
         <div className="flex min-w-0 flex-wrap items-baseline gap-x-1.5 gap-y-0">
           {href ? (
@@ -243,7 +238,7 @@ export function ConnectionsPanel({ jobUrl, connections, onChanged }: Props) {
   return (
     <div className="connections-panel min-w-0">
       {!hasAny ? (
-        <p className="text-xs text-muted-foreground">
+        <p className="connections-empty">
           No LinkedIn contacts ranked for this employer yet. Search your network or paste a
           profile URL.
         </p>
@@ -336,8 +331,7 @@ export function ConnectionsPanel({ jobUrl, connections, onChanged }: Props) {
           <Button
             type="button"
             size="sm"
-            variant="secondary"
-            className="shrink-0"
+            className="connections-add-btn shrink-0"
             disabled={busy || !profileUrl.trim()}
             onClick={() => void addFromUrl()}
           >

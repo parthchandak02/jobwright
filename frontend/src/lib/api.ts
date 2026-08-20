@@ -247,6 +247,22 @@ export function startJobTailor(url: string, instructions?: Partial<TailorInstruc
   })
 }
 
+/** Resume-only tailor (tailor + docx). */
+export function startJobTailorResume(url: string, resumeInstructions?: string): Promise<RunHandle> {
+  return apiFetch<RunHandle>(`/jobs/${encodeURIComponent(url)}/tailor/resume`, {
+    method: 'POST',
+    body: JSON.stringify({ resume_instructions: resumeInstructions }),
+  })
+}
+
+/** Cover-only tailor (cover + docx). */
+export function startJobTailorCover(url: string, coverInstructions?: string): Promise<RunHandle> {
+  return apiFetch<RunHandle>(`/jobs/${encodeURIComponent(url)}/tailor/cover`, {
+    method: 'POST',
+    body: JSON.stringify({ cover_instructions: coverInstructions }),
+  })
+}
+
 /** Stop a running pipeline process. */
 export function stopRun(runId: string): Promise<StopRunResponse> {
   return apiFetch<StopRunResponse>(`/runs/${runId}/stop`, { method: 'POST' })

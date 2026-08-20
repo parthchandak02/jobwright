@@ -9,8 +9,12 @@ import { DrawerStageNav } from '@/components/DrawerStageNav'
 import { JobSummary } from '@/components/JobSummary'
 import { ConnectionsPanel, type ConnectionContact } from '@/components/ConnectionsPanel'
 import { LinkedInLogo } from '@/components/LinkedInLogo'
-import { MaterialsPanel, type MaterialsData } from '@/components/MaterialsPanel'
-import { apiFetch, JobCard, laneTone, STAGE_LABELS } from '@/lib/api'
+import {
+  JobCoverMaterials,
+  JobResumeMaterials,
+  type MaterialsData,
+} from '@/components/MaterialsPanel'
+import { apiFetch, JobCard, laneTone, STAGE_LABELS, type SettingsData } from '@/lib/api'
 import { cn, errorMessage } from '@/lib/utils'
 import type { CSSProperties } from 'react'
 
@@ -45,6 +49,7 @@ export function JobDrawer({ jobUrl, onClose, onChanged, onRequestClose }: Props)
   const open = !!jobUrl
   const [job, setJob] = useState<JobCard | null>(null)
   const [materials, setMaterials] = useState<MaterialsData | null>(null)
+  const [settings, setSettings] = useState<SettingsData | null>(null)
   const [connections, setConnections] = useState<Connections | null>(null)
   const [notes, setNotes] = useState('')
   const [busy, setBusy] = useState(false)
@@ -58,18 +63,21 @@ export function JobDrawer({ jobUrl, onClose, onChanged, onRequestClose }: Props)
     setNotes(j.notes || '')
     loadedUrl.current = url
 
-    const [mRes, cRes] = await Promise.allSettled([
+    const [mRes, cRes, sRes] = await Promise.allSettled([
       apiFetch<MaterialsData>(`/jobs/${enc}/materials`),
       apiFetch<Connections>(`/jobs/${enc}/connections`),
+      apiFetch<SettingsData>('/settings'),
     ])
     setMaterials(mRes.status === 'fulfilled' ? mRes.value : null)
     setConnections(cRes.status === 'fulfilled' ? cRes.value : null)
+    setSettings(sRes.status === 'fulfilled' ? sRes.value : null)
   }
 
   useEffect(() => {
     if (!jobUrl) {
       setJob(null)
       setMaterials(null)
+      setSettings(null)
       setConnections(null)
       loadedUrl.current = null
       return
@@ -133,15 +141,7 @@ export function JobDrawer({ jobUrl, onClose, onChanged, onRequestClose }: Props)
     }
   }
 
-  const hasMaterials = !!(
-    materials?.resume_preview ||
-    materials?.cover_preview ||
-    materials?.resume_docx ||
-    materials?.cover_docx ||
-    materials?.resume_md ||
-    materials?.cover_md
-  )
-  const showMaterialsSection = hasMaterials || job?.funnel_stage === 'prepare'
+  const showMaterialsSections = !!jobUrl && (job?.funnel_stage === 'prepare' || !!materials || !!settings)
 
   const lane = job ? laneTone(job.funnel_stage) : undefined
 
@@ -201,6 +201,7 @@ export function JobDrawer({ jobUrl, onClose, onChanged, onRequestClose }: Props)
 
                 {jobUrl ? (
                   <DrawerSection
+                    className="connections-section"
                     title={
                       <span className="inline-flex items-center gap-2">
                         <LinkedInLogo className="size-4 text-[var(--linkedin)]" />
@@ -218,17 +219,31 @@ export function JobDrawer({ jobUrl, onClose, onChanged, onRequestClose }: Props)
                   </DrawerSection>
                 ) : null}
 
-                {showMaterialsSection ? (
-                  <DrawerSection title="Materials">
-                    <MaterialsPanel
-                      materials={materials}
-                      jobUrl={jobUrl ?? undefined}
-                      onTailored={() => {
-                        onChanged()
-                        if (jobUrl) void load(jobUrl).catch((e) => toast.error(errorMessage(e)))
-                      }}
-                    />
-                  </DrawerSection>
+                {showMaterialsSections ? (
+                  <>
+                    <DrawerSection title="Resume">
+                      <JobResumeMaterials
+                        materials={materials}
+                        settings={settings}
+                        jobUrl={jobUrl ?? undefined}
+                        onTailored={() => {
+                          onChanged()
+                          if (jobUrl) void load(jobUrl).catch((e) => toast.error(errorMessage(e)))
+                        }}
+                      />
+                    </DrawerSection>
+                    <DrawerSection title="Cover Letter">
+                      <JobCoverMaterials
+                        materials={materials}
+                        settings={settings}
+                        jobUrl={jobUrl ?? undefined}
+                        onTailored={() => {
+                          onChanged()
+                          if (jobUrl) void load(jobUrl).catch((e) => toast.error(errorMessage(e)))
+                        }}
+                      />
+                    </DrawerSection>
+                  </>
                 ) : null}
 
                 <DrawerSection title="Notes">
