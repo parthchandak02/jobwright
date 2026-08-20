@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ExternalLink, Loader2, Plus, Trash2, UserRound } from 'lucide-react'
+import { LinkedInLogo } from '@/components/LinkedInLogo'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -16,7 +17,9 @@ export type ConnectionContact = {
   role?: string
   email?: string
   url?: string
+  source_url?: string
   why?: string
+  note?: string
   rank_score?: number
   source?: string
 }
@@ -60,13 +63,14 @@ function ContactRow({
 }) {
   const name = displayName(contact)
   const meta = subtitle(contact)
-  const href = contact.url?.trim()
+  const href = (contact.url || contact.source_url || '').trim()
+  const why = (contact.why || contact.note || '').trim()
   const isManual = contact.source === 'manual'
 
   return (
     <li className="connection-row">
       <div className="connection-avatar" aria-hidden>
-        <UserRound />
+        {href?.includes('linkedin.com') ? <LinkedInLogo /> : <UserRound />}
       </div>
 
       <div className="connection-body">
@@ -86,7 +90,7 @@ function ContactRow({
           {isManual ? <span className="connection-added">Added</span> : null}
         </div>
         {meta ? <p className="connection-meta">{meta}</p> : null}
-        {contact.why ? <p className="connection-why">{contact.why}</p> : null}
+        {why ? <p className="connection-why">{why}</p> : null}
       </div>
 
       <div className="flex shrink-0 items-center -mr-1">
@@ -239,7 +243,10 @@ export function ConnectionsPanel({ jobUrl, connections, onChanged }: Props) {
   return (
     <div className="connections-panel min-w-0">
       {!hasAny ? (
-        <p className="text-xs text-muted-foreground">No contacts yet.</p>
+        <p className="text-xs text-muted-foreground">
+          No LinkedIn contacts ranked for this employer yet. Search your network or paste a
+          profile URL.
+        </p>
       ) : (
         <ul className="connections-list min-w-0">
           {suggested.map((c, i) => (

@@ -214,7 +214,14 @@ export function useAutoSearch(onDone: () => void): AutoSearch {
         const runs = await listRuns()
         if (cancelled) return
         const live = runs.find((r) => r.running && isAutoSearchRun(r))
-        if (!live) return
+        if (!live) {
+          // API restart (or process exit) drops SSE before `done`. Stop the
+          // header timer instead of sitting on "Starting" forever.
+          if (st === 'running' || st === 'starting' || st === 'error') {
+            setState('finished')
+          }
+          return
+        }
         const current = handleRef.current?.run_id
         const attached = current === live.run_id && st === 'running'
         if (!attached) adopt(live)
