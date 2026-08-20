@@ -51,18 +51,44 @@ Follow [.cursor/commit-overlay.md](../../commit-overlay.md). Update `AGENTS.md` 
 
 ## Phase 2: Quality gate (scoped)
 
-Read overlay. Run the **minimum** gate for what changed:
+Read overlay. Run the **minimum** gate for what changed. Prefer the repo's tracked commands (same as AGENTS.md **Last verified**):
+
+```bash
+uv run --extra dev --extra web pytest tests/ -q
+```
 
 | Changed paths | Gate |
 |---------------|------|
-| `src/`, `tests/`, `scripts/` | `pytest tests/ -v` and `ruff check src/` |
+| `src/`, `tests/`, `scripts/` | pytest (above) + **scoped ruff** on changed Python under `src/` (see below) |
 | `frontend/` only | `cd frontend && pnpm build` (catches TS/build errors; also used by deploy) |
 | docs / `.cursor/` only | skip tests; skim for accuracy |
-| both backend + frontend | full pytest + ruff, then deploy builds again (acceptable) |
+| both backend + frontend | pytest + scoped ruff + `pnpm build` (deploy may build again; acceptable) |
+
+### Ruff (scoped, not whole tree)
+
+Full `ruff check src/` hits many pre-existing warnings (e.g. `BLE001` in `pipeline.py`). Gate only **files you changed**:
+
+```bash
+# From repo root; empty if no src/ changes
+git diff --name-only HEAD -- 'src/**/*.py' ':(exclude)src/**/__pycache__/**'
+# Then, for each path (or pass all at once):
+uv run ruff check src/jobwright/discovery/cleanup.py ...
+```
+
+Fix new violations in touched files before commit. Do not "fix" unrelated hubs in the same deploy unless the user asked.
 
 Optional when pipeline scripts changed: `bash scripts/validate_pipeline.sh`.
 
 Fix failures before commit unless the user explicitly approves committing with failures.
+
+### Pre-commit: git-secrets
+
+Commits run a `git-secrets` hook. New `env.setdefault(...)` lines for pipeline env vars often false-positive.
+
+- **Never** use `--no-verify` unless the user explicitly asks.
+- Add an allowlist regex to [`.gitallowed`](../../../.gitallowed) (mirror existing `JOBWRIGHT_*` env var lines).
+- Re-stage `.gitallowed` in the same backend commit when needed.
+- Preview: `git secrets --scan --cached`
 
 ## Phase 3: Clustered commits
 
@@ -122,12 +148,16 @@ From repo root. Use `./scripts/restart.sh` or `./scripts/dashboard_deploy.sh` (a
 
 | Diff touches | Command | Notes |
 |--------------|---------|-------|
-| `frontend/**` | `./scripts/restart.sh --prod-ui` | `pnpm build` + restart API + local health check |
-| `src/jobwright/web/**` or other `src/jobwright/**` (no frontend) | `./scripts/restart.sh --backend-only` **or skip** if API already has `--reload` and health passes | Prefer skip when reload is on and `curl -sf http://127.0.0.1:8002/api/health` succeeds |
+| `frontend/**` (with or without backend) | `./scripts/restart.sh --prod-ui` | `build_frontend()` + restart API + `health_check()`; **default when UI changed** |
+| `src/jobwright/**` only (no `frontend/**`) | `./scripts/restart.sh --backend-only` **or skip** if API has `--reload` and health passes | Prefer skip when `curl -sf http://127.0.0.1:8002/api/health` succeeds |
 | `cloudflared-config-jobwright.yml`, tunnel ingress | `./scripts/restart.sh --tunnel-only` | Config is gitignored; only if user changed local file |
 | `ecosystem.config.js` API args/env | `./scripts/restart.sh --backend-only` | |
 | docs / tests only | **skip deploy** | |
 | user says "deploy everything" | `./scripts/restart.sh --prod-ui` + `./scripts/restart.sh --tunnel-only` | rare; confirm tunnel needed |
+
+**Mixed frontend + backend:** always `--prod-ui` (prod serves `frontend/dist` through the API; backend-only restart does not rebuild UI).
+
+**Script map (graphify):** `graphify query "restart.sh"` or `graphify explain "build_frontend"` when unsure which flag runs build vs PM2 restart. `./scripts/dashboard_deploy.sh` is a thin alias for `--prod-ui`.
 
 **Never** run `--frontend-only` or restart `jobwright-ui` expecting production to update.
 
@@ -144,6 +174,16 @@ Skip public URL check if DNS or tunnel is known down; report local health only.
 ### PM2 persistence
 
 After first successful deploy on a host: `pm2 save` (once per machine, not every commit).
+
+## Graphify (optional, after backend commits)
+
+The pre-commit hook may launch a background `graphify update .`. You do not need to wait on it for deploy.
+
+- After backend changes, if an agent will explore architecture next: `graphify update .` (AST-only, no API cost).
+- Never commit `graphify-out/`.
+- Query symbols (`run_pipeline`, `build_frontend`), not English slogans. See [.cursor/rules/graphify.mdc](../../rules/graphify.mdc).
+
+Skip graphify during deploy when you already know the script path (e.g. `./scripts/restart.sh --prod-ui`).
 
 ## Phase 6: Next steps
 

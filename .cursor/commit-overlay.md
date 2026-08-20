@@ -29,10 +29,12 @@ Used by [.cursor/skills/deploy/SKILL.md](.cursor/skills/deploy/SKILL.md) and [.c
 
 ## Quality gate
 
-- Command: `pytest tests/ -v` and `ruff check src/`
+- Command: `uv run --extra dev --extra web pytest tests/ -q`
+- Ruff: **changed files only** under `src/` (`uv run ruff check <paths from git diff>`). Full-tree `ruff check src/` is not the gate (pre-existing noise).
 - Optional: `bash scripts/validate_pipeline.sh`
 - Run when: any change under `src/`, `tests/`, or `scripts/`
 - Tracked in: AGENTS.md **Last verified** line
+- Pre-commit: `git-secrets` via `.gitallowed` allowlist; never `--no-verify` without explicit user ask
 
 ## Commit clusters (recommended order)
 
@@ -42,8 +44,8 @@ Used by [.cursor/skills/deploy/SKILL.md](.cursor/skills/deploy/SKILL.md) and [.c
 | 2 | Core package | `src/jobwright/`, `pyproject.toml`, `uv.lock` |
 | 3 | Templates / skills readme | `templates/`, `skills/README.md` |
 | 4 | Dashboard UI | `frontend/` |
-| 5 | Scripts / bin | `scripts/`, `bin/` |
-| 6 | Tests | `tests/` |
+| 5 | Scripts / bin / hooks | `scripts/`, `bin/`, `.gitallowed` |
+| 6 | Tests | `tests/` (often same commit as backend when tightly coupled) |
 
 ## Message style
 
@@ -60,8 +62,8 @@ Public dashboard: `jobwright.parthchandak.info` (API `:8002` serves `frontend/di
 
 | Diff | Deploy action |
 |------|----------------|
-| `frontend/**` | `./scripts/restart.sh --prod-ui` |
-| `src/jobwright/**` (no frontend) | skip if uvicorn `--reload` + health OK; else `--backend-only` |
+| `frontend/**` (± backend) | `./scripts/restart.sh --prod-ui` |
+| `src/jobwright/**` only | skip if uvicorn `--reload` + health OK; else `--backend-only` |
 | tunnel config / ecosystem API | `--tunnel-only` or `--backend-only` as appropriate |
 | docs / tests only | skip deploy |
 
