@@ -15,8 +15,6 @@ const buttonVariants = cva(
         ghost: 'hover:bg-accent hover:text-accent-foreground',
         link: 'text-primary underline-offset-4 hover:underline',
         ai: 'border border-tailor/30 bg-tailor-muted text-tailor hover:bg-tailor/15 hover:text-tailor focus-visible:ring-tailor/30',
-        prepare:
-          'border border-[color:var(--lane)] bg-[color-mix(in_srgb,var(--lane)_30%,var(--glass))] text-[color:var(--lane)] hover:bg-[color-mix(in_srgb,var(--lane)_38%,var(--glass))] hover:text-[color:var(--lane)] focus-visible:ring-[color:var(--lane)]/40',
       },
       size: {
         default: 'h-9 px-4 py-2 has-[>svg]:px-3',

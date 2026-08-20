@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
-import { ChevronDown, Loader2 } from 'lucide-react'
+import { ArrowLeft, ChevronDown, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
+import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Textarea } from '@/components/ui/textarea'
 import { DrawerSection } from '@/components/DrawerSection'
 import { DrawerStageNav } from '@/components/DrawerStageNav'
 import { JobSummary } from '@/components/JobSummary'
 import { ConnectionsPanel, type ConnectionContact } from '@/components/ConnectionsPanel'
+import { LinkedInLogo } from '@/components/LinkedInLogo'
 import { MaterialsPanel, type MaterialsData } from '@/components/MaterialsPanel'
 import { apiFetch, JobCard, laneTone, STAGE_LABELS } from '@/lib/api'
 import { cn, errorMessage } from '@/lib/utils'
@@ -154,8 +156,14 @@ export function JobDrawer({ jobUrl, onClose, onChanged, onRequestClose }: Props)
           <SheetDescription>{job?.company || job?.site || 'Job drawer'}</SheetDescription>
         </SheetHeader>
 
+        <header className="flex shrink-0 items-center border-b border-border/60 bg-background px-3 py-2">
+          <Button type="button" size="icon-sm" variant="ghost" onClick={onClose} aria-label="Back to board">
+            <ArrowLeft />
+          </Button>
+        </header>
+
         <div className="job-drawer-scroll">
-          <div className="min-w-0 px-4 pb-6 pt-4">
+          <div className="min-w-0 px-4 pb-6 pt-3">
             {!job ? (
               <div className="flex items-center gap-2 py-8 text-sm text-muted-foreground">
                 <Loader2 className="size-4 animate-spin" /> Loading job…
@@ -192,7 +200,14 @@ export function JobDrawer({ jobUrl, onClose, onChanged, onRequestClose }: Props)
                 ) : null}
 
                 {jobUrl ? (
-                  <DrawerSection title="Connections">
+                  <DrawerSection
+                    title={
+                      <span className="inline-flex items-center gap-2">
+                        <LinkedInLogo className="size-4 text-[var(--linkedin)]" />
+                        Connections
+                      </span>
+                    }
+                  >
                     <ConnectionsPanel
                       jobUrl={jobUrl}
                       connections={connections}

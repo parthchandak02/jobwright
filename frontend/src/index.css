@@ -106,9 +106,9 @@
   --jobs-table-col-source: 7rem;
   --jobs-table-col-materials: 9.5rem;
   /* LinkedIn accent (connections panel) */
-  --linkedin: oklch(0.52 0.14 250);
-  --linkedin-muted: oklch(0.52 0.14 250 / 0.07);
-  --linkedin-subtle: oklch(0.52 0.14 250 / 0.14);
+  --linkedin: #0a66c2;
+  --linkedin-muted: color-mix(in srgb, #0a66c2 10%, transparent);
+  --linkedin-subtle: color-mix(in srgb, #0a66c2 22%, transparent);
   --whatsapp: oklch(0.72 0.19 145);
   /* Custom Tailor (AI) */
   --tailor: oklch(0.5 0.16 305);
@@ -164,9 +164,9 @@
   /* App background depth (subtle neutral, no color cast) */
   --mesh-1: oklch(0.6 0 0 / 0.05);
   --mesh-2: oklch(0.6 0 0 / 0.03);
-  --linkedin: oklch(0.62 0.12 250);
-  --linkedin-muted: oklch(0.62 0.12 250 / 0.1);
-  --linkedin-subtle: oklch(0.62 0.12 250 / 0.18);
+  --linkedin: #70b5f9;
+  --linkedin-muted: color-mix(in srgb, #70b5f9 14%, transparent);
+  --linkedin-subtle: color-mix(in srgb, #70b5f9 28%, transparent);
   --whatsapp: oklch(0.78 0.18 145);
   --tailor: oklch(0.78 0.14 305);
   --tailor-muted: oklch(0.78 0.14 305 / 0.16);
