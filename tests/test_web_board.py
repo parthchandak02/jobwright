@@ -163,6 +163,12 @@ def test_job_subroutes_not_shadowed(api_client):
     assert "resume_pdf" in body
     assert "cover_pdf" in body
 
+    res = api_client.get(f"/api/jobs/{enc}/materials/resume.pdf")
+    assert res.status_code == 404
+
+    res = api_client.get(f"/api/jobs/{enc}/materials/cover.pdf")
+    assert res.status_code == 404
+
     res = api_client.get(f"/api/jobs/{enc}/connections")
     assert res.status_code == 200
     body = res.json()

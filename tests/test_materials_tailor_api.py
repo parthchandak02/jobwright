@@ -153,3 +153,71 @@ def test_tailor_custom_instructions_written(api_client):
     assert cover_files
     assert resume_instr in resume_files[-1].read_text(encoding="utf-8")
     assert cover_instr in cover_files[-1].read_text(encoding="utf-8")
+
+
+def test_job_materials_pdf_inline(api_client, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    client, data_dir = api_client
+    url = "https://example.com/tailor-pdf-preview"
+    tailored_dir = data_dir / "tailored_resumes"
+    tailored_dir.mkdir(parents=True, exist_ok=True)
+    pdf_path = tailored_dir / "manual_test.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4 test")
+    md_path = tailored_dir / "manual_test.md"
+    md_path.write_text("# Tailored\n", encoding="utf-8")
+
+    insert_manual_job(
+        url,
+        title="Test",
+        company="Co",
+        description="Role description here.",
+        funnel_stage="prepare",
+    )
+    from jobwright.database import get_connection
+
+    conn = get_connection()
+    conn.execute(
+        "UPDATE jobs SET tailored_resume_path = ? WHERE url = ?",
+        (str(md_path), url),
+    )
+    conn.commit()
+
+    enc = _enc(url)
+    res = client.get(f"/api/jobs/{enc}/materials/resume.pdf")
+    assert res.status_code == 200
+    assert res.headers["content-type"].startswith("application/pdf")
+    assert "inline" in res.headers.get("content-disposition", "").lower()
+    assert res.content.startswith(b"%PDF")
+
+
+def test_tailor_resume_only_starts_logged_run(api_client):
+    client, _ = api_client
+    url = "https://example.com/tailor-resume-only"
+    insert_manual_job(
+        url,
+        title="Chief of Staff",
+        company="TestCo",
+        description="Chief of Staff role. Python, SQL, stakeholder management.",
+        funnel_stage="prepare",
+    )
+    res = client.post(f"/api/jobs/{_enc(url)}/tailor/resume")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["stages"] == ["tailor", "docx"]
+    assert body["kind"] == "tailor_resume"
+
+
+def test_tailor_cover_only_starts_logged_run(api_client):
+    client, _ = api_client
+    url = "https://example.com/tailor-cover-only"
+    insert_manual_job(
+        url,
+        title="Chief of Staff",
+        company="TestCo",
+        description="Chief of Staff role. Python, SQL, stakeholder management.",
+        funnel_stage="prepare",
+    )
+    res = client.post(f"/api/jobs/{_enc(url)}/tailor/cover")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["stages"] == ["cover", "docx"]
+    assert body["kind"] == "tailor_cover"
