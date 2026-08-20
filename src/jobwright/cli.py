@@ -419,18 +419,30 @@ def tailor_job(
     cover_instructions_file: Optional[str] = typer.Option(
         None, "--cover-instructions-file", help="Override cover letter instructions (text file).",
     ),
+    resume_only: bool = typer.Option(
+        False, "--resume-only", help="Tailor resume and export DOCX only.",
+    ),
+    cover_only: bool = typer.Option(
+        False, "--cover-only", help="Generate cover letter and export DOCX only.",
+    ),
 ) -> None:
     """Tailor resume + cover letter for one job (dashboard / verbose logs)."""
     import os
     from pathlib import Path
 
+    if resume_only and cover_only:
+        raise typer.BadParameter("Use only one of --resume-only or --cover-only.")
     if verbose:
         os.environ["JOBWRIGHT_LOG_LEVEL"] = "DEBUG"
     _bootstrap()
     from jobwright.config import check_tier
 
     check_tier(2, "AI scoring/tailoring")
-    from jobwright.scoring.tailor import run_single_job_materials
+    from jobwright.scoring.tailor import (
+        run_single_job_cover,
+        run_single_job_materials,
+        run_single_job_resume,
+    )
 
     def _read_opt(path: str | None) -> str | None:
         if not path:
@@ -440,12 +452,19 @@ def tailor_job(
             raise typer.BadParameter(f"Instructions file not found: {path}")
         return p.read_text(encoding="utf-8")
 
-    rc = run_single_job_materials(
-        url,
-        validation_mode=validation,
-        resume_instructions=_read_opt(resume_instructions_file),
-        cover_instructions=_read_opt(cover_instructions_file),
-    )
+    resume_instr = _read_opt(resume_instructions_file)
+    cover_instr = _read_opt(cover_instructions_file)
+    if resume_only:
+        rc = run_single_job_resume(url, validation_mode=validation, resume_instructions=resume_instr)
+    elif cover_only:
+        rc = run_single_job_cover(url, validation_mode=validation, cover_instructions=cover_instr)
+    else:
+        rc = run_single_job_materials(
+            url,
+            validation_mode=validation,
+            resume_instructions=resume_instr,
+            cover_instructions=cover_instr,
+        )
     raise typer.Exit(code=rc)
 
 

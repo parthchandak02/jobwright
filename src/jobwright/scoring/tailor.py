@@ -13,13 +13,14 @@ import json
 import logging
 import re
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
+from jobwright import config
 from jobwright.config import load_profile
-import jobwright.config as config
 from jobwright.database import get_connection, get_jobs_by_stage
 from jobwright.llm import get_client
 from jobwright.llm_json import LLMJsonError, parse_json_object
+from jobwright.scoring.materials_format import resolve_material_path
 from jobwright.scoring.portfolio import get_selected_projects
 from jobwright.scoring.validator import (
     BANNED_WORDS,
@@ -454,7 +455,7 @@ def _persist_tailor_result(
         except Exception:
             log.debug("PDF generation failed for %s", md_path, exc_info=True)
 
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     conn.execute(
         "UPDATE jobs SET tailored_resume_path=?, tailored_at=?, "
         "tailor_attempts=COALESCE(tailor_attempts,0)+1 WHERE url=?",
@@ -545,6 +546,116 @@ def tailor_one_job(
     return _persist_tailor_result(conn, job, tailored, report)
 
 
+def _resume_text_for_cover(job: dict) -> str:
+    """Prefer tailored resume text for cover; fall back to base resume."""
+    from jobwright.resume import load_resume_text
+
+    tailored_path = resolve_material_path(job.get("tailored_resume_path"))
+    if tailored_path and tailored_path.is_file():
+        return tailored_path.read_text(encoding="utf-8")
+    return load_resume_text()
+
+
+def _export_job_docx(url: str) -> None:
+    conn = get_connection()
+    job_row = conn.execute("SELECT * FROM jobs WHERE url = ?", (url,)).fetchone()
+    if not job_row:
+        log.warning("Job row missing; skipping DOCX")
+        return
+    from jobwright.scoring.docx_export import convert_job_materials
+
+    docx_result = convert_job_materials(dict(job_row))
+    log.info(
+        "DOCX resume=%s cover=%s",
+        docx_result.get("resume_docx"),
+        docx_result.get("cover_docx"),
+    )
+
+
+def run_single_job_resume(
+    url: str,
+    validation_mode: str = "lenient",
+    resume_instructions: str | None = None,
+) -> int:
+    """Tailor resume and export DOCX for one job. Returns process RC."""
+    try:
+        from jobwright.scoring.tailor_instructions import DEFAULT_RESUME_INSTRUCTIONS
+
+        resume_instructions = (resume_instructions or DEFAULT_RESUME_INSTRUCTIONS).strip()
+        log.info("STAGE: tailor")
+        log.info("Per-job resume tailor starting for %s", url)
+        tailor_result = tailor_one_job(
+            url,
+            subtle=True,
+            validation_mode=validation_mode,
+            extra_instructions=resume_instructions,
+        )
+        status = tailor_result.get("status")
+        path = tailor_result.get("path")
+        if status not in _SUCCESS_STATUSES or not path:
+            log.error("Resume tailoring failed: status=%s", status)
+            log.info("done RC=1")
+            return 1
+        log.info("Stage 'tailor' completed")
+
+        log.info("STAGE: docx")
+        _export_job_docx(url)
+        log.info("Stage 'docx' completed")
+        log.info("done RC=0")
+        return 0
+    except Exception:
+        log.exception("Per-job resume tailor crashed")
+        log.info("done RC=1")
+        return 1
+
+
+def run_single_job_cover(
+    url: str,
+    validation_mode: str = "lenient",
+    cover_instructions: str | None = None,
+) -> int:
+    """Generate cover letter and export DOCX for one job. Returns process RC."""
+    from jobwright.scoring.cover_letter import cover_one_job
+
+    try:
+        from jobwright.scoring.tailor_instructions import DEFAULT_COVER_INSTRUCTIONS
+
+        cover_instructions = (cover_instructions or DEFAULT_COVER_INSTRUCTIONS).strip()
+        conn = get_connection()
+        row = conn.execute("SELECT * FROM jobs WHERE url = ?", (url,)).fetchone()
+        if row is None:
+            log.error("Job not found: %s", url)
+            log.info("done RC=1")
+            return 1
+        job = dict(row)
+        resume_text = _resume_text_for_cover(job)
+
+        log.info("STAGE: cover")
+        log.info("Per-job cover letter starting for %s", url)
+        cover_result = cover_one_job(
+            url,
+            resume_text=resume_text,
+            validation_mode=validation_mode,
+            extra_instructions=cover_instructions,
+        )
+        if not cover_result.get("path"):
+            log.error("Cover letter failed: %s", cover_result.get("error") or "unknown")
+            log.info("done RC=1")
+            return 1
+        log.info("Wrote cover letter %s", cover_result["path"])
+        log.info("Stage 'cover' completed")
+
+        log.info("STAGE: docx")
+        _export_job_docx(url)
+        log.info("Stage 'docx' completed")
+        log.info("done RC=0")
+        return 0
+    except Exception:
+        log.exception("Per-job cover tailor crashed")
+        log.info("done RC=1")
+        return 1
+
+
 def run_single_job_materials(
     url: str,
     validation_mode: str = "lenient",
@@ -555,7 +666,6 @@ def run_single_job_materials(
     from pathlib import Path
 
     from jobwright.scoring.cover_letter import cover_one_job
-    from jobwright.scoring.docx_export import convert_job_materials
 
     try:
         from jobwright.scoring.tailor_instructions import (
@@ -596,17 +706,7 @@ def run_single_job_materials(
         log.info("Stage 'cover' completed")
 
         log.info("STAGE: docx")
-        conn = get_connection()
-        job_row = conn.execute("SELECT * FROM jobs WHERE url = ?", (url,)).fetchone()
-        if job_row:
-            docx_result = convert_job_materials(dict(job_row))
-            log.info(
-                "DOCX resume=%s cover=%s",
-                docx_result.get("resume_docx"),
-                docx_result.get("cover_docx"),
-            )
-        else:
-            log.warning("Job row missing after tailor; skipping DOCX")
+        _export_job_docx(url)
         log.info("Stage 'docx' completed")
         log.info("done RC=0")
         return 0
