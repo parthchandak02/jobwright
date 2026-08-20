@@ -28,6 +28,7 @@ Detailed paths for agents. Summary: [../../AGENTS.md](../../AGENTS.md).
 | `bin/job-apply-pp-cli` | Agent-native JSON wrapper over `jobwright` |
 | `scripts/` | Hermes cron installers, Daily Brief (`run_daily_brief.sh` -> `jobwright notify`), repo resolution |
 | `tests/` | pytest |
+| `.graphifyignore` | Graphify exclude list (skills, shadcn ui, `cn()`, PM2 configs). Rebuild: `graphify update .` |
 
 **Legacy:** `src/applypilot/` is unmaintained; do not extend.
 

@@ -4,3 +4,4 @@ frontend/src/components/ui/
 frontend/src/lib/utils.ts
 frontend/package.json
 ecosystem.config.example.js
+ecosystem.config.js
