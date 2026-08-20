@@ -1,21 +1,27 @@
 ---
-description: graphify knowledge graph context
+description: graphify knowledge graph — query by symbol before exploring
 alwaysApply: true
 ---
 
-This project has a graphify knowledge graph at graphify-out/.
+This project has a graphify knowledge graph at `graphify-out/` (gitignored). Noise is excluded via `.graphifyignore` (Cursor skills, shadcn `ui/`, `cn()` utils, `frontend/package.json`, PM2 ecosystem configs).
 
-**MANDATORY: Before using Read, Grep, Glob, or Bash to explore the codebase, you MUST run graphify first:**
-- `graphify query "<question>"` — scoped subgraph for any codebase or architecture question
-- `graphify path "<A>" "<B>"` — dependency path between two symbols
-- `graphify explain "<concept>"` — all nodes related to a concept
+**Before architecture or "where is X" exploration**, run graphify using **symbol and file names**, not English slogans:
 
-This applies to YOU and to every subagent you spawn. Include this rule explicitly in every subagent prompt that involves code exploration. Do not skip graphify because files are "already known" or because you are executing a plan — the graph surfaces cross-file dependencies and INFERRED edges that grep and Read cannot find.
+- `graphify query "get_connection"` — subgraph around a named concept
+- `graphify path "run_pipeline" "run_notify"` — dependency path between two symbols
+- `graphify explain "JobDrawer"` — one node and its neighbors
 
-Only use Read/Grep/Glob directly when:
-1. graphify has already oriented you and you need to modify or debug specific lines
-2. `graphify-out/graph.json` does not exist yet
+Do **not** query like `how does the daily brief work` (it matches headings in the wrong files). Pass this rule to every explore subagent.
 
-- If `graphify-out/wiki/index.md` exists, navigate it instead of reading raw files
-- Read `graphify-out/GRAPH_REPORT.md` only for broad architecture review when query/path/explain do not surface enough context
-- After modifying code files, run `graphify update .` to keep the graph current (AST-only, no API cost)
+Skip graphify when:
+
+1. You already have the file path and are editing known lines
+2. One-line / typo fixes
+3. `graphify-out/graph.json` is missing — run `graphify update .` first, then query
+
+Degree is not importance. Hubs after ignore are `get_connection()`, `init_db()`, `load_resume_text()`, `AgentProvider`. Do not treat UI helpers or `compilerOptions` as the product core. INFERRED edges on tests and deferred imports are usually real calls, not bugs. Do not split `database.py` because it ranks as a hub.
+
+- If `graphify-out/wiki/index.md` exists, use it for broad navigation
+- Read `graphify-out/GRAPH_REPORT.md` only for architecture review when query/path/explain are not enough
+- After modifying code (or `.graphifyignore`), run `graphify update .` (AST-only). Do not commit `graphify-out/`
+- After clone: `graphify update .`. Optional names: `graphify label . --backend gemini` (batch 1 may fail with a Gemini JSON parse error; retry is the same command)

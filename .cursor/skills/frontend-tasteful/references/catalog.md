@@ -53,7 +53,7 @@ Reuse order: shadcn defaults → domain primitive → new token/class. Tailwind 
 | Board Auto Search dialog | `AutoSearchDialog` (wrapper over `RunProgressDialog`) |
 | Edit tailor instructions then run | `CustomTailorDialog` |
 | LinkedIn-tinted contacts | `ConnectionsPanel` |
-| Gated dialogs | `CloseJobDialog`, `ManualAddModal`, `AutoSearchScheduleDialog` |
+| Gated dialogs | `CloseJobDialog`, `ManualAddModal`, `DailyBriefDialog` (WhatsApp brief time + send) |
 
 ### Profile / forms
 

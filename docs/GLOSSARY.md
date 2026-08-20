@@ -5,6 +5,7 @@
 | Pipeline | Prep stages `discover → enrich → score → portfolio → tailor → cover → pdf → docx → connect` (SQLite `jobs` table). Daily brief and Auto Search skip `pdf`. Optional `apply` is gated. |
 | Job | Database row keyed by `url`; also has a short `job_id` (blake2b of the URL) for dashboard deep links |
 | Prepare | Funnel stage for strong matches with materials; agent auto-advances here; notify lists only these |
+| Backlog | Discovered/scored jobs not yet handed to the human. Low-score and off-track rows are pruned after scoring. Score 7+ on-track jobs get tailored into Prepare. Mid-score on-track jobs stay here as maybes. |
 | Auto Search | Dashboard action that starts the full prep pipeline (`discover`→`connect`) via `POST /api/run` with live logs. Daily Hermes cron (`jobwright-brief-<user>`) runs the same pipeline on `schedule` (default 6:00 AM), then `notify`. Dashboard **WhatsApp** modal edits that schedule and target. |
 | Run registry | Durable run list at `users/<id>/logs/web_runs.json` so the UI can attach, stream, or stop after reload |
 | Notify | `jobwright notify`: one WhatsApp text list of new `prepare` jobs with deep links; stamps `whatsapp_notified_at` |

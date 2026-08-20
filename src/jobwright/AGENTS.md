@@ -7,7 +7,7 @@ Nested agent notes for the Python package. Root context: [../../AGENTS.md](../..
 | Module | Role |
 |--------|------|
 | `cli.py` | Typer entry; `--user` before subcommands. Stages: discover, enrich, score, portfolio, tailor, cover, pdf, docx, connect. Also `tailor-job` (one URL, dashboard-spawned) |
-| `pipeline.py` | `STAGE_ORDER`, stage runners, `--stream` mode; registers runs via `run_registry` |
+| `pipeline.py` | `STAGE_ORDER`, stage runners, `--stream` mode; registers runs via `run_registry`; prunes backlog junk after `score` |
 | `run_registry.py` | Durable pipeline runs in `users/<id>/logs/web_runs.json`; honors `JOBWRIGHT_WEB_RUN_ID` |
 | `resume.py` | PDF source of truth; pymupdf4llm markdown cache at `resume/base.md` for LLM stages |
 | `notify.py` | One WhatsApp list of new `prepare` jobs + dashboard deep links |
@@ -16,7 +16,7 @@ Nested agent notes for the Python package. Root context: [../../AGENTS.md](../..
 | `hermes_cron.py` | Find/edit existing `jobwright-brief-<user>` via `hermes cron` |
 | `database.py` | SQLite schema, `jobs` + `stage_history`, `job_id` (blake2b of URL), `whatsapp_notified_at`, `advance_funnel`, stats |
 | `web/` | FastAPI Kanban: board, materials (incl. `POST .../tailor`), runs + SSE, settings (searches/resume.pdf/cover-letter PDFs), notify, gated apply |
-| `discovery/` | `jobspy.py` (`-w` / `JOBWRIGHT_DISCOVER_WORKERS`, known-URL skip), `workday.py`, `filters.py`, `known_urls.py`, `smartextract.py` (`DISCOVER_MODE`) |
+| `discovery/` | `jobspy.py` (`-w` / `JOBWRIGHT_DISCOVER_WORKERS`, known-URL skip), `workday.py`, `filters.py`, `cleanup.py` (`prune_after_score`), `known_urls.py`, `smartextract.py` (`DISCOVER_MODE`) |
 | `enrichment/` | `detail.py` (full JD), `sponsorship.py` (LLM, not on discover hot path) |
 | `scoring/` | `scorer`, `tailor`, `tailor_instructions` (dashboard Auto/Custom prompts), `cover_letter`, `portfolio`, `pdf`, `docx_export`, `validator` |
 | `network/` | CSV rank, per-job connect, Exa research |
