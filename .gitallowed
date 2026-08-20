@@ -30,4 +30,6 @@ env\["JOBWRIGHT_WEB_RUN_ID"\]
 extra_env
 env\.update\(extra_env\)
 env\.setdefault\("JOBWRIGHT_LOG_LEVEL"
+env\.setdefault\("APPLY_PREP_LIMIT"
+env\.setdefault\("APPLY_MIN_SCORE"
 env\.setdefault\("HERMES_ACCEPT_HOOKS"

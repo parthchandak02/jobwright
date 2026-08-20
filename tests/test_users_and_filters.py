@@ -105,6 +105,18 @@ def test_fit_score_ceiling_caps_generic_ops():
     ) is None
     # No JD yet: do not cap CoS (enrichment still pending)
     assert fit_score_ceiling("Chief of Staff", "Acme", "", excludes) is None
+    assert fit_score_ceiling(
+        "Startups GTM Leader, Startup Partners Center of Excellence",
+        "Amazon Web Services (AWS)",
+        "Lead GTM for startup partners and pipeline.",
+        excludes,
+    ) == 4
+    assert fit_score_ceiling(
+        "Clinical Program Director, Compass Behavioral Health Services",
+        "Compass Family Services",
+        "Oversee licensed clinical programs and staff.",
+        ["clinical program"],
+    ) == 4
 
 
 def test_apply_fit_score_guards_appends_reason():
@@ -224,3 +236,101 @@ def test_set_active_user_updates_paths(tmp_path, monkeypatch):
     assert config.DB_PATH == path / "jobwright.db"
     assert config.ACTIVE_USER_ID == "alice"
     assert users.is_apply_enabled(None) is True
+
+
+def test_prune_after_score_skips_human_and_drops_low_backlog(tmp_path):
+    import sqlite3
+
+    from jobwright.discovery.cleanup import prune_after_score
+
+    db = tmp_path / "t.db"
+    conn = sqlite3.connect(db)
+    conn.execute(
+        """CREATE TABLE jobs (
+            url TEXT PRIMARY KEY,
+            title TEXT,
+            company TEXT,
+            site TEXT,
+            location TEXT,
+            salary TEXT,
+            description TEXT,
+            full_description TEXT,
+            fit_score INTEGER,
+            funnel_stage TEXT,
+            board_updated_by TEXT
+        )"""
+    )
+    conn.executemany(
+        "INSERT INTO jobs VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+        [
+            (
+                "https://a.example/low",
+                "Analyst",
+                "Acme",
+                "indeed",
+                "San Francisco, CA",
+                "$150000",
+                "ops",
+                "Generic ops cadence and OKRs.",
+                2,
+                "backlog",
+                None,
+            ),
+            (
+                "https://a.example/human",
+                "Analyst",
+                "Acme",
+                "indeed",
+                "San Francisco, CA",
+                "$150000",
+                "ops",
+                "Generic ops cadence and OKRs.",
+                2,
+                "backlog",
+                "human",
+            ),
+            (
+                "https://a.example/impact",
+                "Director of Strategic Philanthropy",
+                "Hamilton Families",
+                "indeed",
+                "San Francisco, CA",
+                "$150000",
+                "philanthropy",
+                "Lead strategic philanthropy and community impact.",
+                5,
+                "backlog",
+                None,
+            ),
+            (
+                "https://a.example/gtm",
+                "Startups GTM Leader",
+                "AWS",
+                "linkedin",
+                "San Francisco, CA",
+                "$180000",
+                "gtm pipeline",
+                "Own startup GTM motion and partner enablement.",
+                8,
+                "backlog",
+                None,
+            ),
+        ],
+    )
+    conn.commit()
+    cfg = {
+        "exclude_titles": ["gtm"],
+        "min_salary": 115000,
+        "defaults": {},
+        "location": {
+            "accept_patterns": ["San Francisco", "CA", "Remote"],
+            "reject_patterns": [],
+        },
+    }
+    stats = prune_after_score(conn, cfg, dry_run=False)
+    urls = {r[0] for r in conn.execute("SELECT url FROM jobs")}
+    assert "https://a.example/human" in urls
+    assert "https://a.example/impact" in urls
+    assert "https://a.example/low" not in urls
+    assert "https://a.example/gtm" not in urls
+    assert stats["deleted"] >= 2

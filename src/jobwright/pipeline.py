@@ -153,6 +153,14 @@ def _run_score() -> dict:
         errors = int(result.get("errors") or 0)
         if scored == 0 and errors > 0:
             return {"status": f"error: {errors} scoring failures", **result}
+        try:
+            from jobwright.database import get_connection
+            from jobwright.discovery.cleanup import prune_after_score
+
+            prune_stats = prune_after_score(get_connection(), dry_run=False)
+            result["prune"] = prune_stats
+        except Exception as prune_err:
+            log.warning("Post-score prune skipped: %s", prune_err)
         return {"status": "ok", **result}
     except Exception as e:
         log.error("Scoring failed: %s", e)

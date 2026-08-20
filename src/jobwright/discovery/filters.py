@@ -70,17 +70,63 @@ _IMPACT_MARKERS = (
     "non profit",
     "community impact",
     "community investment",
+    "community engagement",
+    "community partnership",
     "data for good",
-    "for good",
     "grantmaking",
     "grant-making",
+    "workforce development",
     "venture philanthropy",
     "impact invest",
-    "cdfi",
     "economic mobility",
-    "workforce development",
+    "humanitarian",
+    "ngo",
+    "501(c)",
     "csr",
+    "cdfi",
 )
+
+# Generic ops / GTM / clinical titles that need an impact marker (or a
+# foundation/nonprofit employer) or the fit score is capped at 4.
+_GENERIC_OPS_TITLES = (
+    "chief of staff",
+    "business advisor",
+    "business operations",
+    "biz ops",
+    "bizops",
+    "gtm",
+    "go-to-market",
+    "go to market",
+    "founding biz",
+    "growth & ops",
+    "growth and ops",
+    "strategy & ops",
+    "strategy and ops",
+    "partner enablement",
+    "clinical program",
+    "behavioral health",
+    "home health",
+)
+
+
+def has_impact_track(
+    title: str | None,
+    company: str | None,
+    description: str | None,
+) -> bool:
+    """True when title, company, or JD looks like CSR / foundation / social impact."""
+    company_l = (company or "").lower()
+    if any(n in company_l for n in ("foundation", "nonprofit", "non-profit", "philanthrop")):
+        return True
+    blob = f"{(title or '').lower()} {company_l} {(description or '')[:1500].lower()}"
+    short = {"csr", "cdfi", "ngo"}
+    for m in _IMPACT_MARKERS:
+        if m in short:
+            if re.search(rf"(?<![a-z]){re.escape(m)}(?![a-z])", blob):
+                return True
+        elif m in blob:
+            return True
+    return False
 
 
 def title_excluded(title: str | None, exclude_titles: list[str] | None) -> bool:
@@ -160,15 +206,11 @@ def fit_score_ceiling(
     if title_excluded(title, exclude_titles):
         return 4
     t = (title or "").lower()
-    company_l = (company or "").lower()
     desc = (description or "").strip()
-    blob = f"{t} {company_l} {desc[:1500].lower()}"
-    if any(n in company_l for n in ("foundation", "nonprofit", "non-profit", "philanthrop")):
+    if has_impact_track(title, company, description):
         return None
-    needs_mission = any(
-        p in t for p in ("chief of staff", "business advisor", "business operations")
-    )
-    if needs_mission and desc and not any(m in blob for m in _IMPACT_MARKERS):
+    needs_mission = any(p in t for p in _GENERIC_OPS_TITLES)
+    if needs_mission and desc:
         return 4
     return None
 

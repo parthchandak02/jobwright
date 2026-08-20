@@ -16,6 +16,7 @@ from jobwright.network.manual_connections import (
     remove_manual_contact,
     search_connections_csv,
 )
+from jobwright.network.research import present_contact
 
 router = APIRouter(prefix="/api", tags=["connections"])
 
@@ -38,13 +39,15 @@ def job_connections(url: str) -> dict:
     url = unquote(url)
     contacts = _load_contacts()
     entry = contacts.get(url) or {}
+    csv_contacts = [c for c in (present_contact(c) for c in (entry.get("csv_contacts") or [])) if c]
+    web_contacts = [c for c in (present_contact(c) for c in (entry.get("web_contacts") or [])) if c]
     return {
         "url": url,
         "title": entry.get("title"),
         "company": entry.get("company"),
         "fit_score": entry.get("fit_score"),
-        "csv_contacts": entry.get("csv_contacts") or [],
-        "web_contacts": entry.get("web_contacts") or [],
+        "csv_contacts": csv_contacts,
+        "web_contacts": web_contacts,
         "manual_contacts": get_manual_contacts(url),
     }
 

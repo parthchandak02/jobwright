@@ -170,6 +170,16 @@ exclude_titles:
   - "recruiter"
   - "sales development"
   - "police officer"
+  - "home health"
+  - "clinical program"
+  - "behavioral health"
+  - "business operations"
+  - "biz ops"
+  - "bizops"
+  - "gtm"
+  - "go-to-market"
+  - "major gifts"
+  - "principal gifts"
 
 # Annual USD floor - jobs clearly below this are dropped at discovery when salary is known
 min_salary: 115000
