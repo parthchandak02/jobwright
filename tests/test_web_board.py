@@ -201,6 +201,56 @@ def test_manual_connections_api(api_client, tmp_path: Path, monkeypatch: pytest.
     assert res.json()["manual_contacts"] == []
 
 
+def test_job_connections_drops_job_posting_web_results(api_client):
+    import json
+
+    from jobwright import config
+
+    url = "https://example.com/web-smoke"
+    enc = __import__("urllib.parse").parse.quote(url, safe="")
+    network = Path(config.NETWORK_DIR)
+    network.mkdir(parents=True, exist_ok=True)
+    (network / "job_contacts_latest.json").write_text(
+        json.dumps(
+            {
+                "jobs": {
+                    url: {
+                        "title": "Programme Coordinator, Trustlaw",
+                        "company": "Thomson Reuters",
+                        "csv_contacts": [],
+                        "web_contacts": [
+                            {
+                                "name": "Programme Coordinator",
+                                "role": "Programme Coordinator, Trustlaw-Thomson Reuters Foundation",
+                                "source_url": (
+                                    "https://thomsonreuters.wd5.myworkdayjobs.com/job/x"
+                                ),
+                                "note": "Public web result",
+                                "source": "web",
+                            },
+                            {
+                                "name": "Pat Lee",
+                                "role": "Recruiter at Acme",
+                                "source_url": "https://www.linkedin.com/in/pat-lee",
+                                "note": "Hiring contact",
+                                "source": "web",
+                            },
+                        ],
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    res = api_client.get(f"/api/jobs/{enc}/connections")
+    assert res.status_code == 200
+    web = res.json()["web_contacts"]
+    assert len(web) == 1
+    assert web[0]["name"] == "Pat Lee"
+    assert web[0]["url"] == "https://www.linkedin.com/in/pat-lee"
+    assert web[0]["why"] == "Hiring contact"
+
+
 def test_users_and_session(api_client):
     res = api_client.get("/api/users")
     assert res.status_code == 200

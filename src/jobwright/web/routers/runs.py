@@ -240,6 +240,10 @@ def spawn_logged_run(
     if extra_env:
         env.update(extra_env)
     env.setdefault("JOBWRIGHT_LOG_LEVEL", "INFO")
+    # Default tailor batch is 10; Auto Search needs more prepare slots.
+    if kind == "pipeline":
+        env.setdefault("APPLY_PREP_LIMIT", "25")
+        env.setdefault("APPLY_MIN_SCORE", "7")
 
     with log_path.open("w", encoding="utf-8") as log_file:
         proc = subprocess.Popen(

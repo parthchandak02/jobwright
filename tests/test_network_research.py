@@ -28,7 +28,42 @@ def test_research_http_error_returns_empty(monkeypatch):
     assert research.research_company_contacts("Acme", "PM") == []
 
 
-def test_research_skips_linkedin_profiles(monkeypatch):
+def test_looks_like_person_name():
+    from jobwright.network.research import looks_like_person_name
+
+    assert looks_like_person_name("Pat Lee")
+    assert looks_like_person_name("Sam Ok")
+    assert not looks_like_person_name("Programme Coordinator")
+    assert not looks_like_person_name("Legal Manager")
+    assert not looks_like_person_name("Community College Job Network")
+
+
+def test_present_contact_drops_job_postings():
+    from jobwright.network.research import present_contact
+
+    junk = present_contact({
+        "name": "Programme Coordinator",
+        "role": "Programme Coordinator, Trustlaw-Thomson Reuters Foundation",
+        "source_url": "https://thomsonreuters.wd5.myworkdayjobs.com/job/x",
+        "note": "Public web result for Thomson Reuters",
+        "source": "web",
+    })
+    assert junk is None
+
+    keep = present_contact({
+        "name": "Pat Lee",
+        "role": "Recruiter at Acme",
+        "source_url": "https://www.linkedin.com/in/pat-lee",
+        "note": "Hiring contact",
+        "source": "web",
+    })
+    assert keep is not None
+    assert keep["url"] == "https://www.linkedin.com/in/pat-lee"
+    assert keep["why"] == "Hiring contact"
+    assert keep["position"] == "Recruiter at Acme"
+
+
+def test_research_keeps_linkedin_skips_job_boards(monkeypatch):
     from jobwright.network import research
 
     monkeypatch.setenv("EXA_API_KEY", "exa-test")
@@ -42,6 +77,11 @@ def test_research_skips_linkedin_profiles(monkeypatch):
                 "text": "LinkedIn profile",
             },
             {
+                "title": "Programme Coordinator, Trustlaw-Thomson Reuters Foundation",
+                "url": "https://thomsonreuters.wd5.myworkdayjobs.com/job/x",
+                "text": "Job posting",
+            },
+            {
                 "title": "Sam Ok - VP Ops at Acme",
                 "url": "https://acme.com/team/sam",
                 "text": "Public bio",
@@ -49,10 +89,12 @@ def test_research_skips_linkedin_profiles(monkeypatch):
         ]
     }
     monkeypatch.setattr(research.httpx, "post", lambda *a, **k: resp)
-    out = research.research_company_contacts("Acme", "Ops", max_results=2)
-    assert len(out) == 1
-    assert "linkedin.com" not in out[0]["source_url"]
-    assert "Sam" in out[0]["name"]
+    out = research.research_company_contacts("Acme", "Ops", max_results=3)
+    names = [c["name"] for c in out]
+    assert "Pat Lee" in names
+    assert "Sam Ok" in names
+    assert "Programme Coordinator" not in names
+    assert any("linkedin.com/in/" in (c.get("url") or "") for c in out)
 
 
 def test_run_per_job_connect_without_csv_or_exa(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
