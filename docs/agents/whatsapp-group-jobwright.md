@@ -54,7 +54,7 @@ Put the durable prompt below into `~/.hermes/config.yaml` (do not commit secrets
         find jobs now -> jobwright_brief.sh (detached; sends the notify when done).
         notify / resend -> jobwright --user richa notify (one WhatsApp list of new jobs with dashboard deep links).
         Review + apply happen in the dashboard (jobwright.parthchandak.info/jobs/<job_id>), not over WhatsApp.
-        Brief LLM: JOBWRIGHT_LLM_MODEL=gpt-oss-120b (Fireworks). Validation: lenient. Never use BRIEF_SMOKE for daily cron.
+        Brief LLM: JOBWRIGHT_LLM_MODEL=glm-5p3-flash (Fireworks). Validation: lenient. Never use BRIEF_SMOKE for daily cron.
         Code/bugs: reproduce with doctor/status/logs; fix via cursor-agent or small patches;
           never commit users/ or .env; re-run install_hermes_scripts.sh / install_skills.sh if needed.
         Docs: docs/agents/whatsapp-group-jobwright.md, hermes-operator-guide.md, whatsapp-routing.md

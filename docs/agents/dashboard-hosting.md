@@ -107,6 +107,17 @@ pm2 save
 1. Zero Trust → Access → Applications → Self-hosted
 2. Domain: `jobwright.parthchandak.info`
 3. Policy: Allow + email OTP (same as litreview)
+4. **Session duration:** set Application session to **30 days** (`720h`) so household devices re-auth monthly, not daily. Dashboard: Application → Configure → Session Duration. CLI (requires `CLOUDFLARE_API_TOKEN` with Access edit):
+
+```bash
+source ~/.hermes/.env
+cloudflare-pp-cli accounts access applications-update-an-application \
+  <app_id> "$CLOUDFLARE_ACCOUNT_ID" \
+  --body-json '{"type":"self_hosted","name":"jobwright","domain":"jobwright.parthchandak.info","session_duration":"720h","app_launcher_visible":false,"destinations":[{"type":"public","uri":"jobwright.parthchandak.info"}],"allowed_idps":["<idp_id>"]}' \
+  --agent --yes
+```
+
+Optional: Zero Trust → Settings → Authentication → Global session duration → match (7–30d). WhatsApp in-app browser uses a separate cookie jar; users may OTP once per in-app context even with 30d app session.
 
 ### 5. Verify
 

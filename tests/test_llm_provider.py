@@ -125,7 +125,7 @@ def test_fallback_builds_gemini_37_with_thinking_low():
     """Fireworks empty -> Gemini fallback uses GEMINI_FALLBACK_MODEL + thinking low."""
     primary = LLMClient(
         "https://api.fireworks.ai/inference/v1",
-        "accounts/fireworks/models/gpt-oss-120b",
+        "accounts/fireworks/models/glm-5p3-flash",
         "fw",
     )
     captured: dict = {}
