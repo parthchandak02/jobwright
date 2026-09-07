@@ -22,7 +22,7 @@ export JOBWRIGHT_HOURS_OLD="${JOBWRIGHT_HOURS_OLD:-168}"
 
 # Pin a scoring model known to return non-empty JSON, score sequentially, and
 # use the same min-score as the daily brief so one mid-fit job still lands.
-export JOBWRIGHT_LLM_MODEL="${JOBWRIGHT_LLM_MODEL:-accounts/fireworks/models/gpt-oss-120b}"
+export JOBWRIGHT_LLM_MODEL="${JOBWRIGHT_LLM_MODEL:-accounts/fireworks/models/glm-5p3-flash}"
 export SCORE_BATCH_SIZE="${SCORE_BATCH_SIZE:-1}"
 export APPLY_LIMIT="${APPLY_LIMIT:-3}"
 export APPLY_PREP_LIMIT="${APPLY_PREP_LIMIT:-3}"

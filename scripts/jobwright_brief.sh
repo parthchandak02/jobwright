@@ -33,9 +33,9 @@ GLOBAL_ENV="${JOBWRIGHT_ENV:-${JOBWRIGHT_REPO:-${REPO_ROOT:-}}/${DOTENV}}"
 [[ -f "${JOBWRIGHT_DIR}/${DOTENV}" ]] && set -a && source "${JOBWRIGHT_DIR}/${DOTENV}" && set +a
 
 # Single source of truth for the brief model (run_daily_brief.sh re-applies this).
-# gpt-oss-120b returns non-empty JSON for scoring; avoid gemini-* names here since
+# GLM-5.3-flash returns non-empty JSON for scoring; avoid gemini-* names here since
 # they silently remap to Fireworks DeepSeek when only a Fireworks key is present.
-export LLM_MODEL="${JOBWRIGHT_LLM_MODEL:-${LLM_MODEL:-accounts/fireworks/models/gpt-oss-120b}}"
+export LLM_MODEL="${JOBWRIGHT_LLM_MODEL:-${LLM_MODEL:-accounts/fireworks/models/glm-5p3-flash}}"
 export APPLY_DRY_RUN=true
 unset APPLY_LIVE 2>/dev/null || true
 

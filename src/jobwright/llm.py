@@ -25,6 +25,9 @@ _FIREWORKS_SHORT_MODELS = {
     "deepseek-v4-flash": _FIREWORKS_DEFAULT_MODEL,
     "deepseek-v4-pro-0813": "accounts/fireworks/models/deepseek-v4-pro-0813",
     "deepseek-v4-pro": "accounts/fireworks/models/deepseek-v4-pro",
+    "glm-5p3-flash": "accounts/fireworks/models/glm-5p3-flash",
+    "glm-5.3-flash": "accounts/fireworks/models/glm-5p3-flash",
+    "glm-5.3": "accounts/fireworks/models/glm-5p3-flash",
     "gpt-oss-120b": "accounts/fireworks/models/gpt-oss-120b",
     "minimax-m3": "accounts/fireworks/models/minimax-m3",
 }

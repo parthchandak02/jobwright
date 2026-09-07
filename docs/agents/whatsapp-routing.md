@@ -26,7 +26,7 @@ Or via Python: `jobwright users list`.
 |--------------------------------|--------------|
 | `job status`, `how are my jobs` | `jobwright --user $USER_ID status` |
 | `verify brief`, `health check` | `JOBWRIGHT_USER=$USER_ID bash ~/.hermes/scripts/jobwright_verify.sh` |
-| `find jobs now`, `run pipeline`, `run brief` | `JOBWRIGHT_USER=$USER_ID bash ~/.hermes/scripts/jobwright_brief.sh` (detached; ~20-30 min). Uses `run_daily_brief.sh`: discover->connect then `jobwright notify`, `JOBWRIGHT_LLM_MODEL` default `gpt-oss-120b`, `--validation lenient`. Monitor: `users/$USER_ID/logs/brief_YYYYMMDD.log`, `BRIEF_STATUS_YYYYMMDD`. |
+| `find jobs now`, `run pipeline`, `run brief` | `JOBWRIGHT_USER=$USER_ID bash ~/.hermes/scripts/jobwright_brief.sh` (detached; ~20-30 min). Uses `run_daily_brief.sh`: discover->connect then `jobwright notify`, `JOBWRIGHT_LLM_MODEL` default `glm-5p3-flash`, `--validation lenient`. Monitor: `users/$USER_ID/logs/brief_YYYYMMDD.log`, `BRIEF_STATUS_YYYYMMDD`. |
 | `notify`, `send jobs`, `resend list` | `jobwright --user $USER_ID notify` (one WhatsApp list of new prepare jobs with dashboard deep links; `--dry-run` to preview). Skips silently when nothing new. |
 | `smoke test`, `run smoke brief` | `BRIEF_SMOKE=1 JOBWRIGHT_USER=$USER_ID bash ~/.hermes/scripts/jobwright_smoke.sh` (narrow: 3 queries, SF+Remote; JobSpy only - **not** for daily cron) |
 | `materials`, `resume`, `open job` | Point the user to the dashboard deep link from the daily notify (`jobwright.parthchandak.info/jobs/<job_id>`); tailored DOCX + connections live on the card. |
@@ -57,7 +57,7 @@ Brief pipeline defaults (in `run_daily_brief.sh`):
 
 | Env | Default | Notes |
 |-----|---------|--------|
-| `JOBWRIGHT_LLM_MODEL` | `accounts/fireworks/models/gpt-oss-120b` | Overrides global `.env` `LLM_MODEL` for scoring/tailor/cover |
+| `JOBWRIGHT_LLM_MODEL` | `accounts/fireworks/models/glm-5p3-flash` | Overrides global `.env` `LLM_MODEL` for scoring/tailor/cover |
 | `SCORE_BATCH_SIZE` | `10` | Jobs per scoring LLM call. Do not send the full jobs table in one shot. |
 | `DISCOVER_MODE` | `fast` | Tier-1 queries; weekly `full` for deep crawl |
 | `APPLY_MIN_SCORE` | `7` | Min fit score for tailor/cover in the brief (user `.env` may override) |

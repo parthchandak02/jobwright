@@ -36,7 +36,7 @@ GLOBAL_ENV="${JOBWRIGHT_ENV:-${JOBWRIGHT_REPO:-${REPO_ROOT:-}}/${DOTENV}}"
 [[ -f "${GLOBAL_ENV}" ]] && set -a && source "${GLOBAL_ENV}" && set +a
 [[ -f "${JOBWRIGHT_DIR}/${DOTENV}" ]] && set -a && source "${JOBWRIGHT_DIR}/${DOTENV}" && set +a
 
-export LLM_MODEL="${JOBWRIGHT_LLM_MODEL:-accounts/fireworks/models/gpt-oss-120b}"
+export LLM_MODEL="${JOBWRIGHT_LLM_MODEL:-accounts/fireworks/models/glm-5p3-flash}"
 export SCORE_BATCH_SIZE="${SCORE_BATCH_SIZE:-10}"
 export APPLY_DRY_RUN=true
 # Daily cron: JobSpy+Workday tier-1 only; skip smart-extract. Set DISCOVER_MODE=full for weekly deep crawl.

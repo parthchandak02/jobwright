@@ -227,7 +227,7 @@ def generate_cover_letter(
             )},
         ]
 
-        # Reasoning models (gpt-oss) spend hidden tokens before emitting the
+        # Reasoning models (GLM-5.3, gpt-oss) spend hidden tokens before emitting the
         # letter; a tight budget yields finish_reason=length with empty content.
         letter = client.chat(messages, max_tokens=4096, temperature=0.7)
         letter = sanitize_text(letter)  # auto-fix em dashes, smart quotes
