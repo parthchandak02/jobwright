@@ -36,7 +36,11 @@ GLOBAL_ENV="${JOBWRIGHT_ENV:-${JOBWRIGHT_REPO:-${REPO_ROOT:-}}/${DOTENV}}"
 [[ -f "${GLOBAL_ENV}" ]] && set -a && source "${GLOBAL_ENV}" && set +a
 [[ -f "${JOBWRIGHT_DIR}/${DOTENV}" ]] && set -a && source "${JOBWRIGHT_DIR}/${DOTENV}" && set +a
 
-export LLM_MODEL="${JOBWRIGHT_LLM_MODEL:-accounts/fireworks/models/glm-5p3-flash}"
+# Daily brief model. glm-5p3-flash: default (Parth, Sep 2026). gpt-oss banned.
+# (tried Sep 6-11, 2026) burns its token budget on reasoning tokens in
+# tailor/cover (finish_reason=length, empty content) causing 2 doomed retries
+# (~90s each) per job before the Gemini fallback. JOBWRIGHT_LLM_MODEL overrides.
+export LLM_MODEL="${JOBWRIGHT_LLM_MODEL:-${LLM_MODEL:-accounts/fireworks/models/glm-5p3-flash}}"
 export SCORE_BATCH_SIZE="${SCORE_BATCH_SIZE:-10}"
 export APPLY_DRY_RUN=true
 # Daily cron: JobSpy+Workday tier-1 only; skip smart-extract. Set DISCOVER_MODE=full for weekly deep crawl.
