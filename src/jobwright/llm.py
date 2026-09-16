@@ -19,7 +19,7 @@ import httpx
 log = logging.getLogger(__name__)
 
 _FIREWORKS_BASE = "https://api.fireworks.ai/inference/v1"
-_FIREWORKS_DEFAULT_MODEL = "accounts/fireworks/models/deepseek-v4-flash-0731"
+_FIREWORKS_DEFAULT_MODEL = "accounts/fireworks/models/glm-5p3-flash"
 _FIREWORKS_SHORT_MODELS = {
     "deepseek-v4-flash-0731": _FIREWORKS_DEFAULT_MODEL,
     "deepseek-v4-flash": _FIREWORKS_DEFAULT_MODEL,

@@ -33,8 +33,11 @@ GLOBAL_ENV="${JOBWRIGHT_ENV:-${JOBWRIGHT_REPO:-${REPO_ROOT:-}}/${DOTENV}}"
 [[ -f "${JOBWRIGHT_DIR}/${DOTENV}" ]] && set -a && source "${JOBWRIGHT_DIR}/${DOTENV}" && set +a
 
 # Single source of truth for the brief model (run_daily_brief.sh re-applies this).
-# GLM-5.3-flash returns non-empty JSON for scoring; avoid gemini-* names here since
-# they silently remap to Fireworks DeepSeek when only a Fireworks key is present.
+# glm-5p3-flash: default everywhere (Parth, Sep 2026). gpt-oss banned. NOTE: glm-5p3-flash burns reasoning tokens in tailor/cover (finish_reason=length, empty content) - if that returns, pin brief-only model via JOBWRIGHT_LLM_MODEL
+# burns its token budget on reasoning tokens in tailor/cover (finish_reason=length,
+# empty content), causing doomed retries before the Gemini fallback.
+# Avoid gemini-* names here: they silently remap to Fireworks DeepSeek when only
+# a Fireworks key is present.
 export LLM_MODEL="${JOBWRIGHT_LLM_MODEL:-${LLM_MODEL:-accounts/fireworks/models/glm-5p3-flash}}"
 export APPLY_DRY_RUN=true
 unset APPLY_LIVE 2>/dev/null || true
