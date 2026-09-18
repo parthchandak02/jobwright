@@ -28,7 +28,8 @@ def test_fireworks_takes_priority_over_gemini():
     ):
         base_url, model, api_key = _detect_provider()
     assert base_url == "https://api.fireworks.ai/inference/v1"
-    assert model == "accounts/fireworks/models/deepseek-v4-flash-0731"
+    # Default Fireworks model is glm-5p3-flash (better scorer than deepseek as of Sep 2026).
+    assert model == "accounts/fireworks/models/glm-5p3-flash"
     assert api_key == "fw-test"
 
 
@@ -44,7 +45,8 @@ def test_fireworks_ignores_gemini_model_name_without_gemini_key():
         clear=False,
     ):
         _, model, _ = _detect_provider()
-    assert model == "accounts/fireworks/models/deepseek-v4-flash-0731"
+    # A gemini-shaped LLM_MODEL without a Gemini key falls back to the Fireworks default.
+    assert model == "accounts/fireworks/models/glm-5p3-flash"
 
 
 def test_explicit_gemini_model_uses_gemini_when_both_keys():

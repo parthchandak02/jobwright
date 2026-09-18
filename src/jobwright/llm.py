@@ -2,7 +2,7 @@
 Unified LLM client for jobwright.
 
 Auto-detects provider from environment (first match wins):
-  FIREWORKS_API_KEY -> Fireworks AI (default: deepseek-v4-flash-0731)
+  FIREWORKS_API_KEY -> Fireworks AI (default: glm-5p3-flash)
   GEMINI_API_KEY    -> Google Gemini (default: gemini-3.7-flash)
   OPENAI_API_KEY    -> OpenAI (default: gpt-4o-mini)
   LLM_URL           -> Local llama.cpp / Ollama compatible endpoint
