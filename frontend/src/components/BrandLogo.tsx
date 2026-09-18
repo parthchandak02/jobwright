@@ -5,8 +5,11 @@ type Props = {
   title?: string
 }
 
-/** Shared top-bar height for sidebar brand + main header (56px). */
-export const APP_SHELL_HEADER_HEIGHT = 'flex h-14 shrink-0 items-center gap-3 px-4'
+/** Shared top-bar height for sidebar brand + main header (56px).
+ *  Mobile: auto height + wrap so toolbar buttons stack instead of overflowing
+ *  the fixed 56px box and painting over the board. */
+export const APP_SHELL_HEADER_HEIGHT =
+  'flex min-h-14 max-md:h-auto max-md:flex-wrap max-md:py-2 shrink-0 items-center gap-3 px-4 md:h-14'
 
 export const APP_SHELL_HEADER = `${APP_SHELL_HEADER_HEIGHT} app-shell-header`
 
