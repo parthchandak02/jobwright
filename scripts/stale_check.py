@@ -57,7 +57,11 @@ def _live_check(page, url: str) -> str | None:
         if "timeout" in str(exc).lower():
             return None
         return None
-    body = (page.content() or "").lower()
+    body = ""
+    try:
+        body = (page.content() or "").lower()
+    except Exception:  # noqa: BLE001  page mid-navigation: treat as alive this pass
+        return None
     markers = ("no longer accepting applications", "this job no longer exists")
     for m in markers:
         if m in body:
