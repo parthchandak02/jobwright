@@ -365,7 +365,7 @@ export default function App() {
           <ViewModeTabs value={view} onChange={setView} />
 
           <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-2">
-            <div className="relative w-full max-w-xs sm:w-56">
+            <div className="relative hidden max-w-xs sm:block sm:w-56">
               <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
               <Input
                 value={searchQuery}
