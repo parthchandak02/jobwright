@@ -1,6 +1,8 @@
 # git-secrets false positives for jobwright (no secret values)
 os\.environ
 env=env
+# test fixture: fake key string in fastpath env-loading test (never a real secret)
+TYPESAFE_API_KEY=\\"sekret-abc\\"
 CLAUDECODE
 CLAUDE_CODE_ENTRYPOINT
 GEMINI_API_KEY

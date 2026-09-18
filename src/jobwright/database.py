@@ -113,6 +113,11 @@ def init_db(db_path: Path | str | None = None) -> sqlite3.Connection:
             scored_at             TEXT,
             portfolio_project_ids TEXT,
 
+            -- Jev fast-path hybrid (TypeSafe scoring; optional shadow/hybrid routing)
+            jev_score             REAL,
+            jev_confidence        REAL,
+            jev_routed            TEXT,
+
             -- Tailoring stage (resume tailor)
             tailored_resume_path  TEXT,
             tailored_resume_docx_path TEXT,
@@ -205,6 +210,10 @@ _ALL_COLUMNS: dict[str, str] = {
     "user_score_rationale": "TEXT",
     "user_score_at": "TEXT",
     "portfolio_project_ids": "TEXT",
+    # Jev fast-path hybrid (TypeSafe scoring; optional shadow/hybrid routing)
+    "jev_score": "REAL",
+    "jev_confidence": "REAL",
+    "jev_routed": "TEXT",
     # Tailoring
     "tailored_resume_path": "TEXT",
     "tailored_resume_docx_path": "TEXT",

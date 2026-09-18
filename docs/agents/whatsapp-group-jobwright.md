@@ -9,6 +9,8 @@ Use this when Parth asks whether Hermes has **everything needed for jobwright** 
 | WhatsApp target | `whatsapp:120363427224277278@g.us` |
 | Registry user | `richa` (Richa Jatia) |
 | `apply_enabled` | `false` (find-only until user opts in) |
+| `human_gate` | `true` — brief stops before material generation; review-first notify |
+| `brief_top_n` | `10` — per-brief notify cap (top N by fit score; 0 = uncapped) |
 | Repo | `/Volumes/ExternalSSD/Projects/jobwright` |
 | User data | `/Volumes/ExternalSSD/Projects/jobwright/users/richa/` |
 
@@ -52,7 +54,12 @@ Put the durable prompt below into `~/.hermes/config.yaml` (do not commit secrets
           (backup first). Profile chips + Auto Search also live on the dashboard.
           See docs/agents/whatsapp-routing.md.
         find jobs now -> jobwright_brief.sh (detached; sends the notify when done).
-        notify / resend -> jobwright --user richa notify (one WhatsApp list of new jobs with dashboard deep links).
+        Human gate ON for richa: the brief delivers a top-10 review list (deep links), THEN
+          materials are generated on demand after she approves.
+        notify / resend -> jobwright --user richa notify (review-first, top-N by fit score).
+        "prepare <job>" -> scoped on-demand material generation:
+          jobwright --user richa run tailor cover docx (or the dashboard Auto Tailor buttons).
+          No WhatsApp command parser exists; the Hermes agent interprets the message.
         Review + apply happen in the dashboard (jobwright.parthchandak.info/jobs/<job_id>), not over WhatsApp.
         Brief LLM: JOBWRIGHT_LLM_MODEL=gpt-oss-120b (Fireworks). Validation: lenient. Never use BRIEF_SMOKE for daily cron.
         Code/bugs: reproduce with doctor/status/logs; fix via cursor-agent or small patches;
@@ -88,7 +95,8 @@ Need: `jobwright_brief.sh`, `run_daily_brief.sh`, `jobwright_smoke.sh`, `resolve
 | `job status` | `jobwright --user richa status` |
 | `verify brief` | `JOBWRIGHT_USER=richa bash ~/.hermes/scripts/jobwright_verify.sh` |
 | `find jobs now` | `JOBWRIGHT_USER=richa bash ~/.hermes/scripts/jobwright_brief.sh` (~20-30 min; sends notify when done; monitor `logs/brief_YYYYMMDD.log`) |
-| `notify` / resend | `jobwright --user richa notify` (one WhatsApp list of new jobs with dashboard deep links) |
+|| `notify` / resend | `jobwright --user richa notify` (review-first, top-N by fit score, with dashboard deep links) |
+| `prepare <job>` / `prepare <link or name>` | Scoped on-demand material generation for the approved job: `jobwright --user richa run tailor cover docx` (or point to dashboard Auto Tailor). No command parser — the Hermes agent interprets this. |
 | open a job / materials | Point to the dashboard deep link from the notify (`jobwright.parthchandak.info/jobs/<job_id>`) |
 | resume / Connections.csv | File into `users/richa/` (backup first) |
 | apply | Only if `apply_enabled`; from the dashboard apply button (confirm gate), never over WhatsApp |

@@ -163,3 +163,109 @@ def test_run_notify_missing_target_raises(db: sqlite3.Connection, monkeypatch: p
     )
     with pytest.raises(ValueError):
         notify.run_notify()
+
+
+def _fake_user(whatsapp: str = "whatsapp:123@g.us"):
+    return type("U", (), {"whatsapp_target": whatsapp})()
+
+
+def test_build_review_notification_format():
+    url = "https://example.com/job-a"
+    jobs = [
+        {
+            "url": url,
+            "title": "Ops Lead",
+            "company": "Acme",
+            "location": "Remote",
+            "fit_score": 9,
+        }
+    ]
+    msg = notify.build_review_notification(jobs, "https://jobwright.parthchandak.info/")
+    assert "1 new job for your review:" in msg
+    assert f"https://jobwright.parthchandak.info/jobs/{job_id_for_url(url)}" in msg
+    assert "after you approve a job" in msg
+
+
+def test_run_notify_gate_caps_records_and_marks_only_shown(
+    db: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+):
+    # 12 candidate jobs, cap 5, human gate on -> only top 5 sent + recorded.
+    for i in range(12):
+        _insert_job(
+            db,
+            f"https://example.com/gate-{i}",
+            title=f"Role {i}",
+            fit_score=12 - i,  # descending: gate-0 highest (12) .. gate-11 lowest (1)
+        )
+    sent: list[tuple[str, str]] = []
+    monkeypatch.setattr(notify, "send_via_hermes", lambda msg, target: sent.append((msg, target)))
+    monkeypatch.setattr(notify, "get_active_user_id", lambda: "richa")
+    monkeypatch.setattr(notify, "get_user", lambda _uid: _fake_user())
+    monkeypatch.setattr(notify, "get_human_gate", lambda _uid: True)
+    monkeypatch.setattr(notify, "get_brief_top_n", lambda _uid: 5)
+
+    result = notify.run_notify()
+
+    assert result["sent"] == 5
+    assert result["human_gate"] is True
+    assert result["top_n"] == 5
+    assert result["capped"] is True
+    assert "for your review:" in result["message"]
+    # Only 5 bullets for the capped top-5.
+    assert result["message"].count("\u2022") == 5
+
+    # The 5 highest-score jobs are the shown ones.
+    shown_urls = [f"https://example.com/gate-{i}" for i in range(5)]
+    for u in shown_urls:
+        assert f"/jobs/{job_id_for_url(u)}" in result["message"]
+    for i in range(5, 12):
+        assert f"/jobs/{job_id_for_url(f'https://example.com/gate-{i}')}" not in result["message"]
+
+    # brief_items recorded: 12 recorded, 5 shown, ranks 1..5 on the shown ones.
+    rows = db.execute(
+        "SELECT job_url, cap_rank, shown FROM brief_items ORDER BY cap_rank"
+    ).fetchall()
+    assert len(rows) == 12
+    shown = [r for r in rows if r["shown"] == 1]
+    assert len(shown) == 5
+    ranks = sorted(r["cap_rank"] for r in shown)
+    assert ranks == [1, 2, 3, 4, 5]
+
+    # Only the 5 shown jobs were stamped notified (below-cap stay unnotified).
+    marked = db.execute(
+        "SELECT COUNT(*) FROM jobs WHERE whatsapp_notified_at IS NOT NULL"
+    ).fetchone()[0]
+    assert marked == 5
+
+
+def test_run_notify_gate_uncapped_zero_sends_all(
+    db: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+):
+    for i in range(3):
+        _insert_job(db, f"https://example.com/uncap-{i}", title=f"Role {i}", fit_score=8)
+    monkeypatch.setattr(notify, "send_via_hermes", lambda *_a, **_k: None)
+    monkeypatch.setattr(notify, "get_active_user_id", lambda: "richa")
+    monkeypatch.setattr(notify, "get_user", lambda _uid: _fake_user())
+    monkeypatch.setattr(notify, "get_human_gate", lambda _uid: False)
+    monkeypatch.setattr(notify, "get_brief_top_n", lambda _uid: 0)
+
+    result = notify.run_notify()
+    assert result["sent"] == 3
+    assert result["top_n"] == 0
+    assert result["capped"] is False
+    assert "ready to review:" in result["message"]  # legacy format (gate off)
+
+
+def test_run_notify_records_nothing_on_dry_run(
+    db: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+):
+    _insert_job(db, "https://example.com/prepare-new")
+    monkeypatch.setattr(notify, "send_via_hermes", lambda *_a, **_k: None)
+    monkeypatch.setattr(notify, "get_active_user_id", lambda: "richa")
+    monkeypatch.setattr(notify, "get_user", lambda _uid: _fake_user())
+    monkeypatch.setattr(notify, "get_human_gate", lambda _uid: True)
+    monkeypatch.setattr(notify, "get_brief_top_n", lambda _uid: 10)
+
+    result = notify.run_notify(dry_run=True)
+    assert result["dry_run"] is True and result["sent"] == 0
+    assert db.execute("SELECT COUNT(*) FROM brief_items").fetchone()[0] == 0
