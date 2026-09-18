@@ -526,6 +526,55 @@ RETRYABLE_STATUSES = {408, 429, 500, 502, 503, 504}
 PERMANENT_FAILURES = {404, 410, 451}
 
 
+def _is_permanent_failure(error: str | None) -> bool:
+    """True when the enrich error text marks the posting as permanently gone."""
+    if not error:
+        return False
+    for code in PERMANENT_FAILURES:
+        if f"HTTP {code}" in error:
+            return True
+    low = error.lower()
+    return "no longer accepting" in low or "not accepting applications" in low or (
+        "this job no longer exists" in low
+    )
+
+
+def _auto_close_dead(conn: sqlite3.Connection, url: str, error: str | None) -> bool:
+    """Soft-close a dead posting via the canonical funnel path.
+
+    Skips human-held cards (board_updated_by='human' protection lives inside
+    advance_funnel's stage history; here we also guard explicitly). Returns
+    True when the job was closed.
+    """
+    try:
+        held = conn.execute(
+            "SELECT board_updated_by, funnel_stage FROM jobs WHERE url = ?", (url,)
+        ).fetchone()
+        if held is None:
+            return False
+        d = dict(held) if not isinstance(held, sqlite3.Row) else dict(held)
+        if (d.get("board_updated_by") or "") == "human":
+            return False
+        if d.get("funnel_stage") not in (None, "", "backlog"):
+            return False
+        from jobwright.database import advance_funnel
+
+        prev = advance_funnel(
+            url,
+            "closed",
+            actor="system",
+            note=f"auto: posting dead ({error})",
+            outcome="cancelled",
+            conn=conn,
+        )
+        if prev is not None:
+            log.info("auto-closed dead posting (%s): %s", error, url[:80])
+        return prev is not None
+    except Exception:  # noqa: BLE001 - close-out is best-effort, never break enrich
+        log.warning("auto_close_dead failed for %s", url[:80], exc_info=True)
+        return False
+
+
 def scrape_detail_page(page, url: str) -> dict:
     """Full cascade for one detail page."""
     result: dict = {
@@ -679,6 +728,12 @@ def scrape_site_batch(
                     )
                 else:
                     stats["error"] += 1
+                    # Permanent failure (404/410/451) = posting is gone. Soft-close so the
+                    # board stays honest; human-held cards are never touched by the guard.
+                    if _is_permanent_failure(result.get("error")) and _auto_close_dead(
+                        conn, url, result.get("error")
+                    ):
+                        stats["auto_closed"] = stats.get("auto_closed", 0) + 1
                     conn.execute(
                         "UPDATE jobs SET detail_error = ?, detail_scraped_at = ? WHERE url = ?",
                         (result.get("error", "unknown"), now, url),

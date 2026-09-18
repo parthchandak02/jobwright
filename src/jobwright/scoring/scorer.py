@@ -121,8 +121,23 @@ def _build_score_prompt(profile: dict | None, calibration: str = "") -> str:
 _MAX_CALIBRATION_EXAMPLES = 12
 
 
+def _load_applied_examples(conn, limit: int = 8) -> list[dict]:
+    """Recent jobs the user actually applied to — the strongest positive signal."""
+    rows = conn.execute(
+        """
+        SELECT title, company, site, fit_score
+        FROM jobs
+        WHERE applied_at IS NOT NULL
+        ORDER BY applied_at DESC
+        LIMIT ?
+        """,
+        (limit,),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
 def _load_score_calibration(conn) -> str:
-    """Load recent human score corrections as few-shot calibration for the LLM."""
+    """Load recent human score corrections + applied jobs as few-shot calibration."""
     rows = conn.execute(
         """
         SELECT title, company, site, fit_score, user_fit_score, user_score_rationale
@@ -152,6 +167,16 @@ def _load_score_calibration(conn) -> str:
             f"{i}. {title} @ {company} — {ai_part}, human corrected to {user}. "
             f"Rationale: {rationale}"
         )
+    applied = _load_applied_examples(conn)
+    if applied:
+        lines.append(
+            "\n\nJOBS THE USER APPLIED TO (strong positive signal — similar roles "
+            "should score high):"
+        )
+        for i, d in enumerate(applied, 1):
+            title = d.get("title") or "Unknown role"
+            company = d.get("company") or d.get("site") or "Unknown"
+            lines.append(f"{i}. {title} @ {company}")
     return "\n".join(lines)
 
 
