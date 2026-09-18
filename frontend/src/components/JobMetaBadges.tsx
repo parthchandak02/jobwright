@@ -16,7 +16,12 @@ import type { JobCard } from '@/lib/api'
 type Props = {
   job: Pick<
     JobCard,
-    'source' | 'has_resume' | 'has_cover' | 'outcome' | 'whatsapp_notified_at'
+    | 'source'
+    | 'has_resume'
+    | 'has_cover'
+    | 'outcome'
+    | 'is_dead'
+    | 'whatsapp_notified_at'
   >
 }
 
@@ -39,6 +44,7 @@ export function JobMetaBadges({ job }: Props) {
     job.has_resume ||
     job.has_cover ||
     job.outcome ||
+    job.is_dead ||
     job.whatsapp_notified_at
   if (!hasAny) return null
 
@@ -48,6 +54,15 @@ export function JobMetaBadges({ job }: Props) {
 
   return (
     <>
+      {job.is_dead && (
+        <Chip
+          icon={Ban}
+          tone="--destructive"
+          title="Posting is dead: no longer accepting applications (checked automatically)"
+        >
+          DEAD
+        </Chip>
+      )}
       {job.source === 'manual' && (
         <Chip icon={PenLine}>manual</Chip>
       )}

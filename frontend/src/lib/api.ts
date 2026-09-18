@@ -64,6 +64,7 @@ export type JobCard = {
   reasoning: string
   funnel_stage: string
   outcome: string | null
+  is_dead?: boolean
   source: string
   applied_manually: boolean
   applied_at: string | null

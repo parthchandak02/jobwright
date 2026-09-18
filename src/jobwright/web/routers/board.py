@@ -46,6 +46,9 @@ def _row_to_card(row) -> dict:
     reasoning = (d.get("score_reasoning") or "").split("\n", 1)
     user_rationale = (d.get("user_score_rationale") or "").strip()
     url = d.get("url")
+    from jobwright.enrichment.detail import _is_permanent_failure
+
+    is_dead = _is_permanent_failure(d.get("detail_error"))
     return {
         "url": url,
         "job_id": job_id_for_url(url) if url else None,
@@ -68,6 +71,7 @@ def _row_to_card(row) -> dict:
         "reasoning": reasoning[1][:240] if len(reasoning) > 1 else "",
         "funnel_stage": d.get("funnel_stage") or "backlog",
         "outcome": d.get("outcome"),
+        "is_dead": is_dead,
         "source": d.get("source") or "discovered",
         "applied_manually": bool(d.get("applied_manually")),
         "applied_at": d.get("applied_at"),
