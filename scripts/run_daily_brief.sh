@@ -74,7 +74,7 @@ finish_status() {
 }
 trap finish_status EXIT
 
-python3 -m jobwright.cli "${USER_FLAG[@]}" run discover enrich score portfolio tailor cover docx connect \
+python3 -m jobwright.cli "${USER_FLAG[@]}" run discover enrich score portfolio connect \
   -w "${WORKERS}" --min-score "${MIN_SCORE}" --validation lenient >> "${LOG}" 2>&1 || RC=$?
 
 if [ "${RC}" -ne 0 ]; then

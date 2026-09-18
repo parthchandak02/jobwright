@@ -61,6 +61,28 @@ _UPSTREAM: dict[str, str | None] = {
     "connect":  "docx",
 }
 
+# Default daily-brief stage list when the active user has human_gate enabled:
+# the pipeline stops before material generation (tailor/cover/pdf/docx). Jobs
+# are reviewed first; materials are generated on demand after approval.
+BRIEF_STAGES_HUMAN_GATED = ("discover", "enrich", "score", "portfolio", "connect")
+# Full brief runs every stage (the pre-gate default / on-demand full pipeline).
+BRIEF_STAGES_FULL = STAGE_ORDER
+
+
+def default_brief_stages() -> list[str]:
+    """Resolve the default pipeline stage list for the active user.
+
+    Honors the per-user ``human_gate`` config key: when True the default drops
+    tailor/cover/pdf/docx. Explicit stage lists (e.g. ``jobwright run tailor
+    cover docx``) are never altered and always run their full on-demand path.
+    """
+    from jobwright.config import get_active_user_id
+    from jobwright.users import get_human_gate
+
+    if get_human_gate(get_active_user_id()):
+        return list(BRIEF_STAGES_HUMAN_GATED)
+    return list(STAGE_ORDER)
+
 
 # ---------------------------------------------------------------------------
 # Individual stage runners
@@ -595,7 +617,7 @@ def run_pipeline(
 
     # Resolve stages
     if stages is None:
-        stages = ["all"]
+        stages = default_brief_stages()
     ordered = _resolve_stages(stages)
 
     # Banner

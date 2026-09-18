@@ -96,6 +96,13 @@ class UserRecord:
     schedule: str = "0 6 * * *"  # daily brief at 6:00 (all days)
     digest_schedule: str = "30 6 * * *"  # WhatsApp send at 6:30
     notes: str = ""
+    # Human gate: when true, the default daily-brief pipeline stops before
+    # tailor/cover/pdf/docx and notify sends a review-first list; materials
+    # are generated on demand after the user approves a job.
+    human_gate: bool = False
+    # Notify cap: show the top N jobs by fit score per brief. 0 = uncapped
+    # (legacy behavior: send every prepare-stage job).
+    brief_top_n: int = 10
     # Optional overrides; empty = use default path under USERS_ROOT
     data_dir: str = ""
 
@@ -186,6 +193,8 @@ def _from_dict(raw: dict[str, Any]) -> UserRecord:
         schedule=str(raw.get("schedule") or "0 */3 * * 1-5"),
         digest_schedule=str(raw.get("digest_schedule") or "15 */3 * * 1-5"),
         notes=str(raw.get("notes") or ""),
+        human_gate=bool(raw.get("human_gate", False)),
+        brief_top_n=int(raw.get("brief_top_n", 0)),
         data_dir=str(raw.get("data_dir") or ""),
     )
 
@@ -216,6 +225,8 @@ def add_user(
     schedule: str = "0 */3 * * 1-5",
     digest_schedule: str = "15 */3 * * 1-5",
     notes: str = "",
+    human_gate: bool = False,
+    brief_top_n: int = 0,
 ) -> UserRecord:
     """Register a user and create their data directory skeleton."""
     validate_user_id(user_id)
@@ -230,6 +241,8 @@ def add_user(
         schedule=schedule,
         digest_schedule=digest_schedule,
         notes=notes,
+        human_gate=human_gate,
+        brief_top_n=brief_top_n,
     )
     data_dir = user.resolve_data_dir()
     data_dir.mkdir(parents=True, exist_ok=True)
@@ -273,6 +286,7 @@ def update_user(user_id: str, **fields: Any) -> UserRecord:
     allowed = {
         "name", "whatsapp_target", "apply_enabled", "schedule",
         "digest_schedule", "notes", "data_dir",
+        "human_gate", "brief_top_n",
     }
     for key, value in fields.items():
         if key not in allowed:
@@ -299,3 +313,36 @@ def is_apply_enabled(user_id: str | None = None) -> bool:
     if user is None:
         return False
     return bool(user.apply_enabled)
+
+
+DEFAULT_BRIEF_TOP_N = 0  # uncapped legacy default; cap only when explicitly configured (richa: 10)
+
+
+def get_human_gate(user_id: str | None = None) -> bool:
+    """Return whether the default brief pipeline is human-gated for a user.
+
+    When True, the daily brief stops before material generation (tailor/cover/
+    pdf/docx) and notify sends a review-first list; materials are produced on
+    demand after the user approves. Defaults to False for legacy single-user
+    and for any unknown user id.
+    """
+    if not user_id:
+        return False
+    user = get_user(user_id)
+    if user is None:
+        return False
+    return bool(user.human_gate)
+
+
+def get_brief_top_n(user_id: str | None = None) -> int:
+    """Return the per-brief notify cap (top N jobs by fit score) for a user.
+
+    0 means uncapped (legacy behavior — send every prepare-stage job).
+    Defaults to 10 for legacy single-user and unknown user ids.
+    """
+    if not user_id:
+        return DEFAULT_BRIEF_TOP_N
+    user = get_user(user_id)
+    if user is None:
+        return DEFAULT_BRIEF_TOP_N
+    return max(int(user.brief_top_n), 0)

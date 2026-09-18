@@ -299,6 +299,14 @@ def users_set(
     whatsapp: Optional[str] = typer.Option(None, "--whatsapp", "-w"),
     name: Optional[str] = typer.Option(None, "--name", "-n"),
     schedule: Optional[str] = typer.Option(None, "--schedule"),
+    human_gate: bool | None = typer.Option(
+        None, "--human-gate/--no-human-gate",
+        help="Human gate: stop the daily brief before material generation.",
+    ),
+    brief_top_n: int | None = typer.Option(
+        None, "--brief-top-n",
+        help="Per-brief notify cap (top N by fit score; 0 = uncapped).",
+    ),
 ) -> None:
     """Update fields on an existing user."""
     from jobwright.users import update_user
@@ -312,6 +320,10 @@ def users_set(
         fields["name"] = name
     if schedule is not None:
         fields["schedule"] = schedule
+    if human_gate is not None:
+        fields["human_gate"] = human_gate
+    if brief_top_n is not None:
+        fields["brief_top_n"] = brief_top_n
     if not fields:
         console.print("[yellow]No fields to update.[/yellow]")
         raise typer.Exit(code=1)
@@ -369,20 +381,26 @@ def run(
 
     from jobwright.pipeline import run_pipeline
 
-    stage_list = stages if stages else ["all"]
+    # When no stages are given, let the pipeline resolve the default brief
+    # stage list (which honors the user's human_gate config key). Explicit
+    # stage lists always run verbatim — on-demand `run tailor cover docx`
+    # still generates materials for an approved job.
+    explicit = list(stages) if stages else None
 
     # Validate stage names
-    for s in stage_list:
-        if s != "all" and s not in VALID_STAGES:
-            console.print(
-                f"[red]Unknown stage:[/red] '{s}'. "
-                f"Valid stages: {', '.join(VALID_STAGES)}, all"
-            )
-            raise typer.Exit(code=1)
+    if explicit:
+        for s in explicit:
+            if s != "all" and s not in VALID_STAGES:
+                console.print(
+                    f"[red]Unknown stage:[/red] '{s}'. "
+                    f"Valid stages: {', '.join(VALID_STAGES)}, all"
+                )
+                raise typer.Exit(code=1)
 
-    # Gate AI stages behind Tier 2
+    # Gate AI stages behind Tier 2 (default briefs include scoring either way).
     llm_stages = {"score", "tailor", "cover"}
-    if any(s in stage_list for s in llm_stages) or "all" in stage_list:
+    runs_llm = explicit is None or "all" in explicit or any(s in llm_stages for s in explicit)
+    if runs_llm:
         from jobwright.config import check_tier
         check_tier(2, "AI scoring/tailoring")
 
@@ -396,7 +414,7 @@ def run(
         raise typer.Exit(code=1)
 
     result = run_pipeline(
-        stages=stage_list,
+        stages=explicit,
         min_score=min_score,
         dry_run=dry_run,
         stream=stream,
@@ -912,6 +930,50 @@ def notify(
     console.print(f"[green]Sent {result['sent']} job(s) to WhatsApp.[/green]")
     for j in result["jobs"]:
         console.print(f"  {j['title']} @ {j.get('company') or '?'}  [dim]{j['job_id']}[/dim]")
+
+
+@app.command("briefstats")
+def briefstats_cmd(
+    days: int = typer.Option(14, "--days", help="Number of days of brief history to report."),
+) -> None:
+    """Per-brief scoreboard: precision proxy (advanced / shown) over recent briefs."""
+    from jobwright.briefstats import briefstats as compute_briefstats
+    from jobwright.config import get_active_user_id
+
+    _bootstrap()
+    active = get_active_user_id()
+    if not active:
+        console.print("[red]No active user.[/red] Set one with: jobwright --user <id> briefstats")
+        raise typer.Exit(code=1)
+
+    history = compute_briefstats(user=active, days=days)
+    if not history:
+        console.print(f"[yellow]No brief_items recorded for the last {days} day(s).[/yellow] "
+                      "Briefs are recorded when notify sends.")
+        return
+
+    table = Table(title=f"Scoreboard (last {days}d)", show_header=True, header_style="bold cyan")
+    table.add_column("brief_date", style="bold")
+    table.add_column("shown", justify="right")
+    table.add_column("applied", justify="right")
+    table.add_column("in_progress", justify="right")
+    table.add_column("offer", justify="right")
+    table.add_column("closed", justify="right")
+    table.add_column("untouched", justify="right")
+    table.add_column("precision@K", justify="right")
+    for r in history:
+        table.add_row(
+            r["brief_date"],
+            str(r["shown"]),
+            str(r["applied"]),
+            str(r["in_progress"]),
+            str(r["offer"]),
+            str(r["closed"]),
+            str(r["untouched"]),
+            f"{r['precision']:.3f}" if r["precision"] is not None else "-",
+        )
+    console.print(table)
+    console.print("\n[dim]precision@K = (applied + in_progress) / shown, per brief[/dim]")
 
 
 @app.command()

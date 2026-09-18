@@ -66,9 +66,24 @@ export JOBWRIGHT_DIR="${JOBWRIGHT_USERS_ROOT}/${USER_ID}"
 |---------|--------|
 | Cron (daily 6:00) | `jobwright_brief.sh` -> `run_daily_brief.sh` (pipeline then `jobwright notify`) -> one WhatsApp list |
 | User: "find jobs now" | `JOBWRIGHT_USER=$USER_ID bash ~/.hermes/scripts/jobwright_brief.sh` |
-| User: "notify" / resend list | `jobwright --user $USER_ID notify` (one list of new prepare jobs; `--dry-run` to preview) |
+| User: "notify" / resend list | `jobwright --user $USER_ID notify` (top-N review-first list when human_gate on; `--dry-run` to preview) |
 | User: "materials" / open job | Point to the dashboard deep link from the notify (`jobwright.parthchandak.info/jobs/<job_id>`) |
 | User: "job status" | `jobwright --user $USER_ID status` |
+| User: "prepare <job>" | On-demand material generation for the approved job: `jobwright --user $USER_ID run tailor cover docx` (or dashboard Auto Tailor). No command parser — the agent interprets it. |
+| Operator check: scoreboard | `jobwright --user $USER_ID briefstats --days 14` (precision@K per brief: advanced / shown) |
+
+Human gate (on for richa): the default brief pipeline stops before material
+generation — `discover enrich score portfolio connect` — and `notify` sends a
+review-first, top-N (by fit score) list of jobs for the user to review. Materials
+(tailored resume + cover letter) are generated on demand after she approves a job:
+dashboard Auto Tailor buttons, or `jobwright --user richa run tailor cover docx`.
+Explicit stage lists always run verbatim; `jobwright run all` still runs everything.
+
+Scoreboard (D4): each `notify` send records a `brief_items` snapshot (brief_date,
+job_url, job_id, fit_score, jev_score, cap_rank, shown). The notify list is capped to
+the user's `brief_top_n` (default 0 = uncapped legacy; richa = 10). `briefstats` reports, per
+brief, count shown / applied / in_progress / offer / closed / untouched and a
+precision proxy = (applied + in_progress) / shown. Read-only over funnel data.
 
 Pipeline stages: discover -> enrich -> score -> portfolio -> tailor -> cover -> docx -> connect, then `jobwright notify`. (CLI also has `pdf`; brief and Auto Search skip it.) Dashboard Auto Search is the same prep pipeline via `POST /api/run`. Profile searches, resume PDF, and cover-letter example PDFs can be edited in the dashboard.
 
@@ -138,6 +153,10 @@ jobwright --user <id> doctor
 ```
 
 Apply stays OFF unless: `jobwright users set <id> --apply`
+
+Per-user brief config: `human_gate` (default off; on for richa) and `brief_top_n`
+(notify cap, default 0 = uncapped; richa = 10) live in the registry `users/users.yaml`,
+settable via `jobwright users set <id> --human-gate/--no-human-gate --brief-top-n <n>`.
 
 ## File upload handling (WhatsApp)
 

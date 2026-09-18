@@ -6,18 +6,29 @@ profile and resume file.
 
 Default path is batched (resume once + N short JDs per call). Sequential
 fallback is used when SCORE_BATCH_SIZE=1 or a batch parse fails.
+
+A new concurrent single-shot path (JOBWRIGHT_SCORE_WORKERS>0, default 20) is the
+primary scoring path: one job per LLM call, full 6000-char description,
+temperature 0, structured JSON output, profile prompt built once and reused as
+a byte-identical prefix (prompt-cache friendly). Set JOBWRIGHT_SCORE_WORKERS=0
+to keep the legacy batch+sequential path. Optional Jev fast-path hybrid
+(D3, fastpath.py) runs first when the user config enables jev_hybrid.
 """
 
+import concurrent.futures
 import logging
 import os
+import random
 import time
 from datetime import datetime, timezone
+
+import httpx
 
 from jobwright.config import load_profile
 from jobwright.database import get_connection, get_jobs_by_stage
 from jobwright.discovery.filters import apply_fit_score_guards
 from jobwright.llm import get_client
-from jobwright.llm_json import LLMJsonError, chat_json_object, get_list_field
+from jobwright.llm_json import LLMJsonError, chat_json_object, get_list_field, parse_json_object
 
 log = logging.getLogger(__name__)
 
@@ -168,6 +179,226 @@ def _batch_size() -> int:
         return max(1, int(raw))
     except ValueError:
         return _DEFAULT_BATCH_SIZE
+
+
+# ── Concurrent single-shot path (D2) ──────────────────────────────────────
+
+DEFAULT_SCORE_WORKERS = 20
+# The schema-path request bypasses LLMClient's internal 5-retry ladder, so the
+# outer loop is the only retry: 3 attempts with backoff absorbs 429 bursts and
+# the rare json_schema 400 degrade without dropping jobs to skipped.
+SCORE_SINGLE_ATTEMPTS = 3
+# 60 was too small: the model writes reasoning before "score", truncating the
+# JSON mid-object ("No valid JSON object found"). 300 fits score + 2-3 sentence
+# reasoning with headroom.
+SINGLE_MAX_TOKENS = 300
+
+# OpenRouter/Fireworks json_schema response object: integer score 1-10 + reasoning.
+SCORE_JSON_SCHEMA = {
+    "name": "job_fit_score",
+    "strict": True,
+    "schema": {
+        "type": "object",
+        "properties": {
+            "score": {"type": "integer", "minimum": 1, "maximum": 10},
+            "reasoning": {"type": "string"},
+        },
+        "required": ["score", "reasoning"],
+        "additionalProperties": False,
+    },
+}
+
+
+def _score_workers() -> int:
+    """JOBWRIGHT_SCORE_WORKERS: 0 = legacy batch+sequential, >0 = concurrent single-shot."""
+    raw = os.environ.get("JOBWRIGHT_SCORE_WORKERS", str(DEFAULT_SCORE_WORKERS)).strip()
+    try:
+        return max(0, int(raw))
+    except ValueError:
+        return DEFAULT_SCORE_WORKERS
+
+
+def _backoff_jitter(attempt: int, rng: random.Random) -> float:
+    """Exponential backoff (base 1s, doubles per attempt) + uniform jitter."""
+    base = 1.0 * (2 ** (attempt - 1))
+    return base + rng.uniform(0.0, 0.5 * base)
+
+
+def _is_retryable(exc: Exception) -> bool:
+    """429/timeouts and parse failures are retried; config errors are not."""
+    return isinstance(
+        exc,
+        (LLMJsonError, httpx.HTTPStatusError, httpx.TimeoutException, httpx.TransportError),
+    )
+
+
+def _try_schema_chat(client, messages: list[dict], *, max_tokens: int, temperature: float) -> str | None:
+    """Best-effort json_schema structured output for OpenAI-compat providers.
+
+    Degrades to ``None`` (caller falls back to json_object / prompt+parse) when
+    the active client is not the real LLMClient, the provider rejects
+    json_schema (400/404/422), or the request fails to send. 429/5xx are
+    propagated so the scorer's retry loop handles them.
+    """
+    if not (
+        hasattr(client, "base_url")
+        and hasattr(client, "model")
+        and hasattr(client, "_client")
+        and not getattr(client, "_is_gemini", False)
+    ):
+        return None
+
+    headers = {"Content-Type": "application/json"}
+    if getattr(client, "api_key", ""):
+        headers["Authorization"] = f"Bearer {client.api_key}"
+    payload = {
+        "model": client.model,
+        "messages": messages,
+        "max_tokens": max_tokens,
+        "temperature": temperature,
+        "response_format": {"type": "json_schema", "json_schema": SCORE_JSON_SCHEMA},
+    }
+    try:
+        resp = client._client.post(
+            f"{client.base_url}/chat/completions", json=payload, headers=headers
+        )
+    except Exception as exc:  # noqa: BLE001 - degrade on send failure
+        log.warning("json_schema request failed (%s); degrading to json_object", exc)
+        return None
+    if resp.status_code in (400, 404, 422):
+        log.info("Provider rejected json_schema (HTTP %s); degrading to json_object", resp.status_code)
+        return None
+    resp.raise_for_status()  # 429/5xx propagate to the retry loop
+    data = resp.json()
+    choice = (data.get("choices") or [{}])[0]
+    content = (choice.get("message") or {}).get("content")
+    if not (content or "").strip():
+        raise LLMJsonError("Empty structured LLM response")
+    return content
+
+
+def _chat_single(client, messages: list[dict], *, max_tokens: int = SINGLE_MAX_TOKENS, temperature: float = 0.0) -> str:
+    """One scoring call: prefer json_schema, then json_object, then prompt+parse.
+
+    Returns the assistant message text.
+    """
+    schema_text = _try_schema_chat(
+        client, messages, max_tokens=max_tokens, temperature=temperature
+    )
+    if schema_text is not None:
+        return schema_text
+    return client.chat(messages, temperature=temperature, max_tokens=max_tokens, json_mode=True)
+
+
+def score_job_single(
+    resume_text: str,
+    job: dict,
+    *,
+    system_prompt: str,
+    search_cfg: dict | None = None,
+    client: "object | None" = None,
+) -> dict | None:
+    """Score one job with the full 6000-char description in a single LLM call.
+
+    Uses temperature 0 and a small token budget. Retries per-call on
+    429/timeouts/parse errors (exponential backoff + jitter, 2 attempts), then
+    returns None so the stage skips-with-warning instead of crashing.
+    """
+    user_msg = (
+        f"RESUME:\n{resume_text}\n\n---\n\nJOB POSTING:\n"
+        f"{_job_block(job, desc_chars=_SINGLE_DESC_CHARS)}"
+    )
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_msg},
+    ]
+    rng = random.Random()
+    for attempt in range(1, SCORE_SINGLE_ATTEMPTS + 1):
+        try:
+            client = client or get_client()
+            raw = _chat_single(client, messages)
+            data = parse_json_object(raw, json_mode=False)
+            return apply_fit_score_guards(job, _parse_score_response(data), search_cfg)
+        except Exception as exc:  # noqa: BLE001 - handled below (skip vs retry)
+            if not _is_retryable(exc) or attempt >= SCORE_SINGLE_ATTEMPTS:
+                log.warning(
+                    "Single-shot score failed for '%s' (attempt %d/%d): %s",
+                    job.get("title", "?"), attempt, SCORE_SINGLE_ATTEMPTS, exc,
+                )
+                return None
+            wait = _backoff_jitter(attempt, rng)
+            log.warning(
+                "Scoring retry (%d/%d) for '%s' after %.2fs: %s",
+                attempt, SCORE_SINGLE_ATTEMPTS, job.get("title", "?"), wait, exc,
+            )
+            time.sleep(wait)
+    return None
+
+
+def score_jobs_single_shot(
+    resume_text: str,
+    jobs: list[dict],
+    profile: dict | None = None,
+    calibration: str = "",
+    search_cfg: dict | None = None,
+    workers: int | None = None,
+) -> tuple[list[dict], int]:
+    """Concurrent single-shot scoring of many jobs.
+
+    Builds the profile/system prefix ONCE and reuses the same string object
+    across every call (byte-identical, prompt-cache friendly). Returns
+    (results_with_url, errors).
+    """
+    n_workers = max(1, workers if workers is not None else _score_workers())
+    system_prompt = _build_score_prompt(profile, calibration) + SINGLE_SCORE_TAIL
+    # Build the LLMClient once HERE (main thread). get_client() is a lazy
+    # singleton with mutable state (_use_native_gemini) and reset_client()
+    # closes it; calling it from 20 threads concurrently caused the flaky
+    # TransportError/parse skips. Workers reuse this shared instance (httpx
+    # Client is thread-safe for concurrent requests).
+    shared_client = get_client()
+
+    def _score_one(job: dict) -> dict | None:
+        return score_job_single(
+            resume_text, job, system_prompt=system_prompt, search_cfg=search_cfg,
+            client=shared_client,
+        )
+
+    results: list[dict] = []
+    errors = 0
+    if n_workers == 1 or len(jobs) <= 1:
+        iterator = (_score_one(j) for j in jobs)
+    else:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=n_workers) as executor:
+            iterator = executor.map(_score_one, jobs)
+    for job, result in zip(jobs, iterator):
+        if result is None:
+            errors += 1
+        else:
+            result["url"] = job["url"]
+            results.append(result)
+    return results, errors
+
+
+def _jev_verdict(job: dict, jev: dict | None, verdict: str, search_cfg: dict | None = None) -> dict:
+    """Build a scored-job dict that records a Jev fast-accept/fast-reject verdict.
+
+    Routed through apply_fit_score_guards like every deepseek-scored job so the
+    exclude_title ceiling / social-impact caps / location caps still apply.
+    """
+    try:
+        score = int((jev or {}).get("jev_score"))
+    except (TypeError, ValueError):
+        score = 1
+    score = max(1, min(10, score))
+    conf = float((jev or {}).get("jev_confidence") or 0.0)
+    raw = {
+        "url": job["url"],
+        "score": score,
+        "keywords": "",
+        "reasoning": f"Jev fastpath {verdict} (jev_score={score}, conf={conf:.2f})",
+    }
+    return apply_fit_score_guards(job, raw, search_cfg)
 
 
 def _job_block(job: dict, index: int | None = None, desc_chars: int = _SINGLE_DESC_CHARS) -> str:
@@ -367,45 +598,85 @@ def run_scoring(limit: int = 0, rescore: bool = False) -> dict:
         columns = jobs[0].keys()
         jobs = [dict(zip(columns, row)) for row in jobs]
 
-    batch_size = _batch_size()
-    log.info("Scoring %d jobs (batch_size=%d)...", len(jobs), batch_size)
-    t0 = time.time()
+    workers = _score_workers()
+    log.info("Scoring %d jobs (workers=%d)...", len(jobs), workers)
+
+    # D3 hook: Jev fast-path (shadow|on) runs FIRST at the start of this stage.
+    from jobwright.scoring import fastpath
+
     errors = 0
     results: list[dict] = []
-    done = 0
+    llm_jobs = jobs
 
-    chunks: list[list[dict]] = (
-        [jobs[i : i + batch_size] for i in range(0, len(jobs), batch_size)]
-        if batch_size > 1
-        else [[j] for j in jobs]
-    )
+    jev_mode = fastpath.get_jev_hybrid(profile)
+    if jev_mode in ("shadow", "on") and jobs:
+        jev_by_url = {
+            r["url"]: r for r in fastpath.score_fastpath(jobs, profile or {}, conn) if r.get("url")
+        }
+        if jev_mode == "on":
+            llm_jobs = []
+            for job in jobs:
+                jev = jev_by_url.get(job["url"])
+                route = jev.get("jev_route") if jev else None
+                if route == "fast_accept":
+                    results.append(_jev_verdict(job, jev, "accept", search_cfg))
+                    log.info("Jev fast-accept (deepseek skipped): %s", job.get("title", "?"))
+                elif route == "fast_reject":
+                    results.append(_jev_verdict(job, jev, "reject", search_cfg))
+                    log.info("Jev fast-reject (deepseek skipped): %s", job.get("title", "?"))
+                else:
+                    llm_jobs.append(job)
+            log.info(
+                "Jev '%s' routed %d via fastpath; escalating %d to deepseek",
+                jev_mode, len(results), len(llm_jobs),
+            )
 
-    for chunk in chunks:
-        scored, leftover = score_jobs_batch(
-            resume_text, chunk, profile=profile, calibration=calibration, search_cfg=search_cfg,
+    t0 = time.time()
+    done = len(results)
+    if workers > 0:
+        llm_scored, llm_errors = score_jobs_single_shot(
+            resume_text, llm_jobs, profile=profile, calibration=calibration,
+            search_cfg=search_cfg, workers=workers,
         )
-        results.extend(scored)
-        done += len(scored)
-        for item in scored:
-            log.info(
-                "[%d/%d] score=%d  %s",
-                done, len(jobs), item["score"], (item.get("url") or "")[-50:],
+        results.extend(llm_scored)
+        errors += llm_errors
+        done += len(llm_scored)
+        for item in llm_scored:
+            log.info("[%d/%d] score=%d  %s", done, len(jobs), item["score"], (item.get("url") or "")[-50:])
+    else:
+        # Legacy batch+sequential path (SCORE_BATCH_SIZE / JOBWRIGHT_SCORE_WORKERS=0).
+        batch_size = _batch_size()
+        chunks: list[list[dict]] = (
+            [llm_jobs[i : i + batch_size] for i in range(0, len(llm_jobs), batch_size)]
+            if batch_size > 1
+            else [[j] for j in llm_jobs]
+        )
+        for chunk in chunks:
+            scored, leftover = score_jobs_batch(
+                resume_text, chunk, profile=profile, calibration=calibration, search_cfg=search_cfg,
             )
-        for job in leftover:
-            result = score_job(
-                resume_text, job, profile=profile, calibration=calibration, search_cfg=search_cfg,
-            )
-            done += 1
-            if result is None:
-                errors += 1
-                log.warning("[%d/%d] score failed  %s", done, len(jobs), job.get("title", "?")[:60])
-                continue
-            result["url"] = job["url"]
-            results.append(result)
-            log.info(
-                "[%d/%d] score=%d  %s",
-                done, len(jobs), result["score"], job.get("title", "?")[:60],
-            )
+            results.extend(scored)
+            done += len(scored)
+            for item in scored:
+                log.info(
+                    "[%d/%d] score=%d  %s",
+                    done, len(jobs), item["score"], (item.get("url") or "")[-50:],
+                )
+            for job in leftover:
+                result = score_job(
+                    resume_text, job, profile=profile, calibration=calibration, search_cfg=search_cfg,
+                )
+                done += 1
+                if result is None:
+                    errors += 1
+                    log.warning("[%d/%d] score failed  %s", done, len(jobs), job.get("title", "?")[:60])
+                    continue
+                result["url"] = job["url"]
+                results.append(result)
+                log.info(
+                    "[%d/%d] score=%d  %s",
+                    done, len(jobs), result["score"], job.get("title", "?")[:60],
+                )
 
     # Write scores to DB
     now = datetime.now(timezone.utc).isoformat()
