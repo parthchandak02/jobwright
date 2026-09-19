@@ -19,6 +19,7 @@ import concurrent.futures
 import logging
 import os
 import random
+import threading
 import time
 from datetime import datetime, timezone
 
@@ -213,10 +214,12 @@ DEFAULT_SCORE_WORKERS = 20
 # outer loop is the only retry: 3 attempts with backoff absorbs 429 bursts and
 # the rare json_schema 400 degrade without dropping jobs to skipped.
 SCORE_SINGLE_ATTEMPTS = 3
-# 60 was too small: the model writes reasoning before "score", truncating the
-# JSON mid-object ("No valid JSON object found"). 300 fits score + 2-3 sentence
-# reasoning with headroom.
-SINGLE_MAX_TOKENS = 300
+# 300 was sized for OpenRouter deepseek (non-thinking). On Fireworks both glm-5p3-flash
+# and deepseek-v4-flash-0731 emit reasoning_tokens that scale with prompt size (~880
+# for a full resume+6000-char JD at temp 0). 300 => 100% reasoning, finish_reason=length,
+# empty content ("Empty structured LLM response") => doomed retries. 1200 fits
+# reasoning + score + 2-3 sentence reasoning with headroom (verified live Sep 19).
+SINGLE_MAX_TOKENS = 1200
 
 # OpenRouter/Fireworks json_schema response object: integer score 1-10 + reasoning.
 SCORE_JSON_SCHEMA = {
@@ -255,6 +258,36 @@ def _is_retryable(exc: Exception) -> bool:
         exc,
         (LLMJsonError, httpx.HTTPStatusError, httpx.TimeoutException, httpx.TransportError),
     )
+
+
+# ---------------------------------------------------------------------------
+# Billing circuit breaker (Sep 19): a dead provider (402 Payment Required,
+# 401/403 quota) must fail the stage in seconds, not burn 3 attempts x N jobs
+# x 20 workers for ~10 minutes of guaranteed-failing calls. Any thread that
+# sees a 402/401/403 sets _billing_dead; every scorer checks it before and
+# between attempts. Reset per run_scoring() invocation.
+# ---------------------------------------------------------------------------
+_billing_dead: threading.Event = threading.Event()
+_billing_reason: str = ""
+
+
+def _note_billing_error(exc: Exception) -> None:
+    """Flip the circuit breaker when an exception is a hard billing/auth error."""
+    global _billing_reason
+    text = str(exc)
+    if any(code in text for code in ("402", "401", "403", "Payment Required", "Unauthorized", "quota")):
+        if not _billing_dead.is_set():
+            _billing_dead.set()
+            _billing_reason = text[:200]
+            log.error("Billing circuit breaker OPEN: %s", text[:200])
+
+
+def _billing_open() -> bool:
+    return _billing_dead.is_set()
+
+
+class _BillingDead(Exception):
+    """Raised in every worker once the circuit breaker is open."""
 
 
 def _try_schema_chat(client, messages: list[dict], *, max_tokens: int, temperature: float) -> str | None:
@@ -339,13 +372,16 @@ def score_job_single(
     ]
     rng = random.Random()
     for attempt in range(1, SCORE_SINGLE_ATTEMPTS + 1):
+        if _billing_open():
+            raise _BillingDead(_billing_reason or "billing/auth dead")
         try:
             client = client or get_client()
             raw = _chat_single(client, messages)
             data = parse_json_object(raw, json_mode=False)
             return apply_fit_score_guards(job, _parse_score_response(data), search_cfg)
         except Exception as exc:  # noqa: BLE001 - handled below (skip vs retry)
-            if not _is_retryable(exc) or attempt >= SCORE_SINGLE_ATTEMPTS:
+            _note_billing_error(exc)
+            if _billing_open() or not _is_retryable(exc) or attempt >= SCORE_SINGLE_ATTEMPTS:
                 log.warning(
                     "Single-shot score failed for '%s' (attempt %d/%d): %s",
                     job.get("title", "?"), attempt, SCORE_SINGLE_ATTEMPTS, exc,
@@ -657,6 +693,7 @@ def run_scoring(limit: int = 0, rescore: bool = False) -> dict:
             )
 
     t0 = time.time()
+    _billing_dead.clear()
     done = len(results)
     if workers > 0:
         llm_scored, llm_errors = score_jobs_single_shot(
@@ -714,6 +751,12 @@ def run_scoring(limit: int = 0, rescore: bool = False) -> dict:
 
     elapsed = time.time() - t0
     log.info("Done: %d scored in %.1fs (%.1f jobs/sec)", len(results), elapsed, len(results) / elapsed if elapsed > 0 else 0)
+
+    if _billing_open() and not results:
+        raise RuntimeError(
+            f"Scoring aborted: LLM provider billing/auth dead — {_billing_reason}. "
+            "Fix the provider key/credits before the next run; no scores were written."
+        )
 
     # Score distribution
     dist = conn.execute("""

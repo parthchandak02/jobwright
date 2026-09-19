@@ -30,23 +30,38 @@ from jobwright.database import (
 from jobwright.users import get_brief_top_n, get_human_gate, get_user
 
 
-def get_unnotified_gated_jobs(conn=None):
+def get_unnotified_gated_jobs(conn=None, max_age_days: int | None = None):
     """Review-first candidate pool (human_gate=true).
 
     Gated pipelines stop at backlog (materials wait for approval), so the
     brief selects high-scoring unnotified BACKLOG jobs instead of prepare
     jobs. Falls back to prepare jobs for anything the dashboard moved on.
+
+    Freshness guard (Sep 19): only jobs discovered within ``max_age_days``
+    (default 7, override with JOBWRIGHT_BRIEF_MAX_AGE_DAYS) are eligible.
+    Without it, a dead scoring run (e.g. provider 402) lets the pool age
+    forever and the brief re-surfaces stale jobs scored under old criteria
+    (old resume, pre-feedback excludes) as if they were fresh finds.
     """
+    import os as _os
+
     from jobwright.database import get_connection
 
     if conn is None:
         conn = get_connection()
     conn.row_factory = sqlite3.Row
+    if max_age_days is None:
+        try:
+            max_age_days = int(_os.environ.get("JOBWRIGHT_BRIEF_MAX_AGE_DAYS", "7"))
+        except ValueError:
+            max_age_days = 7
     rows = conn.execute(
         "SELECT * FROM jobs "
         "WHERE funnel_stage = 'backlog' AND fit_score >= 7 "
         "AND whatsapp_notified_at IS NULL "
-        "ORDER BY COALESCE(user_fit_score, fit_score) DESC NULLS LAST, discovered_at DESC"
+        "AND discovered_at >= datetime('now', ?) "
+        "ORDER BY COALESCE(user_fit_score, fit_score) DESC NULLS LAST, discovered_at DESC",
+        (f"-{int(max_age_days)} days",),
     ).fetchall()
     out = []
     for row in rows:
