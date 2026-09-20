@@ -103,3 +103,30 @@ export function uniqueValues(jobs: JobCard[], key: 'source' | 'work_model'): str
   }
   return [...values].sort((a, b) => a.localeCompare(b))
 }
+
+/**
+ * Autocomplete suggestions for the text filters (title/company/location).
+ * Unique non-empty values from the current job set whose text contains the
+ * typed query (case-insensitive). Empty query returns [] (nothing useful to
+ * suggest before typing). Order: shortest first so "Bay" surfaces
+ * "SF Bay Area"-style short canonical strings before one-off long strings.
+ */
+export function suggestTextValues(
+  jobs: JobCard[],
+  key: 'title' | 'company' | 'location',
+  query: string,
+): string[] {
+  const q = query.trim().toLowerCase()
+  if (!q) return []
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const job of jobs) {
+    const v = (job[key] || '').trim()
+    if (!v) continue
+    const k = v.toLowerCase()
+    if (seen.has(k) || !k.includes(q)) continue
+    seen.add(k)
+    out.push(v)
+  }
+  return out.sort((a, b) => a.length - b.length || a.localeCompare(b)).slice(0, 6)
+}

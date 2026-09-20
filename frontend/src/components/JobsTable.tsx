@@ -31,6 +31,7 @@ import {
   countActiveFilters,
   DEFAULT_COLUMN_FILTERS,
   sortJobs,
+  suggestTextValues,
   type ColumnFilters,
   type SortKey,
   uniqueValues,
@@ -151,12 +152,74 @@ function sortAria(
   return direction === 'asc' ? 'ascending' : 'descending'
 }
 
+function SuggestInput({
+  jobs,
+  field,
+  label,
+  filters,
+  setFilters,
+  id,
+}: {
+  jobs: JobCard[]
+  field: 'title' | 'company' | 'location'
+  label: string
+  filters: ColumnFilters
+  setFilters: Dispatch<SetStateAction<ColumnFilters>>
+  id: string
+}) {
+  const [focused, setFocused] = useState(false)
+  const suggestions = useMemo(
+    () => suggestTextValues(jobs, field, filters[field]),
+    [jobs, field, filters[field]],
+  )
+  const showSuggestions = focused && suggestions.length > 0
+  return (
+    <div className="space-y-1.5">
+      <Label htmlFor={id}>{label}</Label>
+      <div className="relative">
+        <Input
+          id={id}
+          value={filters[field]}
+          onChange={(e) => setFilters((f) => ({ ...f, [field]: e.target.value }))}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+          placeholder="Contains…"
+          autoComplete="off"
+          inputMode="search"
+          enterKeyHint="done"
+        />
+        {showSuggestions ? (
+          <div className="absolute inset-x-0 top-full z-10 mt-1 overflow-hidden rounded-lg border bg-popover shadow-md">
+            {suggestions.map((s) => (
+              <button
+                key={s}
+                type="button"
+                className="block w-full truncate px-3 py-2 text-left text-sm hover:bg-accent"
+                // onMouseDown fires before the input's onBlur, so the tap
+                // registers instead of the sheet swallowing focus first.
+                onMouseDown={(e) => {
+                  e.preventDefault()
+                  setFilters((f) => ({ ...f, [field]: s }))
+                  setFocused(false)
+                }}
+              >
+                {s}
+              </button>
+            ))}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
 function FiltersPanel({
   filters,
   setFilters,
   stages,
   sources,
   workModels,
+  jobs,
   className,
 }: {
   filters: ColumnFilters
@@ -164,37 +227,35 @@ function FiltersPanel({
   stages: string[]
   sources: string[]
   workModels: string[]
+  jobs: JobCard[]
   className?: string
 }) {
   return (
     <div className={cn('space-y-4', className)}>
-      <div className="space-y-1.5">
-        <Label htmlFor="filter-title">Title</Label>
-        <Input
-          id="filter-title"
-          value={filters.title}
-          onChange={(e) => setFilters((f) => ({ ...f, title: e.target.value }))}
-          placeholder="Contains…"
-        />
-      </div>
-      <div className="space-y-1.5">
-        <Label htmlFor="filter-company">Company</Label>
-        <Input
-          id="filter-company"
-          value={filters.company}
-          onChange={(e) => setFilters((f) => ({ ...f, company: e.target.value }))}
-          placeholder="Contains…"
-        />
-      </div>
-      <div className="space-y-1.5">
-        <Label htmlFor="filter-location">Location</Label>
-        <Input
-          id="filter-location"
-          value={filters.location}
-          onChange={(e) => setFilters((f) => ({ ...f, location: e.target.value }))}
-          placeholder="Contains…"
-        />
-      </div>
+      <SuggestInput
+        jobs={jobs}
+        field="title"
+        label="Title"
+        id="filter-title"
+        filters={filters}
+        setFilters={setFilters}
+      />
+      <SuggestInput
+        jobs={jobs}
+        field="company"
+        label="Company"
+        id="filter-company"
+        filters={filters}
+        setFilters={setFilters}
+      />
+      <SuggestInput
+        jobs={jobs}
+        field="location"
+        label="Location"
+        id="filter-location"
+        filters={filters}
+        setFilters={setFilters}
+      />
       <div className="space-y-1.5">
         <Label>Min score</Label>
         <Select
@@ -782,6 +843,7 @@ export function JobsTable({ jobs, stages, onOpen, onScoreSaved }: Props) {
             stages={stageOptions}
             sources={sources}
             workModels={workModels}
+            jobs={jobs}
             className="mt-4 pb-6"
           />
           <div className="sticky bottom-0 flex gap-2 border-t bg-background py-3">
