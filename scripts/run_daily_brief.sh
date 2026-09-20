@@ -68,13 +68,23 @@ mkdir -p "${JOBWRIGHT_DIR}/logs"
 cd "${REPO_ROOT}"
 export PYTHONPATH="${REPO_ROOT}/src${PYTHONPATH:+:$PYTHONPATH}"
 
+# Python resolution: prefer the repo venv (has jobwright + playwright deps).
+# Bare `python3` resolves to Homebrew, which has NEITHER — enrich then dies
+# with "No module named 'playwright'" (Sep 19 evening run) and scores whatever
+# descriptions already exist, silently skipping fresh detail enrichment.
+if [[ -x "${REPO_ROOT}/.venv/bin/python3" ]]; then
+  PY="${REPO_ROOT}/.venv/bin/python3"
+else
+  PY="$(command -v python3)"
+fi
+
 RC=0
 finish_status() {
   echo "done RC=${RC}" >> "${STATUS_FILE}"
 }
 trap finish_status EXIT
 
-python3 -m jobwright.cli "${USER_FLAG[@]}" run discover enrich score portfolio connect \
+"${PY}" -m jobwright.cli "${USER_FLAG[@]}" run discover enrich score portfolio connect \
   -w "${WORKERS}" --min-score "${MIN_SCORE}" --validation lenient >> "${LOG}" 2>&1 || RC=$?
 
 if [ "${RC}" -ne 0 ]; then
@@ -84,7 +94,7 @@ fi
 # Send one WhatsApp message listing newly prepared jobs (deep links to the
 # dashboard). Skips silently when nothing new is ready. A notify failure must
 # not fail the whole brief, so it is recorded but does not change RC.
-if python3 -m jobwright.cli "${USER_FLAG[@]}" notify >> "${LOG}" 2>&1; then
+if "${PY}" -m jobwright.cli "${USER_FLAG[@]}" notify >> "${LOG}" 2>&1; then
   echo "notify_sent" >> "${STATUS_FILE}"
 else
   echo "notify_failed" >> "${STATUS_FILE}"
