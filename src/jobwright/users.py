@@ -9,7 +9,8 @@ from __future__ import annotations
 
 import os
 import re
-from dataclasses import asdict, dataclass
+import tempfile
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -105,6 +106,8 @@ class UserRecord:
     brief_top_n: int = 10
     # Optional overrides; empty = use default path under USERS_ROOT
     data_dir: str = ""
+    # Cloudflare Access login emails that may open this profile.
+    emails: list[str] = field(default_factory=list)
 
     def resolve_data_dir(self) -> Path:
         if self.data_dir:
@@ -127,19 +130,65 @@ def load_registry() -> dict[str, Any]:
 
 
 def save_registry(data: dict[str, Any]) -> None:
+    """Atomically rewrite users.yaml (temp file + rename, owner-only)."""
     USERS_ROOT.mkdir(parents=True, exist_ok=True)
     try:
         USERS_ROOT.chmod(0o700)
     except OSError:
         pass
-    REGISTRY_PATH.write_text(
-        yaml.safe_dump(data, default_flow_style=False, sort_keys=False),
-        encoding="utf-8",
-    )
+    text = yaml.safe_dump(data, default_flow_style=False, sort_keys=False)
+    fd, tmp = tempfile.mkstemp(prefix=".users.", suffix=".yaml", dir=str(USERS_ROOT))
     try:
-        REGISTRY_PATH.chmod(0o600)
-    except OSError:
-        pass
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(text)
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, REGISTRY_PATH)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def normalize_email(email: str | None) -> str:
+    return (email or "").strip().lower()
+
+
+def list_admin_emails() -> list[str]:
+    """Registry ``admins`` plus JOBWRIGHT_ADMIN_EMAILS (comma-separated)."""
+    data = load_registry()
+    emails = [normalize_email(e) for e in (data.get("admins") or []) if normalize_email(e)]
+    for raw in os.environ.get("JOBWRIGHT_ADMIN_EMAILS", "").split(","):
+        e = normalize_email(raw)
+        if e and e not in emails:
+            emails.append(e)
+    return emails
+
+
+def is_admin_email(email: str | None) -> bool:
+    e = normalize_email(email)
+    return bool(e) and e in list_admin_emails()
+
+
+def set_admin_emails(emails: list[str]) -> list[str]:
+    data = load_registry()
+    cleaned: list[str] = []
+    for raw in emails:
+        e = normalize_email(raw)
+        if e and e not in cleaned:
+            cleaned.append(e)
+    data["admins"] = cleaned
+    save_registry(data)
+    return cleaned
+
+
+def users_for_email(email: str | None) -> list[UserRecord]:
+    """Profiles whose ``emails`` list contains this login email."""
+    e = normalize_email(email)
+    if not e:
+        return []
+    return [u for u in list_users() if e in {normalize_email(x) for x in u.emails}]
 
 
 def list_users() -> list[UserRecord]:
@@ -196,16 +245,17 @@ def _from_dict(raw: dict[str, Any]) -> UserRecord:
         human_gate=bool(raw.get("human_gate", False)),
         brief_top_n=int(raw.get("brief_top_n", 0)),
         data_dir=str(raw.get("data_dir") or ""),
+        emails=[normalize_email(e) for e in (raw.get("emails") or []) if normalize_email(e)],
     )
 
 
-def _to_dict(user: UserRecord) -> dict[str, Any]:
-    d = asdict(user)
-    # Omit empty data_dir for cleaner YAML
-    if not d.get("data_dir"):
-        d.pop("data_dir", None)
-    if not d.get("notes"):
-        d.pop("notes", None)
+def _to_dict(user: UserRecord, base: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Serialize a user, keeping unknown keys from ``base`` (e.g. jev_hybrid)."""
+    d = dict(base or {})
+    d.update(asdict(user))
+    for key in ("data_dir", "notes", "emails"):
+        if not d.get(key):
+            d.pop(key, None)
     return d
 
 
@@ -227,6 +277,7 @@ def add_user(
     notes: str = "",
     human_gate: bool = False,
     brief_top_n: int = 0,
+    emails: list[str] | None = None,
 ) -> UserRecord:
     """Register a user and create their data directory skeleton."""
     validate_user_id(user_id)
@@ -243,6 +294,7 @@ def add_user(
         notes=notes,
         human_gate=human_gate,
         brief_top_n=brief_top_n,
+        emails=[normalize_email(e) for e in (emails or []) if normalize_email(e)],
     )
     data_dir = user.resolve_data_dir()
     data_dir.mkdir(parents=True, exist_ok=True)
@@ -286,15 +338,17 @@ def update_user(user_id: str, **fields: Any) -> UserRecord:
     allowed = {
         "name", "whatsapp_target", "apply_enabled", "schedule",
         "digest_schedule", "notes", "data_dir",
-        "human_gate", "brief_top_n",
+        "human_gate", "brief_top_n", "emails",
     }
     for key, value in fields.items():
         if key not in allowed:
             raise ValueError(f"Cannot update field '{key}'")
+        if key == "emails":
+            value = [normalize_email(e) for e in (value or []) if normalize_email(e)]
         setattr(user, key, value)
     data = load_registry()
     data["users"] = [
-        _to_dict(user) if u.get("user_id") == user_id else u
+        _to_dict(user, u) if u.get("user_id") == user_id else u
         for u in data["users"]
     ]
     save_registry(data)

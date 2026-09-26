@@ -16,10 +16,12 @@ REPO_ROOT="$(_jobwright_resolve_repo)"
 TARGET="${1:?usage: resolve_user_from_whatsapp.sh whatsapp:...}"
 
 export PYTHONPATH="${REPO_ROOT}/src${PYTHONPATH:+:$PYTHONPATH}"
-python3 -c "
+# Pass the JID via argv (never interpolate untrusted text into Python source).
+python3 - "$TARGET" <<'PY'
+import sys
 from jobwright.users import find_user_by_whatsapp
-u = find_user_by_whatsapp('''${TARGET}''')
+u = find_user_by_whatsapp(sys.argv[1])
 if u is None:
     raise SystemExit(1)
 print(u.user_id)
-"
+PY

@@ -253,17 +253,24 @@ def acquire_job(target_url: str | None = None, min_score: int = 7,
         """, (stale_cutoff,))
 
         if target_url:
-            like = f"%{target_url.split('?')[0].rstrip('/')}%"
+            # Exact match only (after dropping query/trailing slash): a substring
+            # LIKE would let /jobs/1 grab /jobs/12.
+            norm = target_url.split("?")[0].rstrip("/")
             row = conn.execute("""
                 SELECT url, title, site, application_url, tailored_resume_path,
                        fit_score, location, full_description, cover_letter_path
                 FROM jobs
-                WHERE (url = ? OR application_url = ? OR application_url LIKE ? OR url LIKE ?)
+                WHERE (url = ? OR application_url = ?
+                       OR rtrim(substr(url, 1, CASE WHEN instr(url, '?') > 0 THEN instr(url, '?') - 1
+                                                    ELSE length(url) END), '/') = ?
+                       OR rtrim(substr(application_url, 1, CASE WHEN instr(application_url, '?') > 0
+                                                               THEN instr(application_url, '?') - 1
+                                                               ELSE length(application_url) END), '/') = ?)
                   AND tailored_resume_path IS NOT NULL
                   AND applied_at IS NULL
                   AND (apply_status IS NULL OR apply_status NOT IN ('in_progress', 'applied'))
                 LIMIT 1
-            """, (target_url, target_url, like, like)).fetchone()
+            """, (target_url, target_url, norm, norm)).fetchone()
             if row:
                 from jobwright.config import (
                     is_apply_blocked_job,

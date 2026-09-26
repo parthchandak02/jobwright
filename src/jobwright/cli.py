@@ -497,8 +497,8 @@ def apply(
         help="Stage-6 agent: cursor-sdk (default), cursor-cli, claude.",
     ),
     continuous: bool = typer.Option(False, "--continuous", "-c", help="Run forever, polling for new jobs."),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Preview actions without submitting."),
-    live: bool = typer.Option(False, "--live", help="Submit applications (overrides APPLY_DRY_RUN)."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Preview actions without submitting (the default)."),
+    live: bool = typer.Option(False, "--live", help="Actually submit applications (requires apply_enabled)."),
     headless: bool = typer.Option(False, "--headless", help="Run browsers in headless mode."),
     url: Optional[str] = typer.Option(None, "--url", help="Apply to a specific job URL."),
     gen: bool = typer.Option(False, "--gen", help="Generate prompt file for manual debugging instead of running."),
@@ -514,8 +514,14 @@ def apply(
     from jobwright.config import get_active_user_id
     from jobwright.users import is_apply_enabled
 
+    if live and dry_run:
+        console.print("[red]--live and --dry-run are mutually exclusive.[/red]")
+        raise typer.Exit(code=2)
+    # Dry-run unless the caller explicitly asked for --live. Never infer live.
+    dry_run = not live
+
     active = get_active_user_id()
-    if live and active and not is_apply_enabled(active):
+    if live and not is_apply_enabled(active):
         console.print(
             f"[red]Live apply disabled[/red] for user '{active}'.\n"
             f"Enable with: jobwright users set {active} --apply\n"
@@ -525,11 +531,6 @@ def apply(
 
     if agent_provider:
         os.environ["AGENT_PROVIDER"] = agent_provider
-
-    if live:
-        dry_run = False
-    elif os.environ.get("APPLY_DRY_RUN", "").lower() in ("1", "true", "yes"):
-        dry_run = True
 
     import jobwright.config as config
     from jobwright.config import check_tier, get_agent_provider

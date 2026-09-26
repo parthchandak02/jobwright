@@ -49,6 +49,11 @@ def api_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     from jobwright.web.routers import runs as runs_mod
 
     with TestClient(app) as client:
+
+        import jobwright.config as _cfg
+
+
+        _cfg.set_app_dir(data_dir)
         yield client
 
     # Teardown: never leave background processes running.

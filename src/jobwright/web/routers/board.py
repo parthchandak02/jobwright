@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from urllib.parse import unquote
 
 from fastapi import APIRouter, HTTPException
@@ -155,7 +155,7 @@ def move_job(url: str, body: MoveBody) -> dict:
         raise HTTPException(400, str(exc)) from exc
 
     if body.to_stage == "applied":
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         conn.execute(
             "UPDATE jobs SET applied_at = COALESCE(applied_at, ?), "
             "apply_status = COALESCE(apply_status, 'applied') WHERE url = ?",
@@ -219,7 +219,7 @@ def patch_job(url: str, body: PatchBody) -> dict:
         rationale = (body.user_score_rationale or "").strip()
         if not rationale:
             raise HTTPException(400, "user_score_rationale is required when setting a score")
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         sets.extend(
             [
                 "user_fit_score = ?",
@@ -230,7 +230,7 @@ def patch_job(url: str, body: PatchBody) -> dict:
         params.extend([body.user_fit_score, rationale, now])
 
     if sets:
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         sets.extend(["board_updated_by = ?", "board_updated_at = ?"])
         params.extend(["human", now, url])
         conn.execute(f"UPDATE jobs SET {', '.join(sets)} WHERE url = ?", params)
@@ -248,7 +248,7 @@ def mark_response(url: str) -> dict:
     row = conn.execute("SELECT first_response_at FROM jobs WHERE url = ?", (url,)).fetchone()
     if not row:
         raise HTTPException(404, "Job not found")
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     if not row["first_response_at"]:
         conn.execute(
             "UPDATE jobs SET first_response_at = ?, board_updated_by = 'human', "
@@ -267,7 +267,7 @@ def clear_response(url: str) -> dict:
     exists = conn.execute("SELECT 1 FROM jobs WHERE url = ?", (url,)).fetchone()
     if not exists:
         raise HTTPException(404, "Job not found")
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     conn.execute(
         "UPDATE jobs SET first_response_at = NULL, board_updated_by = 'human', "
         "board_updated_at = ? WHERE url = ?",

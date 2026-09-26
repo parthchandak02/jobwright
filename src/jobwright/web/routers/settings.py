@@ -21,7 +21,7 @@ from pydantic import BaseModel
 from jobwright import config
 from jobwright.resume import cached_pdf_markdown, load_resume_text
 from jobwright.users import get_user
-from jobwright.web.session import resolve_dashboard_user
+from jobwright.web.session import current_user_id
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
@@ -96,7 +96,7 @@ def _write_searches(data: dict) -> None:
 
 @router.get("")
 def get_settings(request: Request) -> dict:
-    user_id = resolve_dashboard_user(request)
+    user_id = current_user_id(request)
     user = get_user(user_id)
     profile = _load_profile()
     searches = _load_searches()

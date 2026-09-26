@@ -13,15 +13,15 @@ from jobwright.users import (
     describe_cron_schedule,
     get_user,
     host_timezone_name,
-    list_users,
     update_user,
     validate_brief_schedule,
 )
 from jobwright.web.session import (
     COOKIE_NAME,
-    activate_user,
-    default_dashboard_user,
-    resolve_dashboard_user,
+    allowed_users,
+    can_open,
+    current_user_id,
+    get_identity,
 )
 
 router = APIRouter(prefix="/api", tags=["system"])
@@ -67,16 +67,31 @@ def health() -> dict:
     return {"ok": True, "version": __version__}
 
 
+@router.get("/me")
+def me(request: Request) -> dict:
+    """Who is logged in, which profiles they may open, and the active one."""
+    identity = get_identity(request)
+    profiles = [{"user_id": u.user_id, "name": u.name or u.user_id} for u in allowed_users(identity)]
+    return {
+        "email": identity.email,
+        "is_admin": identity.is_admin,
+        "auth_mode": identity.mode,
+        "active_user": getattr(request.state, "active_user", None),
+        "profiles": profiles,
+        "can_create_profile": True,
+    }
+
+
 @router.get("/profile")
 def profile(request: Request) -> dict:
-    user_id = resolve_dashboard_user(request)
-    return _profile_payload(user_id)
+    return _profile_payload(current_user_id(request))
 
 
 @router.get("/users")
-def users_list() -> dict:
-    users = [{"user_id": u.user_id, "name": u.name or u.user_id} for u in list_users()]
-    return {"users": users, "default": default_dashboard_user()}
+def users_list(request: Request) -> dict:
+    identity = get_identity(request)
+    users = [{"user_id": u.user_id, "name": u.name or u.user_id} for u in allowed_users(identity)]
+    return {"users": users, "default": getattr(request.state, "active_user", None)}
 
 
 class SessionBody(BaseModel):
@@ -91,9 +106,7 @@ class ProfileUpdate(BaseModel):
 @router.put("/profile")
 def update_profile(body: ProfileUpdate, request: Request) -> dict:
     """Save daily-brief schedule and WhatsApp target, then edit the Hermes cron."""
-    user_id = resolve_dashboard_user(request)
-    if get_user(user_id) is None:
-        raise HTTPException(400, f"Unknown user: {user_id}")
+    user_id = current_user_id(request)
 
     fields: dict = {}
     if body.schedule is not None:
@@ -118,12 +131,14 @@ def update_profile(body: ProfileUpdate, request: Request) -> dict:
 
 
 @router.post("/session")
-def set_session(body: SessionBody, response: Response) -> dict:
+def set_session(body: SessionBody, request: Request, response: Response) -> dict:
+    """Switch the active profile (only to profiles this login may open)."""
+    identity = get_identity(request)
     user_id = body.user_id.strip()
-    try:
-        activate_user(user_id)
-    except (ValueError, SystemExit) as exc:
-        raise HTTPException(400, str(exc)) from exc
+    if get_user(user_id) is None:
+        raise HTTPException(404, f"Unknown profile: {user_id}")
+    if not can_open(identity, user_id):
+        raise HTTPException(403, "You do not have access to that profile.")
 
     response.set_cookie(
         key=COOKIE_NAME,
@@ -133,4 +148,8 @@ def set_session(body: SessionBody, response: Response) -> dict:
         max_age=60 * 60 * 24 * 365,
         path="/",
     )
-    return _profile_payload(user_id)
+    with config.user_context(user_id):
+        from jobwright.web.session import _ensure_user_storage
+
+        _ensure_user_storage()
+        return _profile_payload(user_id)

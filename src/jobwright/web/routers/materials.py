@@ -23,7 +23,7 @@ from jobwright.scoring.tailor_instructions import (
     DEFAULT_RESUME_INSTRUCTIONS,
 )
 from jobwright.web.routers.runs import spawn_logged_run
-from jobwright.web.session import resolve_dashboard_user
+from jobwright.web.session import current_user_id
 
 router = APIRouter(prefix="/api", tags=["materials"])
 
@@ -51,19 +51,25 @@ def _sibling_export(path: str | None, suffix: str) -> str | None:
     return str(candidate) if candidate.is_file() else None
 
 
+_DOWNLOAD_SUFFIXES = frozenset({".pdf", ".docx", ".md", ".txt"})
+
+
 def _allowed_roots() -> list[Path]:
+    """Only generated materials are downloadable (never profile, .env or the DB)."""
     return [
-        Path(config.APP_DIR).resolve(),
         Path(config.TAILORED_DIR).resolve(),
         Path(config.COVER_LETTER_DIR).resolve(),
-        Path(config.NETWORK_DIR).resolve(),
-        Path(config.LOG_DIR).resolve(),
     ]
 
 
 def _assert_allowed(path: Path) -> Path:
-    resolved = path.resolve()
-    if not any(str(resolved).startswith(str(root)) for root in _allowed_roots()):
+    try:
+        resolved = path.resolve()
+    except (OSError, RuntimeError) as exc:
+        raise HTTPException(403, "Access denied") from exc
+    if not any(resolved.is_relative_to(root) for root in _allowed_roots()):
+        raise HTTPException(403, "Access denied")
+    if resolved.suffix.lower() not in _DOWNLOAD_SUFFIXES:
         raise HTTPException(403, "Access denied")
     if not resolved.is_file():
         raise HTTPException(404, "File not found")
@@ -288,7 +294,7 @@ def _spawn_tailor_run(
 
     handle = spawn_logged_run(
         args=args,
-        user_id=resolve_dashboard_user(request),
+        user_id=current_user_id(request),
         stages=stages,
         log_name=log_name,
         kind=kind,

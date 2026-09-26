@@ -135,10 +135,10 @@ cmd_tmux() {
   echo "    Open http://127.0.0.1:${UI_PORT}"
 
   tmux new-session -d -s "$TMUX_SESSION" -n api \
-    "cd '$ROOT' && export JOBWRIGHT_DASHBOARD_USER='$DASHBOARD_USER' PYTHONPATH='$ROOT/src' PORT='$API_PORT' JOBWRIGHT_CORS_ORIGINS='http://127.0.0.1:${UI_PORT},http://localhost:${UI_PORT},http://127.0.0.1:${API_PORT}' && $UV jobwright.web.app:app --host 127.0.0.1 --port ${API_PORT} --reload"
+    "cd '$ROOT' && export JOBWRIGHT_AUTH_MODE=dev JOBWRIGHT_DASHBOARD_USER='$DASHBOARD_USER' PYTHONPATH='$ROOT/src' PORT='$API_PORT' JOBWRIGHT_CORS_ORIGINS='http://127.0.0.1:${UI_PORT},http://localhost:${UI_PORT},http://127.0.0.1:${API_PORT}' && $UV jobwright.web.app:app --host 127.0.0.1 --port ${API_PORT} --reload"
 
   tmux new-window -t "$TMUX_SESSION" -n ui \
-    "cd '$ROOT/frontend' && PORT=${API_PORT} ./node_modules/.bin/vite --port ${UI_PORT} --host 0.0.0.0"
+    "cd '$ROOT/frontend' && PORT=${API_PORT} ./node_modules/.bin/vite --port ${UI_PORT} --host 127.0.0.1"
 
   tmux select-window -t "${TMUX_SESSION}:api"
   echo "==> started. Attach with: tmux attach -t ${TMUX_SESSION}"

@@ -15,7 +15,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
-from jobwright.web.bootstrap import bootstrap_dashboard_user
+from jobwright.web.bootstrap import bootstrap_dashboard
 from jobwright.web.routers import (
     board_router,
     connections_router,
@@ -31,8 +31,7 @@ from jobwright.web.session import DashboardUserMiddleware
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
-    user_id = bootstrap_dashboard_user()
-    _app.state.dashboard_user = user_id
+    bootstrap_dashboard()
     yield
 
 
@@ -67,9 +66,15 @@ _static_dir = pathlib.Path(__file__).resolve().parents[3] / "frontend" / "dist"
 
 @app.get("/{full_path:path}", include_in_schema=False)
 async def spa_fallback(full_path: str) -> FileResponse:
+    if full_path == "api" or full_path.startswith("api/"):
+        raise HTTPException(status_code=404, detail="Not found")
     if _static_dir.exists():
-        candidate = _static_dir / full_path
-        if candidate.exists() and candidate.is_file():
+        root = _static_dir.resolve()
+        try:
+            candidate = (root / full_path).resolve()
+        except (OSError, RuntimeError):
+            candidate = root
+        if candidate != root and candidate.is_relative_to(root) and candidate.is_file():
             return FileResponse(str(candidate))
         index = _static_dir / "index.html"
         if index.exists():

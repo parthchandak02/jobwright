@@ -11,7 +11,7 @@ import sys
 import time
 import uuid
 from collections.abc import AsyncIterator
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import unquote
 
@@ -24,7 +24,7 @@ from jobwright.database import get_connection
 from jobwright.run_registry import load_registry as _load_registry
 from jobwright.run_registry import upsert_registry as _upsert_registry
 from jobwright.users import is_apply_enabled
-from jobwright.web.session import resolve_dashboard_user
+from jobwright.web.session import current_user_id
 
 router = APIRouter(prefix="/api", tags=["runs"])
 
@@ -61,9 +61,9 @@ class ApplyBody(BaseModel):
 # User resolution
 # ---------------------------------------------------------------------------
 
-def _user_id(request: Request | None = None) -> str:
-    """Resolve the active dashboard user from the request cookie, else env."""
-    return resolve_dashboard_user(request)
+def _user_id(request: Request) -> str:
+    """Active profile for this request (bound by the session middleware)."""
+    return current_user_id(request)
 
 
 def _jobwright_cmd(args: list[str], user_id: str) -> list[str]:
@@ -192,13 +192,15 @@ def _status_from_entry(run_id: str, entry: dict) -> dict:
     }
 
 
-def _merged_entries() -> dict[str, dict]:
-    """Merge in-memory runs with the on-disk registry (in-memory wins)."""
+def _merged_entries(user_id: str) -> dict[str, dict]:
+    """This user's runs: on-disk registry merged with live in-memory runs."""
     merged: dict[str, dict] = {}
     for entry in _load_registry():
-        merged[entry["run_id"]] = dict(entry)
+        if entry.get("user") in (None, user_id):
+            merged[entry["run_id"]] = dict(entry)
     for run_id, entry in _runs.items():
-        merged[run_id] = entry
+        if entry.get("user") == user_id:
+            merged[run_id] = entry
     return merged
 
 
@@ -212,7 +214,7 @@ def _write_log_header(
         f"# user: {user}\n"
         f"# cwd: {cwd}\n"
         f"# cmd: {quoted}\n"
-        f"# started (UTC): {datetime.now(timezone.utc).isoformat()}\n"
+        f"# started (UTC): {datetime.now(UTC).isoformat()}\n"
         f"$ {quoted}\n"
     )
     log_file.flush()
@@ -258,7 +260,7 @@ def spawn_logged_run(
             log_file, run_id=run_id, pid=proc.pid, user=user_id, cwd=cwd, cmd=cmd
         )
 
-    started_at = datetime.now(timezone.utc).isoformat()
+    started_at = datetime.now(UTC).isoformat()
     _runs[run_id] = {
         "proc": proc,
         "pid": proc.pid,
@@ -319,16 +321,16 @@ def start_run(body: RunBody, request: Request) -> dict:
 
 
 @router.get("/runs")
-def list_runs() -> dict:
-    entries = _merged_entries()
+def list_runs(request: Request) -> dict:
+    entries = _merged_entries(_user_id(request))
     runs = [_status_from_entry(rid, e) for rid, e in entries.items()]
     runs.sort(key=lambda r: (r.get("started_at") or ""), reverse=True)
     return {"runs": runs}
 
 
 @router.get("/runs/{run_id}")
-def run_status(run_id: str) -> dict:
-    entries = _merged_entries()
+def run_status(run_id: str, request: Request) -> dict:
+    entries = _merged_entries(_user_id(request))
     entry = entries.get(run_id)
     if not entry:
         raise HTTPException(404, "Unknown run_id")
@@ -336,15 +338,18 @@ def run_status(run_id: str) -> dict:
 
 
 @router.post("/runs/{run_id}/stop")
-def stop_run(run_id: str) -> dict:
+def stop_run(run_id: str, request: Request) -> dict:
+    user_id = _user_id(request)
     info = _runs.get(run_id)
+    if info is not None and info.get("user") != user_id:
+        raise HTTPException(404, "Unknown run_id")
     if info is not None:
         proc: subprocess.Popen = info["proc"]
         code = _kill_run(info.get("pid") or proc.pid, proc=proc)
         return {"run_id": run_id, "stopped": True, "returncode": code}
 
     # Only known from the on-disk registry (API reload dropped the Popen handle).
-    entry = next((e for e in _load_registry() if e.get("run_id") == run_id), None)
+    entry = _merged_entries(user_id).get(run_id)
     if entry is None:
         raise HTTPException(404, "Unknown run_id")
 
@@ -356,8 +361,8 @@ def stop_run(run_id: str) -> dict:
 
 
 @router.get("/stream/{run_id}")
-async def stream_run(run_id: str) -> StreamingResponse:
-    merged = _merged_entries()
+async def stream_run(run_id: str, request: Request) -> StreamingResponse:
+    merged = _merged_entries(_user_id(request))
     info = merged.get(run_id)
     if not info:
         raise HTTPException(404, "Unknown run_id")

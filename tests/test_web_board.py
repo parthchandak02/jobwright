@@ -50,6 +50,11 @@ def api_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     from jobwright.web.app import app
 
     with TestClient(app) as client:
+
+        import jobwright.config as _cfg
+
+
+        _cfg.set_app_dir(data_dir)
         yield client
     close_connection(data_dir / "jobwright.db")
 
@@ -269,4 +274,4 @@ def test_users_and_session(api_client):
     assert "jobwright_user" in res.cookies
 
     res = api_client.post("/api/session", json={"user_id": "nope"})
-    assert res.status_code == 400
+    assert res.status_code == 404

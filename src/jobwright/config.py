@@ -3,40 +3,115 @@
 import os
 import platform
 import shutil
+import sys
+import types
+from collections.abc import Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from pathlib import Path
 
-# Active multi-profile user id (None = legacy single-user ~/.jobwright)
-ACTIVE_USER_ID: str | None = None
+# ---------------------------------------------------------------------------
+# Per-user path state
+#
+# Every per-user path (DB_PATH, APP_DIR, ...) lives on a _PathState object. The
+# CLI mutates the process-wide default (one process = one user). The web app
+# binds a fresh state per request via user_context(), stored in a ContextVar so
+# concurrent requests for different users never see each other's paths.
+# Module attribute access (config.DB_PATH) and assignment (tests' monkeypatch)
+# are routed to the active state through properties on the module class.
+# ---------------------------------------------------------------------------
 
-# User data directory — all user-specific files live here
-APP_DIR = Path(os.environ.get("JOBWRIGHT_DIR", Path.home() / ".jobwright"))
+_PATH_FIELDS = (
+    "ACTIVE_USER_ID",
+    "APP_DIR",
+    "DB_PATH",
+    "PROFILE_PATH",
+    "RESUME_DIR",
+    "RESUME_PDF_PATH",
+    "RESUME_MD_PATH",
+    "RESUME_PATH",
+    "COVER_LETTER_INPUT_DIR",
+    "COVER_LETTER_TEMPLATE_PATH",
+    "COVER_LETTER_EXAMPLES_DIR",
+    "SEARCH_CONFIG_PATH",
+    "ENV_PATH",
+    "CONNECTIONS_PATH",
+    "TARGETS_PATH",
+    "REFERENCES_DIR",
+    "REFERENCES_INBOX_DIR",
+    "TAILORED_DIR",
+    "COVER_LETTER_DIR",
+    "LOG_DIR",
+    "NETWORK_DIR",
+    "CHROME_WORKER_DIR",
+    "APPLY_WORKER_DIR",
+)
 
-# Core paths (reassigned by set_app_dir / set_active_user)
-DB_PATH = APP_DIR / "jobwright.db"
-PROFILE_PATH = APP_DIR / "profile.json"
-RESUME_DIR = APP_DIR / "resume"
-RESUME_PDF_PATH = RESUME_DIR / "base.pdf"
-RESUME_MD_PATH = RESUME_DIR / "base.md"
-RESUME_PATH = RESUME_MD_PATH  # derived markdown for LLM stages; PDF is source of truth
-COVER_LETTER_INPUT_DIR = APP_DIR / "cover-letter"
-COVER_LETTER_TEMPLATE_PATH = COVER_LETTER_INPUT_DIR / "template.txt"
-COVER_LETTER_EXAMPLES_DIR = COVER_LETTER_INPUT_DIR / "examples"
-SEARCH_CONFIG_PATH = APP_DIR / "searches.yaml"
-ENV_PATH = APP_DIR / ".env"
-CONNECTIONS_PATH = APP_DIR / "connections.csv"
-TARGETS_PATH = APP_DIR / "target_companies.yaml"
-REFERENCES_DIR = APP_DIR / "references"
-REFERENCES_INBOX_DIR = REFERENCES_DIR / "inbox"
 
-# Generated output
-TAILORED_DIR = APP_DIR / "tailored_resumes"
-COVER_LETTER_DIR = APP_DIR / "cover_letters"
-LOG_DIR = APP_DIR / "logs"
-NETWORK_DIR = APP_DIR / "network"
+class _PathState:
+    __slots__ = _PATH_FIELDS
 
-# Chrome worker isolation
-CHROME_WORKER_DIR = APP_DIR / "chrome-workers"
-APPLY_WORKER_DIR = APP_DIR / "apply-workers"
+    def __init__(self, app_dir: Path, user_id: str | None = None) -> None:
+        self.ACTIVE_USER_ID = user_id
+        self.point_at(app_dir)
+
+    def point_at(self, app_dir: Path) -> None:
+        self.APP_DIR = app_dir
+        self.DB_PATH = app_dir / "jobwright.db"
+        self.PROFILE_PATH = app_dir / "profile.json"
+        self.RESUME_DIR = app_dir / "resume"
+        self.COVER_LETTER_INPUT_DIR = app_dir / "cover-letter"
+        self.COVER_LETTER_TEMPLATE_PATH = self.COVER_LETTER_INPUT_DIR / "template.txt"
+        self.COVER_LETTER_EXAMPLES_DIR = self.COVER_LETTER_INPUT_DIR / "examples"
+        self.SEARCH_CONFIG_PATH = app_dir / "searches.yaml"
+        self.ENV_PATH = app_dir / ".env"
+        self.CONNECTIONS_PATH = app_dir / "connections.csv"
+        self.TARGETS_PATH = app_dir / "target_companies.yaml"
+        self.REFERENCES_DIR = app_dir / "references"
+        self.REFERENCES_INBOX_DIR = self.REFERENCES_DIR / "inbox"
+        self.TAILORED_DIR = app_dir / "tailored_resumes"
+        self.COVER_LETTER_DIR = app_dir / "cover_letters"
+        self.LOG_DIR = app_dir / "logs"
+        self.NETWORK_DIR = app_dir / "network"
+        self.CHROME_WORKER_DIR = app_dir / "chrome-workers"
+        self.APPLY_WORKER_DIR = app_dir / "apply-workers"
+        self.refresh_resume_paths()
+
+    def refresh_resume_paths(self) -> None:
+        """PDF is source of truth; markdown is derived."""
+        structured_pdf = self.RESUME_DIR / "base.pdf"
+        legacy_pdf = self.APP_DIR / "resume.pdf"
+        if structured_pdf.exists() or not legacy_pdf.exists():
+            self.RESUME_PDF_PATH = structured_pdf
+        else:
+            self.RESUME_PDF_PATH = legacy_pdf
+        self.RESUME_MD_PATH = self.RESUME_DIR / "base.md"
+        self.RESUME_PATH = self.RESUME_MD_PATH
+
+
+_DEFAULT_STATE = _PathState(Path(os.environ.get("JOBWRIGHT_DIR", Path.home() / ".jobwright")))
+_STATE_CTX: ContextVar[_PathState | None] = ContextVar("jobwright_user_paths", default=None)
+
+
+def _state() -> _PathState:
+    return _STATE_CTX.get() or _DEFAULT_STATE
+
+
+class _ConfigModule(types.ModuleType):
+    pass
+
+
+def _field_property(name: str) -> property:
+    return property(
+        lambda _self: getattr(_state(), name),
+        lambda _self, value: setattr(_state(), name, value),
+    )
+
+
+for _name in _PATH_FIELDS:
+    setattr(_ConfigModule, _name, _field_property(_name))
+
+sys.modules[__name__].__class__ = _ConfigModule
 
 # Package-shipped config (YAML registries)
 PACKAGE_DIR = Path(__file__).parent
@@ -44,62 +119,42 @@ CONFIG_DIR = PACKAGE_DIR / "config"
 
 
 def set_app_dir(path: Path | str) -> Path:
-    """Point all path constants at a new JOBWRIGHT_DIR.
+    """Point all path constants at a new JOBWRIGHT_DIR (active state only).
 
-    Call before bootstrap so DB/profile/env resolve to the right user.
-    Always read paths via `jobwright.config.DB_PATH` (not a stale import alias).
+    In the CLI this is the process-wide default. Inside user_context() it only
+    affects the current request. Always read paths via `jobwright.config.X`.
     """
-    global APP_DIR, DB_PATH, PROFILE_PATH, RESUME_PATH, RESUME_PDF_PATH, RESUME_MD_PATH
-    global SEARCH_CONFIG_PATH, ENV_PATH, CONNECTIONS_PATH, TARGETS_PATH
-    global TAILORED_DIR, COVER_LETTER_DIR, LOG_DIR, NETWORK_DIR
-    global CHROME_WORKER_DIR, APPLY_WORKER_DIR, REFERENCES_DIR, REFERENCES_INBOX_DIR
-    global RESUME_DIR, COVER_LETTER_INPUT_DIR, COVER_LETTER_TEMPLATE_PATH
-    global COVER_LETTER_EXAMPLES_DIR
-
     app_dir = Path(path).expanduser().resolve()
-    os.environ["JOBWRIGHT_DIR"] = str(app_dir)
-
-    APP_DIR = app_dir
-    DB_PATH = APP_DIR / "jobwright.db"
-    PROFILE_PATH = APP_DIR / "profile.json"
-    RESUME_DIR = APP_DIR / "resume"
-    RESUME_PDF_PATH = RESUME_DIR / "base.pdf"
-    RESUME_MD_PATH = RESUME_DIR / "base.md"
-    RESUME_PATH = RESUME_MD_PATH
-    COVER_LETTER_INPUT_DIR = APP_DIR / "cover-letter"
-    COVER_LETTER_TEMPLATE_PATH = COVER_LETTER_INPUT_DIR / "template.txt"
-    COVER_LETTER_EXAMPLES_DIR = COVER_LETTER_INPUT_DIR / "examples"
-    SEARCH_CONFIG_PATH = APP_DIR / "searches.yaml"
-    ENV_PATH = APP_DIR / ".env"
-    CONNECTIONS_PATH = APP_DIR / "connections.csv"
-    TARGETS_PATH = APP_DIR / "target_companies.yaml"
-    REFERENCES_DIR = APP_DIR / "references"
-    REFERENCES_INBOX_DIR = REFERENCES_DIR / "inbox"
-    TAILORED_DIR = APP_DIR / "tailored_resumes"
-    COVER_LETTER_DIR = APP_DIR / "cover_letters"
-    LOG_DIR = APP_DIR / "logs"
-    NETWORK_DIR = APP_DIR / "network"
-    CHROME_WORKER_DIR = APP_DIR / "chrome-workers"
-    APPLY_WORKER_DIR = APP_DIR / "apply-workers"
-    refresh_user_material_paths()
-    return APP_DIR
+    state = _state()
+    state.point_at(app_dir)
+    if _STATE_CTX.get() is None:
+        os.environ["JOBWRIGHT_DIR"] = str(app_dir)
+    return app_dir
 
 
 def refresh_user_material_paths() -> None:
     """Resolve resume paths: PDF is source of truth; markdown is derived."""
-    global RESUME_PATH, RESUME_PDF_PATH, RESUME_MD_PATH
+    _state().refresh_resume_paths()
 
-    structured_pdf = RESUME_DIR / "base.pdf"
-    legacy_pdf = APP_DIR / "resume.pdf"
-    if structured_pdf.exists():
-        RESUME_PDF_PATH = structured_pdf
-    elif legacy_pdf.exists():
-        RESUME_PDF_PATH = legacy_pdf
-    else:
-        RESUME_PDF_PATH = structured_pdf
 
-    RESUME_MD_PATH = RESUME_DIR / "base.md"
-    RESUME_PATH = RESUME_MD_PATH
+@contextmanager
+def user_context(user_id: str) -> Iterator[Path]:
+    """Bind a registry user's paths to the current context (web requests).
+
+    Does not touch the process-wide default or os.environ, so concurrent
+    requests for different users are isolated.
+    """
+    from jobwright.users import get_user
+
+    user = get_user(user_id)
+    if user is None:
+        raise ValueError(f"Unknown user: {user_id}")
+    state = _PathState(user.resolve_data_dir().expanduser().resolve(), user.user_id)
+    token = _STATE_CTX.set(state)
+    try:
+        yield state.APP_DIR
+    finally:
+        _STATE_CTX.reset(token)
 
 
 def user_relative_path(relative: str) -> Path:
@@ -107,35 +162,37 @@ def user_relative_path(relative: str) -> Path:
     p = Path(relative)
     if p.is_absolute():
         return p
-    return (APP_DIR / p).resolve()
+    return (_state().APP_DIR / p).resolve()
 
 
 def cover_letter_template_path(profile: dict | None = None) -> Path:
     """Cover letter skeleton (input), not generated output."""
+    s = _state()
     if profile:
         rel = profile.get("cover_letter_template")
         if rel:
             candidate = user_relative_path(str(rel))
             if candidate.exists():
                 return candidate
-    if COVER_LETTER_TEMPLATE_PATH.exists():
-        return COVER_LETTER_TEMPLATE_PATH
-    legacy = REFERENCES_DIR / "cover_letter_template.txt"
-    return legacy if legacy.exists() else COVER_LETTER_TEMPLATE_PATH
+    if s.COVER_LETTER_TEMPLATE_PATH.exists():
+        return s.COVER_LETTER_TEMPLATE_PATH
+    legacy = s.REFERENCES_DIR / "cover_letter_template.txt"
+    return legacy if legacy.exists() else s.COVER_LETTER_TEMPLATE_PATH
 
 
 def cover_letter_examples_dir(profile: dict | None = None) -> Path:
     """Directory of real sent cover letters (input examples)."""
+    s = _state()
     if profile:
         rel = profile.get("cover_letter_examples_dir")
         if rel:
             candidate = user_relative_path(str(rel))
             if candidate.is_dir():
                 return candidate
-    if COVER_LETTER_EXAMPLES_DIR.is_dir():
-        return COVER_LETTER_EXAMPLES_DIR
-    legacy = REFERENCES_DIR / "cover_letter_examples"
-    return legacy if legacy.is_dir() else COVER_LETTER_EXAMPLES_DIR
+    if s.COVER_LETTER_EXAMPLES_DIR.is_dir():
+        return s.COVER_LETTER_EXAMPLES_DIR
+    legacy = s.REFERENCES_DIR / "cover_letter_examples"
+    return legacy if legacy.is_dir() else s.COVER_LETTER_EXAMPLES_DIR
 
 
 def load_cover_letter_materials(profile: dict | None = None) -> tuple[str, list[str]]:
@@ -185,7 +242,6 @@ def join_cover_letter_examples(
 
 def set_active_user(user_id: str) -> Path:
     """Resolve a registry user and switch APP_DIR to their data directory."""
-    global ACTIVE_USER_ID
     from jobwright.users import get_user
 
     user = get_user(user_id)
@@ -194,12 +250,12 @@ def set_active_user(user_id: str) -> Path:
             f"Unknown user '{user_id}'. Run: jobwright users list\n"
             f"Or add one: jobwright users add {user_id}"
         )
-    ACTIVE_USER_ID = user.user_id
+    _state().ACTIVE_USER_ID = user.user_id
     return set_app_dir(user.resolve_data_dir())
 
 
 def get_active_user_id() -> str | None:
-    return ACTIVE_USER_ID
+    return _state().ACTIVE_USER_ID
 
 
 def get_chrome_path() -> str:
@@ -259,14 +315,15 @@ def get_chrome_user_data() -> Path:
 
 def ensure_dirs():
     """Create all required directories."""
+    s = _state()
     for d in [
-        APP_DIR, RESUME_DIR, COVER_LETTER_INPUT_DIR, COVER_LETTER_EXAMPLES_DIR,
-        TAILORED_DIR, COVER_LETTER_DIR, LOG_DIR, NETWORK_DIR,
-        CHROME_WORKER_DIR, APPLY_WORKER_DIR, REFERENCES_DIR, REFERENCES_INBOX_DIR,
+        s.APP_DIR, s.RESUME_DIR, s.COVER_LETTER_INPUT_DIR, s.COVER_LETTER_EXAMPLES_DIR,
+        s.TAILORED_DIR, s.COVER_LETTER_DIR, s.LOG_DIR, s.NETWORK_DIR,
+        s.CHROME_WORKER_DIR, s.APPLY_WORKER_DIR, s.REFERENCES_DIR, s.REFERENCES_INBOX_DIR,
     ]:
         d.mkdir(parents=True, exist_ok=True)
     try:
-        APP_DIR.chmod(0o700)
+        s.APP_DIR.chmod(0o700)
     except OSError:
         pass
 
@@ -303,23 +360,25 @@ def has_apply_agent() -> bool:
 def load_profile() -> dict:
     """Load user profile from ~/.jobwright/profile.json."""
     import json
-    if not PROFILE_PATH.exists():
+    path = _state().PROFILE_PATH
+    if not path.exists():
         raise FileNotFoundError(
-            f"Profile not found at {PROFILE_PATH}. Run `jobwright init` first."
+            f"Profile not found at {path}. Run `jobwright init` first."
         )
-    return json.loads(PROFILE_PATH.read_text(encoding="utf-8"))
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def load_search_config() -> dict:
     """Load search configuration from ~/.jobwright/searches.yaml."""
     import yaml
-    if not SEARCH_CONFIG_PATH.exists():
+    path = _state().SEARCH_CONFIG_PATH
+    if not path.exists():
         # Fall back to package-shipped example
         example = CONFIG_DIR / "searches.example.yaml"
         if example.exists():
-            return yaml.safe_load(example.read_text(encoding="utf-8"))
+            return yaml.safe_load(example.read_text(encoding="utf-8")) or {}
         return {}
-    return yaml.safe_load(SEARCH_CONFIG_PATH.read_text(encoding="utf-8"))
+    return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
 
 
 def load_location_filters(search_cfg: dict | None = None) -> tuple[list[str], list[str]]:
@@ -459,34 +518,68 @@ def global_env_path() -> Path:
     return Path.home() / ".jobwright" / ".env"
 
 
-def load_env():
-    """Load environment from the single global .env, then any non-secret per-user overlay.
+def load_user_env_overlay() -> dict[str, str]:
+    """Return the active user's optional .env overlay as a dict (no side effects)."""
+    from dotenv import dotenv_values
 
-    Global secrets (GEMINI_API_KEY, CURSOR_API_KEY, ...) come from one .env
-    (see global_env_path). A per-user data dir may still carry an optional
-    .env with non-secret overrides (e.g. LLM_MODEL, APPLY_DRY_RUN); that is
-    layered on top when present. Real shell environment variables win over the
-    global file so manual overrides still work.
+    s = _state()
+    try:
+        if not s.ENV_PATH.exists() or s.ENV_PATH.resolve() == global_env_path().resolve():
+            return {}
+    except OSError:
+        return {}
+    return {k: v for k, v in dotenv_values(s.ENV_PATH).items() if v is not None}
+
+
+def user_env(key: str, default: str = "") -> str:
+    """Read a setting from the active user's .env overlay, then os.environ.
+
+    Use for per-user settings (e.g. TYPESAFE_API_KEY) that must not leak across
+    users in the long-lived web process.
     """
+    overlay = load_user_env_overlay()
+    if overlay.get(key):
+        return overlay[key]
+    return os.environ.get(key, default)
+
+
+_last_brief_model: str | None = None
+
+
+def load_env():
+    """Load environment from the single global .env, then any per-user overlay.
+
+    Global secrets come from one .env (see global_env_path). The active user's
+    data dir may carry an optional .env overlay layered on top. The overlay is
+    applied to os.environ only for process-wide (CLI) state: inside a web
+    user_context() it is skipped so one user's settings never leak into another
+    request (read those via user_env()). Real shell environment variables win
+    over the global file so manual overrides still work.
+    """
+    global _last_brief_model
     from dotenv import load_dotenv
 
     global_env = global_env_path()
     if global_env.exists():
         load_dotenv(global_env, override=False)
 
-    # Optional per-user overlay for non-secret settings (usually absent).
-    if ENV_PATH.exists() and ENV_PATH.resolve() != global_env.resolve():
-        load_dotenv(ENV_PATH, override=True)
+    if _STATE_CTX.get() is None:
+        env_path = _state().ENV_PATH
+        if env_path.exists() and env_path.resolve() != global_env.resolve():
+            load_dotenv(env_path, override=True)
 
     # Brief / operator override (run_daily_brief.sh sets this before pipeline).
     brief_model = os.environ.get("JOBWRIGHT_LLM_MODEL", "").strip()
     if brief_model:
         os.environ["LLM_MODEL"] = brief_model
-        try:
-            import jobwright.llm as llm_mod
-            llm_mod._instance = None
-        except ImportError:
-            pass
+        if brief_model != _last_brief_model:
+            _last_brief_model = brief_model
+            try:
+                import jobwright.llm as llm_mod
+
+                llm_mod.reset_client()
+            except (ImportError, AttributeError):
+                pass
 
 
 # ---------------------------------------------------------------------------

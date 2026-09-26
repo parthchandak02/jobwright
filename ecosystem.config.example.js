@@ -35,12 +35,12 @@ const useVenv = fs.existsSync(venvUvicorn)
 const apiApp = useVenv
   ? {
       script: venvUvicorn,
-      args: 'jobwright.web.app:app --host 127.0.0.1 --port 8002 --reload',
+      args: 'jobwright.web.app:app --host 127.0.0.1 --port 8002',
       interpreter: 'none',
     }
   : {
       script: 'python3',
-      args: '-m uvicorn jobwright.web.app:app --host 127.0.0.1 --port 8002 --reload',
+      args: '-m uvicorn jobwright.web.app:app --host 127.0.0.1 --port 8002',
       interpreter: 'none',
     }
 
@@ -48,13 +48,16 @@ module.exports = {
   apps: [
     {
       name: 'jobwright-api',
-      // --reload: local hot-reload for Python. Remove for production PM2.
+      // Production: no --reload (edits in the working tree must not restart prod
+      // mid-request). Local hot reload: ./scripts/restart.sh (dev auth mode).
       ...apiApp,
       cwd: PROJECT_DIR,
       exec_mode: 'fork',
       env: {
         PORT: '8002',
-        JOBWRIGHT_DASHBOARD_USER: 'richa',
+        // Verify Cloudflare Access JWTs. JOBWRIGHT_CF_TEAM_DOMAIN + JOBWRIGHT_CF_AUD
+        // live in the repo .env (see .env.example / docs/agents/dashboard-hosting.md).
+        JOBWRIGHT_AUTH_MODE: 'cloudflare',
         PYTHONPATH: `${PROJECT_DIR}/src`,
         JOBWRIGHT_CORS_ORIGINS:
           'http://127.0.0.1:5120,http://localhost:5120,http://127.0.0.1:8002,http://localhost:8002',
@@ -78,7 +81,7 @@ module.exports = {
       name: 'jobwright-ui',
       // Dev-only Vite (HMR). Omit in production when API serves frontend/dist.
       script: `${PROJECT_DIR}/frontend/node_modules/.bin/vite`,
-      args: '--port 5120 --host 0.0.0.0',
+      args: '--port 5120 --host 127.0.0.1',
       cwd: `${PROJECT_DIR}/frontend`,
       interpreter: 'none',
       exec_mode: 'fork',

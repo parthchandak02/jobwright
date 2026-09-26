@@ -96,6 +96,11 @@ def api_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     from jobwright.web.app import app
 
     with TestClient(app) as client:
+
+        import jobwright.config as _cfg
+
+
+        _cfg.set_app_dir(data_dir)
         yield client, examples
     close_connection(data_dir / "jobwright.db")
 

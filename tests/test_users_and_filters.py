@@ -334,3 +334,47 @@ def test_prune_after_score_skips_human_and_drops_low_backlog(tmp_path):
     assert "https://a.example/low" not in urls
     assert "https://a.example/gtm" not in urls
     assert stats["deleted"] >= 2
+
+
+def test_apply_cli_defaults_to_dry_run_and_gates_live(tmp_path, monkeypatch):
+    """`jobwright apply` without --live must never submit; --live needs apply_enabled."""
+    from typer.testing import CliRunner
+
+    from jobwright import cli
+    from jobwright import users as users_mod
+
+    users_mod.add_user("gated", name="Gated", apply_enabled=False)
+    seen = {}
+
+    def fake_main(**kwargs):
+        seen.update(kwargs)
+
+    monkeypatch.setattr("jobwright.apply.launcher.main", fake_main, raising=False)
+    monkeypatch.setattr(cli, "_bootstrap", lambda: None)
+    monkeypatch.setattr("jobwright.config.get_active_user_id", lambda: "gated")
+    runner = CliRunner()
+    res = runner.invoke(cli.app, ["apply", "--live"])
+    assert res.exit_code == 1 and "Live apply disabled" in res.output
+    res = runner.invoke(cli.app, ["apply", "--live", "--dry-run"])
+    assert res.exit_code == 2
+
+
+def test_acquire_job_url_is_exact(tmp_path, monkeypatch):
+    import jobwright.config as cfg
+    from jobwright.apply.launcher import acquire_job
+    from jobwright.database import close_connection, get_connection, init_db
+
+    cfg.set_app_dir(tmp_path)
+    db = tmp_path / "jobwright.db"
+    close_connection(db)
+    init_db(db)
+    conn = get_connection()
+    for u in ("https://ex.com/jobs/12", "https://ex.com/jobs/1"):
+        conn.execute(
+            "INSERT INTO jobs (url, title, site, tailored_resume_path, fit_score) VALUES (?, 'T', 'greenhouse', 'x.md', 9)",
+            (u,),
+        )
+    conn.commit()
+    row = acquire_job(target_url="https://ex.com/jobs/1/?utm=x", min_score=0)
+    assert row is not None and row["url"] == "https://ex.com/jobs/1"
+    close_connection(db)

@@ -6,9 +6,7 @@
 """
 import sqlite3
 
-import pytest
 
-from jobwright import users as users_mod
 from jobwright.scoring import scorer
 
 
@@ -41,7 +39,7 @@ def test_gated_notify_pulls_backlog_jobs(tmp_path, monkeypatch):
         " discovered_at TEXT, job_id TEXT, full_description TEXT)"
     )
     conn.execute(
-        "INSERT INTO jobs VALUES ('u1','T1','C','SF',8,'backlog',NULL,NULL,'2026-09-17','j1','d')"
+        "INSERT INTO jobs VALUES ('u1','T1','C','SF',8,'backlog',NULL,NULL,datetime('now'),'j1','d')"
     )
     conn.commit()
     rows = notify_mod.get_unnotified_gated_jobs(conn)

@@ -4,7 +4,6 @@ from jobwright.hermes_cron import (
     brief_cron_name,
     find_cron_id,
     legacy_cron_names,
-    pause_legacy_crons,
 )
 
 LISTING = """
