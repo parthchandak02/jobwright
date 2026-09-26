@@ -75,3 +75,28 @@ def test_preflight_reports_missing_inputs(tmp_path, monkeypatch):
     checks = preflight.run_checks()
     failed = {c.name for c in preflight.blocking_failures(checks)}
     assert "user_inputs" in failed and "whatsapp_bridge" not in failed
+
+
+def test_backup_snapshots_db_and_files_and_prunes(tmp_path):
+    import sqlite3
+
+    from jobwright import users as users_mod
+
+    users_mod.add_user("bk")
+    data = users_mod.get_user("bk").resolve_data_dir()
+    (data / "profile.json").write_text("{}")
+    db = data / "jobwright.db"
+    with sqlite3.connect(db) as c:
+        c.execute("CREATE TABLE t (x)")
+        c.execute("INSERT INTO t VALUES (42)")
+    dest = tmp_path / "bk"
+    (dest / "2000-01-01_0000").mkdir(parents=True)
+    rep = ops.backup_users(dest, keep_days=14)
+    snap = dest / rep["snapshot"].rsplit("/", 1)[-1]
+    assert not rep["errors"] and (snap / "bk" / "profile.json").exists()
+    with sqlite3.connect(snap / "bk" / "jobwright.db") as c:
+        assert c.execute("SELECT x FROM t").fetchone()[0] == 42
+    assert not (dest / "2000-01-01_0000").exists()
+    rep2 = ops.backup_users(dest, keep_days=14)
+    snap2 = dest / rep2["snapshot"].rsplit("/", 1)[-1]
+    assert (snap2 / "bk" / "profile.json").stat().st_ino == (snap / "bk" / "profile.json").stat().st_ino

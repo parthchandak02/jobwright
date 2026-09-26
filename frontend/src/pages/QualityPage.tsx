@@ -135,7 +135,8 @@ export function QualityPage() {
               {ev ? (
                 <>
                   <p className="text-xs text-muted-foreground">
-                    Last run {new Date(ev.at).toLocaleString()} · scorer {ev.prompt_version}
+                    Last run {new Date(ev.at).toLocaleString()} · {String(ev.config?.n ?? '?')} jobs (
+                    {String(ev.config?.positives ?? '?')} wanted) · scorer {ev.prompt_version}
                   </p>
                   <table className="w-full max-w-lg text-left">
                     <thead>

@@ -570,6 +570,7 @@ export type AdminUser = {
   emails: string[]
   whatsapp_target: string
   schedule: string
+  schedule_label?: string
   human_gate: boolean
   brief_top_n: number
   apply_enabled: boolean

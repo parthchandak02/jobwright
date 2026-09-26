@@ -39,7 +39,24 @@ def phone_target(phone: str) -> str | None:
     return f"whatsapp:{digits}@s.whatsapp.net"
 
 
+_TARGETS_TTL = 60.0
+_targets_cache: tuple[float, list[dict]] | None = None
+
+
 def _hermes_targets() -> list[dict]:
+    """Chat ids Hermes can post to (cached briefly; the CLI takes ~1-2 s)."""
+    global _targets_cache
+    import time as _time
+
+    if _targets_cache and _time.monotonic() - _targets_cache[0] < _TARGETS_TTL:
+        return _targets_cache[1]
+    targets = _load_hermes_targets()
+    if targets:
+        _targets_cache = (_time.monotonic(), targets)
+    return targets
+
+
+def _load_hermes_targets() -> list[dict]:
     try:
         proc = subprocess.run(
             ["hermes", "send", "--list", "whatsapp", "--json"],

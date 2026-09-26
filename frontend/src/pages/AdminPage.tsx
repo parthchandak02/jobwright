@@ -36,7 +36,7 @@ function HealthChip({ user }: { user: AdminUser }) {
   const level = user.health?.level
   const today = user.brief_today.join(' · ')
   if (!level && !today) return <Chip muted>No brief yet today</Chip>
-  const tone = level === 'fail' ? '--destructive' : level === 'warn' ? '--stage-offer' : '--stage-prepare'
+  const tone = level === 'fail' ? '--destructive' : level === 'warn' ? '--stage-in-progress' : '--stage-offer'
   return (
     <Chip tone={tone} title={[...(user.health?.lines || []), today].join('\n')}>
       {level === 'fail' ? 'Problem' : level === 'warn' ? 'Warning' : 'Healthy'}
@@ -177,7 +177,7 @@ export function AdminPage() {
                       />
                     </FormField>
                     <p className="text-xs text-muted-foreground">
-                      WhatsApp: {u.whatsapp_target || 'not set'} · daily at {u.schedule} ·{' '}
+                      WhatsApp: {u.whatsapp_target ? 'set' : 'not set'} · {u.schedule_label || u.schedule} ·{' '}
                       {u.human_gate ? 'review first' : 'materials automatically'} · top {u.brief_top_n || 'all'}
                     </p>
                   </div>

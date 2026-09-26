@@ -63,3 +63,26 @@ def test_ensure_brief_cron_creates_then_edits(tmp_path, monkeypatch):
     out = hermes_cron.ensure_brief_cron("zed", "30 8 * * *")
     edit = calls[-1]
     assert "edit" in edit and "abcdef123456" in edit and "30 8 * * *" in edit
+
+
+def test_hermes_dry_run_never_touches_hermes(tmp_path, monkeypatch):
+    import subprocess
+
+    from jobwright import hermes_cron, notify
+    from jobwright import users as users_mod
+
+    monkeypatch.setenv("JOBWRIGHT_HERMES_DRY_RUN", "1")
+    monkeypatch.setattr(hermes_cron, "_hermes_scripts_dir", lambda: tmp_path / "scripts")
+    calls = []
+    real_run = subprocess.run
+
+    def spy(args, *a, **k):
+        calls.append(args)
+        return real_run(["true"], *a, **{kk: v for kk, v in k.items() if kk in ("capture_output", "text")})
+
+    monkeypatch.setattr(subprocess, "run", spy)
+    users_mod.add_user("sandy", schedule="0 7 * * *")
+    hermes_cron.ensure_brief_cron("sandy", "0 7 * * *")
+    notify.send_via_hermes("hi", "whatsapp:1@s.whatsapp.net")
+    assert all(c[:3] == ["hermes", "cron", "list"] for c in calls)
+    assert not (tmp_path / "scripts").exists()

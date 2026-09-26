@@ -388,3 +388,13 @@ def test_acquire_job_url_is_exact(tmp_path, monkeypatch):
     row = acquire_job(target_url="https://ex.com/jobs/1/?utm=x", min_score=0)
     assert row is not None and row["url"] == "https://ex.com/jobs/1"
     close_connection(db)
+
+
+def test_python_m_cli_registers_every_command():
+    """run_daily_brief.sh uses `python -m jobwright.cli`; every command must exist there."""
+    import subprocess
+    import sys
+
+    out = subprocess.run([sys.executable, "-m", "jobwright.cli", "--help"], capture_output=True, text=True).stdout
+    for cmd in ("run", "notify", "preflight", "ops", "eval", "rescore", "criteria", "labels"):
+        assert cmd in out, cmd

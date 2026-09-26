@@ -23,6 +23,22 @@ export const GOOD_FIT_REASONS = [
 ]
 
 let cached: string[] | null = null
+let labelMap: Record<string, string> | null = null
+
+/** Map dealbreaker id -> the user's own label (for chips). */
+export function useDealbreakerLabels(): Record<string, string> {
+  const [map, setMap] = useState<Record<string, string>>(labelMap ?? {})
+  useEffect(() => {
+    if (labelMap) return
+    getCriteria()
+      .then(({ criteria }) => {
+        labelMap = Object.fromEntries(criteria.dealbreakers.map((d) => [d.id, d.label || d.id]))
+        setMap(labelMap)
+      })
+      .catch(() => undefined)
+  }, [])
+  return map
+}
 
 /** The user's dealbreaker names first, then the common reasons (deduped). */
 export function useNotAFitReasons(): string[] {
@@ -48,4 +64,5 @@ export function useNotAFitReasons(): string[] {
 
 export function invalidateReasons() {
   cached = null
+  labelMap = null
 }

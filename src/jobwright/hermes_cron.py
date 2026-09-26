@@ -106,7 +106,17 @@ def pause_legacy_crons(user_id: str, listing: str | None = None) -> list[str]:
     return paused
 
 
+def hermes_dry_run() -> bool:
+    """JOBWRIGHT_HERMES_DRY_RUN=1: never change real Hermes crons or send messages (sandboxes)."""
+    return os.environ.get("JOBWRIGHT_HERMES_DRY_RUN", "").strip().lower() in ("1", "true", "yes")
+
+
 def _run_hermes(args: list[str]) -> dict:
+    if hermes_dry_run() and args[:2] != ["cron", "list"]:
+        import logging
+
+        logging.getLogger(__name__).warning("HERMES DRY RUN: would run hermes %s", " ".join(args))
+        return {"stdout": ""}
     env = os.environ.copy()
     env.setdefault("HERMES_ACCEPT_HOOKS", "1")
     try:
@@ -150,6 +160,9 @@ def _hermes_scripts_dir():
 def write_brief_wrapper(user_id: str) -> str:
     """Per-user wrapper Hermes runs; pins user, users root and repo. Returns its name."""
     from jobwright.users import USERS_ROOT, get_user
+
+    if hermes_dry_run():
+        return f"wrap_{brief_cron_name(user_id)}.sh"
 
     user = get_user(user_id)
     data_dir = user.resolve_data_dir() if user else USERS_ROOT / user_id
@@ -213,6 +226,9 @@ def remove_brief_cron(user_id: str) -> dict:
 def ensure_watchdog_cron(schedule: str = "30 8 * * *") -> dict:
     """Daily missed-run watchdog; alerts go out via jobwright ops (hermes send)."""
     script_name = "jobwright_ops_watchdog.sh"
+    if hermes_dry_run():
+        _run_hermes(["cron", "create", schedule, "--name", WATCHDOG_CRON_NAME])
+        return {"ok": True, "error": None, "cron_id": None, "dry_run": True}
     path = _hermes_scripts_dir() / script_name
     path.parent.mkdir(parents=True, exist_ok=True)
     from jobwright.users import USERS_ROOT

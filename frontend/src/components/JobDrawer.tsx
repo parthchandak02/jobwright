@@ -352,7 +352,7 @@ export function JobDrawer({ jobKey, onClose, onChanged }: Props) {
             ) : null}
           </div>
           {job ? (
-            <div className="flex flex-wrap gap-2 pl-10">
+            <div className="-mx-3 flex gap-2 overflow-x-auto px-3 pb-0.5 md:mx-0 md:flex-wrap md:overflow-visible md:px-0 md:pl-10">
               {href ? (
                 <Button asChild size="sm" variant={hasMaterials || !beforeApplying ? 'default' : 'outline'}>
                   <a href={href} target="_blank" rel="noreferrer">

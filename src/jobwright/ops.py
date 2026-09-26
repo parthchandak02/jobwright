@@ -182,3 +182,77 @@ def watchdog(grace_minutes: int = 120) -> list[Report]:
         elif not any(s.startswith("done") for s in status):
             reports.append(Report(user.user_id, "fail", ["brief started but has not finished", *status[-3:]]))
     return reports
+
+
+# ---------------------------------------------------------------------------
+# Backups
+# ---------------------------------------------------------------------------
+
+def default_backup_root() -> Path:
+    env = os.environ.get("JOBWRIGHT_BACKUP_DIR", "").strip()
+    return Path(env).expanduser() if env else Path.home() / "jobwright-backups"
+
+
+def backup_users(dest_root: Path | None = None, keep_days: int = 14) -> dict:
+    """Snapshot every profile: consistent SQLite copies + hard-linked file tree.
+
+    Layout: <dest>/<YYYY-mm-dd_HHMM>/{users.yaml, <user_id>/...}. Unchanged files
+    are hard links into the previous snapshot (rsync --link-dest), so daily
+    snapshots cost only what changed. Snapshots older than keep_days are removed.
+    """
+    import shutil
+    import sqlite3
+    import subprocess
+
+    from jobwright.users import REGISTRY_PATH, list_users
+
+    dest_root = (dest_root or default_backup_root()).expanduser()
+    dest_root.mkdir(parents=True, exist_ok=True)
+    try:
+        dest_root.chmod(0o700)
+    except OSError:
+        pass
+    previous = sorted(p for p in dest_root.iterdir() if p.is_dir() and not p.name.startswith("."))
+    snap = dest_root / f".tmp-{datetime.now():%Y-%m-%d_%H%M%S}"
+    snap.mkdir()
+    report: dict = {"snapshot": None, "users": {}, "errors": []}
+    if REGISTRY_PATH.exists():
+        shutil.copy2(REGISTRY_PATH, snap / "users.yaml")
+    for user in list_users():
+        src = user.resolve_data_dir()
+        if not src.exists():
+            report["errors"].append(f"{user.user_id}: data dir missing ({src})")
+            continue
+        out = snap / user.user_id
+        out.mkdir()
+        cmd = ["rsync", "-a", "--exclude", "*.db", "--exclude", "*.db-wal", "--exclude", "*.db-shm",
+               "--exclude", "chrome-workers/", "--exclude", "apply-workers/", "--exclude", "logs/*.log"]
+        if previous:
+            cmd += ["--link-dest", str(previous[-1] / user.user_id)]
+        proc = subprocess.run([*cmd, f"{src}/", f"{out}/"], capture_output=True, text=True, check=False)
+        if proc.returncode not in (0, 24):
+            report["errors"].append(f"{user.user_id}: rsync {proc.returncode} {proc.stderr[:200]}")
+        dbs = 0
+        for db in src.glob("*.db"):
+            try:
+                with sqlite3.connect(db, timeout=30) as source, sqlite3.connect(out / db.name) as target:
+                    source.backup(target)
+                dbs += 1
+            except sqlite3.Error as exc:
+                report["errors"].append(f"{user.user_id}: {db.name}: {exc}")
+        report["users"][user.user_id] = {"dbs": dbs}
+    final = dest_root / snap.name.removeprefix(".tmp-")
+    n = 2
+    while final.exists():
+        final = dest_root / f"{snap.name.removeprefix('.tmp-')}-{n}"
+        n += 1
+    snap.rename(final)
+    report["snapshot"] = str(final)
+    cutoff = datetime.now() - timedelta(days=keep_days)
+    for old in previous:
+        try:
+            if datetime.strptime(old.name[:10], "%Y-%m-%d") < cutoff:
+                shutil.rmtree(old)
+        except ValueError:
+            continue
+    return report

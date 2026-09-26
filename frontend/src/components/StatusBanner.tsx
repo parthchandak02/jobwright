@@ -21,12 +21,13 @@ function summarize(s: AppStatus): { level: 'warn' | 'fail'; text: string; lines:
     lines.push('WhatsApp is disconnected; the daily list will not be delivered until it reconnects.')
   }
   if (!level) return null
+  const first = lines[0] || 'Something needs attention.'
   const text =
-    level === 'fail'
-      ? 'The last job search had a problem. Your list may be incomplete.'
-      : s.whatsapp_bridge !== 'connected' && lines.length === 1
-        ? 'WhatsApp is disconnected right now.'
-        : 'Heads up: something needs attention.'
+    level === 'fail' && s.last_run && !s.last_run.ok
+      ? 'The last job search had a problem, so your list may be incomplete.'
+      : lines.length > 1
+        ? `${first} (+${lines.length - 1} more)`
+        : first
   return { level, text, lines }
 }
 

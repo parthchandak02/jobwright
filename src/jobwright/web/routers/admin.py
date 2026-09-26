@@ -11,6 +11,7 @@ from pydantic import BaseModel
 
 from jobwright import config
 from jobwright.users import (
+    describe_cron_schedule,
     get_user,
     list_admin_emails,
     list_users,
@@ -44,7 +45,8 @@ def users(request: Request) -> dict:
         "users": [
             {
                 "user_id": u.user_id, "name": u.name, "emails": u.emails, "whatsapp_target": u.whatsapp_target,
-                "schedule": u.schedule, "human_gate": u.human_gate, "brief_top_n": u.brief_top_n,
+                "schedule": u.schedule, "schedule_label": describe_cron_schedule(u.schedule),
+                "human_gate": u.human_gate, "brief_top_n": u.brief_top_n,
                 "apply_enabled": u.apply_enabled, "cron": brief_cron_name(u.user_id), **_user_health(u),
             }
             for u in list_users()

@@ -197,6 +197,13 @@ HERMES_SEND_TIMEOUT = 90
 
 def send_via_hermes(message: str, target: str) -> None:
     """Deliver a message to a WhatsApp target via the hermes CLI (bounded)."""
+    from jobwright.hermes_cron import hermes_dry_run
+
+    if hermes_dry_run():
+        import logging
+
+        logging.getLogger(__name__).warning("HERMES DRY RUN: would send to %s:\n%s", target, message)
+        return
     try:
         result = subprocess.run(
             ["hermes", "send", "--to", target, "--quiet", message],

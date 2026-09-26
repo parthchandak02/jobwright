@@ -1043,9 +1043,6 @@ def targets(
     )
 
 
-if __name__ == "__main__":
-    app()
-
 
 # ---------------------------------------------------------------------------
 # Scoring quality: eval, rescore, criteria, labels
@@ -1281,3 +1278,30 @@ def ops_set_target(target: str = typer.Argument(..., help="whatsapp:<jid> for op
     from jobwright.ops import set_ops_target
 
     console.print(f"ops_target = {set_ops_target(target) or '(cleared)'}")
+
+
+@ops_app.command("backup")
+def ops_backup(
+    dest: Optional[str] = typer.Option(None, "--dest", help="Backup root (default JOBWRIGHT_BACKUP_DIR or ~/jobwright-backups)."),
+    keep: int = typer.Option(14, "--keep", help="Days of snapshots to keep."),
+) -> None:
+    """Snapshot every profile (consistent DB copies + hard-linked files); alert on errors."""
+    _configure_logging()
+    from pathlib import Path as _Path
+
+    from jobwright.config import load_env
+    from jobwright.ops import Report, backup_users, deliver
+
+    load_env()
+    rep = backup_users(_Path(dest) if dest else None, keep_days=keep)
+    console.print(f"Snapshot: {rep['snapshot']}  users: {rep['users']}")
+    if rep["errors"]:
+        for e in rep["errors"]:
+            console.print(f"[red]{e}[/red]")
+        console.print(deliver(Report("backup", "fail", rep["errors"][:5])))
+        raise typer.Exit(code=1)
+
+
+# Keep last: every command above must be registered before the app runs.
+if __name__ == "__main__":
+    app()

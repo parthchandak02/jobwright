@@ -104,14 +104,17 @@ def quality(request: Request) -> dict:
         "FROM jobs j WHERE j.whatsapp_notified_at >= datetime('now', '-30 days')"
     ).fetchone()
     latest_eval = None
-    reports = sorted(Path(config.LOG_DIR).glob("eval_*.json"))
-    if reports:
+    parsed = []
+    for path in sorted(Path(config.LOG_DIR).glob("eval_*.json")):
         try:
-            rep = json.loads(reports[-1].read_text(encoding="utf-8"))
-            latest_eval = {k: rep.get(k) for k in ("run_id", "at", "prompt_version", "config", "metrics",
-                                                   "metrics_explicit", "baseline", "baseline_explicit", "errors")}
+            parsed.append(json.loads(path.read_text(encoding="utf-8")))
         except (OSError, ValueError):
-            latest_eval = None
+            continue
+    full = [r for r in parsed if not (r.get("config") or {}).get("limit")]
+    rep = (full or parsed or [None])[-1]
+    if rep:
+        latest_eval = {k: rep.get(k) for k in ("run_id", "at", "prompt_version", "config", "metrics",
+                                               "metrics_explicit", "baseline", "baseline_explicit", "errors")}
     usage = conn.execute(
         "SELECT purpose, SUM(prompt_tokens), SUM(completion_tokens), SUM(cost_usd) FROM llm_usage "
         "WHERE at >= datetime('now', '-30 days') GROUP BY purpose"
