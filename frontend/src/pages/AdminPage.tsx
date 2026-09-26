@@ -64,7 +64,9 @@ export function AdminPage() {
       .catch((e) => toast.error(errorMessage(e)))
   }, [])
 
-  useEffect(load, [load])
+  useEffect(() => {
+    if (me?.is_admin) load()
+  }, [me?.is_admin, load])
 
   async function saveEmails(u: AdminUser, emails: string[]) {
     try {
