@@ -66,42 +66,51 @@ def test_fit_score_ceiling_caps_generic_ops():
         "Adobe",
         "OKRs and headcount planning",
         excludes,
+        mission_guard=True,
     ) == 4
     assert fit_score_ceiling(
         "Chief of Staff",
         "Thesis Care",
         "Scale an AI-powered clinical care platform and ops cadence.",
         excludes,
+        mission_guard=True,
     ) == 4
     assert fit_score_ceiling(
         "Business Advisor",
         "Innovation Norway",
         "Investor outreach and startup ecosystem advisory in San Francisco.",
         excludes,
+        mission_guard=True,
     ) == 4
     assert fit_score_ceiling(
         "Chief of Staff",
         "The OpenAI Foundation",
         "Lead the CEO office and board cadence.",
         excludes,
+        mission_guard=True,
     ) is None
+    # Without the per-user mission guard only exclude_titles cap.
+    assert fit_score_ceiling("Chief of Staff", "Thesis Care", "ops cadence", excludes) is None
     assert fit_score_ceiling(
         "Chief of Staff",
         "Thesis Care",
         "Scale foundation models for clinical AI operations.",
         excludes,
+        mission_guard=True,
     ) == 4
     assert fit_score_ceiling(
         "Chief of Staff",
         "Blue Star Families",
         "Lead community programs at a mission-driven nonprofit serving military families.",
         excludes,
+        mission_guard=True,
     ) is None
     assert fit_score_ceiling(
         "Sr. Program Manager, Data for Good",
         "Databricks",
         "Build Databricks for Good with nonprofits.",
         excludes,
+        mission_guard=True,
     ) is None
     # No JD yet: do not cap CoS (enrichment still pending)
     assert fit_score_ceiling("Chief of Staff", "Acme", "", excludes) is None
@@ -110,6 +119,7 @@ def test_fit_score_ceiling_caps_generic_ops():
         "Amazon Web Services (AWS)",
         "Lead GTM for startup partners and pipeline.",
         excludes,
+        mission_guard=True,
     ) == 4
     assert fit_score_ceiling(
         "Clinical Program Director, Compass Behavioral Health Services",

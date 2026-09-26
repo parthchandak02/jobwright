@@ -192,19 +192,28 @@ def passes_discovery_filters(
     return not salary_below_floor(salary, min_sal, description)
 
 
+def mission_guard_enabled(search_cfg: dict[str, Any] | None) -> bool:
+    """Opt-in social-impact guard (searches.yaml ``scoring: {mission_guard: true}``)."""
+    return bool(((search_cfg or {}).get("scoring") or {}).get("mission_guard"))
+
+
 def fit_score_ceiling(
     title: str | None,
     company: str | None,
     description: str | None,
     exclude_titles: list[str] | None,
+    mission_guard: bool = False,
 ) -> int | None:
     """Hard max fit score, or None if the LLM score should stand.
 
-    Caps roles that are outside the social-impact / CSR / foundation track even
-    when the model overrates transferable ops experience.
+    exclude_titles always cap at 4. With ``mission_guard`` (opt-in per user),
+    generic ops/GTM titles outside the social-impact / CSR / foundation track
+    are also capped, even when the model overrates transferable experience.
     """
     if title_excluded(title, exclude_titles):
         return 4
+    if not mission_guard:
+        return None
     t = (title or "").lower()
     desc = (description or "").strip()
     if has_impact_track(title, company, description):
@@ -227,6 +236,7 @@ def apply_fit_score_guards(
         job.get("company") or job.get("site"),
         job.get("full_description") or job.get("description"),
         (search_cfg or {}).get("exclude_titles"),
+        mission_guard=mission_guard_enabled(search_cfg),
     )
     score = int(parsed["score"])
     if ceiling is None or score <= ceiling:
@@ -234,7 +244,7 @@ def apply_fit_score_guards(
     out = dict(parsed)
     out["score"] = ceiling
     reason = (out.get("reasoning") or "").rstrip()
-    out["reasoning"] = (
-        f"{reason} [capped at {ceiling}: outside social-impact / CSR / foundation track]"
-    )
+    why = "excluded title" if title_excluded(job.get("title"), search_cfg.get("exclude_titles")) \
+        else "outside social-impact / CSR / foundation track"
+    out["reasoning"] = f"{reason} [capped at {ceiling}: {why}]"
     return out

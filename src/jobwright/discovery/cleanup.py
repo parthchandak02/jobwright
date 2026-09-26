@@ -11,6 +11,7 @@ from jobwright.database import tombstone_jobs
 from jobwright.discovery.filters import (
     apply_fit_score_guards,
     has_impact_track,
+    mission_guard_enabled,
     passes_discovery_filters,
     title_excluded,
 )
@@ -257,6 +258,7 @@ def prune_after_score(
         search_cfg = load_search_config()
 
     capped = reapply_fit_score_guards(conn, search_cfg)
+    mission_guard = mission_guard_enabled(search_cfg)
     conn.row_factory = sqlite3.Row
     rows = conn.execute("SELECT * FROM jobs").fetchall()
     to_delete: list[tuple[str, str]] = []
@@ -274,7 +276,7 @@ def prune_after_score(
             if score is None:
                 continue
             score_i = int(score)
-            on_track = has_impact_track(
+            on_track = not mission_guard or has_impact_track(
                 row["title"],
                 row["company"] or row["site"],
                 (row["full_description"] or "") or (row["description"] or ""),
