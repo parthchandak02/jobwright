@@ -11,11 +11,11 @@ to avoid apologetic spirals.
 
 import json
 import logging
-import re
 import time
 from datetime import UTC, datetime
 
 from jobwright import config
+from jobwright.job_identity import material_prefix, resolve_company
 from jobwright.config import load_profile
 from jobwright.database import get_connection, get_jobs_by_stage
 from jobwright.llm import get_client
@@ -282,7 +282,7 @@ def tailor_resume(
     """
     job_text = (
         f"TITLE: {job['title']}\n"
-        f"COMPANY: {job['site']}\n"
+        f"COMPANY: {resolve_company(job) or 'Not stated'}\n"
         f"LOCATION: {job.get('location', 'N/A')}\n\n"
         f"DESCRIPTION:\n{(job.get('full_description') or '')[:6000]}"
     )
@@ -324,7 +324,7 @@ def tailor_resume(
             attempt + 1,
             max_retries + 1,
             job.get("title"),
-            job.get("site"),
+            resolve_company(job),
             subtle,
         )
 
@@ -417,9 +417,7 @@ def tailor_resume(
 
 
 def _job_file_prefix(job: dict) -> str:
-    safe_title = re.sub(r"[^\w\s-]", "", job.get("title") or "untitled")[:50].strip().replace(" ", "_")
-    safe_site = re.sub(r"[^\w\s-]", "", job.get("site") or "manual")[:20].strip().replace(" ", "_")
-    return f"{safe_site}_{safe_title}"
+    return material_prefix(job)
 
 
 def _persist_tailor_result(
@@ -436,7 +434,7 @@ def _persist_tailor_result(
     job_path = config.TAILORED_DIR / f"{prefix}_JOB.txt"
     job_desc = (
         f"Title: {job['title']}\n"
-        f"Company: {job['site']}\n"
+        f"Company: {resolve_company(job)}\n"
         f"Location: {job.get('location', 'N/A')}\n"
         f"Score: {job.get('fit_score', 'N/A')}\n"
         f"URL: {job['url']}\n\n"

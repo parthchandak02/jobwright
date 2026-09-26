@@ -6,12 +6,12 @@ profile at runtime. No hardcoded personal information.
 """
 
 import logging
-import re
 import time
 from datetime import datetime, timezone
 
 from jobwright.config import load_profile
 import jobwright.config as config
+from jobwright.job_identity import material_prefix, resolve_company
 from jobwright.database import get_connection
 from jobwright.llm import get_client
 from jobwright.scoring.portfolio import get_selected_projects
@@ -173,7 +173,7 @@ def generate_cover_letter(
     """
     job_text = (
         f"TITLE: {job['title']}\n"
-        f"COMPANY: {job['site']}\n"
+        f"COMPANY: {resolve_company(job) or 'Not stated'}\n"
         f"LOCATION: {job.get('location', 'N/A')}\n\n"
         f"DESCRIPTION:\n{(job.get('full_description') or '')[:6000]}"
     )
@@ -209,7 +209,7 @@ def generate_cover_letter(
             attempt + 1,
             max_retries + 1,
             job.get("title"),
-            job.get("site"),
+            resolve_company(job),
         )
         # Fresh conversation every attempt
         prompt = cl_prompt_base
@@ -248,9 +248,7 @@ def generate_cover_letter(
 
 
 def _job_file_prefix(job: dict) -> str:
-    safe_title = re.sub(r"[^\w\s-]", "", job.get("title") or "untitled")[:50].strip().replace(" ", "_")
-    safe_site = re.sub(r"[^\w\s-]", "", job.get("site") or "manual")[:20].strip().replace(" ", "_")
-    return f"{safe_site}_{safe_title}"
+    return material_prefix(job)
 
 
 def _persist_cover_result(conn, job: dict, letter: str) -> dict:

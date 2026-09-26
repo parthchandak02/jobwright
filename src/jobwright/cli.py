@@ -356,7 +356,6 @@ def run(
     ),
     min_score: int = typer.Option(7, "--min-score", help="Minimum fit score for tailor/cover stages."),
     workers: int = typer.Option(1, "--workers", "-w", help="Parallel threads for discovery/enrichment stages."),
-    stream: bool = typer.Option(False, "--stream", help="Run stages concurrently (streaming mode)."),
     dry_run: bool = typer.Option(False, "--dry-run", help="Preview stages without executing."),
     verbose: bool = typer.Option(
         False, "--verbose", "-v",
@@ -417,7 +416,6 @@ def run(
         stages=explicit,
         min_score=min_score,
         dry_run=dry_run,
-        stream=stream,
         workers=workers,
         validation_mode=validation,
     )

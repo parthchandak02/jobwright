@@ -88,74 +88,8 @@ def init_db(db_path: Path | str | None = None) -> sqlite3.Connection:
     Path(path).parent.mkdir(parents=True, exist_ok=True)
 
     conn = get_connection(path)
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS jobs (
-            -- Discovery stage (smart_extract / job_search)
-            url                   TEXT PRIMARY KEY,
-            title                 TEXT,
-            salary                TEXT,
-            description           TEXT,
-            location              TEXT,
-            site                  TEXT,
-            company               TEXT,
-            strategy              TEXT,
-            discovered_at         TEXT,
-
-            -- Enrichment stage (detail_scraper)
-            full_description      TEXT,
-            application_url       TEXT,
-            detail_scraped_at     TEXT,
-            detail_error          TEXT,
-
-            -- Scoring stage (job_scorer)
-            fit_score             INTEGER,
-            score_reasoning       TEXT,
-            scored_at             TEXT,
-            portfolio_project_ids TEXT,
-
-            -- Jev fast-path hybrid (TypeSafe scoring; optional shadow/hybrid routing)
-            jev_score             REAL,
-            jev_confidence        REAL,
-            jev_routed            TEXT,
-
-            -- Tailoring stage (resume tailor)
-            tailored_resume_path  TEXT,
-            tailored_resume_docx_path TEXT,
-            tailored_at           TEXT,
-            tailor_attempts       INTEGER DEFAULT 0,
-
-            -- Cover letter stage
-            cover_letter_path     TEXT,
-            cover_letter_docx_path TEXT,
-            cover_letter_at       TEXT,
-            cover_attempts        INTEGER DEFAULT 0,
-
-            -- Application stage
-            applied_at            TEXT,
-            apply_status          TEXT,
-            apply_error           TEXT,
-            apply_attempts        INTEGER DEFAULT 0,
-            agent_id              TEXT,
-            last_attempted_at     TEXT,
-            apply_duration_ms     INTEGER,
-            apply_task_id         TEXT,
-            verification_confidence TEXT,
-
-            -- Kanban board (stored funnel stage; pipeline eligibility stays timestamp-based)
-            funnel_stage          TEXT DEFAULT 'backlog',
-            outcome               TEXT,
-            source                TEXT DEFAULT 'discovered',
-            applied_manually      INTEGER DEFAULT 0,
-            notes                 TEXT,
-            follow_up_at          TEXT,
-            first_response_at     TEXT,
-            board_updated_by      TEXT,
-            board_updated_at      TEXT,
-
-            -- WhatsApp daily notify (deduped one-shot per prepare job)
-            whatsapp_notified_at  TEXT
-        )
-    """)
+    column_sql = ",\n            ".join(f"{col} {dtype}" for col, dtype in _ALL_COLUMNS.items())
+    conn.execute(f"CREATE TABLE IF NOT EXISTS jobs (\n            {column_sql}\n        )")
     conn.execute("""
         CREATE TABLE IF NOT EXISTS stage_history (
             id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -176,10 +110,201 @@ def init_db(db_path: Path | str | None = None) -> sqlite3.Connection:
 
     # Run migrations for any columns added after initial schema
     ensure_columns(conn)
+    ensure_aux_schema(conn)
+    backfill_job_ids(conn)
     backfill_sponsorship_status(conn)
     backfill_funnel_stages(conn)
 
     return conn
+
+
+_AUX_DDL = (
+    # Every URL ever removed from jobs (pruned, deduped, resolved away). Discovery
+    # never re-inserts these, so filtered jobs are not re-scored every day.
+    """
+    CREATE TABLE IF NOT EXISTS job_tombstones (
+        url         TEXT PRIMARY KEY,
+        title       TEXT,
+        company     TEXT,
+        location    TEXT,
+        site        TEXT,
+        fit_score   INTEGER,
+        dedupe_key  TEXT,
+        reason      TEXT,
+        removed_at  TEXT NOT NULL
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_tombstones_dedupe ON job_tombstones(dedupe_key, removed_at)",
+    """
+    CREATE TRIGGER IF NOT EXISTS trg_jobs_block_tombstoned
+    BEFORE INSERT ON jobs
+    WHEN EXISTS (SELECT 1 FROM job_tombstones WHERE url = NEW.url)
+    BEGIN
+        SELECT RAISE(ABORT, 'job url is tombstoned');
+    END
+    """,
+    """
+    CREATE TRIGGER IF NOT EXISTS trg_jobs_tombstone_on_delete
+    AFTER DELETE ON jobs
+    BEGIN
+        INSERT OR IGNORE INTO job_tombstones
+            (url, title, company, location, site, fit_score, dedupe_key, reason, removed_at)
+        VALUES (OLD.url, OLD.title, OLD.company, OLD.location, OLD.site, OLD.fit_score,
+                OLD.dedupe_key, 'deleted', strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));
+    END
+    """,
+    # Human relevance labels: append-only history. jobs.user_fit_score mirrors the
+    # latest label; this table keeps every rescore plus a snapshot of the job so
+    # labels survive pruning and can drive few-shot scoring and offline evals.
+    """
+    CREATE TABLE IF NOT EXISTS score_labels (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        job_url         TEXT NOT NULL,
+        job_id          TEXT,
+        label_score     INTEGER NOT NULL,
+        verdict         TEXT,
+        reasons         TEXT,
+        rationale       TEXT,
+        source          TEXT NOT NULL,
+        actor           TEXT,
+        model_score     INTEGER,
+        title           TEXT,
+        company         TEXT,
+        location        TEXT,
+        description     TEXT,
+        created_at      TEXT NOT NULL
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_score_labels_job ON score_labels(job_url, created_at)",
+    # Every machine score ever produced (live runs, rescoring, evals).
+    """
+    CREATE TABLE IF NOT EXISTS score_history (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        job_url         TEXT NOT NULL,
+        score           INTEGER NOT NULL,
+        confidence      REAL,
+        gates           TEXT,
+        reasoning       TEXT,
+        model           TEXT,
+        prompt_version  TEXT,
+        tier            TEXT,
+        run_kind        TEXT,
+        run_id          TEXT,
+        created_at      TEXT NOT NULL
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_score_history_job ON score_history(job_url, created_at)",
+    # LLM spend ledger (tokens per call, grouped by run / purpose).
+    """
+    CREATE TABLE IF NOT EXISTS llm_usage (
+        id                INTEGER PRIMARY KEY AUTOINCREMENT,
+        at                TEXT NOT NULL,
+        run_id            TEXT,
+        purpose           TEXT,
+        provider          TEXT,
+        model             TEXT,
+        prompt_tokens     INTEGER,
+        completion_tokens INTEGER,
+        cached_tokens     INTEGER,
+        cost_usd          REAL
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_llm_usage_at ON llm_usage(at)",
+    "CREATE TABLE IF NOT EXISTS schema_meta (key TEXT PRIMARY KEY, value TEXT)",
+    "CREATE INDEX IF NOT EXISTS idx_jobs_job_id ON jobs(job_id)",
+    "CREATE INDEX IF NOT EXISTS idx_jobs_dedupe ON jobs(dedupe_key)",
+    "CREATE INDEX IF NOT EXISTS idx_jobs_fit_score ON jobs(fit_score)",
+    "CREATE INDEX IF NOT EXISTS idx_jobs_funnel ON jobs(funnel_stage)",
+    "CREATE INDEX IF NOT EXISTS idx_jobs_discovered ON jobs(discovered_at)",
+)
+
+
+def ensure_aux_schema(conn: sqlite3.Connection | None = None) -> None:
+    """Create side tables, indexes and triggers (idempotent)."""
+    if conn is None:
+        conn = get_connection()
+    for ddl in _AUX_DDL:
+        conn.execute(ddl)
+    conn.commit()
+    _run_once(conn, "seed_tombstones_from_history_v1", _seed_tombstones_from_history)
+
+
+def _run_once(conn: sqlite3.Connection, key: str, fn) -> None:
+    if conn.execute("SELECT 1 FROM schema_meta WHERE key = ?", (key,)).fetchone():
+        return
+    fn(conn)
+    conn.execute(
+        "INSERT OR REPLACE INTO schema_meta (key, value) VALUES (?, ?)",
+        (key, datetime.now(timezone.utc).isoformat()),
+    )
+    conn.commit()
+
+
+def _seed_tombstones_from_history(conn: sqlite3.Connection) -> None:
+    """URLs pruned before tombstones existed only survive in stage_history."""
+    now = datetime.now(timezone.utc).isoformat()
+    conn.execute(
+        "INSERT OR IGNORE INTO job_tombstones (url, reason, removed_at) "
+        "SELECT DISTINCT h.job_url, 'historical_prune', ? FROM stage_history h "
+        "WHERE NOT EXISTS (SELECT 1 FROM jobs j WHERE j.url = h.job_url)",
+        (now,),
+    )
+
+
+def backfill_job_ids(conn: sqlite3.Connection | None = None) -> int:
+    """Store job_id for rows that lack it (deep links use an indexed lookup)."""
+    if conn is None:
+        conn = get_connection()
+    rows = conn.execute("SELECT url FROM jobs WHERE job_id IS NULL").fetchall()
+    if not rows:
+        return 0
+    conn.executemany(
+        "UPDATE jobs SET job_id = ? WHERE url = ?",
+        [(job_id_for_url(r[0]), r[0]) for r in rows if r[0]],
+    )
+    conn.commit()
+    return len(rows)
+
+
+def tombstone_jobs(
+    conn: sqlite3.Connection,
+    items: list[tuple[str, str]],
+    *,
+    commit: bool = True,
+) -> int:
+    """Remove jobs by url, recording (url, reason) so they are never re-discovered."""
+    if not items:
+        return 0
+    now = datetime.now(timezone.utc).isoformat()
+    conn.execute(_AUX_DDL[0])
+    have = {r[1] for r in conn.execute("PRAGMA table_info(jobs)").fetchall()}
+    fields = ("url", "title", "company", "location", "site", "fit_score", "dedupe_key")
+    select = ", ".join(f if f in have else "NULL" for f in fields)
+    removed = 0
+    for url, reason in items:
+        row = conn.execute(f"SELECT {select} FROM jobs WHERE url = ?", (url,)).fetchone()
+        if row is None:
+            continue
+        conn.execute(
+            "INSERT OR REPLACE INTO job_tombstones "
+            "(url, title, company, location, site, fit_score, dedupe_key, reason, removed_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (*tuple(row), reason, now),
+        )
+        conn.execute("DELETE FROM jobs WHERE url = ?", (url,))
+        removed += 1
+    if commit:
+        conn.commit()
+    return removed
+
+
+def untombstone(conn: sqlite3.Connection, url: str) -> None:
+    """Allow a previously removed url back in (e.g. the user adds it manually)."""
+    conn.execute("DELETE FROM job_tombstones WHERE url = ?", (url,))
+
+
+def is_tombstoned(conn: sqlite3.Connection, url: str) -> bool:
+    return conn.execute("SELECT 1 FROM job_tombstones WHERE url = ?", (url,)).fetchone() is not None
 
 
 # Complete column registry: column_name -> SQL type with optional default.
@@ -246,6 +371,16 @@ _ALL_COLUMNS: dict[str, str] = {
     "board_updated_at": "TEXT",
     # WhatsApp daily notify
     "whatsapp_notified_at": "TEXT",
+    # Identity / dedupe (indexed; see backfill_job_ids and discovery.dedupe)
+    "job_id": "TEXT",
+    "dedupe_key": "TEXT",
+    # Structured scoring output (gates JSON, 0-1 confidence, scoring tier)
+    "score_confidence": "REAL",
+    "score_gates": "TEXT",
+    "score_tier": "TEXT",
+    "score_model": "TEXT",
+    # Close reason captured from the board (why the human rejected / closed)
+    "close_reason": "TEXT",
 }
 
 # Canonical Kanban lanes (single shared axis).
@@ -484,6 +619,7 @@ def insert_manual_job(
     from jobwright.enrichment.sponsorship import classify_sponsorship
 
     sponsorship_status = classify_sponsorship(full_description)
+    untombstone(conn, url)
     try:
         conn.execute(
             """
@@ -491,8 +627,8 @@ def insert_manual_job(
                 url, title, company, location, description, application_url,
                 site, strategy, source, discovered_at, funnel_stage,
                 board_updated_by, board_updated_at, notes, full_description,
-                sponsorship_status
-            ) VALUES (?, ?, ?, ?, ?, ?, 'manual', 'manual', 'manual', ?, ?, 'human', ?, ?, ?, ?)
+                sponsorship_status, job_id
+            ) VALUES (?, ?, ?, ?, ?, ?, 'manual', 'manual', 'manual', ?, ?, 'human', ?, ?, ?, ?, ?)
             """,
             (
                 url,
@@ -507,6 +643,7 @@ def insert_manual_job(
                 notes,
                 description,
                 sponsorship_status,
+                job_id_for_url(url),
             ),
         )
     except sqlite3.IntegrityError as exc:
@@ -851,8 +988,12 @@ def get_job_by_id(job_id: str, conn: sqlite3.Connection | None = None) -> dict |
     if conn is None:
         conn = get_connection()
 
-    for row in conn.execute("SELECT * FROM jobs").fetchall():
-        url = row["url"]
-        if url and job_id_for_url(url) == job_id:
+    row = conn.execute("SELECT * FROM jobs WHERE job_id = ?", (job_id,)).fetchone()
+    if row is not None:
+        return dict(row)
+    # Rows inserted since the last backfill: hash on the fly and store.
+    if backfill_job_ids(conn):
+        row = conn.execute("SELECT * FROM jobs WHERE job_id = ?", (job_id,)).fetchone()
+        if row is not None:
             return dict(row)
     return None

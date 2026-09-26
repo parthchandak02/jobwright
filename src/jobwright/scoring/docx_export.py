@@ -165,17 +165,17 @@ def batch_convert_docx(limit: int = 50, min_score: int = 5) -> dict:
                tailored_resume_docx_path, cover_letter_docx_path, fit_score
         FROM jobs
         WHERE tailored_resume_path IS NOT NULL
-          AND fit_score IS NOT NULL
-          AND fit_score >= ?
-        ORDER BY fit_score DESC, url
-        LIMIT ?
+          AND COALESCE(user_fit_score, fit_score) >= ?
+        ORDER BY COALESCE(user_fit_score, fit_score) DESC, url
         """,
-        (min_score, limit),
+        (min_score,),
     ).fetchall()
 
     converted = 0
     errors = 0
     for row in rows:
+        if converted + errors >= limit:
+            break
         job = dict(row)
         resume_md = job.get("tailored_resume_path")
         cover_md = job.get("cover_letter_path")

@@ -10,9 +10,13 @@ Auto-detects provider from environment (first match wins):
 LLM_MODEL env var overrides the model name for the active provider.
 """
 
+import contextvars
 import logging
 import os
+import threading
 import time
+from collections import defaultdict
+from contextlib import contextmanager
 
 import httpx
 
@@ -54,7 +58,7 @@ def _resolve_fireworks_model(model_override: str) -> str:
     return model_override
 
 
-def _detect_provider() -> tuple[str, str, str]:
+def _detect_provider(model_override: str | None = None) -> tuple[str, str, str]:
     """Return (base_url, model, api_key) based on environment variables.
 
     Reads env at call time (not module import time) so that load_env() called
@@ -68,7 +72,8 @@ def _detect_provider() -> tuple[str, str, str]:
     gemini_key = os.environ.get("GEMINI_API_KEY", "")
     openai_key = os.environ.get("OPENAI_API_KEY", "")
     local_url = os.environ.get("LLM_URL", "")
-    model_override = os.environ.get("LLM_MODEL", "")
+    if model_override is None:
+        model_override = os.environ.get("LLM_MODEL", "")
 
     if model_override.startswith("gemini-") and gemini_key and not local_url:
         return (
@@ -129,10 +134,108 @@ def _detect_provider() -> tuple[str, str, str]:
 
 
 # ---------------------------------------------------------------------------
+# Token usage ledger
+#
+# Every successful call adds its token counts to an in-process ledger keyed by
+# (purpose, provider, model). ``llm_purpose("score")`` tags calls made inside a
+# block; pipeline stages flush the ledger to the llm_usage table so spend per
+# run and per purpose is visible. Costs are only computed when a per-model price
+# is configured (JOBWRIGHT_LLM_PRICES='{"model": [in_per_1M, out_per_1M]}').
+# ---------------------------------------------------------------------------
+
+_purpose: contextvars.ContextVar[str] = contextvars.ContextVar("llm_purpose", default="other")
+_usage_lock = threading.Lock()
+_usage: dict[tuple[str, str, str], list[int]] = defaultdict(lambda: [0, 0, 0, 0])
+
+
+@contextmanager
+def llm_purpose(name: str):
+    token = _purpose.set(name)
+    try:
+        yield
+    finally:
+        _purpose.reset(token)
+
+
+def record_usage(provider: str, model: str, usage: dict | None) -> None:
+    if not usage:
+        return
+    prompt = int(usage.get("prompt_tokens") or usage.get("promptTokenCount") or 0)
+    completion = int(usage.get("completion_tokens") or usage.get("candidatesTokenCount") or 0)
+    details = usage.get("prompt_tokens_details") or {}
+    cached = int(details.get("cached_tokens") or usage.get("cachedContentTokenCount") or 0)
+    with _usage_lock:
+        row = _usage[(_purpose.get(), provider, model)]
+        row[0] += prompt
+        row[1] += completion
+        row[2] += cached
+        row[3] += 1
+
+
+def usage_snapshot(reset: bool = False) -> list[dict]:
+    """Aggregated usage since the last reset: purpose/provider/model/tokens/calls."""
+    with _usage_lock:
+        rows = [
+            {"purpose": k[0], "provider": k[1], "model": k[2], "prompt_tokens": v[0],
+             "completion_tokens": v[1], "cached_tokens": v[2], "calls": v[3]}
+            for k, v in _usage.items()
+        ]
+        if reset:
+            _usage.clear()
+    return rows
+
+
+def estimate_cost(model: str, prompt_tokens: int, completion_tokens: int) -> float | None:
+    import json
+
+    raw = os.environ.get("JOBWRIGHT_LLM_PRICES", "").strip()
+    if not raw:
+        return None
+    try:
+        prices = json.loads(raw)
+    except ValueError:
+        return None
+    price = prices.get(model) or prices.get(model.rsplit("/", 1)[-1])
+    if not price:
+        return None
+    return round(prompt_tokens / 1e6 * float(price[0]) + completion_tokens / 1e6 * float(price[1]), 6)
+
+
+def flush_usage(conn, run_id: str | None = None) -> int:
+    """Write the aggregated ledger to llm_usage and reset it."""
+    from datetime import datetime, timezone
+
+    rows = usage_snapshot(reset=True)
+    now = datetime.now(timezone.utc).isoformat()
+    for r in rows:
+        conn.execute(
+            "INSERT INTO llm_usage (at, run_id, purpose, provider, model, prompt_tokens, "
+            "completion_tokens, cached_tokens, cost_usd) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (now, run_id, r["purpose"], r["provider"], r["model"], r["prompt_tokens"],
+             r["completion_tokens"], r["cached_tokens"],
+             estimate_cost(r["model"], r["prompt_tokens"], r["completion_tokens"])),
+        )
+    conn.commit()
+    return len(rows)
+
+
+def _provider_name(base_url: str) -> str:
+    if "fireworks" in base_url:
+        return "fireworks"
+    if "generativelanguage" in base_url:
+        return "gemini"
+    if "openai.com" in base_url:
+        return "openai"
+    return "local"
+
+
+# ---------------------------------------------------------------------------
 # Client
 # ---------------------------------------------------------------------------
 
 _MAX_RETRIES = 5
+_MAX_RETRY_AFTER = 60  # never sleep longer than this on a provider's Retry-After
+_RETRY_STATUS = frozenset({429, 500, 502, 503, 504})
 _EMPTY_RETRIES = 2  # extra in-place retries when a provider returns empty content
 _TIMEOUT = 120  # seconds
 
@@ -179,6 +282,7 @@ class LLMClient:
         # Lazily-built cross-provider fallback (e.g. Fireworks -> Gemini on empty).
         self._fallback: LLMClient | None = None
         self._is_fallback: bool = False
+        self._schema_unsupported: bool = False
 
     # -- Native Gemini API --------------------------------------------------
 
@@ -235,11 +339,11 @@ class LLMClient:
         resp = self._client.post(
             url,
             json=payload,
-            headers={"Content-Type": "application/json"},
-            params={"key": self.api_key},
+            headers={"Content-Type": "application/json", "x-goog-api-key": self.api_key},
         )
         resp.raise_for_status()
         data = resp.json()
+        record_usage("gemini", self.model, data.get("usageMetadata"))
         candidate = (data.get("candidates") or [{}])[0]
         parts = (candidate.get("content") or {}).get("parts") or [{}]
         text = parts[0].get("text")
@@ -290,10 +394,10 @@ class LLMClient:
 
         return self._handle_compat_response(resp)
 
-    @staticmethod
-    def _handle_compat_response(resp: httpx.Response) -> str:
+    def _handle_compat_response(self, resp: httpx.Response) -> str:
         resp.raise_for_status()
         data = resp.json()
+        record_usage(_provider_name(self.base_url), self.model, data.get("usage"))
         choice = (data.get("choices") or [{}])[0]
         message = choice.get("message") or {}
         content = message.get("content")
@@ -328,8 +432,9 @@ class LLMClient:
         For Gemini 3.x, temperature defaults are left to the API (forcing 0.0
         can cause looping). Callers that pass an explicit temperature still win.
         """
-        if json_mode and self._is_gemini:
-            self._use_native_gemini = True
+        # JSON on Gemini goes to the native API for this call only (responseMimeType);
+        # plain-text calls keep using compat unless compat itself was rejected.
+        native_this_call = self._use_native_gemini or (json_mode and self._is_gemini)
         # Google warns low temperature on Gemini 3.x can degrade output.
         if self._is_gemini and _is_gemini3_model(self.model) and temperature == 0.0:
             temperature = None
@@ -343,8 +448,7 @@ class LLMClient:
         empty_attempts = 0
         for attempt in range(_MAX_RETRIES):
             try:
-                # Route to native Gemini if we've already confirmed it's needed
-                if self._use_native_gemini:
+                if native_this_call:
                     return self._chat_native_gemini(
                         messages, temperature, max_tokens, json_mode=json_mode
                     )
@@ -391,36 +495,31 @@ class LLMClient:
 
             except httpx.HTTPStatusError as exc:
                 resp = exc.response
-                if resp.status_code in (429, 503) and attempt < _MAX_RETRIES - 1:
-                    # Respect Retry-After header if provided (Gemini sends this).
+                if resp.status_code in _RETRY_STATUS and attempt < _MAX_RETRIES - 1:
+                    wait = min(_RATE_LIMIT_BASE_WAIT * (2 ** attempt), _MAX_RETRY_AFTER)
                     retry_after = (
                         resp.headers.get("Retry-After")
                         or resp.headers.get("X-RateLimit-Reset-Requests")
                     )
                     if retry_after:
                         try:
-                            wait = float(retry_after)
+                            wait = min(max(float(retry_after), 1.0), _MAX_RETRY_AFTER)
                         except (ValueError, TypeError):
-                            wait = _RATE_LIMIT_BASE_WAIT * (2 ** attempt)
-                    else:
-                        wait = min(_RATE_LIMIT_BASE_WAIT * (2 ** attempt), 60)
-
+                            pass
                     log.warning(
-                        "LLM rate limited (HTTP %s). Waiting %ds before retry %d/%d. "
-                        "Provider may be throttled (Fireworks/Gemini). "
-                        "Set GEMINI_API_KEY for empty-response failover.",
-                        resp.status_code, wait, attempt + 1, _MAX_RETRIES,
+                        "LLM HTTP %s from %s. Waiting %ds before retry %d/%d.",
+                        resp.status_code, self.model, wait, attempt + 1, _MAX_RETRIES,
                     )
                     time.sleep(wait)
                     continue
                 raise
 
-            except httpx.TimeoutException:
+            except (httpx.TimeoutException, httpx.TransportError) as exc:
                 if attempt < _MAX_RETRIES - 1:
-                    wait = min(_RATE_LIMIT_BASE_WAIT * (2 ** attempt), 60)
+                    wait = min(_RATE_LIMIT_BASE_WAIT * (2 ** attempt), _MAX_RETRY_AFTER)
                     log.warning(
-                        "LLM request timed out, retrying in %ds (attempt %d/%d)",
-                        wait, attempt + 1, _MAX_RETRIES,
+                        "LLM transport error (%s), retrying in %ds (attempt %d/%d)",
+                        type(exc).__name__, wait, attempt + 1, _MAX_RETRIES,
                     )
                     time.sleep(wait)
                     continue
@@ -462,6 +561,39 @@ class LLMClient:
             log.error("Gemini fallback also failed: %s", exc)
             return None
 
+    def chat_structured(
+        self,
+        messages: list[dict],
+        schema: dict,
+        *,
+        max_tokens: int = 1200,
+        temperature: float = 0.0,
+    ) -> str:
+        """Structured output: json_schema when the provider supports it, else json_object.
+
+        ``schema`` is an OpenAI-style ``{"name", "strict", "schema"}`` object.
+        One attempt per call; callers own retries. 429/5xx propagate as
+        httpx.HTTPStatusError, empty content raises _EmptyLLMResponse.
+        """
+        if not self._is_gemini and not self._schema_unsupported:
+            headers = {"Content-Type": "application/json"}
+            if self.api_key:
+                headers["Authorization"] = f"Bearer {self.api_key}"
+            payload = {
+                "model": self.model,
+                "messages": messages,
+                "max_tokens": max_tokens,
+                "temperature": temperature,
+                "response_format": {"type": "json_schema", "json_schema": schema},
+            }
+            resp = self._client.post(f"{self.base_url}/chat/completions", json=payload, headers=headers)
+            if resp.status_code in (400, 404, 422):
+                log.info("Provider rejected json_schema (HTTP %s); using json_object", resp.status_code)
+                self._schema_unsupported = True
+            else:
+                return self._handle_compat_response(resp)
+        return self.chat(messages, temperature=temperature, max_tokens=max_tokens, json_mode=True)
+
     def ask(self, prompt: str, **kwargs) -> str:
         """Convenience: single user prompt -> assistant response."""
         return self.chat([{"role": "user", "content": prompt}], **kwargs)
@@ -488,21 +620,47 @@ class _EmptyLLMResponse(RuntimeError):
 # ---------------------------------------------------------------------------
 
 _instance: LLMClient | None = None
+_instance_lock = threading.Lock()
+_named: dict[str, LLMClient] = {}
 
 
 def reset_client() -> None:
-    """Drop the singleton so the next get_client() re-reads env (e.g. after failover)."""
+    """Drop cached clients so the next get_client() re-reads env."""
     global _instance
-    if _instance is not None:
-        _instance.close()
-        _instance = None
+    with _instance_lock:
+        if _instance is not None:
+            _instance.close()
+            _instance = None
+        for client in _named.values():
+            client.close()
+        _named.clear()
 
 
 def get_client() -> LLMClient:
-    """Return (or create) the module-level LLMClient singleton."""
+    """Return (or create) the module-level LLMClient singleton (thread-safe)."""
     global _instance
-    if _instance is None:
-        base_url, model, api_key = _detect_provider()
-        log.info("LLM provider: %s  model: %s", base_url, model)
-        _instance = LLMClient(base_url, model, api_key)
-    return _instance
+    if _instance is not None:
+        return _instance
+    with _instance_lock:
+        if _instance is None:
+            base_url, model, api_key = _detect_provider()
+            log.info("LLM provider: %s  model: %s", base_url, model)
+            _instance = LLMClient(base_url, model, api_key)
+        return _instance
+
+
+def get_client_for_model(model: str) -> LLMClient:
+    """Client for an explicit model id (e.g. the scoring escalation tier).
+
+    Resolves the provider from the model name with the same rules as LLM_MODEL
+    and caches one client per model.
+    """
+    with _instance_lock:
+        client = _named.get(model)
+        if client is not None:
+            return client
+        base_url, resolved, api_key = _detect_provider(model)
+        client = LLMClient(base_url, resolved, api_key)
+        _named[model] = client
+        log.info("LLM client for %s: %s %s", model, base_url, resolved)
+        return client

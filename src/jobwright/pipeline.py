@@ -1,10 +1,10 @@
 """jobwright Pipeline Orchestrator.
 
-Runs pipeline stages in sequence or concurrently (streaming mode).
+Runs pipeline stages in sequence under a per-user lock and writes a
+machine-readable summary (logs/last_run.json) used by alerts and the dashboard.
 
 Usage (via CLI):
-    jobwright run                        # all stages, sequential
-    jobwright run --stream               # all stages, concurrent
+    jobwright run                        # default brief stages (honors human_gate)
     jobwright run discover enrich        # specific stages
     jobwright run score tailor cover     # LLM-only stages
     jobwright run --dry-run              # preview without executing
@@ -12,16 +12,20 @@ Usage (via CLI):
 
 from __future__ import annotations
 
+import fcntl
+import json
 import logging
 import os
-import threading
 import time
-from datetime import datetime
+from contextlib import contextmanager
+from datetime import datetime, timezone
+from pathlib import Path
 
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
+import jobwright.config as config
 from jobwright.config import load_env, ensure_dirs
 from jobwright.database import init_db, get_connection, get_stats
 
@@ -45,20 +49,6 @@ STAGE_META: dict[str, dict] = {
     "pdf":      {"desc": "PDF conversion (tailored resumes + cover letters)"},
     "docx":     {"desc": "DOCX conversion (editable resume + cover letter)"},
     "connect":  {"desc": "Per-job connection ranking (CSV + web research)"},
-}
-
-# Upstream dependency: a stage only finishes when its upstream is done AND
-# it has no remaining pending work.
-_UPSTREAM: dict[str, str | None] = {
-    "discover": None,
-    "enrich":   "discover",
-    "score":    "enrich",
-    "portfolio": "score",
-    "tailor":   "portfolio",
-    "cover":    "tailor",
-    "pdf":      "cover",
-    "docx":     "cover",
-    "connect":  "docx",
 }
 
 # Default daily-brief stage list when the active user has human_gate enabled:
@@ -147,7 +137,26 @@ def _run_discover(workers: int = 1) -> dict:
         console.print("  [dim]Smart extract skipped (DISCOVER_MODE=fast)[/dim]")
         stats["smartextract"] = "skipped"
 
+    stats["dedupe"] = _dedupe()
+    sources = ("jobspy", "workday", "smartextract")
+    ran = [stats[k] for k in sources if stats[k] not in (None, "skipped")]
+    if ran and all(str(v).startswith("error") for v in ran):
+        stats["status"] = "error: every discovery source failed"
+    elif any(str(stats[k]).startswith("error") for k in sources):
+        stats["status"] = "partial"
+    else:
+        stats["status"] = "ok"
     return stats
+
+
+def _dedupe() -> dict:
+    try:
+        from jobwright.discovery.dedupe import dedupe_new_jobs
+
+        return dedupe_new_jobs(get_connection())
+    except Exception as e:  # noqa: BLE001 - dedupe must never sink a run
+        log.warning("Dedupe skipped: %s", e)
+        return {"error": str(e)}
 
 
 def _run_enrich(workers: int = 1) -> dict:
@@ -170,6 +179,8 @@ def _run_score() -> dict:
     """Stage: LLM scoring — assign fit scores 1-10."""
     try:
         from jobwright.scoring.scorer import run_scoring
+
+        _dedupe()
         result = run_scoring()
         scored = int(result.get("scored") or 0)
         errors = int(result.get("errors") or 0)
@@ -209,8 +220,12 @@ def _run_tailor(min_score: int = 7, validation_mode: str = "normal") -> dict:
     """Stage: Resume tailoring — generate tailored resumes for high-fit jobs."""
     try:
         from jobwright.scoring.tailor import run_tailoring
-        run_tailoring(min_score=min_score, limit=_prep_limit(), validation_mode=validation_mode)
-        return {"status": "ok"}
+        stats = run_tailoring(min_score=min_score, limit=_prep_limit(), validation_mode=validation_mode) or {}
+        ok = int(stats.get("approved") or 0)
+        bad = int(stats.get("failed") or 0) + int(stats.get("errors") or 0)
+        if ok == 0 and bad > 0:
+            return {"status": f"error: all {bad} tailor attempts failed", **stats}
+        return {"status": "ok", **stats}
     except Exception as e:
         log.error("Tailoring failed: %s", e)
         return {"status": f"error: {e}"}
@@ -220,8 +235,12 @@ def _run_cover(min_score: int = 7, validation_mode: str = "normal") -> dict:
     """Stage: Cover letter generation."""
     try:
         from jobwright.scoring.cover_letter import run_cover_letters
-        run_cover_letters(min_score=min_score, limit=_prep_limit(), validation_mode=validation_mode)
-        return {"status": "ok"}
+        stats = run_cover_letters(min_score=min_score, limit=_prep_limit(), validation_mode=validation_mode) or {}
+        ok = int(stats.get("generated") or 0)
+        bad = int(stats.get("errors") or 0)
+        if ok == 0 and bad > 0:
+            return {"status": f"error: all {bad} cover letters failed", **stats}
+        return {"status": "ok", **stats}
     except Exception as e:
         log.error("Cover letter generation failed: %s", e)
         return {"status": f"error: {e}"}
@@ -231,8 +250,8 @@ def _run_pdf() -> dict:
     """Stage: PDF conversion — convert tailored resumes and cover letters to PDF."""
     try:
         from jobwright.scoring.pdf import batch_convert
-        batch_convert()
-        return {"status": "ok"}
+        converted = batch_convert()
+        return {"status": "ok", "converted": converted}
     except Exception as e:
         log.error("PDF conversion failed: %s", e)
         return {"status": f"error: {e}"}
@@ -252,8 +271,8 @@ def _run_connect(min_score: int = 7) -> dict:
     """Stage: Per-job connection ranking (CSV + optional Exa web research)."""
     try:
         from jobwright.network.per_job import run_per_job_connect
-        apply_limit = int(os.environ.get("APPLY_LIMIT", "5"))
-        return run_per_job_connect(min_score=min_score, limit=apply_limit)
+        limit = int(os.environ.get("JOBWRIGHT_CONNECT_LIMIT", "15"))
+        return run_per_job_connect(min_score=min_score, limit=limit)
     except Exception as e:
         log.error("Connect stage failed: %s", e)
         return {"status": f"error: {e}"}
@@ -298,182 +317,89 @@ def _resolve_stages(stage_names: list[str]) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
-# Streaming pipeline helpers
+# Run lock + summary
 # ---------------------------------------------------------------------------
 
-class _StageTracker:
-    """Thread-safe tracker for which stages have finished producing work."""
-
-    def __init__(self):
-        self._events: dict[str, threading.Event] = {
-            stage: threading.Event() for stage in STAGE_ORDER
-        }
-        self._results: dict[str, dict] = {}
-        self._lock = threading.Lock()
-
-    def mark_done(self, stage: str, result: dict | None = None) -> None:
-        with self._lock:
-            self._results[stage] = result or {"status": "ok"}
-        self._events[stage].set()
-
-    def is_done(self, stage: str) -> bool:
-        return self._events[stage].is_set()
-
-    def wait(self, stage: str, timeout: float | None = None) -> bool:
-        return self._events[stage].wait(timeout=timeout)
-
-    def get_results(self) -> dict[str, dict]:
-        with self._lock:
-            return dict(self._results)
+class PipelineLocked(RuntimeError):
+    """Another pipeline run already holds this user's lock."""
 
 
-# SQL to count pending work for each stage
-_PENDING_SQL: dict[str, str] = {
-    "enrich": (
-        "SELECT COUNT(*) FROM jobs WHERE detail_scraped_at IS NULL"
-        " AND (board_updated_by IS NULL OR board_updated_by != 'human')"
-        " AND COALESCE(funnel_stage, 'backlog') NOT IN "
-        "('applied', 'in_progress', 'offer', 'closed')"
-    ),
-    "score": (
-        "SELECT COUNT(*) FROM jobs WHERE full_description IS NOT NULL AND fit_score IS NULL"
-        " AND (board_updated_by IS NULL OR board_updated_by != 'human')"
-        " AND COALESCE(funnel_stage, 'backlog') NOT IN "
-        "('applied', 'in_progress', 'offer', 'closed')"
-    ),
-    "portfolio": (
-        "SELECT COUNT(*) FROM jobs WHERE fit_score >= ? "
-        "AND full_description IS NOT NULL AND portfolio_project_ids IS NULL"
-        " AND (board_updated_by IS NULL OR board_updated_by != 'human')"
-        " AND COALESCE(funnel_stage, 'backlog') NOT IN "
-        "('applied', 'in_progress', 'offer', 'closed')"
-    ),
-    "tailor": (
-        "SELECT COUNT(*) FROM jobs WHERE fit_score >= ? "
-        "AND full_description IS NOT NULL "
-        "AND tailored_resume_path IS NULL "
-        "AND COALESCE(tailor_attempts, 0) < 5"
-        " AND (board_updated_by IS NULL OR board_updated_by != 'human')"
-        " AND COALESCE(funnel_stage, 'backlog') NOT IN "
-        "('applied', 'in_progress', 'offer', 'closed')"
-    ),
-    "cover": (
-        "SELECT COUNT(*) FROM jobs WHERE tailored_resume_path IS NOT NULL "
-        "AND (cover_letter_path IS NULL OR cover_letter_path = '') "
-        "AND COALESCE(cover_attempts, 0) < 5"
-        " AND (board_updated_by IS NULL OR board_updated_by != 'human')"
-        " AND COALESCE(funnel_stage, 'backlog') NOT IN "
-        "('applied', 'in_progress', 'offer', 'closed')"
-    ),
-    "pdf": (
-        "SELECT COUNT(*) FROM jobs WHERE tailored_resume_path IS NOT NULL "
-        "AND (tailored_resume_path LIKE '%.md' OR tailored_resume_path LIKE '%.txt')"
-        " AND (board_updated_by IS NULL OR board_updated_by != 'human')"
-        " AND COALESCE(funnel_stage, 'backlog') NOT IN "
-        "('applied', 'in_progress', 'offer', 'closed')"
-    ),
-    "docx": (
-        "SELECT COUNT(*) FROM jobs WHERE tailored_resume_path IS NOT NULL "
-        "AND (tailored_resume_docx_path IS NULL OR tailored_resume_docx_path = '')"
-        " AND (board_updated_by IS NULL OR board_updated_by != 'human')"
-        " AND COALESCE(funnel_stage, 'backlog') NOT IN "
-        "('applied', 'in_progress', 'offer', 'closed')"
-    ),
-}
+@contextmanager
+def pipeline_lock():
+    """Exclusive per-user lock so cron, dashboard and CLI runs never overlap.
 
-# How long to sleep between polling loops in streaming mode (seconds)
-_STREAM_POLL_INTERVAL = 10
-
-
-def _count_pending(stage: str, min_score: int = 7) -> int:
-    """Count pending work items for a stage."""
-    sql = _PENDING_SQL.get(stage)
-    if sql is None:
-        return 0
-    conn = get_connection()
-    if "?" in sql:
-        return conn.execute(sql, (min_score,)).fetchone()[0]
-    return conn.execute(sql).fetchone()[0]
-
-
-def _run_stage_streaming(
-    stage: str,
-    tracker: _StageTracker,
-    stop_event: threading.Event,
-    min_score: int = 7,
-    workers: int = 1,
-    validation_mode: str = "normal",
-) -> None:
-    """Run a single stage in streaming mode: loop until upstream done + no work.
-
-    For discover: runs once, then marks done.
-    For all others: polls DB for pending work, runs the batch processor,
-    and repeats until upstream is done and no pending work remains.
+    flock is released by the kernel if the process dies, so a crashed run can
+    never wedge the next one.
     """
-    runner = _STAGE_RUNNERS[stage]
-    kwargs: dict = {}
-    if stage in ("tailor", "cover", "portfolio", "docx", "connect"):
-        kwargs["min_score"] = min_score
-        if stage in ("tailor", "cover"):
-            kwargs["validation_mode"] = validation_mode
-    if stage in ("discover", "enrich"):
-        kwargs["workers"] = workers
-
-    upstream = _UPSTREAM[stage]
-
-    if stage == "discover":
-        # Discover runs once (its sub-scrapers already do their full crawl)
+    lock_path = Path(config.APP_DIR) / ".pipeline.lock"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    fh = lock_path.open("a+")
+    try:
         try:
-            result = runner(**kwargs)
-            tracker.mark_done(stage, result)
-        except Exception as e:
-            log.exception("Stage '%s' crashed", stage)
-            tracker.mark_done(stage, {"status": f"error: {e}"})
-        return
+            fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            fh.seek(0)
+            holder = fh.read().strip() or "unknown"
+            raise PipelineLocked(f"Another pipeline run is active for this profile ({holder}).") from exc
+        fh.seek(0)
+        fh.truncate()
+        fh.write(f"pid={os.getpid()} started={datetime.now(timezone.utc).isoformat()}")
+        fh.flush()
+        yield
+    finally:
+        try:
+            fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+        except OSError:
+            pass
+        fh.close()
 
-    # For downstream stages: loop until upstream done + no pending work
-    passes = 0
-    last_status = "ok"
-    while not stop_event.is_set():
-        # Wait for upstream to start producing work (first pass only)
-        if passes == 0 and upstream and not tracker.is_done(upstream):
-            # Wait a bit for upstream to produce some work before first run
-            tracker.wait(upstream, timeout=_STREAM_POLL_INTERVAL)
 
-        pending = _count_pending(stage, min_score)
+def _json_safe(value):
+    if isinstance(value, dict):
+        return {str(k): _json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(v) for v in value]
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    return str(value)
 
-        if pending > 0:
-            try:
-                result = runner(**kwargs)
-                passes += 1
-                if isinstance(result, dict):
-                    status = str(result.get("status") or "ok")
-                    if status.startswith("error"):
-                        last_status = status
-            except Exception as e:
-                log.error("Stage '%s' error (pass %d): %s", stage, passes, e)
-                last_status = f"error: {e}"
-                passes += 1
-        else:
-            # No work right now
-            upstream_done = upstream is None or tracker.is_done(upstream)
-            if upstream_done:
-                # No work and upstream is done — this stage is finished
-                break
-            # Upstream still running, wait and retry
-            if stop_event.wait(timeout=_STREAM_POLL_INTERVAL):
-                break  # Stop requested
 
-    tracker.mark_done(stage, {"status": last_status, "passes": passes})
+def write_run_summary(result: dict, stages: list[str], started_at: str) -> Path:
+    """Persist logs/last_run.json (atomic) for alerts, health and the dashboard."""
+    path = Path(config.LOG_DIR) / "last_run.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "user": config.get_active_user_id(),
+        "started_at": started_at,
+        "finished_at": datetime.now(timezone.utc).isoformat(),
+        "stages_requested": stages,
+        "ok": not result.get("errors"),
+        "errors": result.get("errors", {}),
+        "stages": _json_safe(result.get("stages", [])),
+        "elapsed": result.get("elapsed"),
+        "web_run_id": os.environ.get("JOBWRIGHT_WEB_RUN_ID") or None,
+    }
+    tmp = path.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    os.replace(tmp, path)
+    return path
+
+
+def read_run_summary() -> dict | None:
+    path = Path(config.LOG_DIR) / "last_run.json"
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
 
 
 # ---------------------------------------------------------------------------
-# Pipeline orchestrators
+# Pipeline orchestrator
 # ---------------------------------------------------------------------------
 
 def _run_sequential(ordered: list[str], min_score: int, workers: int = 1,
                     validation_mode: str = "normal") -> dict:
-    """Execute stages one at a time (original behavior)."""
+    """Execute stages one at a time."""
     results: list[dict] = []
     errors: dict[str, str] = {}
     pipeline_start = time.time()
@@ -487,6 +413,7 @@ def _run_sequential(ordered: list[str], min_score: int, workers: int = 1,
 
         t0 = time.time()
         runner = _STAGE_RUNNERS[name]
+        detail: dict = {}
 
         try:
             kwargs: dict = {}
@@ -501,14 +428,8 @@ def _run_sequential(ordered: list[str], min_score: int, workers: int = 1,
 
             status = "ok"
             if isinstance(result, dict):
-                status = result.get("status", "ok")
-                if name == "discover":
-                    sub_errors = [
-                        f"{k}: {v}" for k, v in result.items()
-                        if isinstance(v, str) and v.startswith("error")
-                    ]
-                    if sub_errors:
-                        status = "partial"
+                detail = result
+                status = str(result.get("status", "ok"))
 
         except Exception as e:
             elapsed = time.time() - t0
@@ -516,7 +437,7 @@ def _run_sequential(ordered: list[str], min_score: int, workers: int = 1,
             log.exception("Stage '%s' crashed", name)
             console.print(f"\n  [red]STAGE FAILED:[/red] {e}")
 
-        results.append({"stage": name, "status": status, "elapsed": elapsed})
+        results.append({"stage": name, "status": status, "elapsed": elapsed, "detail": detail})
         if status not in ("ok", "partial", "skipped"):
             errors[name] = status
 
@@ -526,75 +447,10 @@ def _run_sequential(ordered: list[str], min_score: int, workers: int = 1,
     return {"stages": results, "errors": errors, "elapsed": total_elapsed}
 
 
-def _run_streaming(ordered: list[str], min_score: int, workers: int = 1,
-                   validation_mode: str = "normal") -> dict:
-    """Execute stages concurrently with DB as conveyor belt."""
-    tracker = _StageTracker()
-    stop_event = threading.Event()
-    pipeline_start = time.time()
-
-    console.print("\n  [bold cyan]STREAMING MODE[/bold cyan] — stages run concurrently")
-    console.print(f"  Poll interval: {_STREAM_POLL_INTERVAL}s\n")
-
-    # Mark stages NOT in `ordered` as done so downstream doesn't wait for them
-    for stage in STAGE_ORDER:
-        if stage not in ordered:
-            tracker.mark_done(stage, {"status": "skipped"})
-
-    # Launch each stage in its own thread
-    threads: dict[str, threading.Thread] = {}
-    start_times: dict[str, float] = {}
-
-    for name in ordered:
-        start_times[name] = time.time()
-        t = threading.Thread(
-            target=_run_stage_streaming,
-            args=(name, tracker, stop_event, min_score, workers, validation_mode),
-            name=f"stage-{name}",
-            daemon=True,
-        )
-        threads[name] = t
-        t.start()
-        console.print(f"  [dim]Started thread:[/dim] {name}")
-
-    # Wait for all threads to finish
-    try:
-        for name in ordered:
-            threads[name].join()
-            elapsed = time.time() - start_times[name]
-            console.print(
-                f"  [green]Completed:[/green] {name} ({elapsed:.1f}s)"
-            )
-    except KeyboardInterrupt:
-        console.print("\n[yellow]Interrupted — stopping stages...[/yellow]")
-        stop_event.set()
-        for t in threads.values():
-            t.join(timeout=10)
-
-    total_elapsed = time.time() - pipeline_start
-
-    # Build results from tracker
-    all_results = tracker.get_results()
-    results: list[dict] = []
-    errors: dict[str, str] = {}
-
-    for name in ordered:
-        r = all_results.get(name, {"status": "unknown"})
-        elapsed = time.time() - start_times.get(name, pipeline_start)
-        status = r.get("status", "ok")
-
-        results.append({"stage": name, "status": status, "elapsed": elapsed})
-        if status not in ("ok", "partial", "skipped"):
-            errors[name] = status
-
-    return {"stages": results, "errors": errors, "elapsed": total_elapsed}
-
-
 def run_pipeline(
     stages: list[str] | None = None,
     min_score: int = 7,
     dry_run: bool = False,
-    stream: bool = False,
     workers: int = 1,
     validation_mode: str = "normal",
 ) -> dict:
@@ -604,7 +460,6 @@ def run_pipeline(
         stages: List of stage names, or None / ["all"] for full pipeline.
         min_score: Minimum fit score for tailor/cover stages.
         dry_run: If True, preview stages without executing.
-        stream: If True, run stages concurrently (streaming mode).
         workers: Number of parallel threads for discovery/enrichment stages.
 
     Returns:
@@ -621,7 +476,7 @@ def run_pipeline(
     ordered = _resolve_stages(stages)
 
     # Banner
-    mode = "streaming" if stream else "sequential"
+    mode = "sequential"
     console.print()
     console.print(Panel.fit(
         f"[bold]jobwright Pipeline[/bold] ({mode})",
@@ -646,15 +501,16 @@ def run_pipeline(
 
     from jobwright.run_registry import register_pipeline_run
 
-    register_pipeline_run(ordered)
-
-    # Execute
-    if stream:
-        result = _run_streaming(ordered, min_score, workers=workers,
-                                validation_mode=validation_mode)
-    else:
-        result = _run_sequential(ordered, min_score, workers=workers,
-                                 validation_mode=validation_mode)
+    started_at = datetime.now(timezone.utc).isoformat()
+    try:
+        with pipeline_lock():
+            register_pipeline_run(ordered)
+            result = _run_sequential(ordered, min_score, workers=workers,
+                                     validation_mode=validation_mode)
+            write_run_summary(result, ordered, started_at)
+    except PipelineLocked as exc:
+        console.print(f"\n  [yellow]{exc}[/yellow] Not starting a second run.")
+        return {"stages": [], "errors": {"lock": str(exc)}, "elapsed": 0.0, "locked": True}
 
     # Summary table
     console.print(f"\n{'=' * 70}")

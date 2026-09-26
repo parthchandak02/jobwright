@@ -426,8 +426,9 @@ def gen_prompt(target_url: str, min_score: int = 7,
 
     # Write prompt file
     config.ensure_dirs()
-    site_slug = ((job.get("site") or "unknown"))[:20].replace(" ", "_")
-    prompt_file = config.LOG_DIR / f"prompt_{site_slug}_{job['title'][:30].replace(' ', '_')}.txt"
+    from jobwright.job_identity import material_prefix
+
+    prompt_file = config.LOG_DIR / f"prompt_{material_prefix(job)}.txt"
     prompt_file.write_text(prompt, encoding="utf-8")
 
     # Write MCP config for reference

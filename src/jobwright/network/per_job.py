@@ -52,21 +52,7 @@ def companies_match(a: str, b: str) -> bool:
     return False
 
 
-def resolve_company(job: dict) -> str:
-    """Prefer DB company; fallback heuristics from site / title / description."""
-    company = (job.get("company") or "").strip()
-    if company:
-        return company
-    site = (job.get("site") or "").strip()
-    # Workday often stores employer in site
-    if site and site.lower() not in ("linkedin", "indeed", "glassdoor", "google", "ziprecruiter"):
-        return site
-    title = job.get("title") or ""
-    # "Role at Company" pattern
-    m = re.search(r"\bat\s+([A-Z][\w&.\' -]{1,60})$", title.strip())
-    if m:
-        return m.group(1).strip()
-    return site or ""
+from jobwright.job_identity import resolve_company  # noqa: E402,F401  (re-export)
 
 
 def filter_contacts_for_company(
@@ -176,37 +162,87 @@ def ensure_company_on_job(job: dict) -> str:
     return company
 
 
+_WEB_CACHE_DAYS = 14
+_REFRESH_DAYS = 14
+
+
+def _eligible_connect_jobs(conn, min_score: int, limit: int, known: dict[str, Any]) -> list[dict]:
+    """Active, well-scored jobs whose contacts are missing or stale.
+
+    Independent of tailoring, so human-gated briefs (no materials yet) still get
+    referral suggestions for the jobs they are about to review.
+    """
+    rows = conn.execute(
+        """
+        SELECT url, title, site, company, fit_score, user_fit_score, score_reasoning,
+               tailored_resume_path, cover_letter_path, tailored_resume_docx_path,
+               cover_letter_docx_path, full_description, location
+        FROM jobs
+        WHERE COALESCE(user_fit_score, fit_score) >= ?
+          AND COALESCE(funnel_stage, 'backlog') IN ('backlog', 'prepare', 'applied', 'in_progress')
+          AND COALESCE(source, 'discovered') != 'manual'
+        ORDER BY COALESCE(user_fit_score, fit_score) DESC, discovered_at DESC
+        """,
+        (min_score,),
+    ).fetchall()
+    cutoff = datetime.now().timestamp() - _REFRESH_DAYS * 86400
+    out: list[dict] = []
+    for row in rows:
+        entry = known.get(row["url"]) or {}
+        try:
+            fresh = datetime.fromisoformat(entry.get("generated_at", "")).timestamp() >= cutoff
+        except ValueError:
+            fresh = False
+        if fresh:
+            continue
+        out.append(dict(row))
+        if len(out) >= limit:
+            break
+    return out
+
+
+def _cached_web_contacts(cache: dict[str, Any], company: str, role: str, max_web: int) -> list[dict]:
+    key = _norm_company(company)
+    hit = cache.get(key)
+    if hit:
+        try:
+            if datetime.now().timestamp() - datetime.fromisoformat(hit["at"]).timestamp() < _WEB_CACHE_DAYS * 86400:
+                return hit.get("contacts") or []
+        except (KeyError, ValueError):
+            pass
+    contacts = research_company_contacts(company, role=role, max_results=max_web)
+    cache[key] = {"at": datetime.now().isoformat(), "contacts": contacts}
+    return contacts
+
+
+def _atomic_write_json(path: Path, payload: dict) -> None:
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    tmp.replace(path)
+
+
 def run_per_job_connect(
-    min_score: int = 5,
-    limit: int = 5,
+    min_score: int = 7,
+    limit: int = 15,
     *,
     max_csv: int = 3,
     max_web: int = 2,
 ) -> dict:
-    """Rank connections per eligible job; write network/job_contacts_<date>.json."""
-    from jobwright.apply.launcher import list_ready_jobs
+    """Rank connections for eligible jobs and merge into network/job_contacts_latest.json.
 
-    jobs = list_ready_jobs(min_score=min_score, limit=limit)
-    if not jobs:
-        return {"status": "ok", "jobs": 0, "contacts_file": None}
+    Existing entries for other jobs are kept (the store grows; it is never
+    replaced by just today's handful). Web research is cached per company.
+    """
+    out_dir = config.NETWORK_DIR
+    out_dir.mkdir(parents=True, exist_ok=True)
+    latest_path = out_dir / "job_contacts_latest.json"
+    store = load_job_contacts(latest_path)
+    known: dict[str, Any] = store.get("jobs") if isinstance(store.get("jobs"), dict) else {}
 
-    # Enrich SELECT with company / score_reasoning / docx if missing from list_ready_jobs
     conn = get_connection()
-    urls = [j["url"] for j in jobs]
-    placeholders = ",".join("?" * len(urls))
-    rows = conn.execute(
-        f"""
-        SELECT url, title, site, company, fit_score, score_reasoning,
-               tailored_resume_path, cover_letter_path,
-               tailored_resume_docx_path, cover_letter_docx_path,
-               full_description, location
-        FROM jobs WHERE url IN ({placeholders})
-        """,
-        urls,
-    ).fetchall()
-    by_url = {r["url"]: dict(r) for r in rows}
-    for j in jobs:
-        j.update(by_url.get(j["url"], {}))
+    jobs = _eligible_connect_jobs(conn, min_score, limit, known)
+    if not jobs:
+        return {"status": "ok", "jobs": 0, "contacts_file": str(latest_path) if latest_path.exists() else None}
 
     try:
         all_contacts = load_connections_csv()
@@ -214,38 +250,27 @@ def run_per_job_connect(
         log.warning("connections.csv missing; CSV connect skipped")
         all_contacts = []
 
-    payload: dict[str, Any] = {
-        "generated_at": datetime.now().isoformat(),
-        "jobs": {},
-    }
-
+    cache_path = out_dir / "web_contacts_cache.json"
+    web_cache = load_job_contacts(cache_path)
+    now = datetime.now().isoformat()
     for job in jobs:
         company = ensure_company_on_job(job)
         matched = filter_contacts_for_company(all_contacts, company) if all_contacts else []
         csv_ranked = rank_contacts_for_job(matched, job, top_n=max_csv) if matched else []
-        web = research_company_contacts(company, role=job.get("title") or "", max_results=max_web)
-        payload["jobs"][job["url"]] = {
+        web = _cached_web_contacts(web_cache, company, job.get("title") or "", max_web) if company else []
+        known[job["url"]] = {
             "title": job.get("title"),
             "company": company,
-            "fit_score": job.get("fit_score"),
+            "fit_score": job.get("user_fit_score") or job.get("fit_score"),
             "csv_contacts": csv_ranked,
             "web_contacts": web,
+            "generated_at": now,
         }
 
-    out_dir = config.NETWORK_DIR
-    out_dir.mkdir(parents=True, exist_ok=True)
-    today = datetime.now().strftime("%Y%m%d")
-    out_path = out_dir / f"job_contacts_{today}.json"
-    out_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-    # Latest pointer for digest
-    (out_dir / "job_contacts_latest.json").write_text(
-        json.dumps(payload, indent=2), encoding="utf-8"
-    )
-    return {
-        "status": "ok",
-        "jobs": len(jobs),
-        "contacts_file": str(out_path),
-    }
+    payload = {"generated_at": now, "jobs": known}
+    _atomic_write_json(latest_path, payload)
+    _atomic_write_json(cache_path, web_cache)
+    return {"status": "ok", "jobs": len(jobs), "contacts_file": str(latest_path)}
 
 
 def load_job_contacts(path: Path | None = None) -> dict[str, Any]:

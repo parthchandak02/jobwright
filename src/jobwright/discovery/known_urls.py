@@ -9,9 +9,13 @@ import sqlite3
 
 
 def load_known_urls(conn: sqlite3.Connection) -> set[str]:
-    """Load url + application_url values, plus /job/ path suffixes for matching."""
+    """Load url + application_url values (incl. removed/tombstoned urls), plus /job/ suffixes."""
     known: set[str] = set()
     rows = conn.execute("SELECT url, application_url FROM jobs").fetchall()
+    try:
+        rows += [(r[0], None) for r in conn.execute("SELECT url FROM job_tombstones").fetchall()]
+    except sqlite3.OperationalError:
+        pass  # pre-tombstone schema
     for url, application_url in rows:
         for value in (url, application_url):
             if not value:

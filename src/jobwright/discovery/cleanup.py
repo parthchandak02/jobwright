@@ -7,6 +7,7 @@ import sqlite3
 from typing import Any
 
 from jobwright.config import load_location_filters, load_search_config
+from jobwright.database import tombstone_jobs
 from jobwright.discovery.filters import (
     apply_fit_score_guards,
     has_impact_track,
@@ -23,6 +24,11 @@ _PROTECTED_STAGES = frozenset({"prepare", "applied", "in_progress", "offer", "cl
 
 def _row_is_protected(row: sqlite3.Row) -> bool:
     if (row["board_updated_by"] or "") == "human":
+        return True
+    keys = row.keys()
+    if "user_fit_score" in keys and row["user_fit_score"] is not None:
+        return True
+    if "source" in keys and (row["source"] or "") == "manual":
         return True
     try:
         stage = row["funnel_stage"]
@@ -149,6 +155,7 @@ def prune_noise_jobs(
         deleted = len(rows)
         if not dry_run and deleted:
             conn.execute("DELETE FROM jobs")
+            conn.execute("DELETE FROM job_tombstones")
             conn.commit()
             try:
                 conn.execute("VACUUM")
@@ -176,12 +183,7 @@ def prune_noise_jobs(
             reasons[key] = reasons.get(key, 0) + 1
 
     if not dry_run and to_delete:
-        conn.executemany("DELETE FROM jobs WHERE url = ?", [(u,) for u, _ in to_delete])
-        conn.commit()
-        try:
-            conn.execute("VACUUM")
-        except sqlite3.OperationalError:
-            pass  # vacuum may fail if DB busy
+        tombstone_jobs(conn, [(u, f"noise:{r}") for u, r in to_delete])
 
     kept = len(rows) - len(to_delete)
     log.info(
@@ -287,8 +289,7 @@ def prune_after_score(
         reasons[key] = reasons.get(key, 0) + 1
 
     if not dry_run and to_delete:
-        conn.executemany("DELETE FROM jobs WHERE url = ?", [(u,) for u, _ in to_delete])
-        conn.commit()
+        tombstone_jobs(conn, [(u, f"prune:{r}") for u, r in to_delete])
 
     stats = {
         "capped": capped,
