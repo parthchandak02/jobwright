@@ -20,6 +20,7 @@ import json
 import logging
 import os
 import random
+import re
 import threading
 import time
 from dataclasses import dataclass, field
@@ -35,7 +36,7 @@ from jobwright.scoring.examples import ExampleIndex, render_examples
 
 log = logging.getLogger(__name__)
 
-PROMPT_VERSION = "v2.2"
+PROMPT_VERSION = "v2.3"
 DESC_CHARS = 6000
 RESUME_CHARS = 7000
 MAX_TOKENS = 2500
@@ -46,6 +47,9 @@ LOCATION_CAP = 3
 # stretch roles, and a cap here cost recall in evals. Set to e.g. 5 to enforce.
 SENIORITY_CAP = 0
 SALARY_CAP = 4
+# A job with no stated location (and no "remote" in the text) never reaches the
+# daily list: high confidence requires knowing it is somewhere acceptable.
+UNKNOWN_LOCATION_CAP = 6
 # Escalation is opt-in (LLM_ESCALATION_MODEL). Evals on 249 labeled jobs showed
 # no precision/recall gain from glm-5p3 or kimi-k3 over the cheap tier with
 # retrieved examples, at 1.2-3x the cost and time (Sep 2026).
@@ -58,7 +62,7 @@ SYSTEM_TEMPLATE = """You screen job postings for ONE specific candidate and deci
 How to judge:
 1. Read the posting's core duties and hard requirements (not the company boilerplate).
 2. Check every dealbreaker. Put its id in "dealbreakers" ONLY when it is the PRIMARY function of the role (most of the day-to-day work) or an explicit hard requirement the candidate cannot meet (e.g. a required license or degree). If it is only one duty among several, or a "nice to have", put the id in "concerns" instead. The candidate's past decisions show where their line is: follow them.
-3. Check location against the candidate's rules (onsite outside the acceptable areas or outside the country is a NO; remote within the country is fine unless stated otherwise).
+3. Check location against the candidate's rules (onsite outside the acceptable areas or outside the country is a NO; remote within the country is fine unless stated otherwise). When the posting's LOCATION is "not stated", infer it only from explicit evidence in the description or the company name (e.g. "Goodwill of Central Arizona" is Arizona); never assume the candidate's own city. If you cannot tell, set location_ok to null.
 4. Check seniority: "too_senior" when the role needs far more experience or a higher level than the candidate has, "too_junior" when clearly entry-level or an internship relative to them, otherwise "match" or "stretch".
 5. Use the candidate's past decisions on similar postings as the strongest guide to their taste.
 6. Then give fit 1-10 for how well the role matches what they want: 9-10 exactly the kind of role they want and are qualified for; 7-8 strong, would likely apply; 5-6 plausible but meaningful mismatch; 3-4 weak; 1-2 wrong field.
@@ -189,6 +193,24 @@ def _env_int(name: str, default: int) -> int:
         return default
 
 
+def _text_places_job_ok(job: dict, search_cfg: dict | None) -> bool:
+    """Evidence (not the model's word) that a location-less job is remote or in an accepted area."""
+    from jobwright.config import load_location_filters
+
+    text = f"{job.get('title') or ''} {(job.get('full_description') or job.get('description') or '')[:4000]}"
+    if re.search(r"\bremote\b", text, re.IGNORECASE):
+        return True
+    try:
+        accept, _reject = load_location_filters(search_cfg or {})
+    except Exception:  # noqa: BLE001
+        accept = []
+    for pat in accept:
+        p = str(pat).strip()
+        if len(p) >= 4 and re.search(rf"\b{re.escape(p)}\b", text, re.IGNORECASE):
+            return True
+    return False
+
+
 def apply_gates(raw: dict[str, Any], job: dict, ctx: MatchContext) -> tuple[int, list[str], list[str]]:
     """Deterministic caps on top of the model's fit. Returns (score, dealbreakers, caps)."""
     fit = max(1, min(10, int(raw.get("fit") or 1)))
@@ -205,6 +227,10 @@ def apply_gates(raw: dict[str, Any], job: dict, ctx: MatchContext) -> tuple[int,
     if seniority_cap and raw.get("seniority") in ("too_senior", "too_junior"):
         score = min(score, seniority_cap)
         caps.append(f"seniority: {raw.get('seniority')}")
+    if not (job.get("location") or "").strip() and score > UNKNOWN_LOCATION_CAP:
+        if not _text_places_job_ok(job, ctx.search_cfg):
+            score = UNKNOWN_LOCATION_CAP
+            caps.append("location not stated")
     if ctx.criteria.min_salary and salary_below_floor(job.get("salary"), ctx.criteria.min_salary):
         score = min(score, SALARY_CAP)
         caps.append("salary below floor")

@@ -73,14 +73,14 @@ def _ctx(**kw):
 
 def test_gates_cap_dealbreakers_location_salary_and_ignore_unknown_ids():
     ctx = _ctx()
-    job = {"url": "u", "title": "Program Manager", "salary": "$60,000", "company": "Acme Foundation"}
+    job = {"url": "u", "title": "Program Manager", "salary": "$60,000", "company": "Acme Foundation", "location": "Remote"}
     score, deals, caps = matcher.apply_gates(_reply(fit=9, deals=["fundraising", "made_up"]), job, ctx)
     assert score == 3 and deals == ["fundraising"]
-    score, _, caps = matcher.apply_gates(_reply(fit=9, loc=False), {"url": "u", "title": "PM"}, ctx)
+    score, _, caps = matcher.apply_gates(_reply(fit=9, loc=False), {"url": "u", "title": "PM", "location": "Remote"}, ctx)
     assert score == 3 and "location" in caps
     score, _, caps = matcher.apply_gates(_reply(fit=9), job, ctx)
     assert score == 4 and "salary below floor" in caps
-    score, _, _ = matcher.apply_gates(_reply(fit=9, seniority="too_senior"), {"url": "u", "title": "PM"}, ctx)
+    score, _, _ = matcher.apply_gates(_reply(fit=9, seniority="too_senior"), {"url": "u", "title": "PM", "location": "Remote"}, ctx)
     assert score == 9  # seniority informs fit; no hard cap by default
 
 
@@ -94,7 +94,7 @@ def test_judge_job_retries_then_scores(monkeypatch):
             return next(replies)
 
     client = Flaky(None)
-    res = matcher.judge_job(_ctx(), {"url": "u", "title": "PM"}, client, tier="t1")
+    res = matcher.judge_job(_ctx(), {"url": "u", "title": "PM", "location": "Remote"}, client, tier="t1")
     assert res.score == 7 and client.calls == 2
 
 
@@ -111,11 +111,11 @@ def test_escalation_uses_strong_model_for_promising_jobs(monkeypatch):
     cheap, strong = FakeClient(_reply(fit=7), "cheap"), FakeClient(_reply(fit=9), "strong")
     monkeypatch.setattr(matcher, "get_client", lambda: cheap)
     monkeypatch.setattr(matcher, "get_client_for_model", lambda m: strong)
-    results, errors = matcher.score_jobs(_ctx(), [{"url": "u1", "title": "PM"}], workers=1, strong_model="strong")
+    results, errors = matcher.score_jobs(_ctx(), [{"url": "u1", "title": "PM", "location": "Remote"}], workers=1, strong_model="strong")
     assert errors == 0 and results[0].score == 9 and results[0].tier == "t2"
     assert results[0].escalated_from["model"] == "cheap"
     cheap.reply = _reply(fit=3, conf=0.95)
-    results, _ = matcher.score_jobs(_ctx(), [{"url": "u2", "title": "PM"}], workers=1, strong_model="strong")
+    results, _ = matcher.score_jobs(_ctx(), [{"url": "u2", "title": "PM", "location": "Remote"}], workers=1, strong_model="strong")
     assert results[0].tier == "t1" and strong.calls == 1
 
 
@@ -186,3 +186,18 @@ def test_scoring_stage_persists_incrementally_and_records_history(db, monkeypatc
     assert out["scored"] == 45 and out["errors"] == 0
     assert db.execute("SELECT COUNT(*) FROM jobs WHERE fit_score = 8 AND score_gates IS NOT NULL").fetchone()[0] == 45
     assert db.execute("SELECT COUNT(DISTINCT run_id), COUNT(*) FROM score_history").fetchone()[1] == 45
+
+
+def test_unknown_location_caps_unless_remote_or_confirmed():
+    ctx = _ctx()
+    job = {"url": "u", "title": "PM", "location": "", "full_description": "Lead programs in our Phoenix office."}
+    score, _, caps = matcher.apply_gates(_reply(fit=9, loc=None), job, ctx)
+    assert score == 6 and "location not stated" in caps
+    score, _, _ = matcher.apply_gates(_reply(fit=9, loc=True), job, ctx)
+    assert score == 6  # the model's word is not evidence
+    ctx2 = _ctx(search_cfg={"location": {"accept_patterns": ["Oakland", "CA"]}})
+    job2 = dict(job, full_description="Based in our Oakland office.")
+    assert matcher.apply_gates(_reply(fit=9, loc=None), job2, ctx2)[0] == 9
+    job["full_description"] = "This is a fully remote role."
+    score, _, _ = matcher.apply_gates(_reply(fit=9, loc=None), job, ctx)
+    assert score == 9

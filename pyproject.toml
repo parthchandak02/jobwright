@@ -1,6 +1,6 @@
 [project]
 name = "jobwright"
-version = "0.5.0"
+version = "0.6.0"
 description = "AI-powered job application pipeline with Cursor/Hermes agent support"
 readme = "README.md"
 license = "AGPL-3.0-only"

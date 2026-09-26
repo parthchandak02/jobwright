@@ -12,6 +12,8 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
+
+from jobwright import __version__
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
@@ -39,7 +41,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     yield
 
 
-app = FastAPI(title="jobwright Dashboard", version="0.5.0", lifespan=lifespan)
+app = FastAPI(title="jobwright Dashboard", version=__version__, lifespan=lifespan)
 
 _cors = os.environ.get(
     "JOBWRIGHT_CORS_ORIGINS",
