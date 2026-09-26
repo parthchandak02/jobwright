@@ -108,7 +108,8 @@ def test_run_notify_no_prepare_jobs_skips(db: sqlite3.Connection, monkeypatch: p
 
     monkeypatch.setattr(notify, "send_via_hermes", _boom)
     result = notify.run_notify()
-    assert result == {"sent": 0, "skipped": True, "reason": "no new prepare jobs", "jobs": []}
+    assert result["sent"] == 0 and result["skipped"] is True and result["jobs"] == []
+    assert result["reason"] == "no newly prepared jobs"
 
 
 def test_run_notify_dry_run_does_not_mark(db: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch):
@@ -269,3 +270,39 @@ def test_run_notify_records_nothing_on_dry_run(
     result = notify.run_notify(dry_run=True)
     assert result["dry_run"] is True and result["sent"] == 0
     assert db.execute("SELECT COUNT(*) FROM brief_items").fetchone()[0] == 0
+
+
+def test_notify_rolls_back_mark_when_send_fails(db: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch):
+    url = "https://example.com/prepare-fail"
+    _insert_job(db, url)
+    monkeypatch.setattr(notify, "get_active_user_id", lambda: "richa")
+
+    def _fail(*_a, **_k):
+        raise RuntimeError("bridge down")
+
+    monkeypatch.setattr(notify, "send_via_hermes", _fail)
+    monkeypatch.setattr(notify, "get_user", lambda uid: type("U", (), {"whatsapp_target": "whatsapp:x@g.us"})())
+    with pytest.raises(RuntimeError):
+        notify.run_notify()
+    assert db.execute("SELECT whatsapp_notified_at FROM jobs WHERE url = ?", (url,)).fetchone()[0] is None
+
+
+def test_send_via_hermes_times_out(monkeypatch: pytest.MonkeyPatch):
+    import subprocess
+
+    def _hang(*_a, **_k):
+        raise subprocess.TimeoutExpired(cmd="hermes", timeout=1)
+
+    monkeypatch.setattr(notify.subprocess, "run", _hang)
+    with pytest.raises(RuntimeError, match="timed out"):
+        notify.send_via_hermes("hi", "whatsapp:x")
+
+
+def test_notify_skips_reposts_of_already_sent_jobs(db: sqlite3.Connection):
+    db.execute(
+        "UPDATE jobs SET whatsapp_notified_at = datetime('now')"
+    )
+    rows = [{"url": "u9", "title": "Program Officer (Remote)", "company": "Acme Foundation, Inc."},
+            {"url": "u10", "title": "Program Officer", "company": "Acme Foundation"},
+            {"url": "u11", "title": "Director", "company": "Other"}]
+    assert [r["url"] for r in notify._dedupe_for_notify(db, rows)] == ["u9", "u11"]

@@ -46,7 +46,10 @@ LOCATION_CAP = 3
 # stretch roles, and a cap here cost recall in evals. Set to e.g. 5 to enforce.
 SENIORITY_CAP = 0
 SALARY_CAP = 4
-DEFAULT_ESCALATION_MODEL = "accounts/fireworks/models/glm-5p3"
+# Escalation is opt-in (LLM_ESCALATION_MODEL). Evals on 249 labeled jobs showed
+# no precision/recall gain from glm-5p3 or kimi-k3 over the cheap tier with
+# retrieved examples, at 1.2-3x the cost and time (Sep 2026).
+DEFAULT_ESCALATION_MODEL = ""
 # Hidden-thinking budget per tier (thinking-only models truncate without it).
 TIER_REASONING = {"t1": "low", "t2": "medium"}
 
@@ -316,13 +319,18 @@ def score_jobs(
     lock = threading.Lock()
     results: list[MatchResult] = []
     errors = 0
+    t2 = {"tried": 0, "failed": 0}
 
     def run(job: dict) -> MatchResult | None:
         first = judge_job(ctx, job, cheap, tier="t1", stop=stop)
         if first is None or strong is None or not should_escalate(first, escalate_at, min_confidence):
             return first
+        with lock:
+            t2["tried"] += 1
         second = judge_job(ctx, job, strong, tier="t2", stop=stop)
         if second is None:
+            with lock:
+                t2["failed"] += 1
             return first
         second.escalated_from = {"model": first.model, "score": first.score, "fit": first.fit, "confidence": first.confidence}
         return second
@@ -344,6 +352,12 @@ def score_jobs(
                     results.append(res)
                     if on_result is not None:
                         on_result(res)
+    if t2["tried"] and t2["failed"] * 2 >= t2["tried"]:
+        log.error(
+            "Escalation model %s failed on %d/%d jobs; tier-1 scores were kept. "
+            "Check LLM_ESCALATION_MODEL (is it deployed for this key?).",
+            strong_model, t2["failed"], t2["tried"],
+        )
     if billing is not None and not results:
         raise billing
     return results, errors

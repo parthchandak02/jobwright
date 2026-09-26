@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Background daily brief: run the pipeline (discover -> connect), then send ONE
-# WhatsApp notification listing newly prepared jobs with dashboard deep links.
+# Background daily brief: preflight (self-heals the Playwright browser), run the
+# default brief stages for this user (human_gate honored by the pipeline), send
+# ONE WhatsApp notification, then an operator report (alerts on problems).
 # Multi-profile: set JOBWRIGHT_USER + JOBWRIGHT_DIR (wrappers do this).
 set -euo pipefail
 
@@ -36,12 +37,10 @@ GLOBAL_ENV="${JOBWRIGHT_ENV:-${JOBWRIGHT_REPO:-${REPO_ROOT:-}}/${DOTENV}}"
 [[ -f "${GLOBAL_ENV}" ]] && set -a && source "${GLOBAL_ENV}" && set +a
 [[ -f "${JOBWRIGHT_DIR}/${DOTENV}" ]] && set -a && source "${JOBWRIGHT_DIR}/${DOTENV}" && set +a
 
-# Daily brief model. glm-5p3-flash: default (Parth, Sep 2026). gpt-oss banned.
-# (tried Sep 6-11, 2026) burns its token budget on reasoning tokens in
-# tailor/cover (finish_reason=length, empty content) causing 2 doomed retries
-# (~90s each) per job before the Gemini fallback. JOBWRIGHT_LLM_MODEL overrides.
+# Daily brief model: glm-5p3-flash (Parth, Sep 2026; gpt-oss banned). Scoring v2
+# bounds its hidden reasoning with reasoning_effort, so the old empty-response
+# retries no longer happen. JOBWRIGHT_LLM_MODEL overrides.
 export LLM_MODEL="${JOBWRIGHT_LLM_MODEL:-${LLM_MODEL:-accounts/fireworks/models/glm-5p3-flash}}"
-export SCORE_BATCH_SIZE="${SCORE_BATCH_SIZE:-10}"
 export APPLY_DRY_RUN=true
 # Daily cron: JobSpy+Workday tier-1 only; skip smart-extract. Set DISCOVER_MODE=full for weekly deep crawl.
 export DISCOVER_MODE="${DISCOVER_MODE:-fast}"
@@ -81,21 +80,28 @@ fi
 RC=0
 finish_status() {
   echo "done RC=${RC}" >> "${STATUS_FILE}"
+  # Operator report: alerts the admin on stage failures, empty briefs, notify
+  # failures (never blocks or changes RC).
+  "${PY}" -m jobwright.cli "${USER_FLAG[@]}" ops brief-report --status-file "${STATUS_FILE}" >> "${LOG}" 2>&1 || true
 }
 trap finish_status EXIT
 
-"${PY}" -m jobwright.cli "${USER_FLAG[@]}" run discover enrich score portfolio connect \
+if ! "${PY}" -m jobwright.cli "${USER_FLAG[@]}" preflight --fix >> "${LOG}" 2>&1; then
+  echo "preflight_failed (see ${LOG})" >> "${STATUS_FILE}"
+  RC=2
+  exit 0
+fi
+
+# No explicit stage list: the pipeline picks the user's default brief stages
+# (human_gate users stop before tailor/cover/docx; others run everything).
+"${PY}" -m jobwright.cli "${USER_FLAG[@]}" run \
   -w "${WORKERS}" --min-score "${MIN_SCORE}" --validation lenient >> "${LOG}" 2>&1 || RC=$?
 
 if [ "${RC}" -ne 0 ]; then
   echo "pipeline_rc=${RC} (notifying on ready jobs anyway)" >> "${STATUS_FILE}"
 fi
 
-# Send one WhatsApp message listing newly prepared jobs (deep links to the
-# dashboard). Skips silently when nothing new is ready. A notify failure must
-# not fail the whole brief, so it is recorded but does not change RC.
-if "${PY}" -m jobwright.cli "${USER_FLAG[@]}" notify >> "${LOG}" 2>&1; then
-  echo "notify_sent" >> "${STATUS_FILE}"
-else
-  echo "notify_failed" >> "${STATUS_FILE}"
-fi
+# One WhatsApp message (deep links to the dashboard). notify writes its own
+# truthful status line: notify_sent N / notify_skipped <reason> / notify_failed.
+# A notify failure must not fail the whole brief.
+"${PY}" -m jobwright.cli "${USER_FLAG[@]}" notify --status-file "${STATUS_FILE}" >> "${LOG}" 2>&1 || true

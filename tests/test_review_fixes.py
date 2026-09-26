@@ -36,13 +36,13 @@ def test_gated_notify_pulls_backlog_jobs(tmp_path, monkeypatch):
     conn.execute(
         "CREATE TABLE jobs (url TEXT PRIMARY KEY, title TEXT, company TEXT, location TEXT,"
         " fit_score INTEGER, funnel_stage TEXT, whatsapp_notified_at REAL, user_fit_score INTEGER,"
-        " discovered_at TEXT, job_id TEXT, full_description TEXT)"
+        " discovered_at TEXT, job_id TEXT, full_description TEXT, score_confidence REAL)"
     )
     conn.execute(
-        "INSERT INTO jobs VALUES ('u1','T1','C','SF',8,'backlog',NULL,NULL,datetime('now'),'j1','d')"
+        "INSERT INTO jobs VALUES ('u1','T1','C','SF',8,'backlog',NULL,NULL,datetime('now'),'j1','d',0.9)"
     )
     conn.commit()
-    rows = notify_mod.get_unnotified_gated_jobs(conn)
+    rows = notify_mod.get_unnotified_gated_jobs(conn, threshold=7)
     assert [r["url"] for r in rows] == ["u1"]
 
 

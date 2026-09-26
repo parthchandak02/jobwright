@@ -30,7 +30,52 @@ from jobwright.database import (
 from jobwright.users import get_brief_top_n, get_human_gate, get_user
 
 
-def get_unnotified_gated_jobs(conn=None, max_age_days: int | None = None):
+def _notify_threshold() -> int:
+    """Per-user notify threshold from match_criteria (default 7)."""
+    from jobwright.config import load_profile
+    from jobwright.scoring.criteria import load_criteria
+
+    try:
+        return load_criteria(load_profile()).notify_threshold
+    except FileNotFoundError:
+        return 7
+
+
+def _max_age_days() -> int:
+    try:
+        return int(os.environ.get("JOBWRIGHT_BRIEF_MAX_AGE_DAYS", "7"))
+    except ValueError:
+        return 7
+
+
+def _identity(job: dict) -> str:
+    from jobwright.discovery.dedupe import normalize_company, normalize_title
+
+    return f"{normalize_company(job.get('company'))}|{normalize_title(job.get('title'))}"
+
+
+def _recently_notified_identities(conn, days: int = 60) -> set[str]:
+    rows = conn.execute(
+        "SELECT title, company FROM jobs WHERE whatsapp_notified_at >= datetime('now', ?)",
+        (f"-{days} days",),
+    ).fetchall()
+    return {_identity({"title": r[0], "company": r[1]}) for r in rows}
+
+
+def _dedupe_for_notify(conn, jobs: list[dict]) -> list[dict]:
+    """Drop reposts of jobs already sent recently, and duplicates within this list."""
+    seen = _recently_notified_identities(conn)
+    out = []
+    for job in jobs:
+        ident = _identity(job)
+        if ident.strip("|") and ident in seen:
+            continue
+        seen.add(ident)
+        out.append(job)
+    return out
+
+
+def get_unnotified_gated_jobs(conn=None, max_age_days: int | None = None, threshold: int | None = None):
     """Review-first candidate pool (human_gate=true).
 
     Gated pipelines stop at backlog (materials wait for approval), so the
@@ -38,30 +83,26 @@ def get_unnotified_gated_jobs(conn=None, max_age_days: int | None = None):
     jobs. Falls back to prepare jobs for anything the dashboard moved on.
 
     Freshness guard (Sep 19): only jobs discovered within ``max_age_days``
-    (default 7, override with JOBWRIGHT_BRIEF_MAX_AGE_DAYS) are eligible.
-    Without it, a dead scoring run (e.g. provider 402) lets the pool age
-    forever and the brief re-surfaces stale jobs scored under old criteria
-    (old resume, pre-feedback excludes) as if they were fresh finds.
+    (default 7, override with JOBWRIGHT_BRIEF_MAX_AGE_DAYS) are eligible, so a
+    dead scoring run never re-surfaces stale jobs as fresh finds.
     """
-    import os as _os
-
     from jobwright.database import get_connection
 
     if conn is None:
         conn = get_connection()
     conn.row_factory = sqlite3.Row
     if max_age_days is None:
-        try:
-            max_age_days = int(_os.environ.get("JOBWRIGHT_BRIEF_MAX_AGE_DAYS", "7"))
-        except ValueError:
-            max_age_days = 7
+        max_age_days = _max_age_days()
+    if threshold is None:
+        threshold = _notify_threshold()
     rows = conn.execute(
         "SELECT * FROM jobs "
-        "WHERE funnel_stage = 'backlog' AND fit_score >= 7 "
+        "WHERE funnel_stage = 'backlog' AND COALESCE(user_fit_score, fit_score) >= ? "
         "AND whatsapp_notified_at IS NULL "
         "AND discovered_at >= datetime('now', ?) "
-        "ORDER BY COALESCE(user_fit_score, fit_score) DESC NULLS LAST, discovered_at DESC",
-        (f"-{int(max_age_days)} days",),
+        "ORDER BY COALESCE(user_fit_score, fit_score) DESC NULLS LAST, "
+        "COALESCE(score_confidence, 0) DESC, discovered_at DESC",
+        (int(threshold), f"-{int(max_age_days)} days"),
     ).fetchall()
     out = []
     for row in rows:
@@ -71,12 +112,31 @@ def get_unnotified_gated_jobs(conn=None, max_age_days: int | None = None):
             "title": d.get("title") or "Untitled role",
             "company": d.get("company") or "Unknown",
             "location": d.get("location") or "Location n/a",
-            "fit_score": d.get("fit_score"),
+            "fit_score": d.get("user_fit_score") or d.get("fit_score"),
             "job_id": d.get("job_id"),
         })
     if out:
         return out
     return get_unnotified_prepare_jobs(conn)
+
+
+def count_worth_a_look(conn=None, max_age_days: int | None = None, threshold: int | None = None) -> int:
+    """Fresh backlog jobs just under the notify bar with no hard dealbreaker."""
+    from jobwright.database import get_connection
+
+    conn = conn or get_connection()
+    threshold = threshold if threshold is not None else _notify_threshold()
+    max_age_days = max_age_days if max_age_days is not None else _max_age_days()
+    return int(
+        conn.execute(
+            "SELECT COUNT(*) FROM jobs WHERE funnel_stage = 'backlog' AND whatsapp_notified_at IS NULL "
+            "AND COALESCE(user_fit_score, fit_score) BETWEEN ? AND ? "
+            "AND discovered_at >= datetime('now', ?) "
+            "AND (score_gates IS NULL OR score_gates NOT LIKE '%\"dealbreakers\": [\"%')",
+            (int(threshold) - 2, int(threshold) - 1, f"-{int(max_age_days)} days"),
+        ).fetchone()[0]
+    )
+
 
 DEFAULT_BASE_URL = "https://jobwright.parthchandak.info"
 
@@ -132,14 +192,23 @@ def build_review_notification(jobs: list[dict], base_url: str) -> str:
     return "\n".join(lines)
 
 
+HERMES_SEND_TIMEOUT = 90
+
+
 def send_via_hermes(message: str, target: str) -> None:
-    """Deliver a message to a WhatsApp target via the hermes CLI."""
-    result = subprocess.run(
-        ["hermes", "send", "--to", target, "--quiet", message],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    """Deliver a message to a WhatsApp target via the hermes CLI (bounded)."""
+    try:
+        result = subprocess.run(
+            ["hermes", "send", "--to", target, "--quiet", message],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=HERMES_SEND_TIMEOUT,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(f"hermes send timed out after {HERMES_SEND_TIMEOUT}s") from exc
+    except FileNotFoundError as exc:
+        raise RuntimeError("hermes CLI not found on PATH") from exc
     if result.returncode != 0:
         raise RuntimeError(
             f"hermes send failed (exit {result.returncode}): "
@@ -160,12 +229,21 @@ def run_notify(dry_run: bool = False) -> dict:
     Raises:
         ValueError: The active user has no whatsapp_target configured.
     """
+    from jobwright.database import get_connection
+
     ensure_brief_items()
+    conn = get_connection()
     active = get_active_user_id()
     human_gate = get_human_gate(active)
-    jobs = (get_unnotified_gated_jobs() if human_gate else get_unnotified_prepare_jobs())
+    threshold = _notify_threshold()
+    jobs = (get_unnotified_gated_jobs(threshold=threshold) if human_gate else get_unnotified_prepare_jobs())
+    jobs = _dedupe_for_notify(conn, jobs)
     if not jobs:
-        return {"sent": 0, "skipped": True, "reason": "no new prepare jobs", "jobs": []}
+        reason = (
+            f"no new matches scored {threshold}+ in the last {_max_age_days()} days"
+            if human_gate else "no newly prepared jobs"
+        )
+        return {"sent": 0, "skipped": True, "reason": reason, "jobs": [], "threshold": threshold}
 
     base_url = os.environ.get("JOBWRIGHT_PUBLIC_BASE_URL", DEFAULT_BASE_URL)
 
@@ -178,6 +256,12 @@ def run_notify(dry_run: bool = False) -> dict:
         message = build_review_notification(shown, base_url)
     else:
         message = build_notification(shown, base_url)
+    worth = count_worth_a_look(conn, threshold=threshold) if human_gate else 0
+    if worth:
+        message += (
+            f"\n\n+ {worth} more worth a look (just under your bar): "
+            f"{base_url.rstrip('/')}/?view=list&worth=1"
+        )
 
     job_summaries = [
         {
@@ -208,11 +292,21 @@ def run_notify(dry_run: bool = False) -> dict:
             f"Set one with: jobwright users set {active or '<id>'} --whatsapp <target>"
         )
 
-    send_via_hermes(message, target)
+    # Mark first, then send; roll the mark back if delivery fails. A crash
+    # between the two can only lose a notice, never re-send one.
+    marked = mark_whatsapp_notified(shown_urls, conn=conn)
+    conn.commit()
+    try:
+        send_via_hermes(message, target)
+    except Exception:
+        placeholders = ", ".join("?" for _ in shown_urls)
+        conn.execute(f"UPDATE jobs SET whatsapp_notified_at = NULL WHERE url IN ({placeholders})", shown_urls)
+        conn.commit()
+        raise
     # Snapshot after a successful send so items never delivered are not counted
     # as precision data.
     record_brief_items(jobs, shown_urls)
-    mark_whatsapp_notified(shown_urls)
+    del marked
 
     return {
         "sent": len(shown),

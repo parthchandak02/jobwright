@@ -600,7 +600,7 @@ class LLMClient:
                 self._reasoning_unsupported = True
                 payload.pop("reasoning_effort")
                 resp = self._client.post(f"{self.base_url}/chat/completions", json=payload, headers=headers)
-            if resp.status_code in (400, 404, 422):
+            if resp.status_code in (400, 422):
                 log.info("Provider rejected json_schema (HTTP %s); using json_object", resp.status_code)
                 self._schema_unsupported = True
             else:

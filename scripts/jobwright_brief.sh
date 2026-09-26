@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Daily Brief: discover → cover → docx → connect. Does NOT apply.
+# Daily Brief launcher: runs scripts/run_daily_brief.sh detached. Does NOT apply.
+# If a brief is already running for this user it is left alone (never killed).
 # Launches run_daily_brief.sh detached so cron exits instantly (300s limit).
 # Multi-profile: set JOBWRIGHT_USER + JOBWRIGHT_DIR (wrappers do this).
 set -euo pipefail
@@ -32,12 +33,7 @@ GLOBAL_ENV="${JOBWRIGHT_ENV:-${JOBWRIGHT_REPO:-${REPO_ROOT:-}}/${DOTENV}}"
 [[ -f "${GLOBAL_ENV}" ]] && set -a && source "${GLOBAL_ENV}" && set +a
 [[ -f "${JOBWRIGHT_DIR}/${DOTENV}" ]] && set -a && source "${JOBWRIGHT_DIR}/${DOTENV}" && set +a
 
-# Single source of truth for the brief model (run_daily_brief.sh re-applies this).
-# glm-5p3-flash: default everywhere (Parth, Sep 2026). gpt-oss banned. NOTE: glm-5p3-flash burns reasoning tokens in tailor/cover (finish_reason=length, empty content) - if that returns, pin brief-only model via JOBWRIGHT_LLM_MODEL
-# burns its token budget on reasoning tokens in tailor/cover (finish_reason=length,
-# empty content), causing doomed retries before the Gemini fallback.
-# Avoid gemini-* names here: they silently remap to Fireworks DeepSeek when only
-# a Fireworks key is present.
+# Brief model (run_daily_brief.sh re-applies this): glm-5p3-flash, gpt-oss banned.
 export LLM_MODEL="${JOBWRIGHT_LLM_MODEL:-${LLM_MODEL:-accounts/fireworks/models/glm-5p3-flash}}"
 export APPLY_DRY_RUN=true
 unset APPLY_LIVE 2>/dev/null || true
@@ -48,8 +44,10 @@ mkdir -p "${JOBWRIGHT_DIR}/logs"
 
 if [ -f "${JOBWRIGHT_DIR}/BRIEF_PID" ]; then
   OLD_PID=$(cat "${JOBWRIGHT_DIR}/BRIEF_PID" 2>/dev/null || echo "")
-  if [ -n "${OLD_PID}" ] && kill -0 "${OLD_PID}" 2>/dev/null; then
-    kill -- "-${OLD_PID}" 2>/dev/null || kill "${OLD_PID}" 2>/dev/null || true
+  if [ -n "${OLD_PID}" ] && kill -0 "${OLD_PID}" 2>/dev/null \
+     && ps -p "${OLD_PID}" -o command= 2>/dev/null | grep -q "run_daily_brief"; then
+    echo "Daily brief already running for ${JOBWRIGHT_USER:-legacy} (pid=${OLD_PID}); not starting another."
+    exit 0
   fi
 fi
 
