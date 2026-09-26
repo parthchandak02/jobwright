@@ -13,12 +13,12 @@ import uuid
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from pathlib import Path
-from urllib.parse import unquote
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
+from jobwright.web.jobkeys import resolve_job_key
 from jobwright import config
 from jobwright.database import get_connection
 from jobwright.run_registry import load_registry as _load_registry
@@ -434,7 +434,7 @@ def mark_applied(url: str) -> dict:
     from jobwright.apply.launcher import mark_job
     from jobwright.web.routers.board import _row_to_card
 
-    url = unquote(url)
+    url = resolve_job_key(url)
     conn = get_connection()
     exists = conn.execute("SELECT 1 FROM jobs WHERE url = ?", (url,)).fetchone()
     if not exists:

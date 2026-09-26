@@ -17,14 +17,18 @@ from fastapi.responses import FileResponse
 
 from jobwright.web.bootstrap import bootstrap_dashboard
 from jobwright.web.routers import (
+    admin_router,
     board_router,
     connections_router,
     jobs_router,
     materials_router,
     notify_router,
+    onboarding_router,
+    quality_router,
     runs_router,
     settings_router,
     system_router,
+    whatsapp_router,
 )
 from jobwright.web.session import DashboardUserMiddleware
 
@@ -52,8 +56,12 @@ app.add_middleware(
 app.add_middleware(DashboardUserMiddleware)
 
 app.include_router(system_router)
+app.include_router(admin_router)
+app.include_router(onboarding_router)
+app.include_router(whatsapp_router)
 app.include_router(board_router)
 # Specific /jobs/{url}/… routes must register before the greedy /jobs/{url:path} catch-all.
+app.include_router(quality_router)
 app.include_router(materials_router)
 app.include_router(connections_router)
 app.include_router(jobs_router)

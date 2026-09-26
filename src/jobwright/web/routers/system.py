@@ -7,7 +7,7 @@ from pydantic import BaseModel
 
 from jobwright import __version__, config
 from jobwright.database import FUNNEL_STAGES, get_connection, get_stats
-from jobwright.hermes_cron import brief_cron_name, sync_brief_cron
+from jobwright.hermes_cron import brief_cron_name, ensure_brief_cron
 from jobwright.users import (
     _normalize_whatsapp_target,
     describe_cron_schedule,
@@ -122,12 +122,30 @@ def update_profile(body: ProfileUpdate, request: Request) -> dict:
     update_user(user_id, **fields)
     user = get_user(user_id)
     assert user is not None
-    cron = sync_brief_cron(user_id, user.schedule, user.whatsapp_target)
+    cron = ensure_brief_cron(user_id, user.schedule)
     payload = _profile_payload(user_id)
-    payload["cron_synced"] = cron["synced"]
-    payload["cron_id"] = cron["cron_id"]
-    payload["cron_error"] = cron["error"]
+    payload["cron_synced"] = cron["ok"]
+    payload["cron_id"] = cron.get("cron_id")
+    payload["cron_error"] = cron.get("error")
     return payload
+
+
+@router.get("/status")
+def status(request: Request) -> dict:
+    """Health for the dashboard banner: last run, last ops report, bridge."""
+    from jobwright.ops import read_health
+    from jobwright.pipeline import read_run_summary
+    from jobwright.whatsapp import bridge_status
+
+    current_user_id(request)
+    summary = read_run_summary()
+    return {
+        "last_run": {
+            k: summary.get(k) for k in ("started_at", "finished_at", "ok", "errors", "stages_requested")
+        } if summary else None,
+        "health": read_health(),
+        "whatsapp_bridge": bridge_status(),
+    }
 
 
 @router.post("/session")

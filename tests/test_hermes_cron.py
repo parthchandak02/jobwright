@@ -34,3 +34,32 @@ def test_legacy_cron_names():
     assert "jobwright-send-richa" in names
     assert "jobwright-check-richa" in names
     assert "job-apply-morning-richa" in names
+
+
+def test_ensure_brief_cron_creates_then_edits(tmp_path, monkeypatch):
+    from jobwright import hermes_cron
+    from jobwright import users as users_mod
+
+    users_mod.add_user("zed", schedule="15 7 * * *")
+    monkeypatch.setattr(hermes_cron, "_hermes_scripts_dir", lambda: tmp_path / "scripts")
+    calls = []
+    listing = {"text": ""}
+
+    def fake(args):
+        calls.append(args)
+        if args[:2] == ["cron", "list"]:
+            return {"stdout": listing["text"]}
+        if "create" in args:
+            listing["text"] = "  abcdef123456 [active]\n    Name:      jobwright-brief-zed\n"
+        return {"stdout": ""}
+
+    monkeypatch.setattr(hermes_cron, "_run_hermes", fake)
+    out = hermes_cron.ensure_brief_cron("zed", "15 7 * * *")
+    assert out["ok"] and out["cron_id"] == "abcdef123456"
+    create = next(c for c in calls if "create" in c)
+    assert create[create.index("--deliver") + 1] == "local" and "--no-agent" in create
+    wrapper = (tmp_path / "scripts" / "wrap_jobwright-brief-zed.sh").read_text()
+    assert 'JOBWRIGHT_USER="zed"' in wrapper and "scripts/jobwright_brief.sh" in wrapper
+    out = hermes_cron.ensure_brief_cron("zed", "30 8 * * *")
+    edit = calls[-1]
+    assert "edit" in edit and "abcdef123456" in edit and "30 8 * * *" in edit

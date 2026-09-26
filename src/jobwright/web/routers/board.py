@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from urllib.parse import unquote
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
+from jobwright.web.jobkeys import resolve_job_key
 from jobwright.database import (
     CLOSED_OUTCOMES,
     FUNNEL_STAGES,
@@ -127,7 +127,7 @@ class MoveBody(BaseModel):
 
 @router.post("/jobs/{url:path}/move")
 def move_job(url: str, body: MoveBody) -> dict:
-    url = unquote(url)
+    url = resolve_job_key(url)
     if body.to_stage not in FUNNEL_STAGES:
         raise HTTPException(400, f"Invalid stage: {body.to_stage}")
     if body.outcome is not None and body.outcome not in CLOSED_OUTCOMES:
@@ -182,7 +182,7 @@ class PatchBody(BaseModel):
 
 @router.patch("/jobs/{url:path}")
 def patch_job(url: str, body: PatchBody, request: Request = None) -> dict:  # type: ignore[assignment]
-    url = unquote(url)
+    url = resolve_job_key(url)
     conn = get_connection()
     row = conn.execute("SELECT * FROM jobs WHERE url = ?", (url,)).fetchone()
     if not row:
@@ -248,7 +248,7 @@ def patch_job(url: str, body: PatchBody, request: Request = None) -> dict:  # ty
 @router.post("/jobs/{url:path}/response")
 def mark_response(url: str) -> dict:
     """Stamp first_response_at (got a reply) without changing lane."""
-    url = unquote(url)
+    url = resolve_job_key(url)
     conn = get_connection()
     row = conn.execute("SELECT first_response_at FROM jobs WHERE url = ?", (url,)).fetchone()
     if not row:
@@ -267,7 +267,7 @@ def mark_response(url: str) -> dict:
 
 @router.delete("/jobs/{url:path}/response")
 def clear_response(url: str) -> dict:
-    url = unquote(url)
+    url = resolve_job_key(url)
     conn = get_connection()
     exists = conn.execute("SELECT 1 FROM jobs WHERE url = ?", (url,)).fetchone()
     if not exists:
@@ -285,7 +285,7 @@ def clear_response(url: str) -> dict:
 
 @router.get("/jobs/{url:path}/history")
 def stage_history(url: str) -> dict:
-    url = unquote(url)
+    url = resolve_job_key(url)
     conn = get_connection()
     rows = conn.execute(
         "SELECT from_stage, to_stage, actor, at, note FROM stage_history "

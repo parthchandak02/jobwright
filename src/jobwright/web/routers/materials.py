@@ -5,12 +5,12 @@ from __future__ import annotations
 import json
 import uuid
 from pathlib import Path
-from urllib.parse import unquote
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
+from jobwright.web.jobkeys import resolve_job_key
 from jobwright import config
 from jobwright.database import get_connection
 from jobwright.scoring.materials_format import (
@@ -105,7 +105,7 @@ def _read_preview(path: str | None, kind: MaterialKind) -> str | None:
 
 @router.get("/jobs/{url:path}/materials")
 def job_materials(url: str) -> dict:
-    url = unquote(url)
+    url = resolve_job_key(url)
     conn = get_connection()
     row = conn.execute(
         "SELECT tailored_resume_path, tailored_resume_docx_path, "
@@ -152,7 +152,7 @@ def job_materials(url: str) -> dict:
 
 def _inline_job_pdf(url: str, *, resume: bool) -> FileResponse:
     """Serve tailored resume or cover PDF inline for drawer iframe preview."""
-    url = unquote(url)
+    url = resolve_job_key(url)
     conn = get_connection()
     row = conn.execute(
         "SELECT tailored_resume_path, tailored_resume_docx_path, "
@@ -228,7 +228,7 @@ def _spawn_tailor_run(
     scope: str,
     body: TailorJobBody | None,
 ) -> dict:
-    url = unquote(url)
+    url = resolve_job_key(url)
     conn = get_connection()
     row = conn.execute(
         "SELECT url, full_description, description FROM jobs WHERE url = ?",

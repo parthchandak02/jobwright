@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from urllib.parse import unquote
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from jobwright.web.jobkeys import resolve_job_key
 from jobwright.database import FUNNEL_STAGES, get_connection, insert_manual_job
 from jobwright.web.routers.board import _derive_work_model, _row_to_card
 
@@ -15,7 +15,7 @@ router = APIRouter(prefix="/api", tags=["jobs"])
 
 @router.get("/jobs/{url:path}")
 def get_job(url: str) -> dict:
-    url = unquote(url)
+    url = resolve_job_key(url)
     conn = get_connection()
     row = conn.execute("SELECT * FROM jobs WHERE url = ?", (url,)).fetchone()
     if not row:

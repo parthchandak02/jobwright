@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from urllib.parse import unquote
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from jobwright.web.jobkeys import resolve_job_key
 from jobwright import config
 from jobwright.network.manual_connections import (
     add_manual_contact,
@@ -36,7 +36,7 @@ def _load_contacts() -> dict:
 
 @router.get("/jobs/{url:path}/connections")
 def job_connections(url: str) -> dict:
-    url = unquote(url)
+    url = resolve_job_key(url)
     contacts = _load_contacts()
     entry = contacts.get(url) or {}
     csv_contacts = [c for c in (present_contact(c) for c in (entry.get("csv_contacts") or [])) if c]
@@ -70,7 +70,7 @@ class AddConnectionBody(BaseModel):
 
 @router.post("/jobs/{url:path}/connections")
 def add_job_connection(url: str, body: AddConnectionBody) -> dict:
-    url = unquote(url)
+    url = resolve_job_key(url)
     try:
         contact = add_manual_contact(url, body.model_dump())
     except ValueError as exc:
@@ -80,7 +80,7 @@ def add_job_connection(url: str, body: AddConnectionBody) -> dict:
 
 @router.delete("/jobs/{url:path}/connections/{contact_id}")
 def delete_job_connection(url: str, contact_id: str) -> dict:
-    url = unquote(url)
+    url = resolve_job_key(url)
     if not remove_manual_contact(url, contact_id):
         raise HTTPException(404, "Connection not found")
     return {"manual_contacts": get_manual_contacts(url)}

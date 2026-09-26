@@ -108,13 +108,8 @@ def test_profile_includes_schedule(api_client):
 
 def test_put_profile_saves_schedule(api_client, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(
-        "jobwright.web.routers.system.sync_brief_cron",
-        lambda uid, sched, deliver: {
-            "synced": True,
-            "name": f"jobwright-brief-{uid}",
-            "cron_id": "abc123",
-            "error": None,
-        },
+        "jobwright.web.routers.system.ensure_brief_cron",
+        lambda uid, sched: {"ok": True, "name": f"jobwright-brief-{uid}", "cron_id": "abc123", "error": None},
     )
     res = api_client.put(
         "/api/profile",
