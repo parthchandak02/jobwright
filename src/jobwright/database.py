@@ -227,6 +227,13 @@ def ensure_aux_schema(conn: sqlite3.Connection | None = None) -> None:
         conn.execute(ddl)
     conn.commit()
     _run_once(conn, "seed_tombstones_from_history_v1", _seed_tombstones_from_history)
+    _run_once(conn, "import_user_scores_v1", _import_user_scores)
+
+
+def _import_user_scores(conn: sqlite3.Connection) -> None:
+    from jobwright.labels import import_existing_user_scores
+
+    import_existing_user_scores(conn)
 
 
 def _run_once(conn: sqlite3.Connection, key: str, fn) -> None:

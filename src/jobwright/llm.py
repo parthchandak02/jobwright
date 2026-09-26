@@ -283,6 +283,7 @@ class LLMClient:
         self._fallback: LLMClient | None = None
         self._is_fallback: bool = False
         self._schema_unsupported: bool = False
+        self._reasoning_unsupported: bool = False
 
     # -- Native Gemini API --------------------------------------------------
 
@@ -568,8 +569,13 @@ class LLMClient:
         *,
         max_tokens: int = 1200,
         temperature: float = 0.0,
+        reasoning_effort: str | None = None,
     ) -> str:
         """Structured output: json_schema when the provider supports it, else json_object.
+
+        ``reasoning_effort`` (low|medium|high) bounds hidden thinking on reasoning
+        models; without it thinking-only models can spend the whole budget and
+        return empty content. Dropped automatically if the provider rejects it.
 
         ``schema`` is an OpenAI-style ``{"name", "strict", "schema"}`` object.
         One attempt per call; callers own retries. 429/5xx propagate as
@@ -586,7 +592,14 @@ class LLMClient:
                 "temperature": temperature,
                 "response_format": {"type": "json_schema", "json_schema": schema},
             }
+            if reasoning_effort and not self._reasoning_unsupported:
+                payload["reasoning_effort"] = reasoning_effort
             resp = self._client.post(f"{self.base_url}/chat/completions", json=payload, headers=headers)
+            if resp.status_code == 400 and "reasoning" in resp.text.lower() and "reasoning_effort" in payload:
+                log.info("Provider rejected reasoning_effort for %s; retrying without it", self.model)
+                self._reasoning_unsupported = True
+                payload.pop("reasoning_effort")
+                resp = self._client.post(f"{self.base_url}/chat/completions", json=payload, headers=headers)
             if resp.status_code in (400, 404, 422):
                 log.info("Provider rejected json_schema (HTTP %s); using json_object", resp.status_code)
                 self._schema_unsupported = True

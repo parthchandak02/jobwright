@@ -210,6 +210,7 @@ def test_json_schema_not_supported_client_falls_back(monkeypatch):
 
 def test_run_scoring_on_mode_routes_fastpath_and_escalates(tmp_path, monkeypatch):
     """jev_hybrid='on': fast-accept skips deepseek; escalate still gets scored."""
+    monkeypatch.setenv("JOBWRIGHT_SCORER", "v1")
     from jobwright import config
     from jobwright.database import close_connection, get_connection, init_db
     from jobwright.scoring import fastpath, scorer

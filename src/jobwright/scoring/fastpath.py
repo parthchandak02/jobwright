@@ -212,7 +212,7 @@ def get_jev_hybrid(user_config: dict | None) -> str:
     if not isinstance(user_config, dict):
         return "off"
     value = str(user_config.get("jev_hybrid") or "off").strip().lower()
-    if value not in ("shadow", "on"):
+    if value not in ("shadow", "on", "reject"):
         return "off"
     return value
 
@@ -365,9 +365,9 @@ def jev_route(score: int | None, confidence: float | None, mode: str) -> str:
 
     Returns ``"escalate"`` in shadow/off mode (no decision is ever made there).
     """
-    if mode != "on" or score is None or confidence is None:
+    if mode not in ("on", "reject") or score is None or confidence is None:
         return "escalate"
-    if confidence >= _ROUTE_CONFIDENCE and score >= _FAST_ACCEPT_MIN:
+    if mode == "on" and confidence >= _ROUTE_CONFIDENCE and score >= _FAST_ACCEPT_MIN:
         return "fast_accept"
     if confidence >= _ROUTE_CONFIDENCE and score <= _FAST_REJECT_MAX:
         return "fast_reject"
@@ -394,7 +394,7 @@ def score_fastpath(
     stage is never blocked.
     """
     mode = get_jev_hybrid(user_config)
-    if mode not in ("shadow", "on"):
+    if mode not in ("shadow", "on", "reject"):
         return []
 
     api_key = _typesafe_api_key()

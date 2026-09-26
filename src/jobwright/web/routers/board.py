@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from urllib.parse import unquote
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from jobwright.database import (
@@ -175,11 +175,13 @@ class PatchBody(BaseModel):
     company: str | None = None
     user_fit_score: int | None = None
     user_score_rationale: str | None = None
+    user_score_reasons: list[str] | None = None
     clear_user_score: bool = False
+    close_reason: str | None = None
 
 
 @router.patch("/jobs/{url:path}")
-def patch_job(url: str, body: PatchBody) -> dict:
+def patch_job(url: str, body: PatchBody, request: Request = None) -> dict:  # type: ignore[assignment]
     url = unquote(url)
     conn = get_connection()
     row = conn.execute("SELECT * FROM jobs WHERE url = ?", (url,)).fetchone()
@@ -205,29 +207,20 @@ def patch_job(url: str, body: PatchBody) -> dict:
     if body.company is not None:
         sets.append("company = ?")
         params.append(body.company)
+    if body.close_reason is not None:
+        sets.append("close_reason = ?")
+        params.append(body.close_reason.strip() or None)
+    label_change = None
     if body.clear_user_score:
-        sets.extend(
-            [
-                "user_fit_score = NULL",
-                "user_score_rationale = NULL",
-                "user_score_at = NULL",
-            ]
-        )
+        label_change = ("clear", None, "", [])
     elif body.user_fit_score is not None:
         if not (1 <= body.user_fit_score <= 10):
             raise HTTPException(400, "user_fit_score must be between 1 and 10")
         rationale = (body.user_score_rationale or "").strip()
-        if not rationale:
-            raise HTTPException(400, "user_score_rationale is required when setting a score")
-        now = datetime.now(UTC).isoformat()
-        sets.extend(
-            [
-                "user_fit_score = ?",
-                "user_score_rationale = ?",
-                "user_score_at = ?",
-            ]
-        )
-        params.extend([body.user_fit_score, rationale, now])
+        reasons = [r for r in (body.user_score_reasons or []) if isinstance(r, str) and r.strip()]
+        if not rationale and not reasons:
+            raise HTTPException(400, "Add a reason (chip or note) when setting a score")
+        label_change = ("set", body.user_fit_score, rationale, reasons)
 
     if sets:
         now = datetime.now(UTC).isoformat()
@@ -235,6 +228,18 @@ def patch_job(url: str, body: PatchBody) -> dict:
         params.extend(["human", now, url])
         conn.execute(f"UPDATE jobs SET {', '.join(sets)} WHERE url = ?", params)
         conn.commit()
+
+    if label_change is not None:
+        from jobwright.labels import clear_label, record_label
+
+        kind, score, rationale, reasons = label_change
+        actor = getattr(getattr(request, "state", None), "identity", None)
+        actor_email = getattr(actor, "email", None) or None
+        if kind == "clear":
+            clear_label(url, actor=actor_email, conn=conn)
+        else:
+            text = rationale or ", ".join(reasons)
+            record_label(url, score, rationale=text, reasons=reasons, source="dashboard", actor=actor_email, conn=conn)
 
     row = conn.execute("SELECT * FROM jobs WHERE url = ?", (url,)).fetchone()
     return _row_to_card(row)

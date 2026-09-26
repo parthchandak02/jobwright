@@ -617,6 +617,18 @@ def score_job(
 
 
 def run_scoring(limit: int = 0, rescore: bool = False) -> dict:
+    """Score unscored jobs that have full descriptions (v2 by default).
+
+    JOBWRIGHT_SCORER=v1 restores the legacy single-number scorer.
+    """
+    if os.environ.get("JOBWRIGHT_SCORER", "v2").strip().lower() == "v1":
+        return _run_scoring_v1(limit=limit, rescore=rescore)
+    from jobwright.scoring.pipeline_v2 import run_scoring_v2
+
+    return run_scoring_v2(limit=limit, rescore=rescore)
+
+
+def _run_scoring_v1(limit: int = 0, rescore: bool = False) -> dict:
     """Score unscored jobs that have full descriptions.
 
     Args:

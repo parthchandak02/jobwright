@@ -66,6 +66,7 @@ def test_score_job_returns_none_on_empty_llm(monkeypatch):
 
 def test_run_scoring_records_errors_on_empty_batch(tmp_path, monkeypatch):
     """Batch empty -> sequential fallback empty -> errors counted."""
+    monkeypatch.setenv("JOBWRIGHT_SCORER", "v1")
     from unittest.mock import MagicMock
 
     import jobwright.config as config
