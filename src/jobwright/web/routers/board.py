@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, HTTPException, Request
@@ -41,9 +42,21 @@ def _effective_fit_score(d: dict) -> int | None:
     return int(ai_score) if ai_score is not None else None
 
 
+def _gates(d: dict) -> dict:
+    try:
+        return json.loads(d.get("score_gates") or "{}") or {}
+    except (TypeError, ValueError):
+        return {}
+
+
 def _row_to_card(row) -> dict:
     d = dict(row)
-    reasoning = (d.get("score_reasoning") or "").split("\n", 1)
+    gates = _gates(d)
+    if gates:
+        # v2 scores store plain reasoning (no legacy "keywords\n" prefix).
+        reasoning = ["", d.get("score_reasoning") or ""]
+    else:
+        reasoning = (d.get("score_reasoning") or "").split("\n", 1)
     user_rationale = (d.get("user_score_rationale") or "").strip()
     url = d.get("url")
     from jobwright.enrichment.detail import _is_permanent_failure
@@ -68,7 +81,16 @@ def _row_to_card(row) -> dict:
         "user_score_at": d.get("user_score_at"),
         "score_user_modified": d.get("user_fit_score") is not None,
         "keywords": reasoning[0][:120] if reasoning else "",
-        "reasoning": reasoning[1][:240] if len(reasoning) > 1 else "",
+        "reasoning": reasoning[1][:600] if len(reasoning) > 1 else "",
+        "score_confidence": d.get("score_confidence"),
+        "score_tier": d.get("score_tier"),
+        "score_model": d.get("score_model"),
+        "dealbreakers": gates.get("dealbreakers") or [],
+        "concerns": gates.get("concerns") or [],
+        "score_caps": gates.get("caps") or [],
+        "location_ok": gates.get("location_ok"),
+        "seniority": gates.get("seniority"),
+        "close_reason": d.get("close_reason"),
         "funnel_stage": d.get("funnel_stage") or "backlog",
         "outcome": d.get("outcome"),
         "is_dead": is_dead,
@@ -92,14 +114,25 @@ def _row_to_card(row) -> dict:
     }
 
 
+CLOSED_ON_BOARD = 150
+
+
 @router.get("/board")
 def get_board() -> dict:
+    """Every open job plus the most recently closed ones (closed history is long)."""
     conn = get_connection()
     rows = conn.execute(
-        "SELECT * FROM jobs ORDER BY COALESCE(user_fit_score, fit_score) DESC NULLS LAST, discovered_at DESC"
+        "SELECT * FROM jobs WHERE COALESCE(funnel_stage, 'backlog') != 'closed' "
+        "ORDER BY COALESCE(user_fit_score, fit_score) DESC NULLS LAST, discovered_at DESC"
     ).fetchall()
+    closed = conn.execute(
+        "SELECT * FROM jobs WHERE funnel_stage = 'closed' "
+        "ORDER BY COALESCE(board_updated_at, discovered_at) DESC LIMIT ?",
+        (CLOSED_ON_BOARD,),
+    ).fetchall()
+    closed_total = conn.execute("SELECT COUNT(*) FROM jobs WHERE funnel_stage = 'closed'").fetchone()[0]
     columns = {stage: [] for stage in FUNNEL_STAGES}
-    for row in rows:
+    for row in [*rows, *closed]:
         card = _row_to_card(row)
         stage = card["funnel_stage"] if card["funnel_stage"] in columns else "backlog"
         columns[stage].append(card)
@@ -107,6 +140,7 @@ def get_board() -> dict:
         "stages": list(FUNNEL_STAGES),
         "columns": columns,
         "total": sum(len(v) for v in columns.values()),
+        "closed_total": closed_total,
     }
 
 
@@ -123,6 +157,8 @@ class MoveBody(BaseModel):
     to_stage: str
     note: str | None = None
     outcome: str | None = None
+    close_reason: str | None = None
+    reasons: list[str] | None = None
 
 
 @router.post("/jobs/{url:path}/move")
@@ -161,6 +197,26 @@ def move_job(url: str, body: MoveBody) -> dict:
             "apply_status = COALESCE(apply_status, 'applied') WHERE url = ?",
             (now, url),
         )
+    elif from_stage == "applied" and body.to_stage in ("backlog", "prepare"):
+        # Human correcting an accidental "Applied": undo the apply stamps.
+        conn.execute(
+            "UPDATE jobs SET applied_at = NULL, applied_manually = 0, "
+            "apply_status = CASE WHEN apply_status = 'applied' THEN NULL ELSE apply_status END WHERE url = ?",
+            (url,),
+        )
+    if body.to_stage == "closed":
+        reasons = [r.strip() for r in (body.reasons or []) if r and r.strip()]
+        reason_text = (body.close_reason or "").strip() or ", ".join(reasons)
+        if reason_text:
+            conn.execute("UPDATE jobs SET close_reason = ? WHERE url = ?", (reason_text, url))
+        row = conn.execute("SELECT applied_at, user_fit_score FROM jobs WHERE url = ?", (url,)).fetchone()
+        never_applied = row["applied_at"] is None and from_stage in ("backlog", "prepare")
+        if never_applied and row["user_fit_score"] is None and (reasons or reason_text) \
+                and body.outcome == "not_interested":
+            from jobwright.labels import record_label
+
+            conn.commit()
+            record_label(url, 2, rationale=reason_text, reasons=reasons, source="dismiss", conn=conn)
     conn.commit()
 
     row = conn.execute("SELECT * FROM jobs WHERE url = ?", (url,)).fetchone()

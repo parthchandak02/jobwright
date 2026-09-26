@@ -70,6 +70,17 @@ def _jobwright_cmd(args: list[str], user_id: str) -> list[str]:
     return [sys.executable, "-m", "jobwright", "--user", user_id, *args]
 
 
+def _pid_is_jobwright(pid: int) -> bool:
+    """Guard against PID reuse: the PID must still be a jobwright process."""
+    try:
+        out = subprocess.run(
+            ["ps", "-p", str(pid), "-o", "command="], capture_output=True, text=True, timeout=3, check=False,
+        ).stdout
+    except (OSError, subprocess.TimeoutExpired):
+        return True
+    return "jobwright" in out
+
+
 def _pid_running(pid: int | None) -> bool:
     """Best-effort liveness check for a bare PID (no live Popen handle)."""
     if not pid:
@@ -91,7 +102,7 @@ def _pid_running(pid: int | None) -> bool:
         pass
     except OSError:
         pass
-    return True
+    return _pid_is_jobwright(pid)
 
 
 def _dedicated_pgid(pid: int) -> int | None:
@@ -177,8 +188,8 @@ def _status_from_entry(run_id: str, entry: dict) -> dict:
         running = code is None
         pid = proc.pid
     else:
-        code = None
-        running = _pid_running(pid)
+        code = entry.get("returncode")
+        running = code is None and _pid_running(pid)
     return {
         "run_id": run_id,
         "pid": pid,
@@ -189,6 +200,7 @@ def _status_from_entry(run_id: str, entry: dict) -> dict:
         "log_path": entry.get("log_path"),
         "user": entry.get("user"),
         "kind": entry.get("kind") or "pipeline",
+        "job_id": entry.get("job_id"),
     }
 
 
@@ -228,6 +240,7 @@ def spawn_logged_run(
     log_name: str,
     kind: str,
     extra_env: dict[str, str] | None = None,
+    job_id: str | None = None,
 ) -> dict:
     """Spawn a jobwright subprocess, tee stdout to a log file, register the run."""
     run_id = uuid.uuid4().hex[:12]
@@ -270,6 +283,7 @@ def spawn_logged_run(
         "cmd": cmd,
         "user": user_id,
         "kind": kind,
+        "job_id": job_id,
     }
     _upsert_registry(
         {
@@ -281,6 +295,7 @@ def spawn_logged_run(
             "user": user_id,
             "cmd": cmd,
             "kind": kind,
+            "job_id": job_id,
         }
     )
     return {
@@ -290,6 +305,7 @@ def spawn_logged_run(
         "stages": stages,
         "log_path": str(log_path),
         "kind": kind,
+        "job_id": job_id,
     }
 
 
@@ -372,22 +388,30 @@ async def stream_run(run_id: str, request: Request) -> StreamingResponse:
 
     async def event_gen() -> AsyncIterator[str]:
         pos = 0
+        partial = ""
         while True:
             if log_path.exists():
-                data = log_path.read_bytes()
-                if len(data) > pos:
-                    chunk = data[pos:].decode("utf-8", errors="replace")
-                    pos = len(data)
-                    for line in chunk.splitlines():
-                        yield f"data: {line}\n\n"
+                with log_path.open("rb") as fh:
+                    fh.seek(pos)
+                    data = fh.read()
+                if data:
+                    pos += len(data)
+                    text = partial + data.decode("utf-8", errors="replace")
+                    lines = text.split("\n")
+                    partial = lines.pop()  # keep an unterminated tail for the next read
+                    for line in lines:
+                        yield f"data: {line.rstrip(chr(13))}\n\n"
             if proc is not None:
                 code = proc.poll()
                 done = code is not None
             else:
-                code = None
-                done = not _pid_running(pid)
+                entry = next((e for e in _load_registry() if e.get("run_id") == run_id), {})
+                code = entry.get("returncode")
+                done = code is not None or not _pid_running(pid)
             if done:
-                yield f"data: [done RC={code if code is not None else 0}]\n\n"
+                if partial:
+                    yield f"data: {partial}\n\n"
+                yield f"data: [done RC={code if code is not None else '?'}]\n\n"
                 yield "event: done\ndata: {}\n\n"
                 break
             await asyncio.sleep(0.5)

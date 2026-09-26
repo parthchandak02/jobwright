@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 
 from jobwright.web.jobkeys import resolve_job_key
 from jobwright import config
-from jobwright.database import get_connection
+from jobwright.database import get_connection, job_id_for_url
 from jobwright.scoring.materials_format import (
     MaterialKind,
     format_material_preview,
@@ -299,6 +299,7 @@ def _spawn_tailor_run(
         log_name=log_name,
         kind=kind,
         extra_env={"JOBWRIGHT_LOG_LEVEL": "DEBUG"},
+        job_id=job_id_for_url(url),
     )
     return {**handle, "url": url}
 

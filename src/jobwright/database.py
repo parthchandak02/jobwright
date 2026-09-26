@@ -402,6 +402,7 @@ FUNNEL_STAGES = (
 AGENT_MAX_STAGE = "prepare"
 HUMAN_HELD_STAGES = ("applied", "in_progress", "offer", "closed")
 CLOSED_OUTCOMES = (
+    "not_interested",
     "accepted",
     "rejected",
     "withdrawn",

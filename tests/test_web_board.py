@@ -270,3 +270,22 @@ def test_users_and_session(api_client):
 
     res = api_client.post("/api/session", json={"user_id": "nope"})
     assert res.status_code == 404
+
+def test_dismiss_with_reason_records_label_and_undo_applied(api_client):
+    from jobwright.database import get_connection
+
+    url = "https://example.com/web-smoke"
+    res = api_client.post(f"/api/jobs/{url}/move", json={"to_stage": "applied"})
+    assert res.status_code == 200
+    res = api_client.post(f"/api/jobs/{url}/move", json={"to_stage": "backlog"})
+    row = get_connection().execute("SELECT applied_at, applied_manually FROM jobs WHERE url = ?", (url,)).fetchone()
+    assert row[0] is None and not row[1]
+    res = api_client.post(
+        f"/api/jobs/{url}/move",
+        json={"to_stage": "closed", "outcome": "not_interested", "reasons": ["Too senior", "Wrong location"]},
+    )
+    assert res.status_code == 200, res.text
+    card = res.json()["job"]
+    assert card["close_reason"] == "Too senior, Wrong location" and card["user_fit_score"] == 2
+    labels = api_client.get(f"/api/jobs/{card['job_id']}/labels").json()["labels"]
+    assert labels[0]["source"] == "dismiss" and labels[0]["reasons"] == ["Too senior", "Wrong location"]
