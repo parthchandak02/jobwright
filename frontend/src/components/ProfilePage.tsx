@@ -1,24 +1,35 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ArrowLeft } from 'lucide-react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
+import { ArrowLeft, Loader2, Save, Send, Sparkles } from 'lucide-react'
 import { toast } from 'sonner'
 import { BoardToggles } from '@/components/BoardToggles'
 import { APP_SHELL_HEADER } from '@/components/BrandLogo'
 import { ChipInput } from '@/components/ChipInput'
+import { CriteriaEditor } from '@/components/CriteriaEditor'
 import { FormField } from '@/components/FormField'
 import { LocationChipInput } from '@/components/LocationChipInput'
 import { ProfileMaterials } from '@/components/ProfileMaterials'
+import { ProfileSwitcher } from '@/components/ProfileSwitcher'
 import { QueryChipInput } from '@/components/QueryChipInput'
 import { SectionLabel } from '@/components/SectionLabel'
+import { WhatsAppChatPicker } from '@/components/WhatsAppChatPicker'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { UserSwitcher } from '@/components/UserSwitcher'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   apiFetch,
   apiUpload,
+  getCriteria,
+  notifyWhatsApp,
   Profile,
+  saveCriteria,
   SettingsData,
   SettingsSearches,
+  suggestCriteria,
+  updateProfile,
+  type MatchCriteria,
 } from '@/lib/api'
+import { invalidateReasons } from '@/lib/reasons'
 import { cn, errorMessage } from '@/lib/utils'
 
 type Props = {
@@ -55,7 +66,224 @@ function searchesPayload(s: SettingsSearches) {
   }
 }
 
+function cronToTime(cron: string | undefined): string {
+  const parts = (cron || '0 7 * * *').trim().split(/\s+/)
+  if (parts.length !== 5 || !/^\d+$/.test(parts[0]) || !/^\d+$/.test(parts[1])) return '07:00'
+  return `${parts[1].padStart(2, '0')}:${parts[0].padStart(2, '0')}`
+}
+
+function RulesTab() {
+  const [criteria, setCriteria] = useState<MatchCriteria | null>(null)
+  const [derived, setDerived] = useState(false)
+  const [dirty, setDirty] = useState(false)
+  const [busy, setBusy] = useState<null | 'save' | 'suggest'>(null)
+
+  useEffect(() => {
+    void getCriteria()
+      .then((r) => {
+        setCriteria(r.criteria)
+        setDerived(r.derived)
+      })
+      .catch((e) => toast.error(errorMessage(e)))
+  }, [])
+
+  async function save() {
+    if (!criteria) return
+    setBusy('save')
+    try {
+      const r = await saveCriteria(criteria)
+      setCriteria(r.criteria)
+      setDerived(false)
+      setDirty(false)
+      invalidateReasons()
+      toast.success('Saved. New jobs are scored with these rules; use Match quality → Rescore to re-check open jobs.')
+    } catch (e) {
+      toast.error(errorMessage(e))
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  async function suggest() {
+    setBusy('suggest')
+    try {
+      const r = await suggestCriteria()
+      setCriteria(r.criteria)
+      setDirty(true)
+      toast.success(
+        r.based_on_ratings
+          ? `Drafted from your resume and ${r.based_on_ratings} ratings. Review, then save.`
+          : 'Drafted from your resume. Review, then save.',
+      )
+    } catch (e) {
+      toast.error(errorMessage(e))
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  if (!criteria) return <p className="text-sm text-muted-foreground">Loading…</p>
+  return (
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <SectionLabel hint="Every new job is judged against these rules plus your past ratings.">
+          How jobs are scored
+        </SectionLabel>
+        <div className="flex gap-2">
+          <Button size="sm" variant="ai" onClick={() => void suggest()} disabled={!!busy}>
+            {busy === 'suggest' ? <Loader2 className="animate-spin" /> : <Sparkles />} Suggest from my ratings
+          </Button>
+          <Button size="sm" onClick={() => void save()} disabled={!!busy || (!dirty && !derived)}>
+            {busy === 'save' ? <Loader2 className="animate-spin" /> : <Save />} Save rules
+          </Button>
+        </div>
+      </div>
+      {derived ? (
+        <p className="rounded-lg border border-border/60 bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+          These rules are filled in from your profile. Edit and save them, or let us suggest better ones from the jobs
+          you’ve rated.
+        </p>
+      ) : null}
+      <CriteriaEditor
+        value={criteria}
+        onChange={(next) => {
+          setCriteria(next)
+          setDirty(true)
+        }}
+      />
+    </div>
+  )
+}
+
+function WhatsAppTab({ profile, onSaved }: { profile: Profile | null; onSaved: () => void }) {
+  const [target, setTarget] = useState(profile?.whatsapp_target || '')
+  const [time, setTime] = useState(cronToTime(profile?.schedule))
+  const [busy, setBusy] = useState<null | 'save' | 'send'>(null)
+
+  useEffect(() => {
+    setTarget(profile?.whatsapp_target || '')
+    setTime(cronToTime(profile?.schedule))
+  }, [profile?.whatsapp_target, profile?.schedule])
+
+  async function save() {
+    const [h, m] = time.split(':').map(Number)
+    setBusy('save')
+    try {
+      const res = await updateProfile({ schedule: `${m} ${h} * * *`, whatsapp_target: target })
+      if (res.cron_synced) toast.success('Saved. Your daily list is scheduled.')
+      else toast.info(`Saved, but the daily schedule could not be updated: ${res.cron_error || 'unknown error'}`)
+      onSaved()
+    } catch (e) {
+      toast.error(errorMessage(e))
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  async function sendNow() {
+    setBusy('send')
+    try {
+      const res = await notifyWhatsApp()
+      if (res.skipped) toast.info(res.reason || 'Nothing new to send')
+      else toast.success(`Sent ${res.sent} jobs to WhatsApp`)
+      onSaved()
+    } catch (e) {
+      toast.error(errorMessage(e))
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  return (
+    <div className="max-w-2xl space-y-5">
+      <SectionLabel hint="Once a day: search, score, then one WhatsApp message with your best new matches.">
+        Daily WhatsApp list
+      </SectionLabel>
+      <FormField label="Send it to">
+        <WhatsAppChatPicker value={target} onChange={setTarget} />
+      </FormField>
+      <FormField label={`Time${profile?.timezone ? ` (${profile.timezone})` : ''}`}>
+        <Input type="time" value={time} onChange={(e) => setTime(e.target.value)} className="w-40" />
+      </FormField>
+      <div className="flex flex-wrap gap-2">
+        <Button size="sm" onClick={() => void save()} disabled={!!busy || !target}>
+          {busy === 'save' ? <Loader2 className="animate-spin" /> : <Save />} Save
+        </Button>
+        <Button size="sm" variant="outline" onClick={() => void sendNow()} disabled={!!busy}>
+          {busy === 'send' ? <Loader2 className="animate-spin" /> : <Send />} Send today’s list now
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+const ABOUT_FIELDS: { key: string; label: string; placeholder?: string }[] = [
+  { key: 'full_name', label: 'Full name' },
+  { key: 'email', label: 'Email', placeholder: 'you@example.com' },
+  { key: 'phone', label: 'Phone (with country code)', placeholder: '+1 415 555 0100' },
+  { key: 'city', label: 'City' },
+  { key: 'province_state', label: 'State' },
+  { key: 'linkedin_url', label: 'LinkedIn URL' },
+]
+
+function AboutTab({ data, onSaved }: { data: SettingsData; onSaved: () => void }) {
+  const [personal, setPersonal] = useState<Record<string, string>>(data.profile.personal || {})
+  const [target, setTarget] = useState<string>(data.profile.experience?.target_role || '')
+  const [busy, setBusy] = useState(false)
+
+  async function save() {
+    setBusy(true)
+    try {
+      await apiFetch('/settings/profile', {
+        method: 'PUT',
+        body: JSON.stringify({ personal, experience: { target_role: target } }),
+      })
+      toast.success('Saved')
+      onSaved()
+    } catch (e) {
+      toast.error(errorMessage(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="max-w-2xl space-y-4">
+      <SectionLabel hint="Used to find your WhatsApp chats and when writing materials.">About you</SectionLabel>
+      <div className="grid gap-3 sm:grid-cols-2">
+        {ABOUT_FIELDS.map((f) => (
+          <FormField key={f.key} label={f.label}>
+            <Input
+              value={personal[f.key] || ''}
+              placeholder={f.placeholder}
+              onChange={(e) => setPersonal({ ...personal, [f.key]: e.target.value })}
+              className="h-8"
+            />
+          </FormField>
+        ))}
+      </div>
+      <FormField label="Target role" hint="One or two sentences on the roles you want.">
+        <textarea
+          value={target}
+          onChange={(e) => setTarget(e.target.value)}
+          rows={3}
+          className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+        />
+      </FormField>
+      <Button size="sm" onClick={() => void save()} disabled={busy}>
+        {busy ? <Loader2 className="animate-spin" /> : <Save />} Save
+      </Button>
+    </div>
+  )
+}
+
+const PROFILE_TABS = ['search', 'rules', 'documents', 'whatsapp', 'about'] as const
+
 export function ProfilePage({ profile, onBack, onProfileChanged }: Props) {
+  const navigate = useNavigate()
+  const [params] = useSearchParams()
+  const tabParam = params.get('tab')
+  const tab = (PROFILE_TABS as readonly string[]).includes(tabParam || '') ? (tabParam as string) : 'search'
   const [data, setData] = useState<SettingsData | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState<string | null>(null)
@@ -192,9 +420,11 @@ export function ProfilePage({ profile, onBack, onProfileChanged }: Props) {
         <Button type="button" size="icon-sm" variant="ghost" onClick={onBack} aria-label="Back to board">
           <ArrowLeft />
         </Button>
-        <h1 className="justify-self-center text-xs font-bold uppercase tracking-wider">Profile</h1>
+        <h1 className="justify-self-center text-xs font-bold uppercase tracking-wider">
+          {profile?.name || 'Profile'}
+        </h1>
         <div className="justify-self-end">
-          <UserSwitcher profile={profile} onChanged={onProfileChanged} />
+          <ProfileSwitcher className="h-8 w-40" />
         </div>
       </header>
 
@@ -202,7 +432,28 @@ export function ProfilePage({ profile, onBack, onProfileChanged }: Props) {
         {loading || !data ? (
           <p className="text-sm text-muted-foreground">Loading profile…</p>
         ) : (
-          <div className="mx-auto w-full max-w-6xl space-y-6">
+          <Tabs
+            value={tab}
+            onValueChange={(v) => navigate(`/profile?tab=${v}`, { replace: true })}
+            className="mx-auto w-full max-w-6xl gap-5"
+          >
+            <TabsList className="max-w-full justify-start overflow-x-auto">
+              <TabsTrigger value="search">Search</TabsTrigger>
+              <TabsTrigger value="rules">Match rules</TabsTrigger>
+              <TabsTrigger value="documents">Documents</TabsTrigger>
+              <TabsTrigger value="whatsapp">WhatsApp</TabsTrigger>
+              <TabsTrigger value="about">About you</TabsTrigger>
+            </TabsList>
+            <TabsContent value="rules">
+              <RulesTab />
+            </TabsContent>
+            <TabsContent value="whatsapp">
+              <WhatsAppTab profile={profile} onSaved={onProfileChanged} />
+            </TabsContent>
+            <TabsContent value="about">
+              <AboutTab data={data} onSaved={onProfileChanged} />
+            </TabsContent>
+            <TabsContent value="search" className="space-y-6">
             <section className={SECTION}>
               <div className="flex items-center justify-between gap-3">
                 <SectionLabel hint="Changes save as you edit. Next Auto Search uses the latest keywords and boards.">
@@ -312,6 +563,8 @@ export function ProfilePage({ profile, onBack, onProfileChanged }: Props) {
               </div>
             </section>
 
+            </TabsContent>
+            <TabsContent value="documents" className="space-y-6">
             <section className={SECTION}>
               <SectionLabel hint="Resume is used for scoring and tailoring. Cover letter PDFs are amalgamated when Auto Search writes materials. Auto Search does not search from these files.">
                 Resume and cover letters
@@ -352,7 +605,8 @@ export function ProfilePage({ profile, onBack, onProfileChanged }: Props) {
                 onRemoveCover={removeCoverPdf}
               />
             </section>
-          </div>
+            </TabsContent>
+          </Tabs>
         )}
       </main>
     </div>

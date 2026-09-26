@@ -32,7 +32,7 @@ export type ConnectionsData = {
 type SearchResult = ConnectionContact
 
 type Props = {
-  jobUrl: string
+  jobKey: string
   connections: ConnectionsData | null
   onChanged: () => void
 }
@@ -120,7 +120,7 @@ function ContactRow({
   )
 }
 
-export function ConnectionsPanel({ jobUrl, connections, onChanged }: Props) {
+export function ConnectionsPanel({ jobKey, connections, onChanged }: Props) {
   const [search, setSearch] = useState('')
   const [searchResults, setSearchResults] = useState<SearchResult[]>([])
   const [searchOpen, setSearchOpen] = useState(false)
@@ -175,7 +175,7 @@ export function ConnectionsPanel({ jobUrl, connections, onChanged }: Props) {
   async function addFromSearch(contact: SearchResult) {
     setBusy(true)
     try {
-      await apiFetch(`/jobs/${encodeURIComponent(jobUrl)}/connections`, {
+      await apiFetch(`/jobs/${encodeURIComponent(jobKey)}/connections`, {
         method: 'POST',
         body: JSON.stringify({
           first_name: contact.first_name,
@@ -201,7 +201,7 @@ export function ConnectionsPanel({ jobUrl, connections, onChanged }: Props) {
   async function addFromUrl() {
     setBusy(true)
     try {
-      await apiFetch(`/jobs/${encodeURIComponent(jobUrl)}/connections`, {
+      await apiFetch(`/jobs/${encodeURIComponent(jobKey)}/connections`, {
         method: 'POST',
         body: JSON.stringify({
           url: profileUrl.trim(),
@@ -223,7 +223,7 @@ export function ConnectionsPanel({ jobUrl, connections, onChanged }: Props) {
     setRemovingId(contactId)
     try {
       await apiFetch(
-        `/jobs/${encodeURIComponent(jobUrl)}/connections/${encodeURIComponent(contactId)}`,
+        `/jobs/${encodeURIComponent(jobKey)}/connections/${encodeURIComponent(contactId)}`,
         { method: 'DELETE' },
       )
       onChanged()

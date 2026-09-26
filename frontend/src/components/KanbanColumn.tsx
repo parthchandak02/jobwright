@@ -9,6 +9,8 @@ type Props = {
   stage: string
   label: string
   jobs: JobCard[]
+  /** Full count when the lane shows only a recent slice (closed). */
+  total?: number
   isDropTarget?: boolean
   isDragging?: boolean
   onOpen: (job: JobCard) => void
@@ -19,6 +21,7 @@ export function KanbanColumn({
   stage,
   label,
   jobs,
+  total,
   isDropTarget,
   isDragging,
   onOpen,
@@ -41,7 +44,7 @@ export function KanbanColumn({
           {label}
         </h2>
         <span className="shrink-0 text-xs font-semibold tabular-nums text-[color:var(--lane)]/70">
-          {jobs.length}
+          {total && total > jobs.length ? `${jobs.length} of ${total}` : jobs.length}
         </span>
       </header>
       <div

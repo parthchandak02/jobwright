@@ -1,5 +1,7 @@
+import { toast } from 'sonner'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
+  listRuns,
   startJobTailorCover,
   startJobTailorResume,
   stopRun,
@@ -27,7 +29,7 @@ function parseRC(line: string): number | null {
  * Per-job resume or cover tailor run with SSE logs.
  */
 export function useTailorMaterials(
-  jobUrl: string | undefined,
+  jobKey: string | undefined,
   scope: TailorScope,
   onDone: () => void,
 ): AutoSearch {
@@ -61,7 +63,28 @@ export function useTailorMaterials(
     setStopping(false)
     stoppedRef.current = false
     startedAtRef.current = null
-  }, [jobUrl, scope])
+  }, [jobKey, scope])
+
+  // Reattach to a tailor run for this job that is still going (drawer reopened,
+  // page reloaded) instead of showing idle and inviting a duplicate run.
+  useEffect(() => {
+    if (!jobKey) return
+    let cancelled = false
+    const kind = scope === 'resume' ? 'tailor_resume' : 'tailor_cover'
+    listRuns()
+      .then((runs) => {
+        if (cancelled) return
+        const live = runs.find((r) => r.running && r.job_id === jobKey && (r.kind === kind || r.kind === 'tailor'))
+        if (!live) return
+        startedAtRef.current = Date.parse(live.started_at) || Date.now()
+        setHandle(live)
+        setState('running')
+      })
+      .catch(() => undefined)
+    return () => {
+      cancelled = true
+    }
+  }, [jobKey, scope])
 
   useEffect(() => {
     if (!active || startedAtRef.current == null) return
@@ -87,7 +110,7 @@ export function useTailorMaterials(
       if (line.includes('done RC=')) {
         const parsed = parseRC(line)
         setRc(parsed)
-        setState(stoppedRef.current || parsed !== 0 ? 'failed' : 'finished')
+        setState(stoppedRef.current || (parsed !== null && parsed !== 0) ? 'failed' : 'finished')
       }
     }
 
@@ -126,7 +149,7 @@ export function useTailorMaterials(
   const start = useCallback(
     (arg?: unknown) => {
       const instructions = typeof arg === 'string' ? arg : undefined
-      if (!jobUrl || state === 'starting' || state === 'running') return
+      if (!jobKey || state === 'starting' || state === 'running') return
       stoppedRef.current = false
       setState('starting')
       setLog('')
@@ -139,23 +162,21 @@ export function useTailorMaterials(
         try {
           const res =
             scope === 'resume'
-              ? await startJobTailorResume(jobUrl, instructions)
-              : await startJobTailorCover(jobUrl, instructions)
+              ? await startJobTailorResume(jobKey, instructions)
+              : await startJobTailorCover(jobKey, instructions)
           setHandle(res)
           setState('running')
         } catch (e) {
-          const { toast } = await import('sonner')
           toast.error(errorMessage(e))
           setState('error')
         }
       })()
     },
-    [jobUrl, scope, state],
+    [jobKey, scope, state],
   )
 
   const stop = useCallback(async () => {
     if (!runId) {
-      const { toast } = await import('sonner')
       toast.error('No run to stop yet')
       return
     }
@@ -165,14 +186,12 @@ export function useTailorMaterials(
     setStopping(true)
     try {
       const res = await stopRun(runId)
-      const { toast } = await import('sonner')
       toast.success(
         res.stopped ? 'Run stopped' : 'Stop requested (process may still be winding down)',
       )
       setRc(res.returncode)
       setState('failed')
     } catch (e) {
-      const { toast } = await import('sonner')
       toast.error(errorMessage(e))
       setState('failed')
     } finally {

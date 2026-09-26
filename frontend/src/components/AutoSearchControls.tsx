@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { AutoSearchDialog } from '@/components/AutoSearchDialog'
 import { RunProgressButton } from '@/components/RunProgressButton'
-import { useAutoSearch, STAGE_LABELS } from '@/lib/useAutoSearch'
+import { useAutoSearch, RUN_STAGE_LABELS } from '@/lib/useAutoSearch'
 
 type Props = {
   onRunDone: () => void
@@ -18,7 +18,7 @@ export function AutoSearchControls({ onRunDone }: Props) {
         run={run}
         idleLabel="Auto Search"
         variant="prepare"
-        stageLabels={STAGE_LABELS}
+        stageLabels={RUN_STAGE_LABELS}
         titleIdle="Run auto search. Prepared jobs land in Prepare."
         titleActive="Auto search in progress. Click to view logs"
         onClick={() => {

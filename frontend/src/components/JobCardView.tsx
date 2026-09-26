@@ -31,6 +31,15 @@ export function JobCardView({ job, stage, onOpen, dragging, onScoreSaved }: Prop
           : 'glass-interactive',
       )}
       onClick={() => onOpen?.(job)}
+      onKeyDown={(e) => {
+        if (onOpen && (e.key === 'Enter' || (e.key === ' ' && e.target === e.currentTarget))) {
+          e.preventDefault()
+          onOpen(job)
+        }
+      }}
+      role={onOpen ? 'button' : undefined}
+      tabIndex={onOpen ? 0 : undefined}
+      aria-label={onOpen ? `Open ${job.title || 'job'} at ${job.company || 'unknown company'}` : undefined}
     >
       <JobSummary job={job} onScoreSaved={onScoreSaved} onLinkClick={stopCardOpen} />
     </div>
@@ -60,14 +69,17 @@ export function SortableJobCard({
     transform: CSS.Transform.toString(transform),
     transition,
   }
+  // The card itself is the single focus target (Enter opens it); keyboard users
+  // move stages from the drawer, so the drag wrapper stays out of the tab order.
+  const { role: _role, tabIndex: _tabIndex, ...dragAttributes } = attributes
 
   if (isDragging) {
     return (
       <div
         ref={setNodeRef}
         style={{ ...style, '--lane': lane } as CSSProperties}
-        className="touch-none"
-        {...attributes}
+        className="touch-manipulation"
+        {...dragAttributes}
         {...listeners}
       >
         <div
@@ -79,7 +91,7 @@ export function SortableJobCard({
   }
 
   return (
-    <div ref={setNodeRef} style={style} {...attributes} {...listeners} className="touch-none">
+    <div ref={setNodeRef} style={style} {...dragAttributes} {...listeners} className="touch-manipulation">
       <JobCardView job={job} stage={stage} onOpen={onOpen} onScoreSaved={onScoreSaved} />
     </div>
   )

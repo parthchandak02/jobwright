@@ -6,12 +6,13 @@ import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Textarea } from '@/components/ui/textarea'
-import { apiFetch } from '@/lib/api'
+import { apiFetch, jobPath } from '@/lib/api'
 import { getScoreColors } from '@/lib/scoreColor'
 import { cn, errorMessage } from '@/lib/utils'
 
 type ScoreFields = {
   url: string
+  job_id?: string | null
   fit_score: number | null
   ai_fit_score?: number | null
   user_fit_score?: number | null
@@ -60,7 +61,7 @@ export function ScoreEditor({ job, className, badgeClassName, onSaved }: Props) 
     }
     setBusy(true)
     try {
-      await apiFetch(`/jobs/${encodeURIComponent(job.url)}`, {
+      await apiFetch(jobPath(job), {
         method: 'PATCH',
         body: JSON.stringify({
           user_fit_score: draftScore,
@@ -80,7 +81,7 @@ export function ScoreEditor({ job, className, badgeClassName, onSaved }: Props) 
   async function clearOverride() {
     setBusy(true)
     try {
-      await apiFetch(`/jobs/${encodeURIComponent(job.url)}`, {
+      await apiFetch(jobPath(job), {
         method: 'PATCH',
         body: JSON.stringify({ clear_user_score: true }),
       })

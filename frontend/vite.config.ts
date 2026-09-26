@@ -10,6 +10,18 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          react: ['react', 'react-dom', 'react-router-dom'],
+          ui: ['radix-ui', '@radix-ui/react-slot', 'lucide-react', 'sonner'],
+          markdown: ['react-markdown', 'remark-gfm', 'remark-breaks'],
+          dnd: ['@dnd-kit/core', '@dnd-kit/sortable', '@dnd-kit/utilities'],
+        },
+      },
+    },
+  },
   server: {
     host: process.env.VITE_HOST ?? '127.0.0.1',
     proxy: {

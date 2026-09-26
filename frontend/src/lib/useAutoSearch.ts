@@ -1,8 +1,9 @@
+import { toast } from 'sonner'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { listRuns, startRun, stopRun, type RunHandle, type RunRecord } from '@/lib/api'
 import { errorMessage } from '@/lib/utils'
 
-/** Full pipeline the "Auto Search" action runs, in order. */
+/** Every stage a run can report, in order (a run uses a subset). */
 export const FULL_PIPELINE = [
   'discover',
   'enrich',
@@ -14,8 +15,8 @@ export const FULL_PIPELINE = [
   'connect',
 ] as const
 
-/** Human labels for the compact progress readout. */
-export const STAGE_LABELS: Record<string, string> = {
+/** Human labels for pipeline run stages (not Kanban lanes; see api.STAGE_LABELS). */
+export const RUN_STAGE_LABELS: Record<string, string> = {
   discover: 'Discovering',
   enrich: 'Enriching',
   score: 'Scoring',
@@ -140,7 +141,7 @@ export function useAutoSearch(onDone: () => void): AutoSearch {
       if (line.includes('done RC=')) {
         const parsed = parseRC(line)
         setRc(parsed)
-        setState(stoppedRef.current || parsed !== 0 ? 'failed' : 'finished')
+        setState(stoppedRef.current || (parsed !== null && parsed !== 0) ? 'failed' : 'finished')
       }
     }
 
@@ -209,7 +210,7 @@ export function useAutoSearch(onDone: () => void): AutoSearch {
     let cancelled = false
     const tick = async () => {
       const st = stateRef.current
-      if (st === 'starting' || stopping) return
+      if (st === 'starting' || stopping || document.hidden) return
       try {
         const runs = await listRuns()
         if (cancelled) return
@@ -217,7 +218,7 @@ export function useAutoSearch(onDone: () => void): AutoSearch {
         if (!live) {
           // API restart (or process exit) drops SSE before `done`. Stop the
           // header timer instead of sitting on "Starting" forever.
-          if (st === 'running' || st === 'starting' || st === 'error') {
+          if (st === 'running') {
             setState('finished')
           }
           return
@@ -249,16 +250,15 @@ export function useAutoSearch(onDone: () => void): AutoSearch {
     startedAtRef.current = Date.now()
     void (async () => {
       try {
-        const existing = (await listRuns()).find((r) => r.running)
+        const existing = (await listRuns()).find((r) => r.running && isAutoSearchRun(r))
         if (existing) {
           adopt(existing)
           return
         }
-        const res = await startRun([...FULL_PIPELINE], { min_score: 7, workers: 4 })
+        const res = await startRun([], { min_score: 7, workers: 2 })
         setHandle(res)
         setState('running')
       } catch (e) {
-        const { toast } = await import('sonner')
         toast.error(errorMessage(e))
         setState('error')
       }
@@ -267,7 +267,6 @@ export function useAutoSearch(onDone: () => void): AutoSearch {
 
   const stop = useCallback(async () => {
     if (!runId) {
-      const { toast } = await import('sonner')
       toast.error('No run to stop yet')
       return
     }
@@ -277,12 +276,10 @@ export function useAutoSearch(onDone: () => void): AutoSearch {
     setStopping(true)
     try {
       const res = await stopRun(runId)
-      const { toast } = await import('sonner')
       toast.success(res.stopped ? 'Run stopped' : 'Stop requested (process may still be winding down)')
       setRc(res.returncode)
       setState('failed')
     } catch (e) {
-      const { toast } = await import('sonner')
       toast.error(errorMessage(e))
       // Keep failed so the UI does not look like the run is still going.
       setState('failed')
@@ -291,7 +288,8 @@ export function useAutoSearch(onDone: () => void): AutoSearch {
     }
   }, [runId])
 
-  const total = FULL_PIPELINE.length
+  const runStages = handle?.stages?.length ? handle.stages : [...FULL_PIPELINE]
+  const total = runStages.length
   const done = Math.min(completedCount, total)
   // Give partial credit for the stage currently running so the bar advances
   // between completions instead of sitting still through a long stage.
@@ -307,7 +305,7 @@ export function useAutoSearch(onDone: () => void): AutoSearch {
     handle,
     log,
     rc,
-    stages: [...FULL_PIPELINE],
+    stages: runStages,
     currentStage,
     completedCount: done,
     progress,

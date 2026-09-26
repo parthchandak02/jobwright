@@ -9,7 +9,7 @@ import {
 import { RunProgressButton } from '@/components/RunProgressButton'
 import { RunProgressDialog } from '@/components/RunProgressDialog'
 import type { CoverLetterExample, SettingsData } from '@/lib/api'
-import { STAGE_LABELS } from '@/lib/useAutoSearch'
+import { RUN_STAGE_LABELS } from '@/lib/useAutoSearch'
 import { useTailorMaterials } from '@/lib/useTailorMaterials'
 import { cn } from '@/lib/utils'
 
@@ -28,7 +28,7 @@ type Props = {
   materials: MaterialsData | null
   settings: SettingsData | null
   className?: string
-  jobUrl?: string
+  jobKey?: string
   onTailored?: () => void
 }
 
@@ -57,7 +57,7 @@ function useTailorToasts(
 }
 
 type MaterialSectionShellProps = {
-  jobUrl?: string
+  jobKey?: string
   views: MaterialViewOption[]
   viewKey: string
   onViewKeyChange: (key: string) => void
@@ -75,7 +75,7 @@ type MaterialSectionShellProps = {
 }
 
 function MaterialSectionShell({
-  jobUrl,
+  jobKey,
   views,
   viewKey,
   onViewKeyChange,
@@ -108,7 +108,7 @@ function MaterialSectionShell({
         tailoredDocx={tailoredDocx}
         tailoredPdf={tailoredPdf}
         tailorActions={
-          jobUrl ? (
+          jobKey ? (
             <MaterialsTailorActions
               customDisabled={tailor.active}
               onCustom={() => onCustomOpen(true)}
@@ -116,7 +116,7 @@ function MaterialSectionShell({
                 <RunProgressButton
                   run={tailor}
                   idleLabel="Auto Tailor"
-                  stageLabels={STAGE_LABELS}
+                  stageLabels={RUN_STAGE_LABELS}
                   titleIdle="Runs in the background. Click again for logs."
                   titleActive="Tailoring in progress. Click to view logs"
                   onClick={onAutoTailor}
@@ -138,7 +138,7 @@ function MaterialSectionShell({
         onClose={() => onLogOpen(false)}
         title={logTitle}
         description={logDescription}
-        stageLabels={STAGE_LABELS}
+        stageLabels={RUN_STAGE_LABELS}
         run={tailor}
       />
     </>
@@ -148,14 +148,14 @@ function MaterialSectionShell({
 export function JobResumeMaterials({
   materials,
   settings,
-  jobUrl,
+  jobKey,
   onTailored,
   className,
 }: Omit<Props, never>) {
   const [viewKey, setViewKey] = useState('base')
   const [logOpen, setLogOpen] = useState(false)
   const [customOpen, setCustomOpen] = useState(false)
-  const tailor = useTailorMaterials(jobUrl, 'resume', () => onTailored?.())
+  const tailor = useTailorMaterials(jobKey, 'resume', () => onTailored?.())
   useTailorToasts(tailor, logOpen, 'Resume tailor')
 
   const baseResumePdf =
@@ -163,8 +163,8 @@ export function JobResumeMaterials({
       ? `/api/settings/resume.pdf?t=${settings.resume_pdf_mtime}`
       : null
   const resumePdfUrl =
-    jobUrl && materials?.resume_pdf
-      ? `/api/jobs/${encodeURIComponent(jobUrl)}/materials/resume.pdf`
+    jobKey && materials?.resume_pdf
+      ? `/api/jobs/${encodeURIComponent(jobKey)}/materials/resume.pdf`
       : null
 
   const views = useMemo<MaterialViewOption[]>(() => {
@@ -197,7 +197,7 @@ export function JobResumeMaterials({
     <div className={className}>
       {views.length ? (
         <MaterialSectionShell
-          jobUrl={jobUrl}
+          jobKey={jobKey}
           views={views}
           viewKey={viewKey}
           onViewKeyChange={setViewKey}
@@ -228,20 +228,20 @@ export function JobResumeMaterials({
 export function JobCoverMaterials({
   materials,
   settings,
-  jobUrl,
+  jobKey,
   onTailored,
   className,
 }: Omit<Props, never>) {
   const [viewKey, setViewKey] = useState('base')
   const [logOpen, setLogOpen] = useState(false)
   const [customOpen, setCustomOpen] = useState(false)
-  const tailor = useTailorMaterials(jobUrl, 'cover', () => onTailored?.())
+  const tailor = useTailorMaterials(jobKey, 'cover', () => onTailored?.())
   useTailorToasts(tailor, logOpen, 'Cover letter tailor')
 
   const examples = settings?.cover_letter_examples ?? []
   const coverPdfUrl =
-    jobUrl && materials?.cover_pdf
-      ? `/api/jobs/${encodeURIComponent(jobUrl)}/materials/cover.pdf`
+    jobKey && materials?.cover_pdf
+      ? `/api/jobs/${encodeURIComponent(jobKey)}/materials/cover.pdf`
       : null
 
   const views = useMemo<MaterialViewOption[]>(() => {
@@ -283,7 +283,7 @@ export function JobCoverMaterials({
     <div className={className}>
       {views.length ? (
         <MaterialSectionShell
-          jobUrl={jobUrl}
+          jobKey={jobKey}
           views={views}
           viewKey={viewKey}
           onViewKeyChange={setViewKey}
@@ -313,20 +313,20 @@ export function JobCoverMaterials({
   )
 }
 
-export function MaterialsPanel({ materials, settings, className, jobUrl, onTailored }: Props) {
-  if (!jobUrl && !settings && !materials) return null
+export function MaterialsPanel({ materials, settings, className, jobKey, onTailored }: Props) {
+  if (!jobKey && !settings && !materials) return null
   return (
     <div className={cn('space-y-8', className)}>
       <JobResumeMaterials
         materials={materials}
         settings={settings}
-        jobUrl={jobUrl}
+        jobKey={jobKey}
         onTailored={onTailored}
       />
       <JobCoverMaterials
         materials={materials}
         settings={settings}
-        jobUrl={jobUrl}
+        jobKey={jobKey}
         onTailored={onTailored}
       />
     </div>

@@ -1,5 +1,5 @@
 import { RunProgressDialog } from '@/components/RunProgressDialog'
-import { STAGE_LABELS, type AutoSearch } from '@/lib/useAutoSearch'
+import { RUN_STAGE_LABELS, type AutoSearch } from '@/lib/useAutoSearch'
 
 type Props = {
   open: boolean
@@ -14,7 +14,7 @@ export function AutoSearchDialog({ open, onClose, run }: Props) {
       onClose={onClose}
       title="Auto Search"
       description="Full pipeline: discover through connect. Closing this window does not stop the run."
-      stageLabels={STAGE_LABELS}
+      stageLabels={RUN_STAGE_LABELS}
       run={run}
     />
   )

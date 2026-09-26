@@ -45,7 +45,8 @@ _runs: dict[str, dict] = {}
 
 
 class RunBody(BaseModel):
-    stages: list[str] = Field(default_factory=lambda: ["score"])
+    # Empty = the profile's default brief stages (human_gate honored).
+    stages: list[str] = Field(default_factory=list)
     min_score: int = 7
     workers: int = 2
 
@@ -315,14 +316,17 @@ def spawn_logged_run(
 
 @router.post("/run")
 def start_run(body: RunBody, request: Request) -> dict:
-    stages = [s for s in body.stages if s in ALLOWED_STAGES]
-    if not stages:
+    from jobwright.pipeline import default_brief_stages
+
+    explicit = [s for s in body.stages if s in ALLOWED_STAGES]
+    if body.stages and not explicit:
         raise HTTPException(400, f"No valid stages; allowed: {ALLOWED_STAGES}")
+    stages = explicit or default_brief_stages()
 
     return spawn_logged_run(
         args=[
             "run",
-            *stages,
+            *explicit,
             "-w",
             str(max(1, min(body.workers, 4))),
             "--min-score",

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { CircleUser } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { BrandLogo, APP_SHELL_HEADER_HEIGHT } from '@/components/BrandLogo'
@@ -20,6 +20,8 @@ type Props = {
   onOpenProfile: () => void
   /** Unpin when a job drawer opens (more room for the board). */
   jobOpen?: boolean
+  /** Extra footer rows (e.g. Match quality, Admin). */
+  extraActions?: ReactNode
 }
 
 export function AppSidebar({
@@ -30,6 +32,7 @@ export function AppSidebar({
   profileActive,
   onOpenProfile,
   jobOpen = false,
+  extraActions,
 }: Props) {
   const [pinned, setPinned] = useState(false)
   const [hovered, setHovered] = useState(false)
@@ -135,6 +138,7 @@ export function AppSidebar({
           onFilterStage={onFilterStage}
         />
         <div className="mt-auto flex w-[var(--sidebar-panel)] shrink-0 flex-col gap-0.5 border-t border-sidebar-border p-2">
+          {extraActions}
           <SidebarActionButton
             active={profileActive}
             icon={CircleUser}
