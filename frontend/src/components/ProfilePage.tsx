@@ -12,6 +12,7 @@ import { ProfileMaterials } from '@/components/ProfileMaterials'
 import { ProfileSwitcher } from '@/components/ProfileSwitcher'
 import { QueryChipInput } from '@/components/QueryChipInput'
 import { SectionLabel } from '@/components/SectionLabel'
+import { ConnectedChat } from '@/components/ConnectedChat'
 import { WhatsAppChatPicker } from '@/components/WhatsAppChatPicker'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -29,6 +30,7 @@ import {
   updateProfile,
   type MatchCriteria,
 } from '@/lib/api'
+import { useMe } from '@/lib/me'
 import { invalidateReasons } from '@/lib/reasons'
 import { cn, errorMessage } from '@/lib/utils'
 
@@ -156,6 +158,7 @@ function RulesTab() {
 }
 
 function WhatsAppTab({ profile, onSaved }: { profile: Profile | null; onSaved: () => void }) {
+  const isAdmin = Boolean(useMe().me?.is_admin)
   const [target, setTarget] = useState(profile?.whatsapp_target || '')
   const [time, setTime] = useState(cronToTime(profile?.schedule))
   const [weekly, setWeekly] = useState(profile?.weekly_summary ?? true)
@@ -176,7 +179,7 @@ function WhatsAppTab({ profile, onSaved }: { profile: Profile | null; onSaved: (
       const days = Math.min(90, Math.max(1, Math.round(Number(followupDays)) || 10))
       const res = await updateProfile({
         schedule: `${m} ${h} * * *`,
-        whatsapp_target: target,
+        ...(isAdmin ? { whatsapp_target: target } : {}),
         weekly_summary: weekly,
         followup_days: days,
       })
@@ -209,8 +212,12 @@ function WhatsAppTab({ profile, onSaved }: { profile: Profile | null; onSaved: (
       <SectionLabel hint="Once a day: search, score, then one WhatsApp message with your best new matches.">
         Daily WhatsApp list
       </SectionLabel>
-      <FormField label="Send it to">
-        <WhatsAppChatPicker value={target} onChange={setTarget} />
+      <FormField label="Sent to">
+        {isAdmin ? (
+          <WhatsAppChatPicker value={target} onChange={setTarget} />
+        ) : (
+          <ConnectedChat target={profile?.whatsapp_target} name={profile?.whatsapp_chat_name} />
+        )}
       </FormField>
       <FormField label={`Time${profile?.timezone ? ` (${profile.timezone})` : ''}`}>
         <Input type="time" value={time} onChange={(e) => setTime(e.target.value)} className="w-40" />
@@ -233,7 +240,7 @@ function WhatsAppTab({ profile, onSaved }: { profile: Profile | null; onSaved: (
         />
       </FormField>
       <div className="flex flex-wrap gap-2">
-        <Button size="sm" onClick={() => void save()} disabled={!!busy || !target}>
+        <Button size="sm" onClick={() => void save()} disabled={!!busy || (isAdmin && !target)}>
           {busy === 'save' ? <Loader2 className="animate-spin" /> : <Save />} Save
         </Button>
         <Button size="sm" variant="outline" onClick={() => void sendNow()} disabled={!!busy}>

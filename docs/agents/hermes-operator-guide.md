@@ -151,7 +151,7 @@ Dry-run remains the default; `--live` is required to submit, and LinkedIn apply 
 
 ## Onboarding a new user
 
-Preferred (v0.6): the owner adds the person's email to the Cloudflare Access policy, then the person opens the dashboard and completes `/welcome` (resume → drafted profile, searches, match criteria → WhatsApp chat picker → brief time, which creates `jobwright-brief-<id>`). An admin can also create a profile for someone else on the Admin page (binds their email).
+Preferred (v0.6): the owner adds the person's email to the Cloudflare Access policy, then the person opens the dashboard and completes `/welcome` (resume → drafted profile, searches, match criteria → shows the WhatsApp chat the admin connected (read-only) → brief time, which creates `jobwright-brief-<id>`). The admin creates the profile on the Admin page first (binds their email) and connects their WhatsApp group there; people cannot choose or change their own chat.
 
 CLI fallback (then bind the email on the Admin page or in `users.yaml` `emails`):
 

@@ -242,5 +242,5 @@ def onboarding_status() -> dict[str, Any]:
         "schedule": bool(user and user.schedule),
         "first_run": (Path(config.LOG_DIR) / "last_run.json").exists(),
     }
-    required = ("resume", "profile", "searches", "whatsapp")
+    required = ("resume", "profile", "searches")
     return {"user_id": uid, "steps": steps, "complete": all(steps[k] for k in required)}

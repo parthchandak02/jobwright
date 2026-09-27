@@ -15,7 +15,7 @@ Detailed paths for agents. Summary: [../../AGENTS.md](../../AGENTS.md).
 | `src/jobwright/ops.py` | Brief report, watchdog, alerts to `ops_target`, backups |
 | `src/jobwright/preflight.py` | Pre-run checks; `--fix` installs Playwright Chromium |
 | `src/jobwright/onboarding.py` | New profile + LLM draft from resume |
-| `src/jobwright/whatsapp.py` | Chat picker (Hermes targets + bridge names) and test send |
+| `src/jobwright/whatsapp.py` | Admin chat picker (Hermes targets + bridge names), `chat_name`, test send |
 | `src/jobwright/labels.py` | Append-only human labels (`score_labels`) and eval set |
 | `src/jobwright/config.py` | `JOBWRIGHT_DIR` paths, environment loading, `set_active_user` (CLI), `user_context` (per-request web), `user_env` |
 | `src/jobwright/users.py` | Multi-profile registry (`users/users.yaml`: users with `emails`, `admins`, `ops_target`) |

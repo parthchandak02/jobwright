@@ -102,26 +102,37 @@ def test_admin_settings_and_email_binding(api_env):
     assert s["ops_target"] == "whatsapp:123@lid"
 
 
-def test_whatsapp_chats_filtered_for_non_admin(api_env, monkeypatch):
+def test_whatsapp_chat_is_admin_managed(api_env, monkeypatch):
     client, h, _ = api_env
-    client.post("/api/onboarding/profile", json={"name": "Di"}, headers=h("di@example.com"))
+    di = h("di@example.com")
+    client.post("/api/onboarding/profile", json={"name": "Di"}, headers=di)
     client.cookies.set("jobwright_user", "di")
     monkeypatch.setattr("jobwright.whatsapp._hermes_targets", lambda: [
-        {"id": "111@g.us", "name": "111", "type": "group"}, {"id": "222@g.us", "name": "222", "type": "group"},
-        {"id": "9@lid", "name": "Parth", "type": "dm"},
+        {"id": "111@g.us", "name": "111", "type": "group"}, {"id": "9@lid", "name": "Parth", "type": "dm"},
     ])
     monkeypatch.setattr("jobwright.whatsapp.bridge_status", lambda: "connected")
     monkeypatch.setattr("jobwright.whatsapp._bridge_chat", lambda jid: {
-        "111@g.us": {"name": "Di job search", "participants": ["14155550100@s.whatsapp.net", "9@s.whatsapp.net"]},
-        "222@g.us": {"name": "Family", "participants": ["9@s.whatsapp.net"]},
+        "111@g.us": {"name": "Di job search", "participants": ["9@s.whatsapp.net"]},
     }.get(jid))
-    body = client.get("/api/whatsapp/chats?phone=%2B1%20415%20555%200100", headers=h("di@example.com")).json()
-    assert [c["name"] for c in body["chats"]] == ["Di job search"]
-    assert body["direct_target"] == "whatsapp:14155550100@s.whatsapp.net"
+    sent = []
+    monkeypatch.setattr("jobwright.whatsapp.send_test", lambda target, name="": sent.append(target))
+
+    assert client.get("/api/whatsapp/chats", headers=di).status_code == 403
+    r = client.put("/api/profile", json={"whatsapp_target": "whatsapp:222@g.us"}, headers=di)
+    assert r.status_code == 403
+    assert client.post("/api/whatsapp/test", json={}, headers=di).status_code == 400
+
     boss = h("boss@example.com")
-    client.cookies.set("jobwright_user", "di")
     names = {c["name"] for c in client.get("/api/whatsapp/chats", headers=boss).json()["chats"]}
-    assert {"Di job search", "Family", "Parth"} <= names
+    assert {"Di job search", "Parth"} <= names
+    r = client.put("/api/profile", json={"whatsapp_target": "whatsapp:111@g.us"}, headers=boss)
+    assert r.status_code == 200 and r.json()["whatsapp_chat_name"] == "Di job search"
+
+    assert client.post("/api/whatsapp/test", json={"target": "whatsapp:9@lid"}, headers=di).json()["target"] \
+        == "whatsapp:111@g.us"
+    assert sent == ["whatsapp:111@g.us"]
+    profile = client.get("/api/profile", headers=di).json()
+    assert profile["whatsapp_chat_name"] == "Di job search"
 
 
 def test_job_id_routes_and_labels(api_env):

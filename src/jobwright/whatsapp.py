@@ -101,6 +101,25 @@ def _bridge_chat(jid: str) -> dict | None:
     return None
 
 
+def chat_name(target: str | None) -> str:
+    """Display name for a whatsapp:<jid> target (bridge, then cached lists, then the id)."""
+    jid = (target or "").removeprefix("whatsapp:")
+    if not jid:
+        return ""
+    if jid.endswith("@g.us"):
+        info = _bridge_chat(jid) or {}
+        name = str(info.get("name") or "")
+        if name and name != jid.split("@")[0]:
+            return name
+        cached = _cached_group_names().get(jid)
+        if cached:
+            return cached
+    for t in (_targets_cache[1] if _targets_cache else []):
+        if t.get("id") == jid and t.get("name"):
+            return str(t["name"])
+    return jid.split("@")[0]
+
+
 def list_chats(*, for_phone: str | None = None, show_all: bool = False) -> dict:
     """Chats the bot can post to. ``show_all`` for admins, else filtered by ``for_phone``."""
     targets = _hermes_targets()

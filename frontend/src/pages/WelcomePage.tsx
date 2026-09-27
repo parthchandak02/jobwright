@@ -8,11 +8,13 @@ import { CriteriaEditor } from '@/components/CriteriaEditor'
 import { FormField } from '@/components/FormField'
 import { LocationChipInput } from '@/components/LocationChipInput'
 import { QueryChipInput } from '@/components/QueryChipInput'
+import { ConnectedChat } from '@/components/ConnectedChat'
 import { WhatsAppChatPicker } from '@/components/WhatsAppChatPicker'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import {
+  apiFetch,
   apiUpload,
   confirmSetup,
   createProfile,
@@ -23,6 +25,7 @@ import {
   type DraftHints,
   type OnboardingDraft,
   type OnboardingStatus,
+  type Profile,
 } from '@/lib/api'
 import { useMe } from '@/lib/me'
 import { cn, errorMessage } from '@/lib/utils'
@@ -93,6 +96,8 @@ export function WelcomePage() {
   const [hints, setHints] = useState<DraftHints>({})
   const [draft, setDraft] = useState<OnboardingDraft | null>(null)
   const [target, setTarget] = useState('')
+  const [connected, setConnected] = useState<Profile | null>(null)
+  const isAdmin = Boolean(me?.is_admin)
   const [time, setTime] = useState('07:00')
   const [letters, setLetters] = useState<string[]>([])
   const fileRef = useRef<HTMLInputElement>(null)
@@ -155,15 +160,28 @@ export function WelcomePage() {
     }
   }
 
+  useEffect(() => {
+    if (step !== 'whatsapp') return
+    void apiFetch<Profile>('/profile')
+      .then((p) => {
+        setConnected(p)
+        if (p.whatsapp_target) setTarget(p.whatsapp_target)
+      })
+      .catch(() => setConnected(null))
+  }, [step])
+
   async function doWhatsApp() {
-    if (!target) {
-      toast.error('Pick a chat for your daily list.')
+    if (isAdmin && !target) {
+      toast.error('Pick a chat for their daily list.')
       return
     }
     const [h, m] = time.split(':').map(Number)
     setBusy(true)
     try {
-      const res = await updateProfile({ schedule: `${m} ${h} * * *`, whatsapp_target: target })
+      const res = await updateProfile({
+        schedule: `${m} ${h} * * *`,
+        ...(isAdmin ? { whatsapp_target: target } : {}),
+      })
       if (res.cron_error) toast.info(`Saved. Daily schedule note: ${res.cron_error}`)
       setStep('letters')
     } catch (e) {
@@ -366,14 +384,20 @@ export function WelcomePage() {
 
         {step === 'whatsapp' ? (
           <Panel
-            title="Where should your daily list go?"
+            title="Your daily WhatsApp list"
             lead="Once a day you get one WhatsApp message with your best new matches. Each links straight to the job here."
           >
-            <WhatsAppChatPicker value={target} onChange={setTarget} phone={phone || undefined} />
+            {isAdmin ? (
+              <WhatsAppChatPicker value={target} onChange={setTarget} phone={phone || undefined} />
+            ) : (
+              <FormField label="Sent to">
+                <ConnectedChat target={connected?.whatsapp_target} name={connected?.whatsapp_chat_name} />
+              </FormField>
+            )}
             <FormField label="Send it at">
               <Input type="time" value={time} onChange={(e) => setTime(e.target.value)} className="w-40" />
             </FormField>
-            <Button onClick={() => void doWhatsApp()} disabled={busy || !target}>
+            <Button onClick={() => void doWhatsApp()} disabled={busy || (isAdmin && !target)}>
               {busy ? <Loader2 className="animate-spin" /> : <ArrowRight />} Continue
             </Button>
           </Panel>

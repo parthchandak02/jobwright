@@ -28,6 +28,17 @@ from jobwright.web.session import (
 router = APIRouter(prefix="/api", tags=["system"])
 
 
+def _chat_name(target: str) -> str:
+    if not target:
+        return ""
+    try:
+        from jobwright.whatsapp import chat_name
+
+        return chat_name(target)
+    except Exception:  # noqa: BLE001
+        return target.removeprefix("whatsapp:").split("@")[0]
+
+
 def _profile_payload(user_id: str) -> dict:
     user = get_user(user_id)
     conn = get_connection()
@@ -48,6 +59,7 @@ def _profile_payload(user_id: str) -> dict:
         "schedule_label": describe_cron_schedule(schedule),
         "timezone": host_timezone_name(),
         "whatsapp_target": user.whatsapp_target if user else "",
+        "whatsapp_chat_name": _chat_name(user.whatsapp_target if user else ""),
         "weekly_summary": user.weekly_summary if user else True,
         "followup_days": user.followup_days if user else DEFAULT_FOLLOWUP_DAYS,
         "brief_cron_name": brief_cron_name(user_id),
@@ -120,7 +132,12 @@ def update_profile(body: ProfileUpdate, request: Request) -> dict:
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
     if body.whatsapp_target is not None:
-        fields["whatsapp_target"] = _normalize_whatsapp_target(body.whatsapp_target.strip())
+        new_target = _normalize_whatsapp_target(body.whatsapp_target.strip())
+        current = get_user(user_id)
+        if new_target != (current.whatsapp_target if current else ""):
+            if not get_identity(request).is_admin:
+                raise HTTPException(403, "Only an admin can change the WhatsApp chat.")
+            fields["whatsapp_target"] = new_target
     if body.weekly_summary is not None:
         fields["weekly_summary"] = body.weekly_summary
     if body.followup_days is not None:

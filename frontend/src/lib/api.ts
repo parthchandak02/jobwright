@@ -133,6 +133,7 @@ export type Profile = {
   schedule_label?: string
   timezone?: string
   whatsapp_target?: string
+  whatsapp_chat_name?: string
   weekly_summary?: boolean
   followup_days?: number
   brief_cron_name?: string
@@ -464,10 +465,10 @@ export function listWhatsAppChats(phone?: string): Promise<WhatsAppChats> {
   return apiFetch<WhatsAppChats>(`/whatsapp/chats${q}`)
 }
 
-export function sendWhatsAppTest(target: string) {
+export function sendWhatsAppTest(target = '') {
   return apiFetch<{ ok: boolean; target: string }>('/whatsapp/test', {
     method: 'POST',
-    body: JSON.stringify({ target }),
+    body: JSON.stringify(target ? { target } : {}),
   })
 }
 

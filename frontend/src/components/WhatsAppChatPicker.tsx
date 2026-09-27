@@ -17,10 +17,7 @@ type Props = {
   hideTest?: boolean
 }
 
-/**
- * Pick where the daily job list is posted. Admins see every chat the bot is in;
- * everyone else sees chats that include their phone number, or a direct message.
- */
+/** Admin-only: pick where a profile's daily job list is posted (every chat the bot is in). */
 export function WhatsAppChatPicker({ value, onChange, phone, className, hideTest }: Props) {
   const [data, setData] = useState<WhatsAppChats | null>(null)
   const [loading, setLoading] = useState(false)

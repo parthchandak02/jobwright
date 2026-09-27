@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- WhatsApp chats are admin-managed: non-admins see their connected chat read-only (Welcome and Profile pages) and cannot list chats or change it; test sends go only to their own chat; onboarding no longer requires a chat.
+
 ### Added
 - **Weekly summary** (`jobwright summary [--dry-run] [--days 7] [--force]`, `summary.py`): one WhatsApp recap per profile (new jobs found, sent, applied, moved to interviews / offer, closed, top 3 open jobs with dashboard links, due follow-ups). Mark-then-send via `logs/weekly_summary.json`; skips when sent in the last 6 days or nothing happened. `jobwright-weekly-summary` Hermes cron (Sunday 18:00, `--deliver local`) runs it for every profile and is part of `jobwright ops install-crons`. Per-user opt-out `weekly_summary` in `users.yaml` (default true), editable on Profile → WhatsApp
 - **Follow-up reminders** (`followups.py`): applied jobs with no stage change for `followup_days` (per user, default 10) are due. Board cards and the job drawer show "Follow up? Applied N days ago"; drawer actions "Followed up" (stamps `followed_up_at`, snoozes N days via `follow_up_at`) and "No response" (closes, `close_reason=no_response`, outcome `ghosted`). `POST /api/jobs/{key}/followup`. Up to 3 due follow-ups are appended to the daily notify message and the weekly summary

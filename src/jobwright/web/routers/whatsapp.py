@@ -25,12 +25,13 @@ def chats(request: Request, phone: str = "") -> dict:
     from jobwright.whatsapp import list_chats
 
     current_user_id(request)
-    identity = get_identity(request)
-    return list_chats(for_phone=phone or _profile_phone(), show_all=identity.is_admin)
+    if not get_identity(request).is_admin:
+        raise HTTPException(403, "Only an admin can choose WhatsApp chats.")
+    return list_chats(for_phone=phone or _profile_phone(), show_all=True)
 
 
 class TestBody(BaseModel):
-    target: str
+    target: str = ""
 
 
 @router.post("/test")
@@ -39,10 +40,14 @@ def test_message(body: TestBody, request: Request) -> dict:
     from jobwright.whatsapp import send_test
 
     uid = current_user_id(request)
-    target = _normalize_whatsapp_target(body.target)
-    if not target.startswith("whatsapp:") or len(target) < 14:
-        raise HTTPException(400, "Pick a chat first.")
     user = get_user(uid)
+    own = _normalize_whatsapp_target(user.whatsapp_target if user else "")
+    if get_identity(request).is_admin:
+        target = _normalize_whatsapp_target(body.target) if body.target else own
+    else:
+        target = own
+    if not target.startswith("whatsapp:") or len(target) < 14:
+        raise HTTPException(400, "No WhatsApp chat is connected yet.")
     try:
         send_test(target, (user.name if user else "").split(" ")[0])
     except RuntimeError as exc:
