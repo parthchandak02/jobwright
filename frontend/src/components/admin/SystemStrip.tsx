@@ -155,7 +155,7 @@ export function SystemStrip({ overview, onChanged }: Props) {
                 The “jobwright users” allow policy is kept equal to every login email plus admins. Other policies are
                 never changed.
               </p>
-              {access.error ? <p className="text-destructive">{access.error}</p> : null}
+              {access.error ? <p className="text-destructive [overflow-wrap:anywhere]">{access.error}</p> : null}
               <EmailList label="Will be allowed" emails={access.add ?? []} />
               <EmailList label="Will be removed" emails={access.remove ?? []} />
             </>
@@ -192,7 +192,7 @@ export function SystemStrip({ overview, onChanged }: Props) {
               Each person’s WhatsApp group gets its own Hermes instructions (only that person’s data). After applying,
               restart Hermes: <code>hermes gateway restart</code>
             </p>
-            {hermes.error ? <p className="text-destructive">{hermes.error}</p> : null}
+            {hermes.error ? <p className="text-destructive [overflow-wrap:anywhere]">{hermes.error}</p> : null}
             {hermesPending.length ? (
               <ul className="space-y-0.5">
                 {hermesPending.map((u) => (

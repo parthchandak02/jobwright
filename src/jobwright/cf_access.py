@@ -109,6 +109,10 @@ class CFAccessClient:
             body = {}
         if resp.status_code >= 400 or not body.get("success", False):
             errors = "; ".join(str(e.get("message", e)) for e in body.get("errors") or []) or resp.text[:200]
+            if "authentication" in errors.lower():
+                raise CFAccessError(
+                    f"Cloudflare rejected the API token (check CLOUDFLARE_API_TOKEN; it needs {REQUIRED_PERMISSION})."
+                )
             raise CFAccessError(f"Cloudflare API {method} {path} failed (HTTP {resp.status_code}): {errors}")
         return resp
 

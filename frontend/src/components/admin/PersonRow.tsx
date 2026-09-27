@@ -58,7 +58,7 @@ export function PersonRow({ user: u, expanded, onToggle, saveState, ...actions }
         <span className="order-last flex min-w-0 basis-full flex-wrap gap-x-3 gap-y-0.5 pl-5.5 text-xs text-muted-foreground tabular-nums lg:order-none lg:grid lg:flex-1 lg:basis-auto lg:grid-cols-[minmax(0,1fr)_4.5rem_2rem_3.5rem_7.5rem_4rem] lg:items-center lg:pl-0">
           <span className={cn('min-w-0 truncate', chat && 'text-foreground/80')}>{chat || 'No chat'}</span>
           {pending ? (
-            <span className="lg:col-span-4">Setup pending</span>
+            <span className="hidden lg:col-span-4 lg:inline">Setup pending</span>
           ) : (
             <>
               <span>{fmtTime(u.hour, u.minute)}</span>
@@ -67,7 +67,7 @@ export function PersonRow({ user: u, expanded, onToggle, saveState, ...actions }
               <span>{`${u.counts?.new_7d ?? 0} new this week`}</span>
             </>
           )}
-          <span className="lg:text-right" title="AI usage, last 30 days">
+          <span className={cn('lg:text-right', pending && 'hidden lg:inline')} title="AI usage, last 30 days">
             {fmtCost(u.cost_30d)}
           </span>
         </span>
