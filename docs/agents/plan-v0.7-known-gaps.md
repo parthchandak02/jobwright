@@ -26,6 +26,7 @@
 | G7 | No weekly summary | Sunday WhatsApp summary per user: new jobs, applied, in progress, responses, top 3 still open | merged to `dev` |
 | G8 | No follow-up reminders | Applied jobs with no stage change after N days (default 10) appear in the brief and on the board | merged to `dev` |
 | G9 | Cost per user not visible to admin | Admin page: 30-day tokens and estimated cost per profile from `llm_usage` | merged to `dev` |
+| G11 | Admin page is a stack of big cards; people's settings and WhatsApp groups are scattered | Admin console v2 per `docs/agents/admin-console-spec.md`: system strip, compact expandable people rows with inline settings | in progress |
 | G10 | First brief on the new setup unverified | Check 2026-09-27 06:00 run: `last_run.json`, `ops_health.json`, WhatsApp delivery | pending (after 06:00) |
 
 ## Rules for this phase
