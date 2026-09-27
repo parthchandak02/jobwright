@@ -78,8 +78,8 @@ export function JobSummary({ job, onScoreSaved, onLinkClick }: Props) {
         </JobCardHeader>
 
         <JobCardMeta>
-          <MetaField icon={MapPin} label="Location" value={job.location} />
-          <MetaField icon={DollarSign} label="Salary" value={job.salary} />
+          <MetaField icon={MapPin} empty="Location not stated" value={job.location} />
+          <MetaField icon={DollarSign} empty="Pay not stated" value={job.salary} />
         </JobCardMeta>
 
         <JobCardFooter className={href ? 'job-card-footer--with-link' : undefined}>

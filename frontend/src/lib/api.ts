@@ -107,6 +107,7 @@ export type JobCard = {
   location_ok?: boolean | null
   seniority?: string | null
   close_reason?: string | null
+  duplicate_of?: { job_id: string; title: string | null; company: string | null } | null
   tailored_resume_path?: string | null
   tailored_resume_docx_path?: string | null
   cover_letter_path?: string | null
@@ -227,6 +228,7 @@ export const OUTCOME_LABELS: Record<string, string> = {
   ghosted: 'No response',
   accepted: 'Accepted an offer',
   cancelled: 'Posting closed',
+  duplicate: 'Duplicate posting',
 }
 
 /** Handle returned when a pipeline run is started. */

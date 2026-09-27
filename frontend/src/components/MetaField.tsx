@@ -3,12 +3,12 @@ import { cn } from '@/lib/utils'
 
 type Props = {
   icon?: LucideIcon
-  label: string
+  empty: string
   value?: string | null
   className?: string
 }
 
-export function MetaField({ icon: Icon, label, value, className }: Props) {
+export function MetaField({ icon: Icon, empty, value, className }: Props) {
   const hasValue = value != null && value.trim() !== ''
   return (
     <div className={cn('job-card-meta-row', className)}>
@@ -16,9 +16,7 @@ export function MetaField({ icon: Icon, label, value, className }: Props) {
       {hasValue ? (
         <span className="truncate text-foreground">{value}</span>
       ) : (
-        <span className="truncate text-muted-foreground">
-          {label}: <span className="font-medium">NA</span>
-        </span>
+        <span className="truncate text-muted-foreground">{empty}</span>
       )}
     </div>
   )

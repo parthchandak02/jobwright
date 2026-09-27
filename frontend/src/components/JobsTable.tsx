@@ -807,7 +807,7 @@ export function JobsTable({ jobs, stages, onOpen, onScoreSaved }: Props) {
                     <td className="text-muted-foreground">
                       <span className="flex min-w-0 items-center gap-1">
                         <MapPin className="size-3 shrink-0" aria-hidden />
-                        <span className="truncate">{job.location || '—'}</span>
+                        <span className="truncate">{job.location || 'Location not stated'}</span>
                       </span>
                     </td>
                     <td>

@@ -12,6 +12,7 @@ import {
   Sparkles,
   XCircle,
 } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
 import { ConnectionsPanel, type ConnectionContact } from '@/components/ConnectionsPanel'
 import { DismissDialog, type DismissResult } from '@/components/DismissDialog'
@@ -409,7 +410,14 @@ export function JobDrawer({ jobKey, onClose, onChanged }: Props) {
                       <JobMetaBadges job={job} />
                     </div>
                     <StagePicker stage={job.funnel_stage} disabled={busy} onMove={requestMove} />
-                    {job.funnel_stage === 'closed' && (job.outcome || job.close_reason) ? (
+                    {job.funnel_stage === 'closed' && job.duplicate_of ? (
+                      <p className="text-xs text-muted-foreground">
+                        Closed: duplicate of{' '}
+                        <Link to={jobPath(job.duplicate_of.job_id)} className="font-medium text-foreground underline underline-offset-2">
+                          {job.duplicate_of.title || 'another posting'}
+                        </Link>
+                      </p>
+                    ) : job.funnel_stage === 'closed' && (job.outcome || job.close_reason) ? (
                       <p className="text-xs text-muted-foreground">
                         Closed{job.outcome ? `: ${job.outcome.replace('_', ' ')}` : ''}
                         {job.close_reason ? ` · ${job.close_reason}` : ''}
