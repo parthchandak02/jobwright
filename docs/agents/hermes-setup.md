@@ -224,8 +224,25 @@ Re-run cron registration (Step 3) only if schedules or the user list changed. Us
 1. Clone or copy to the new path (recommended `/Users/parthchandak/apps/jobwright`) with `users/` and `.env`; `uv sync` / `.venv`, then `jobwright preflight --fix`.
 2. From the new checkout: `./scripts/install_skills.sh` (rewrites the skill `JOBWRIGHT_REPO` file) and `./scripts/install_hermes_scripts.sh`.
 3. Regenerate wrappers and crons: re-save each user's brief time in the dashboard (or `ensure_brief_cron`), and re-run the ops cron snippet above. Every generated script pins the repo and users root.
-4. Update the jobwright channel `system_prompt` / notes in `~/.hermes/config.yaml` that mention the old path; restart the gateway.
+4. Regenerate the per-profile group instructions: `jobwright hermes channels --apply` (rewrites the repo path in every managed `system_prompt`); restart the gateway.
 5. Point pm2 at the new checkout (no `--reload`). Keep the SSD for `JOBWRIGHT_BACKUP_DIR`.
+
+## WhatsApp group instructions (generated)
+
+Each profile whose `whatsapp_target` is a group (`whatsapp:<jid>@g.us`) gets its own Hermes entry in `~/.hermes/config.yaml`, generated from `users/users.yaml` by `src/jobwright/hermes_channels.py`: `channel_overrides.<jid>.system_prompt` (that user only: `--user <id>`, `jobwright-brief-<id>`, `apply_enabled`, dashboard URL, no model lines), `channel_prompts.<jid>`, a `channel_skill_bindings` entry (pp-job-apply, hermes-cron-jobs, graphify, cursor-agent) and `group_allow_from`.
+
+```bash
+jobwright hermes channels                 # show the diff (default ~/.hermes/config.yaml, or $HERMES_CONFIG / --config PATH)
+jobwright hermes channels --apply         # backup to <config>.bak-jobwright-<ts>, atomic write, re-parse
+jobwright hermes channels --apply --prune # also drop managed entries whose group no longer belongs to a profile
+hermes gateway restart                    # Hermes only reads the file at start
+```
+
+- Managed prompts carry the line `# managed by jobwright (hermes_channels)`. Entries for other groups are never touched; comments and key order are preserved (ruamel.yaml round-trip).
+- A managed entry whose group no profile uses is reported as `orphan` and kept unless `--prune`.
+- DMs and empty targets are skipped. Idempotent: a second run reports everything `unchanged`.
+- `JOBWRIGHT_HERMES_DRY_RUN=1` never writes. Admin page → "WhatsApp group instructions" shows the same plan with an Apply button (`GET /api/admin/hermes-channels`, `POST /api/admin/hermes-channels/apply`).
+- Re-run after adding a profile, changing a group, toggling `apply_enabled`/`human_gate`, or moving the checkout.
 
 ---
 

@@ -653,5 +653,26 @@ export type AccessPlan = {
 }
 export const getAccessPlan = () => apiFetch<AccessPlan>('/admin/access')
 export const syncAccess = () => apiFetch<AccessPlan>('/admin/access/sync', { method: 'POST' })
+export type HermesChannelEntry = {
+  user_id: string
+  name: string
+  jid: string
+  status: 'add' | 'update' | 'unchanged'
+  changes: string[]
+}
+export type HermesChannelsPlan = {
+  config_path: string
+  entries: HermesChannelEntry[]
+  skipped: { user_id: string; name: string; reason: string }[]
+  orphans: string[]
+  changed: boolean
+  diff: string
+  backup?: string | null
+  written?: boolean
+  dry_run?: boolean
+}
+export const getHermesChannels = () => apiFetch<HermesChannelsPlan>('/admin/hermes-channels')
+export const applyHermesChannels = () =>
+  apiFetch<HermesChannelsPlan>('/admin/hermes-channels/apply', { method: 'POST', body: '{}' })
 
 export const previewNotify = () => apiFetch<NotifyResponse & { dry_run?: boolean }>('/notify/preview')

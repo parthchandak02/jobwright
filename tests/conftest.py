@@ -39,6 +39,7 @@ def _hermetic(tmp_path_factory, monkeypatch):
     sandbox = tmp_path_factory.mktemp("hermetic")
     monkeypatch.setenv("JOBWRIGHT_ENV", str(sandbox / "no-global.env"))
     monkeypatch.setenv("JOBWRIGHT_AUTH_MODE", "dev")
+    monkeypatch.setenv("HERMES_CONFIG", str(sandbox / "hermes-config.yaml"))
 
     users_root = sandbox / "users"
     monkeypatch.setenv("JOBWRIGHT_USERS_ROOT", str(users_root))

@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Follow-up reminders** (`followups.py`): applied jobs with no stage change for `followup_days` (per user, default 10) are due. Board cards and the job drawer show "Follow up? Applied N days ago"; drawer actions "Followed up" (stamps `followed_up_at`, snoozes N days via `follow_up_at`) and "No response" (closes, `close_reason=no_response`, outcome `ghosted`). `POST /api/jobs/{key}/followup`. Up to 3 due follow-ups are appended to the daily notify message and the weekly summary
 - **Cost per profile** on the Admin page: `GET /api/admin/costs?days=30` (admins only) reads each profile's `llm_usage` read-only and reports calls, tokens and estimated cost (stored `cost_usd`, else `JOBWRIGHT_LLM_PRICES`), plus a total
 - `PUT /api/profile` accepts `weekly_summary` and `followup_days` (the brief cron is only touched when schedule or chat change)
+- `jobwright hermes channels [--apply] [--prune] [--config PATH]`: per-profile Hermes WhatsApp group instructions generated from `users.yaml` (system prompt scoped to that user only, channel prompt, skill binding, `group_allow_from`). ruamel.yaml round-trip keeps comments and key order; backup + atomic write; orphans reported, removed only with `--prune`; honors `JOBWRIGHT_HERMES_DRY_RUN`. Admin page card "WhatsApp group instructions" with Apply (`/api/admin/hermes-channels`). New dependency `ruamel.yaml>=0.18`.
 
 ## [0.6.0] - 2026-09-26
 
