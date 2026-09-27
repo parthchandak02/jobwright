@@ -129,7 +129,7 @@ def derive_criteria(profile: dict[str, Any] | None) -> MatchCriteria:
         for text in _as_list(prefs.get("avoid_roles")) + _as_list(prefs.get("avoid")) + _as_list(prefs.get("exclude"))
     ]
     must = _as_list(prefs.get("ideal_roles"))
-    seek = _as_list(prefs.get("seek")) + _as_list(prefs.get("include"))
+    seek = _as_list(prefs.get("seek")) + _as_list(prefs.get("include")) + _as_list(prefs.get("company_types"))
     summary = str(exp.get("target_role") or profile.get("target_role") or "").strip()
     criteria = parse_criteria(
         {

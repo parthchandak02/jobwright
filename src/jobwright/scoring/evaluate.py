@@ -24,7 +24,7 @@ from jobwright.labels import EvalItem, build_eval_set
 from jobwright.llm import usage_snapshot
 from jobwright.scoring.criteria import load_criteria
 from jobwright.scoring.examples import ExampleIndex
-from jobwright.scoring.matcher import MatchContext, score_jobs
+from jobwright.scoring.matcher import Borderline, MatchContext, MatchResult, apply_gates, score_jobs
 
 
 def metrics(pairs: list[tuple[int | None, int]], threshold: int) -> dict[str, Any]:
@@ -42,11 +42,69 @@ def metrics(pairs: list[tuple[int | None, int]], threshold: int) -> dict[str, An
     }
 
 
+SWEEP_THRESHOLDS = tuple(range(3, 10))
+MIN_EXPLICIT_PRECISION = 0.85
+MIN_SURFACED = 3
+
+
+def threshold_sweep(rows: list[dict[str, Any]], thresholds: tuple[int, ...] = SWEEP_THRESHOLDS) -> list[dict[str, Any]]:
+    """P / R / F0.5 per threshold, on all labels and on explicit labels only."""
+    explicit = [(r["score"], r["label"]) for r in rows if r.get("source") != "closed_unapplied"]
+    every = [(r["score"], r["label"]) for r in rows]
+    return [{"threshold": t, "all": metrics(every, t), "explicit": metrics(explicit, t)} for t in thresholds]
+
+
+def recommend_threshold(
+    sweep: list[dict[str, Any]], *, min_precision: float = MIN_EXPLICIT_PRECISION, min_surfaced: int = MIN_SURFACED,
+) -> dict[str, Any] | None:
+    """Lowest threshold (max recall) whose explicit-label precision meets the bar.
+
+    Falls back to the best explicit F0.5 (``meets_bar`` False) when none does.
+    """
+    if not sweep:
+        return None
+    ok = [s for s in sweep if s["explicit"]["precision"] >= min_precision and s["explicit"]["tp"] >= min_surfaced]
+    if ok:
+        best = max(ok, key=lambda s: (s["explicit"]["recall"], s["threshold"]))
+        meets = True
+    else:
+        best = max(sweep, key=lambda s: (s["explicit"]["f05"], s["threshold"]))
+        meets = False
+    return {
+        "threshold": best["threshold"], "meets_bar": meets, "min_precision": min_precision,
+        "precision": best["explicit"]["precision"], "recall": best["explicit"]["recall"],
+        "precision_all": best["all"]["precision"], "recall_all": best["all"]["recall"],
+    }
+
+
 def _item_job(item: EvalItem) -> dict[str, Any]:
     return {
         "url": item.url, "title": item.title, "company": item.company, "location": item.location,
         "salary": item.salary, "full_description": item.description, "dedupe_key": item.dedupe_key,
     }
+
+
+def prior_from_report(path: Path, jobs: list[dict[str, Any]], ctx: MatchContext) -> dict[str, MatchResult]:
+    """First-pass results from a stored eval report, re-gated with the current rules.
+
+    Only rows that carry the raw judgment (fit, location_ok, seniority) are reused.
+    """
+    rows = {r["url"]: r for r in json.loads(Path(path).read_text(encoding="utf-8")).get("items") or []}
+    out: dict[str, MatchResult] = {}
+    for job in jobs:
+        r = rows.get(job["url"])
+        if not r or r.get("fit") is None or "seniority" not in r or r.get("tier") not in ("t1", None):
+            continue
+        raw = {"fit": r["fit"], "dealbreakers": r.get("dealbreakers") or [], "location_ok": r.get("location_ok"),
+               "seniority": r.get("seniority") or "match"}
+        score, deals, caps = apply_gates(raw, job, ctx)
+        out[job["url"]] = MatchResult(
+            url=job["url"], score=score, fit=int(r["fit"]), confidence=float(r.get("confidence") or 0.0),
+            dealbreakers=deals, location_ok=r.get("location_ok"), seniority=raw["seniority"],
+            reasoning=r.get("reasoning") or "", model=r.get("model") or "?", tier="t1", caps=caps,
+            concerns=list(r.get("concerns") or []),
+        )
+    return out
 
 
 def run_eval(
@@ -68,6 +126,8 @@ def run_eval(
     thresholds: tuple[int, ...] = (6, 7, 8),
     write_history: bool = True,
     report_dir: Path | None = None,
+    borderline: Borderline | None = None,
+    reuse_report: Path | None = None,
 ) -> dict[str, Any]:
     items = [i for i in build_eval_set(conn) if len(i.description) >= 200]
     if limit and limit < len(items):
@@ -82,11 +142,14 @@ def run_eval(
         resume_text=resume_text, criteria=criteria, index=index, search_cfg=search_cfg,
         k_examples=k_examples, leave_one_out=True, min_positive_examples=min_positive_examples,
     )
+    jobs = [_item_job(i) for i in items]
+    prior = prior_from_report(reuse_report, jobs, ctx) if reuse_report else None
+    borderline = borderline or Borderline()
     usage_snapshot(reset=True)
     t0 = time.time()
     results, errors = score_jobs(
-        ctx, [_item_job(i) for i in items], workers=workers, escalate=escalate, escalate_at=escalate_at,
-        cheap_model=cheap_model, strong_model=strong_model,
+        ctx, jobs, workers=workers, escalate=escalate, escalate_at=escalate_at,
+        cheap_model=cheap_model, strong_model=strong_model, borderline=borderline, prior=prior,
     )
     elapsed = time.time() - t0
     usage = usage_snapshot(reset=True)
@@ -100,9 +163,12 @@ def run_eval(
             "label_score": it.label_score, "rationale": it.rationale, "baseline": it.model_score,
             "score": r.score if r else None, "fit": r.fit if r else None, "confidence": r.confidence if r else None,
             "dealbreakers": r.dealbreakers if r else None, "caps": r.caps if r else None,
+            "concerns": r.concerns if r else None, "location_ok": r.location_ok if r else None,
+            "seniority": r.seniority if r else None, "location": it.location, "salary": it.salary,
             "tier": r.tier if r else None, "model": r.model if r else None,
             "reasoning": r.reasoning if r else None,
             "escalated_from": r.escalated_from if r else None,
+            "second_opinion": r.second_opinion if r else None,
         })
     report = {
         "run_id": run_id,
@@ -113,6 +179,8 @@ def run_eval(
             "cheap_model": cheap_model, "strong_model": strong_model, "escalate": escalate,
             "escalate_at": escalate_at, "use_examples": use_examples, "k_examples": k_examples,
             "min_positive_examples": min_positive_examples,
+            "borderline": borderline.__dict__ if borderline.enabled else None,
+            "reused": str(reuse_report) if reuse_report else None, "reused_rows": len(prior or {}),
             "limit": limit, "n": len(items), "positives": sum(i.label for i in items),
         },
         "errors": errors,
@@ -131,8 +199,11 @@ def run_eval(
             for t in thresholds
         },
         "escalated": sum(1 for r in results if r.tier == "t2"),
+        "second_opinions": sum(1 for r in results if r.second_opinion),
         "items": rows,
     }
+    report["sweep"] = threshold_sweep(rows)
+    report["recommended"] = recommend_threshold(report["sweep"])
     if write_history:
         now = report["at"]
         conn.executemany(

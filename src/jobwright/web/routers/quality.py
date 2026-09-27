@@ -87,6 +87,18 @@ def job_labels(url: str, request: Request) -> dict:
     return {"labels": label_history(url, conn), "machine_scores": [dict(r) for r in history]}
 
 
+def _recommendation(report: dict) -> dict | None:
+    from jobwright.scoring.criteria import load_criteria
+    from jobwright.scoring.evaluate import recommend_threshold, threshold_sweep
+
+    rec = report.get("recommended")
+    if rec is None and report.get("items"):
+        rec = recommend_threshold(threshold_sweep(report["items"]))
+    if not rec:
+        return None
+    return {**rec, "current": load_criteria(_profile()).notify_threshold}
+
+
 @router.get("/quality")
 def quality(request: Request) -> dict:
     """Scoreboard: ratings, label-based precision of what was shown, latest eval."""
@@ -112,9 +124,11 @@ def quality(request: Request) -> dict:
             continue
     full = [r for r in parsed if not (r.get("config") or {}).get("limit")]
     rep = (full or parsed or [None])[-1]
+    recommended = None
     if rep:
         latest_eval = {k: rep.get(k) for k in ("run_id", "at", "prompt_version", "config", "metrics",
                                                "metrics_explicit", "baseline", "baseline_explicit", "errors")}
+        recommended = _recommendation(rep)
     usage = conn.execute(
         "SELECT purpose, SUM(prompt_tokens), SUM(completion_tokens), SUM(cost_usd) FROM llm_usage "
         "WHERE at >= datetime('now', '-30 days') GROUP BY purpose"
@@ -126,6 +140,7 @@ def quality(request: Request) -> dict:
         "notified_30d": shown[0] or 0,
         "notified_advanced_30d": shown[1] or 0,
         "latest_eval": latest_eval,
+        "recommended_threshold": recommended,
         "usage_30d": [
             {"purpose": r[0], "prompt_tokens": r[1] or 0, "completion_tokens": r[2] or 0, "cost_usd": r[3]}
             for r in usage

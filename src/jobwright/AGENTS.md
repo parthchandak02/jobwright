@@ -51,6 +51,7 @@ pytest tests/ -v
 ruff check src/jobwright/
 python -c "from jobwright.apply.providers.base import parse_result_output; assert parse_result_output('RESULT:APPLIED')=='applied'"
 jobwright --user <id> eval --limit 60   # scoring changes only
+jobwright --user <id> eval --reuse users/<id>/logs/eval_<ts>.json --borderline 5-6   # re-gate a stored run; only new calls cost tokens
 ```
 
 Single-user doctor: `jobwright doctor`. Multi-profile: `jobwright --user <id> doctor`.
@@ -64,6 +65,7 @@ Single-user doctor: `jobwright doctor`. Multi-profile: `jobwright --user <id> do
 | `tests/test_web_auth.py` | JWT verification, per-email access, admin switching, concurrent mixed-user requests |
 | `tests/test_web_multiuser.py` | Onboarding, non-admin isolation, admin settings, chat filtering, `job_id` routes + labels |
 | `tests/test_scoring_v2.py` | Criteria, gates, retrieval, labels, eval metrics, incremental persistence |
+| `tests/test_scoring_recall.py` | Borderline second opinion, threshold sweep + recommendation, eval `--reuse`, `/api/quality` recommendation |
 | `tests/test_scorer.py` | Legacy batch score JSON mapping |
 | `tests/test_llm_hardening.py` | LLM retries, structured-output fallback, usage + cost |
 | `tests/test_pipeline_integrity.py` | Tombstones, dedupe, run lock, run summary / stage failures |

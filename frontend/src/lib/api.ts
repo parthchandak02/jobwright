@@ -543,6 +543,14 @@ export type QualitySummary = {
     baseline_explicit: Record<string, EvalMetrics>
     errors: number
   }
+  recommended_threshold: null | {
+    threshold: number
+    meets_bar: boolean
+    min_precision: number
+    precision: number
+    recall: number
+    current: number
+  }
   usage_30d: { purpose: string; prompt_tokens: number; completion_tokens: number; cost_usd: number | null }[]
 }
 
