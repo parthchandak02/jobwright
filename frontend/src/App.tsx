@@ -13,11 +13,10 @@ import {
   useSensors,
 } from '@dnd-kit/core'
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { CircleUser, Gauge, Menu, Plus, Search, Shield, X } from 'lucide-react'
+import { Gauge, Plus, Search, Shield, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import {
   apiFetch,
   BoardResponse,
@@ -41,11 +40,9 @@ import { JobDrawer } from '@/components/JobDrawer'
 import { JobsTable } from '@/components/JobsTable'
 import { KanbanColumn } from '@/components/KanbanColumn'
 import { ManualAddModal } from '@/components/ManualAddModal'
-import { ProfileSwitcher } from '@/components/ProfileSwitcher'
+import { MobileNav, MobileNavProvider, MobileNavTrigger } from '@/components/MobileNav'
 import { SidebarActionButton } from '@/components/SidebarActionButton'
-import { SidebarNav } from '@/components/SidebarNav'
 import { StatusBanner } from '@/components/StatusBanner'
-import { ThemeToggle } from '@/components/ThemeToggle'
 import { ViewModeTabs, type ViewMode } from '@/components/ViewModeTabs'
 import {
   createKanbanCollisionDetection,
@@ -108,7 +105,6 @@ export default function App() {
   const [showSchedule, setShowSchedule] = useState(false)
   const [pendingNotify, setPendingNotify] = useState(0)
   const [loading, setLoading] = useState(true)
-  const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const [closeTarget, setCloseTarget] = useState<JobCard | null>(null)
   const [dropTargetStage, setDropTargetStage] = useState<string | null>(null)
   const dragOriginStage = useRef<string | null>(null)
@@ -304,236 +300,192 @@ export default function App() {
 
   const drawerOpen = Boolean(jobId)
 
-  const extraNav = (onNavigate?: () => void) => (
+  const extraNav = (
     <>
       <SidebarActionButton
         active={page === 'quality'}
         icon={Gauge}
         label="Match quality"
-        onClick={() => {
-          navigate('/quality')
-          onNavigate?.()
-        }}
+        onClick={() => navigate('/quality')}
       />
       {me?.is_admin ? (
         <SidebarActionButton
           active={page === 'admin'}
           icon={Shield}
           label="Admin"
-          onClick={() => {
-            navigate('/admin')
-            onNavigate?.()
-          }}
+          onClick={() => navigate('/admin')}
         />
       ) : null}
     </>
   )
 
   return (
-    <div className="relative flex h-full bg-background">
-      <AppSidebar
-        profile={profile}
-        board={board}
-        filterStage={filterStage}
-        onFilterStage={selectStage}
-        profileActive={page === 'profile'}
-        onOpenProfile={() => navigate('/profile')}
-        jobOpen={drawerOpen}
-        extraActions={extraNav()}
-      />
+    <MobileNavProvider>
+      <div className="relative flex h-full bg-background">
+        <AppSidebar
+          profile={profile}
+          board={board}
+          filterStage={filterStage}
+          onFilterStage={selectStage}
+          profileActive={page === 'profile'}
+          onOpenProfile={() => navigate('/profile')}
+          jobOpen={drawerOpen}
+          extraActions={extraNav}
+        />
 
-      {page === 'profile' ? (
-        <Suspense fallback={<PageFallback />}>
-          <ProfilePage profile={profile} onBack={() => navigate('/')} onProfileChanged={() => void refresh()} />
-        </Suspense>
-      ) : page === 'quality' ? (
-        <Suspense fallback={<PageFallback />}>
-          <QualityPage />
-        </Suspense>
-      ) : page === 'admin' ? (
-        <Suspense fallback={<PageFallback />}>
-          <AdminPage />
-        </Suspense>
-      ) : (
-        <div className={cn('flex min-w-0 flex-1 flex-col', drawerOpen && 'max-md:hidden')}>
-          <StatusBanner />
-          <header className={cn('sticky top-0 z-20', APP_SHELL_HEADER)}>
-            <Button
-              type="button"
-              size="icon-sm"
-              variant="ghost"
-              onClick={() => setMobileNavOpen(true)}
-              aria-label="Open menu"
-              className="md:hidden"
-            >
-              <Menu />
-            </Button>
+        {page === 'profile' ? (
+          <Suspense fallback={<PageFallback />}>
+            <ProfilePage profile={profile} onBack={() => navigate('/')} onProfileChanged={() => void refresh()} />
+          </Suspense>
+        ) : page === 'quality' ? (
+          <Suspense fallback={<PageFallback />}>
+            <QualityPage />
+          </Suspense>
+        ) : page === 'admin' ? (
+          <Suspense fallback={<PageFallback />}>
+            <AdminPage />
+          </Suspense>
+        ) : (
+          <div className={cn('flex min-w-0 flex-1 flex-col', drawerOpen && 'max-md:hidden')}>
+            <StatusBanner />
+            <header className={cn('sticky top-0 z-20', APP_SHELL_HEADER)}>
+              <MobileNavTrigger />
 
-            <ViewModeTabs value={view} onChange={setView} />
+              <ViewModeTabs value={view} onChange={setView} />
 
-            <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-2">
-              <div className="relative w-full max-w-xs max-md:order-last sm:w-56">
-                <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search jobs…"
-                  className="h-8 pl-8"
-                  aria-label="Search jobs"
-                />
-              </div>
+              <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-2">
+                <div className="relative w-full max-w-xs max-md:order-last sm:w-56">
+                  <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search jobs…"
+                    className="h-8 pl-8"
+                    aria-label="Search jobs"
+                  />
+                </div>
 
-              <AutoSearchControls onRunDone={() => void refresh()} />
+                <AutoSearchControls onRunDone={() => void refresh()} />
 
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={() => setShowSchedule(true)}
-                title="Daily WhatsApp list"
-              >
-                <WhatsAppIcon className="text-whatsapp" />
-                <span className="max-sm:sr-only">WhatsApp</span>
-                {pendingNotify > 0 ? ` (${pendingNotify})` : ''}
-              </Button>
-
-              <Button size="sm" variant="outline" onClick={() => setShowAdd(true)} aria-label="Add a job">
-                <Plus /> <span className="max-sm:sr-only">Add job</span>
-              </Button>
-            </div>
-          </header>
-
-          <main className="min-h-0 flex-1 overflow-auto p-3 md:p-4">
-            {worthOnly ? (
-              <div className="mb-3 flex items-center gap-2">
-                <Chip>Worth a look: scored 5–6, no dealbreakers</Chip>
                 <Button
+                  type="button"
                   size="sm"
-                  variant="ghost"
-                  onClick={() => {
-                    params.delete('worth')
-                    setParams(params, { replace: true })
-                  }}
+                  variant="outline"
+                  onClick={() => setShowSchedule(true)}
+                  title="Daily WhatsApp list"
                 >
-                  <X /> Show all
+                  <WhatsAppIcon className="text-whatsapp" />
+                  <span className="max-sm:sr-only">WhatsApp</span>
+                  {pendingNotify > 0 ? ` (${pendingNotify})` : ''}
+                </Button>
+
+                <Button size="sm" variant="outline" onClick={() => setShowAdd(true)} aria-label="Add a job">
+                  <Plus /> <span className="max-sm:sr-only">Add job</span>
                 </Button>
               </div>
-            ) : null}
-            {!board ? (
-              <p className="text-sm text-muted-foreground">
-                {loading ? 'Loading your jobs…' : 'Could not load your jobs. Refresh the page.'}
-              </p>
-            ) : allJobs.length === 0 ? (
-              <div className="mx-auto mt-16 max-w-md space-y-3 text-center">
-                <h2 className="text-base font-semibold">No jobs yet</h2>
-                <p className="text-sm text-muted-foreground">
-                  Your first search fills this board. Run it now, or wait for tomorrow morning’s automatic search.
-                </p>
-                <div className="flex justify-center gap-2">
-                  <AutoSearchControls onRunDone={() => void refresh()} />
-                  <Button size="sm" variant="outline" onClick={() => navigate('/profile?tab=search')}>
-                    Check search settings
+            </header>
+
+            <main className="min-h-0 flex-1 overflow-auto p-3 md:p-4">
+              {worthOnly ? (
+                <div className="mb-3 flex items-center gap-2">
+                  <Chip>Worth a look: scored 5–6, no dealbreakers</Chip>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      params.delete('worth')
+                      setParams(params, { replace: true })
+                    }}
+                  >
+                    <X /> Show all
                   </Button>
                 </div>
-              </div>
-            ) : view === 'board' && !worthOnly ? (
-              <DndContext
-                sensors={sensors}
-                collisionDetection={collisionDetection}
-                onDragStart={onDragStart}
-                onDragOver={onDragOver}
-                onDragEnd={onDragEnd}
-                onDragCancel={onDragCancel}
-              >
-                <div className="flex h-full min-h-[70vh] gap-3 overflow-x-auto pb-2">
-                  {visibleStages.map((stage) => (
-                    <KanbanColumn
-                      key={stage}
-                      stage={stage}
-                      label={STAGE_LABELS[stage] || stage}
-                      jobs={filteredColumns[stage] || []}
-                      total={stage === 'closed' ? board.closed_total : undefined}
-                      isDropTarget={dropTargetStage === stage}
-                      isDragging={!!activeCard}
-                      onOpen={openJob}
-                      onScoreSaved={() => void refresh()}
-                    />
-                  ))}
+              ) : null}
+              {!board ? (
+                <p className="text-sm text-muted-foreground">
+                  {loading ? 'Loading your jobs…' : 'Could not load your jobs. Refresh the page.'}
+                </p>
+              ) : allJobs.length === 0 ? (
+                <div className="mx-auto mt-16 max-w-md space-y-3 text-center">
+                  <h2 className="text-base font-semibold">No jobs yet</h2>
+                  <p className="text-sm text-muted-foreground">
+                    Your first search fills this board. Run it now, or wait for tomorrow morning’s automatic search.
+                  </p>
+                  <div className="flex justify-center gap-2">
+                    <AutoSearchControls onRunDone={() => void refresh()} />
+                    <Button size="sm" variant="outline" onClick={() => navigate('/profile?tab=search')}>
+                      Check search settings
+                    </Button>
+                  </div>
                 </div>
-                <DragOverlay dropAnimation={dropAnimation}>
-                  {activeCard ? (
-                    <JobCardView job={activeCard} stage={dropTargetStage || activeCard.funnel_stage} dragging />
-                  ) : null}
-                </DragOverlay>
-              </DndContext>
-            ) : (
-              <JobsTable
-                jobs={tableJobs}
-                stages={board.stages}
-                onOpen={openJobByUrl}
-                onScoreSaved={() => void refresh()}
-              />
-            )}
-          </main>
-        </div>
-      )}
-
-      <JobDrawer jobKey={jobId ?? null} onClose={closeDrawer} onChanged={() => void refresh()} />
-      <DismissDialog
-        open={!!closeTarget}
-        jobTitle={closeTarget?.title}
-        fromStage={closeTarget?.funnel_stage}
-        onCancel={() => setCloseTarget(null)}
-        onConfirm={onDismissConfirm}
-      />
-      <ManualAddModal
-        open={showAdd}
-        onClose={() => setShowAdd(false)}
-        onCreated={() => {
-          setShowAdd(false)
-          void refresh()
-        }}
-      />
-      <DailyBriefDialog
-        open={showSchedule}
-        onClose={() => setShowSchedule(false)}
-        profile={profile}
-        pendingCount={pendingNotify}
-        onSaved={() => void refresh()}
-      />
-
-      <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
-        <SheetContent side="left" className="flex w-64 flex-col gap-0 p-0">
-          <SheetHeader className="border-b px-4 py-4 text-left">
-            <SheetTitle className="text-sm">{profile?.name || 'jobwright'}</SheetTitle>
-            <ProfileSwitcher className="mt-2 h-8 w-full" />
-          </SheetHeader>
-          <SidebarNav
-            className="min-h-0 flex-1 overflow-y-auto"
-            profile={profile}
-            board={board}
-            filterStage={filterStage}
-            onFilterStage={(s) => {
-              selectStage(s)
-              setMobileNavOpen(false)
-            }}
-            onNavigate={() => setMobileNavOpen(false)}
-          />
-          <div className="mt-auto flex flex-col gap-0.5 border-t border-border p-2">
-            {extraNav(() => setMobileNavOpen(false))}
-            <SidebarActionButton
-              active={page === 'profile'}
-              icon={CircleUser}
-              label="Profile & settings"
-              onClick={() => {
-                navigate('/profile')
-                setMobileNavOpen(false)
-              }}
-            />
-            <ThemeToggle />
+              ) : view === 'board' && !worthOnly ? (
+                <DndContext
+                  sensors={sensors}
+                  collisionDetection={collisionDetection}
+                  onDragStart={onDragStart}
+                  onDragOver={onDragOver}
+                  onDragEnd={onDragEnd}
+                  onDragCancel={onDragCancel}
+                >
+                  <div className="flex h-full min-h-[70vh] gap-3 overflow-x-auto pb-2">
+                    {visibleStages.map((stage) => (
+                      <KanbanColumn
+                        key={stage}
+                        stage={stage}
+                        label={STAGE_LABELS[stage] || stage}
+                        jobs={filteredColumns[stage] || []}
+                        total={stage === 'closed' ? board.closed_total : undefined}
+                        isDropTarget={dropTargetStage === stage}
+                        isDragging={!!activeCard}
+                        onOpen={openJob}
+                        onScoreSaved={() => void refresh()}
+                      />
+                    ))}
+                  </div>
+                  <DragOverlay dropAnimation={dropAnimation}>
+                    {activeCard ? (
+                      <JobCardView job={activeCard} stage={dropTargetStage || activeCard.funnel_stage} dragging />
+                    ) : null}
+                  </DragOverlay>
+                </DndContext>
+              ) : (
+                <JobsTable
+                  jobs={tableJobs}
+                  stages={board.stages}
+                  onOpen={openJobByUrl}
+                  onScoreSaved={() => void refresh()}
+                />
+              )}
+            </main>
           </div>
-        </SheetContent>
-      </Sheet>
-    </div>
+        )}
+
+        <JobDrawer jobKey={jobId ?? null} onClose={closeDrawer} onChanged={() => void refresh()} />
+        <DismissDialog
+          open={!!closeTarget}
+          jobTitle={closeTarget?.title}
+          fromStage={closeTarget?.funnel_stage}
+          onCancel={() => setCloseTarget(null)}
+          onConfirm={onDismissConfirm}
+        />
+        <ManualAddModal
+          open={showAdd}
+          onClose={() => setShowAdd(false)}
+          onCreated={() => {
+            setShowAdd(false)
+            void refresh()
+          }}
+        />
+        <DailyBriefDialog
+          open={showSchedule}
+          onClose={() => setShowSchedule(false)}
+          profile={profile}
+          pendingCount={pendingNotify}
+          onSaved={() => void refresh()}
+        />
+
+        <MobileNav profile={profile} board={board} filterStage={filterStage} onFilterStage={selectStage} />
+      </div>
+    </MobileNavProvider>
   )
 }

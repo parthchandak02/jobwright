@@ -21,7 +21,7 @@ export function SidebarActionButton({
       aria-label={label}
       aria-current={active ? 'page' : undefined}
       className={cn(
-        'flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors hover:bg-sidebar-accent/60',
+        'flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors duration-(--dur-1) hover:bg-sidebar-accent/60 max-md:min-h-11',
         active && 'bg-sidebar-accent/70 font-medium',
       )}
     >

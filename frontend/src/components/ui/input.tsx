@@ -1,13 +1,17 @@
 import * as React from 'react'
 import { cn } from '@/lib/utils'
 
+const controlBase =
+  'w-full min-w-0 rounded-md border border-input bg-surface text-base text-foreground transition-[color,border-color,box-shadow] duration-(--dur-1) ease-out placeholder:text-subtle-foreground hover:border-[color-mix(in_oklch,var(--border-strong),var(--foreground)_12%)] focus-visible:border-primary focus-visible:outline-offset-0 disabled:cursor-not-allowed disabled:bg-surface-muted disabled:text-subtle-foreground aria-invalid:border-destructive md:text-sm'
+
 function Input({ className, type, ...props }: React.ComponentProps<'input'>) {
   return (
     <input
       type={type}
       data-slot="input"
       className={cn(
-        'h-9 w-full min-w-0 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-[color,box-shadow] outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50',
+        controlBase,
+        'h-11 px-3 file:mr-3 file:border-0 file:bg-transparent file:text-label file:text-foreground md:h-10',
         className,
       )}
       {...props}
@@ -15,4 +19,4 @@ function Input({ className, type, ...props }: React.ComponentProps<'input'>) {
   )
 }
 
-export { Input }
+export { Input, controlBase }

@@ -39,3 +39,5 @@ env\.setdefault\("HERMES_ACCEPT_HOOKS"
 skills/deploy/SKILL
 git-secrets hook
 mirror existing `JOBWRIGHT_
+# CSS env() for iOS safe-area insets (no secret values)
+env\(safe-area-inset

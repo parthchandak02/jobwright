@@ -9,7 +9,7 @@ function Toaster(props: ToasterProps) {
       className="toaster group"
       toastOptions={{
         classNames: {
-          toast: 'border border-border bg-popover text-popover-foreground shadow-md',
+          toast: 'rounded-popover border border-border bg-popover text-popover-foreground shadow-e1',
         },
       }}
       {...props}
