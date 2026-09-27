@@ -1,18 +1,15 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowRight, Check, FileText, Loader2, Sparkles, Upload } from 'lucide-react'
 import { toast } from 'sonner'
-import { BrandLogo } from '@/components/BrandLogo'
-import { ChipInput } from '@/components/ChipInput'
-import { CriteriaEditor } from '@/components/CriteriaEditor'
-import { FormField } from '@/components/FormField'
-import { LocationChipInput } from '@/components/LocationChipInput'
-import { QueryChipInput } from '@/components/QueryChipInput'
-import { ConnectedChat } from '@/components/ConnectedChat'
-import { WhatsAppChatPicker } from '@/components/WhatsAppChatPicker'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Textarea } from '@/components/ui/textarea'
+import { StepAbout } from '@/components/welcome/StepAbout'
+import { StepDailyList } from '@/components/welcome/StepDailyList'
+import { StepFinish } from '@/components/welcome/StepFinish'
+import { StepFit } from '@/components/welcome/StepFit'
+import { StepLetters } from '@/components/welcome/StepLetters'
+import { StepResume } from '@/components/welcome/StepResume'
+import { StepSearch } from '@/components/welcome/StepSearch'
+import { PROGRESS_LABELS, WelcomeShell } from '@/components/welcome/WelcomeShell'
+import { Skeleton } from '@/components/ui/skeleton'
 import {
   apiFetch,
   apiUpload,
@@ -26,54 +23,13 @@ import {
   type OnboardingDraft,
   type OnboardingStatus,
   type Profile,
+  type SettingsData,
 } from '@/lib/api'
 import { useMe } from '@/lib/me'
-import { cn, errorMessage } from '@/lib/utils'
+import { errorMessage } from '@/lib/utils'
 
 type Step = 'name' | 'resume' | 'review' | 'whatsapp' | 'letters' | 'done'
-
-const STEPS: { id: Step; label: string }[] = [
-  { id: 'name', label: 'You' },
-  { id: 'resume', label: 'Resume' },
-  { id: 'review', label: 'What to look for' },
-  { id: 'whatsapp', label: 'WhatsApp' },
-  { id: 'letters', label: 'Cover letters' },
-  { id: 'done', label: 'Start' },
-]
-
-function Progress({ step }: { step: Step }) {
-  const idx = STEPS.findIndex((s) => s.id === step)
-  return (
-    <ol className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs" aria-label="Setup progress">
-      {STEPS.map((s, i) => (
-        <li key={s.id} className={cn('flex items-center gap-1.5', i <= idx ? 'text-foreground' : 'text-muted-foreground')}>
-          <span
-            className={cn(
-              'flex size-5 items-center justify-center rounded-full border text-xs font-semibold',
-              i < idx && 'border-primary bg-primary text-primary-foreground',
-              i === idx && 'border-primary text-primary',
-            )}
-          >
-            {i < idx ? <Check className="size-3" /> : i + 1}
-          </span>
-          {s.label}
-        </li>
-      ))}
-    </ol>
-  )
-}
-
-function Panel({ title, lead, children }: { title: string; lead?: string; children: ReactNode }) {
-  return (
-    <section className="space-y-5">
-      <header className="space-y-1">
-        <h1 className="text-lg font-semibold">{title}</h1>
-        {lead ? <p className="text-sm text-muted-foreground">{lead}</p> : null}
-      </header>
-      {children}
-    </section>
-  )
-}
+type ReviewPart = 'search' | 'fit'
 
 function firstStepFor(status: OnboardingStatus | null): Step {
   if (!status?.has_profile) return 'name'
@@ -85,23 +41,36 @@ function firstStepFor(status: OnboardingStatus | null): Step {
   return 'done'
 }
 
+function progressFor(step: Step, part: ReviewPart): number {
+  const order: Record<Step, number> = { name: 0, resume: 1, review: 2, whatsapp: 4, letters: 5, done: PROGRESS_LABELS.length }
+  return order[step] + (step === 'review' && part === 'fit' ? 1 : 0)
+}
+
+function timeFromCron(schedule?: string): string | null {
+  const [m, h] = (schedule || '').split(' ')
+  if (!/^\d+$/.test(m ?? '') || !/^\d+$/.test(h ?? '')) return null
+  return `${h.padStart(2, '0')}:${m.padStart(2, '0')}`
+}
+
 export function WelcomePage() {
   const navigate = useNavigate()
   const { me, refresh } = useMe()
+  const isAdmin = Boolean(me?.is_admin)
   const [status, setStatus] = useState<OnboardingStatus | null>(null)
+  const [loaded, setLoaded] = useState(false)
   const [step, setStep] = useState<Step>('name')
+  const [part, setPart] = useState<ReviewPart>('search')
   const [busy, setBusy] = useState(false)
   const [name, setName] = useState('')
+  const [phone, setPhone] = useState('')
   const [file, setFile] = useState<File | null>(null)
   const [hints, setHints] = useState<DraftHints>({})
   const [draft, setDraft] = useState<OnboardingDraft | null>(null)
   const [target, setTarget] = useState('')
-  const [connected, setConnected] = useState<Profile | null>(null)
-  const isAdmin = Boolean(me?.is_admin)
+  const [profile, setProfile] = useState<Profile | null | undefined>(undefined)
+  const [settings, setSettings] = useState<SettingsData | null | undefined>(undefined)
   const [time, setTime] = useState('07:00')
   const [letters, setLetters] = useState<string[]>([])
-  const fileRef = useRef<HTMLInputElement>(null)
-  const lettersRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     void getOnboardingStatus()
@@ -110,7 +79,33 @@ export function WelcomePage() {
         setStep(firstStepFor(s))
       })
       .catch((e) => toast.error(errorMessage(e)))
+      .finally(() => setLoaded(true))
   }, [])
+
+  useLayoutEffect(() => {
+    window.scrollTo({ top: 0 })
+  }, [step, part])
+
+  useEffect(() => {
+    if (step !== 'whatsapp' && step !== 'done') return
+    setProfile(undefined)
+    void apiFetch<Profile>('/profile')
+      .then((p) => {
+        setProfile(p)
+        if (p.whatsapp_target) setTarget(p.whatsapp_target)
+        const t = timeFromCron(p.schedule)
+        if (t) setTime(t)
+      })
+      .catch(() => setProfile(null))
+  }, [step])
+
+  useEffect(() => {
+    if (step !== 'done') return
+    setSettings(undefined)
+    void apiFetch<SettingsData>('/settings')
+      .then(setSettings)
+      .catch(() => setSettings(null))
+  }, [step])
 
   async function doCreate() {
     if (!name.trim()) return
@@ -134,7 +129,12 @@ export function WelcomePage() {
     }
     setBusy(true)
     try {
-      setDraft(await draftSetup(file, hints))
+      const next = await draftSetup(file, hints)
+      const typed = phone.trim()
+      if (typed) next.profile.personal = { ...next.profile.personal, phone: typed }
+      else setPhone(next.profile.personal.phone || '')
+      setDraft(next)
+      setPart('search')
       setStep('review')
     } catch (e) {
       toast.error(errorMessage(e))
@@ -143,10 +143,19 @@ export function WelcomePage() {
     }
   }
 
+  function toFit() {
+    if (!draft?.searches.queries.length) {
+      toast.error('Add at least one job title.')
+      return
+    }
+    setPart('fit')
+  }
+
   async function doConfirm() {
     if (!draft) return
     if (!draft.searches.queries.length) {
-      toast.error('Add at least one search keyword.')
+      toast.error('Add at least one job title.')
+      setPart('search')
       return
     }
     setBusy(true)
@@ -159,16 +168,6 @@ export function WelcomePage() {
       setBusy(false)
     }
   }
-
-  useEffect(() => {
-    if (step !== 'whatsapp') return
-    void apiFetch<Profile>('/profile')
-      .then((p) => {
-        setConnected(p)
-        if (p.whatsapp_target) setTarget(p.whatsapp_target)
-      })
-      .catch(() => setConnected(null))
-  }, [step])
 
   async function doWhatsApp() {
     if (isAdmin && !target) {
@@ -191,14 +190,13 @@ export function WelcomePage() {
     }
   }
 
-  async function uploadLetters(files: FileList | null) {
-    if (!files?.length) return
+  async function uploadLetters(files: File[]) {
+    if (!files.length) return
     setBusy(true)
     try {
-      for (const f of [...files]) {
-        if (!f.name.toLowerCase().endsWith('.pdf')) continue
+      for (const f of files) {
         await apiUpload('/settings/cover-letters', f)
-        setLetters((l) => [...l, f.name])
+        setLetters((l) => (l.includes(f.name) ? l : [...l, f.name]))
       }
     } catch (e) {
       toast.error(errorMessage(e))
@@ -221,235 +219,103 @@ export function WelcomePage() {
     }
   }
 
-  const phone = draft?.profile.personal.phone || ''
+  function edit(what: 'search' | 'daily' | 'letters') {
+    if (what === 'search') {
+      if (draft) {
+        setPart('search')
+        setStep('review')
+      } else navigate('/profile?tab=search')
+    } else setStep(what === 'daily' ? 'whatsapp' : 'letters')
+  }
+
+  const view: Step = step === 'review' && !draft ? 'resume' : step
+  let content
+  if (!loaded) {
+    content = (
+      <div className="space-y-4" aria-label="Loading">
+        <Skeleton className="h-9 w-3/4" />
+        <Skeleton className="h-5 w-full" />
+        <Skeleton className="mt-8 h-11 w-full" />
+      </div>
+    )
+  } else if (view === 'name') {
+    content = (
+      <StepAbout name={name} onName={setName} phone={phone} onPhone={setPhone} busy={busy} onContinue={() => void doCreate()} />
+    )
+  } else if (view === 'resume') {
+    content = (
+      <StepResume
+        file={file}
+        onFile={setFile}
+        hasResume={Boolean(status?.steps.resume)}
+        hints={hints}
+        onHints={setHints}
+        drafting={busy}
+        onDraft={() => void doDraft()}
+      />
+    )
+  } else if (view === 'review' && draft) {
+    content =
+      part === 'search' ? (
+        <StepSearch draft={draft} onDraft={setDraft} onBack={() => setStep('resume')} onContinue={toFit} />
+      ) : (
+        <StepFit
+          draft={draft}
+          onDraft={setDraft}
+          busy={busy}
+          onBack={() => setPart('search')}
+          onContinue={() => void doConfirm()}
+        />
+      )
+  } else if (view === 'whatsapp') {
+    content = (
+      <StepDailyList
+        isAdmin={isAdmin}
+        profile={profile}
+        target={target}
+        onTarget={setTarget}
+        phone={phone || draft?.profile.personal.phone}
+        time={time}
+        onTime={setTime}
+        busy={busy}
+        onBack={
+          draft
+            ? () => {
+                setPart('fit')
+                setStep('review')
+              }
+            : undefined
+        }
+        onContinue={() => void doWhatsApp()}
+      />
+    )
+  } else if (view === 'letters') {
+    content = (
+      <StepLetters
+        letters={letters}
+        uploading={busy}
+        onUpload={(f) => void uploadLetters(f)}
+        onBack={() => setStep('whatsapp')}
+        onContinue={() => setStep('done')}
+      />
+    )
+  } else if (view === 'done') {
+    content = (
+      <StepFinish
+        settings={settings}
+        profile={profile}
+        starting={busy}
+        onEdit={edit}
+        onBack={() => setStep('letters')}
+        onBoard={() => navigate('/')}
+        onStart={() => void doStart()}
+      />
+    )
+  }
 
   return (
-    <div className="min-h-dvh bg-background">
-      <div className="mx-auto flex w-full max-w-3xl flex-col gap-8 px-4 py-8 md:py-12">
-        <div className="flex items-center gap-3">
-          <BrandLogo className="size-8" />
-          <div>
-            <p className="text-sm font-semibold uppercase tracking-[0.14em]">jobwright</p>
-            <p className="text-xs text-muted-foreground">{me?.email}</p>
-          </div>
-        </div>
-        <Progress step={step} />
-
-        {step === 'name' ? (
-          <Panel
-            title="Welcome. Let’s set up your job search."
-            lead="jobwright finds new roles every morning, scores how well they fit you, and sends the best ones to WhatsApp. Setup takes about five minutes."
-          >
-            <FormField label="Your name">
-              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="First and last name" autoFocus />
-            </FormField>
-            <Button disabled={!name.trim() || busy} onClick={() => void doCreate()}>
-              {busy ? <Loader2 className="animate-spin" /> : <ArrowRight />} Continue
-            </Button>
-          </Panel>
-        ) : null}
-
-        {step === 'resume' ? (
-          <Panel
-            title="Add your resume"
-            lead="We read it to draft your search: the roles to look for, keywords, locations and your dealbreakers. You review everything before it’s saved."
-          >
-            <input
-              ref={fileRef}
-              type="file"
-              accept="application/pdf"
-              className="sr-only"
-              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-            />
-            <button
-              type="button"
-              onClick={() => fileRef.current?.click()}
-              className="flex w-full items-center gap-3 rounded-xl border border-dashed border-border px-4 py-6 text-left transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-            >
-              {file ? <FileText className="size-6 text-primary" /> : <Upload className="size-6 text-muted-foreground" />}
-              <span className="min-w-0">
-                <span className="block text-sm font-medium">
-                  {file ? file.name : status?.steps.resume ? 'Resume on file. Upload a new one (optional)' : 'Choose your resume (PDF)'}
-                </span>
-                <span className="block text-xs text-muted-foreground">PDF only. It stays in your private profile.</span>
-              </span>
-            </button>
-
-            <div className="grid gap-4 sm:grid-cols-2">
-              <FormField label="Roles you want (optional)" hint="Helps when your resume doesn't show where you're headed.">
-                <Input
-                  value={hints.target_roles || ''}
-                  onChange={(e) => setHints({ ...hints, target_roles: e.target.value })}
-                  placeholder="e.g. program manager at an education nonprofit"
-                />
-              </FormField>
-              <FormField label="Where (optional)">
-                <Input
-                  value={hints.locations || ''}
-                  onChange={(e) => setHints({ ...hints, locations: e.target.value })}
-                  placeholder="e.g. Bay Area or remote"
-                />
-              </FormField>
-              <FormField label="Pay floor (optional)">
-                <Input
-                  value={hints.min_salary || ''}
-                  inputMode="numeric"
-                  onChange={(e) => setHints({ ...hints, min_salary: e.target.value })}
-                  placeholder="e.g. 110000"
-                />
-              </FormField>
-              <FormField label="Never show me (optional)">
-                <Input
-                  value={hints.avoid || ''}
-                  onChange={(e) => setHints({ ...hints, avoid: e.target.value })}
-                  placeholder="e.g. sales, fundraising, roles needing a license"
-                />
-              </FormField>
-            </div>
-            <Button disabled={busy} onClick={() => void doDraft()}>
-              {busy ? <Loader2 className="animate-spin" /> : <Sparkles />}
-              {busy ? 'Reading your resume… (up to a minute)' : 'Draft my search'}
-            </Button>
-          </Panel>
-        ) : null}
-
-        {step === 'review' && draft ? (
-          <Panel
-            title="Here’s what we’ll look for"
-            lead="Edit anything that’s off. The better this is, the better your matches."
-          >
-            <FormField label="Target role" hint="One or two sentences.">
-              <Textarea
-                rows={3}
-                value={draft.profile.experience.target_role || ''}
-                onChange={(e) =>
-                  setDraft({
-                    ...draft,
-                    profile: { ...draft.profile, experience: { ...draft.profile.experience, target_role: e.target.value } },
-                  })
-                }
-              />
-            </FormField>
-            <FormField label="Search keywords" hint="Job-board searches run every morning. Daily ones run every day; weekly ones on the deeper weekly crawl.">
-              <QueryChipInput
-                queries={draft.searches.queries}
-                onChange={(queries) => setDraft({ ...draft, searches: { ...draft.searches, queries } })}
-              />
-            </FormField>
-            <FormField label="Where to search" hint="Add a chip named Remote for remote roles.">
-              <LocationChipInput
-                locations={draft.searches.locations}
-                onChange={(locations) => setDraft({ ...draft, searches: { ...draft.searches, locations } })}
-              />
-            </FormField>
-            <FormField label="Phone (with country code)" hint="Used to find WhatsApp chats you're in. Not shared.">
-              <Input
-                value={phone}
-                onChange={(e) =>
-                  setDraft({
-                    ...draft,
-                    profile: { ...draft.profile, personal: { ...draft.profile.personal, phone: e.target.value } },
-                  })
-                }
-                placeholder="+1 415 555 0100"
-              />
-            </FormField>
-            <FormField label="Roles to avoid">
-              <ChipInput
-                values={draft.profile.job_preferences.avoid_roles}
-                onChange={(avoid_roles) =>
-                  setDraft({
-                    ...draft,
-                    profile: { ...draft.profile, job_preferences: { ...draft.profile.job_preferences, avoid_roles } },
-                  })
-                }
-                placeholder="Add a role type"
-                tone="--destructive"
-              />
-            </FormField>
-            <div className="rounded-xl border border-border/60 p-4">
-              <p className="mb-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">How jobs are scored</p>
-              <CriteriaEditor compact value={draft.criteria} onChange={(criteria) => setDraft({ ...draft, criteria })} />
-            </div>
-            <div className="flex gap-2">
-              <Button variant="outline" onClick={() => setStep('resume')} disabled={busy}>
-                Back
-              </Button>
-              <Button onClick={() => void doConfirm()} disabled={busy}>
-                {busy ? <Loader2 className="animate-spin" /> : <Check />} Save and continue
-              </Button>
-            </div>
-          </Panel>
-        ) : null}
-
-        {step === 'whatsapp' ? (
-          <Panel
-            title="Your daily WhatsApp list"
-            lead="Once a day you get one WhatsApp message with your best new matches. Each links straight to the job here."
-          >
-            {isAdmin ? (
-              <WhatsAppChatPicker value={target} onChange={setTarget} phone={phone || undefined} />
-            ) : (
-              <FormField label="Sent to">
-                <ConnectedChat target={connected?.whatsapp_target} name={connected?.whatsapp_chat_name} />
-              </FormField>
-            )}
-            <FormField label="Send it at">
-              <Input type="time" value={time} onChange={(e) => setTime(e.target.value)} className="w-40" />
-            </FormField>
-            <Button onClick={() => void doWhatsApp()} disabled={busy || (isAdmin && !target)}>
-              {busy ? <Loader2 className="animate-spin" /> : <ArrowRight />} Continue
-            </Button>
-          </Panel>
-        ) : null}
-
-        {step === 'letters' ? (
-          <Panel
-            title="Cover letters you’ve written (optional)"
-            lead="Upload a few real letters as PDFs. Tailored letters will sound like you. You can add these later in your profile."
-          >
-            <input
-              ref={lettersRef}
-              type="file"
-              accept="application/pdf"
-              multiple
-              className="sr-only"
-              onChange={(e) => void uploadLetters(e.target.files)}
-            />
-            <Button variant="outline" onClick={() => lettersRef.current?.click()} disabled={busy}>
-              {busy ? <Loader2 className="animate-spin" /> : <Upload />} Upload PDFs
-            </Button>
-            {letters.length ? (
-              <ul className="space-y-1 text-sm">
-                {letters.map((l) => (
-                  <li key={l} className="flex items-center gap-2">
-                    <Check className="size-4 text-primary" /> {l}
-                  </li>
-                ))}
-              </ul>
-            ) : null}
-            <Button onClick={() => setStep('done')}>
-              <ArrowRight /> {letters.length ? 'Continue' : 'Skip for now'}
-            </Button>
-          </Panel>
-        ) : null}
-
-        {step === 'done' ? (
-          <Panel
-            title="You’re all set"
-            lead="Start your first search now, or wait for tomorrow morning’s run. You can change anything later under Profile."
-          >
-            <div className="flex flex-wrap gap-2">
-              <Button onClick={() => void doStart()} disabled={busy}>
-                {busy ? <Loader2 className="animate-spin" /> : <Sparkles />} Find my first jobs
-              </Button>
-              <Button variant="outline" onClick={() => navigate('/')}>
-                Go to my board
-              </Button>
-            </div>
-          </Panel>
-        ) : null}
-      </div>
-    </div>
+    <WelcomeShell progress={progressFor(view, part)} email={me?.email}>
+      {content}
+    </WelcomeShell>
   )
 }
