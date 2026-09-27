@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
 import {
   ArrowLeft,
+  BellRing,
   Building2,
   CheckCircle2,
   ChevronDown,
@@ -17,7 +18,7 @@ import { toast } from 'sonner'
 import { ConnectionsPanel, type ConnectionContact } from '@/components/ConnectionsPanel'
 import { DismissDialog, type DismissResult } from '@/components/DismissDialog'
 import { DrawerSection } from '@/components/DrawerSection'
-import { JobMetaBadges } from '@/components/JobMetaBadges'
+import { followUpLabel, JobMetaBadges } from '@/components/JobMetaBadges'
 import { listingHref } from '@/components/JobSummary'
 import { LinkedInLogo } from '@/components/LinkedInLogo'
 import { MatchExplanation } from '@/components/MatchExplanation'
@@ -36,6 +37,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { WorkModelBadge } from '@/components/WorkModelBadge'
 import {
   apiFetch,
+  followUpJob,
   getJobHistory,
   getJobLabels,
   jobPath,
@@ -264,6 +266,20 @@ export function JobDrawer({ jobKey, onClose, onChanged }: Props) {
     }
   }
 
+  async function doFollowUp(action: 'followed_up' | 'no_response') {
+    if (!job) return
+    setBusy(true)
+    try {
+      setJob(await followUpJob(job, action))
+      onChanged()
+      toast.success(action === 'followed_up' ? "Nice. We'll remind you again later." : 'Moved to Closed (no response).')
+    } catch (e) {
+      toast.error(errorMessage(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
   function requestMove(toStage: string) {
     if (toStage === 'closed') setDismissOpen(true)
     else void doMove(toStage)
@@ -410,6 +426,18 @@ export function JobDrawer({ jobKey, onClose, onChanged }: Props) {
                       <JobMetaBadges job={job} />
                     </div>
                     <StagePicker stage={job.funnel_stage} disabled={busy} onMove={requestMove} />
+                    {job.followup_due ? (
+                      <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border/60 bg-muted/30 p-2.5 text-sm">
+                        <BellRing className="size-4 shrink-0 text-[var(--stage-in-progress)]" aria-hidden />
+                        <span className="min-w-0 flex-1">{followUpLabel(job.applied_days_ago)}. No reply yet.</span>
+                        <Button size="sm" variant="outline" disabled={busy} onClick={() => void doFollowUp('followed_up')}>
+                          Followed up
+                        </Button>
+                        <Button size="sm" variant="ghost" disabled={busy} onClick={() => void doFollowUp('no_response')}>
+                          No response
+                        </Button>
+                      </div>
+                    ) : null}
                     {job.funnel_stage === 'closed' && job.duplicate_of ? (
                       <p className="text-xs text-muted-foreground">
                         Closed: duplicate of{' '}
@@ -420,7 +448,7 @@ export function JobDrawer({ jobKey, onClose, onChanged }: Props) {
                     ) : job.funnel_stage === 'closed' && (job.outcome || job.close_reason) ? (
                       <p className="text-xs text-muted-foreground">
                         Closed{job.outcome ? `: ${job.outcome.replace('_', ' ')}` : ''}
-                        {job.close_reason ? ` · ${job.close_reason}` : ''}
+                        {job.close_reason ? ` · ${job.close_reason === 'no_response' ? 'no response' : job.close_reason}` : ''}
                       </p>
                     ) : null}
                   </div>

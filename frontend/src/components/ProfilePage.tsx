@@ -158,18 +158,28 @@ function RulesTab() {
 function WhatsAppTab({ profile, onSaved }: { profile: Profile | null; onSaved: () => void }) {
   const [target, setTarget] = useState(profile?.whatsapp_target || '')
   const [time, setTime] = useState(cronToTime(profile?.schedule))
+  const [weekly, setWeekly] = useState(profile?.weekly_summary ?? true)
+  const [followupDays, setFollowupDays] = useState(String(profile?.followup_days ?? 10))
   const [busy, setBusy] = useState<null | 'save' | 'send'>(null)
 
   useEffect(() => {
     setTarget(profile?.whatsapp_target || '')
     setTime(cronToTime(profile?.schedule))
-  }, [profile?.whatsapp_target, profile?.schedule])
+    setWeekly(profile?.weekly_summary ?? true)
+    setFollowupDays(String(profile?.followup_days ?? 10))
+  }, [profile?.whatsapp_target, profile?.schedule, profile?.weekly_summary, profile?.followup_days])
 
   async function save() {
     const [h, m] = time.split(':').map(Number)
     setBusy('save')
     try {
-      const res = await updateProfile({ schedule: `${m} ${h} * * *`, whatsapp_target: target })
+      const days = Math.min(90, Math.max(1, Math.round(Number(followupDays)) || 10))
+      const res = await updateProfile({
+        schedule: `${m} ${h} * * *`,
+        whatsapp_target: target,
+        weekly_summary: weekly,
+        followup_days: days,
+      })
       if (res.cron_synced) toast.success('Saved. Your daily list is scheduled.')
       else toast.info(`Saved, but the daily schedule could not be updated: ${res.cron_error || 'unknown error'}`)
       onSaved()
@@ -204,6 +214,23 @@ function WhatsAppTab({ profile, onSaved }: { profile: Profile | null; onSaved: (
       </FormField>
       <FormField label={`Time${profile?.timezone ? ` (${profile.timezone})` : ''}`}>
         <Input type="time" value={time} onChange={(e) => setTime(e.target.value)} className="w-40" />
+      </FormField>
+      <SectionLabel hint="Sunday evening: a short recap of your week and the jobs still worth a look.">
+        Weekly summary
+      </SectionLabel>
+      <label className="flex items-center gap-2 text-sm">
+        <input type="checkbox" checked={weekly} onChange={(e) => setWeekly(e.target.checked)} />
+        Send me a weekly summary on WhatsApp
+      </label>
+      <FormField label="Remind me to follow up after (days with no reply)">
+        <Input
+          type="number"
+          min={1}
+          max={90}
+          value={followupDays}
+          onChange={(e) => setFollowupDays(e.target.value)}
+          className="w-24"
+        />
       </FormField>
       <div className="flex flex-wrap gap-2">
         <Button size="sm" onClick={() => void save()} disabled={!!busy || !target}>

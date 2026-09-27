@@ -77,6 +77,7 @@ Put the durable prompt below into `~/.hermes/config.yaml` (do not commit secrets
 | `jobwright-brief-richa` | `0 6 * * *` | `wrap_jobwright-brief-richa.sh` (deliver `local`) |
 | `jobwright-ops-watchdog` | `30 8 * * *` | `jobwright_ops_watchdog.sh` (shared) |
 | `jobwright-backup` | `30 2 * * *` | `jobwright_backup.sh` (shared) |
+| `jobwright-weekly-summary` | `0 18 * * 0` | `jobwright_weekly_summary.sh` (shared, every profile) |
 
 One brief cron per user. Delete any `job-apply-*`, `jobwright-send-*`, or `jobwright-check-*` crons if still present.
 

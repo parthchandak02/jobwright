@@ -1,6 +1,7 @@
 import type { LucideIcon } from 'lucide-react'
 import {
   Ban,
+  BellRing,
   CheckCheck,
   CheckCircle,
   FileText,
@@ -22,12 +23,19 @@ type Props = {
     | 'outcome'
     | 'is_dead'
     | 'whatsapp_notified_at'
+    | 'followup_due'
+    | 'applied_days_ago'
   >
 }
 
 function formatNotified(iso: string): string {
   const d = new Date(iso)
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleString()
+}
+
+export function followUpLabel(days: number | null | undefined): string {
+  if (days == null) return 'Follow up?'
+  return `Follow up? Applied ${days} day${days === 1 ? '' : 's'} ago`
 }
 
 const OUTCOME_ICONS: Record<string, LucideIcon> = {
@@ -45,7 +53,8 @@ export function JobMetaBadges({ job }: Props) {
     job.has_cover ||
     job.outcome ||
     job.is_dead ||
-    job.whatsapp_notified_at
+    job.whatsapp_notified_at ||
+    job.followup_due
   if (!hasAny) return null
 
   const outcomeIcon = job.outcome
@@ -54,6 +63,11 @@ export function JobMetaBadges({ job }: Props) {
 
   return (
     <>
+      {job.followup_due && (
+        <Chip icon={BellRing} tone="--stage-in-progress" title="No reply yet. A short follow-up note can help.">
+          {followUpLabel(job.applied_days_ago)}
+        </Chip>
+      )}
       {job.is_dead && (
         <Chip
           icon={Ban}

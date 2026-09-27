@@ -28,6 +28,8 @@ def _default_users_root() -> Path:
 USERS_ROOT = _default_users_root()
 REGISTRY_PATH = USERS_ROOT / "users.yaml"
 
+DEFAULT_FOLLOWUP_DAYS = 10
+
 _USER_ID_RE = re.compile(r"^[a-z][a-z0-9_-]{1,31}$")
 
 
@@ -108,6 +110,10 @@ class UserRecord:
     data_dir: str = ""
     # Cloudflare Access login emails that may open this profile.
     emails: list[str] = field(default_factory=list)
+    # Sunday WhatsApp recap (jobwright summary); false opts out.
+    weekly_summary: bool = True
+    # Applied jobs with no stage change for this many days are "follow-up due".
+    followup_days: int = DEFAULT_FOLLOWUP_DAYS
 
     def resolve_data_dir(self) -> Path:
         if self.data_dir:
@@ -246,7 +252,17 @@ def _from_dict(raw: dict[str, Any]) -> UserRecord:
         brief_top_n=int(raw.get("brief_top_n", 0)),
         data_dir=str(raw.get("data_dir") or ""),
         emails=[normalize_email(e) for e in (raw.get("emails") or []) if normalize_email(e)],
+        weekly_summary=bool(raw.get("weekly_summary", True)),
+        followup_days=_positive_int(raw.get("followup_days"), DEFAULT_FOLLOWUP_DAYS),
     )
+
+
+def _positive_int(value: Any, default: int) -> int:
+    try:
+        n = int(value)
+    except (TypeError, ValueError):
+        return default
+    return n if n > 0 else default
 
 
 def _to_dict(user: UserRecord, base: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -338,13 +354,17 @@ def update_user(user_id: str, **fields: Any) -> UserRecord:
     allowed = {
         "name", "whatsapp_target", "apply_enabled", "schedule",
         "digest_schedule", "notes", "data_dir",
-        "human_gate", "brief_top_n", "emails",
+        "human_gate", "brief_top_n", "emails", "weekly_summary", "followup_days",
     }
     for key, value in fields.items():
         if key not in allowed:
             raise ValueError(f"Cannot update field '{key}'")
         if key == "emails":
             value = [normalize_email(e) for e in (value or []) if normalize_email(e)]
+        if key == "followup_days":
+            value = int(value)
+            if not 1 <= value <= 90:
+                raise ValueError("followup_days must be between 1 and 90")
         setattr(user, key, value)
     data = load_registry()
     data["users"] = [
@@ -400,3 +420,9 @@ def get_brief_top_n(user_id: str | None = None) -> int:
     if user is None:
         return DEFAULT_BRIEF_TOP_N
     return max(int(user.brief_top_n), 0)
+
+
+def get_followup_days(user_id: str | None = None) -> int:
+    """Days in Applied with no stage change before a follow-up is due."""
+    user = get_user(user_id) if user_id else None
+    return user.followup_days if user else DEFAULT_FOLLOWUP_DAYS

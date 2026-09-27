@@ -9,6 +9,7 @@ from jobwright import __version__, config
 from jobwright.database import FUNNEL_STAGES, get_connection, get_stats
 from jobwright.hermes_cron import brief_cron_name, ensure_brief_cron
 from jobwright.users import (
+    DEFAULT_FOLLOWUP_DAYS,
     _normalize_whatsapp_target,
     describe_cron_schedule,
     get_user,
@@ -47,6 +48,8 @@ def _profile_payload(user_id: str) -> dict:
         "schedule_label": describe_cron_schedule(schedule),
         "timezone": host_timezone_name(),
         "whatsapp_target": user.whatsapp_target if user else "",
+        "weekly_summary": user.weekly_summary if user else True,
+        "followup_days": user.followup_days if user else DEFAULT_FOLLOWUP_DAYS,
         "brief_cron_name": brief_cron_name(user_id),
         "app_dir": str(config.APP_DIR),
         "stats": {
@@ -101,6 +104,8 @@ class SessionBody(BaseModel):
 class ProfileUpdate(BaseModel):
     schedule: str | None = None
     whatsapp_target: str | None = None
+    weekly_summary: bool | None = None
+    followup_days: int | None = None
 
 
 @router.put("/profile")
@@ -116,17 +121,25 @@ def update_profile(body: ProfileUpdate, request: Request) -> dict:
             raise HTTPException(400, str(exc)) from exc
     if body.whatsapp_target is not None:
         fields["whatsapp_target"] = _normalize_whatsapp_target(body.whatsapp_target.strip())
+    if body.weekly_summary is not None:
+        fields["weekly_summary"] = body.weekly_summary
+    if body.followup_days is not None:
+        fields["followup_days"] = body.followup_days
     if not fields:
         raise HTTPException(400, "Nothing to update.")
 
-    update_user(user_id, **fields)
+    try:
+        update_user(user_id, **fields)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
     user = get_user(user_id)
     assert user is not None
-    cron = ensure_brief_cron(user_id, user.schedule)
     payload = _profile_payload(user_id)
-    payload["cron_synced"] = cron["ok"]
-    payload["cron_id"] = cron.get("cron_id")
-    payload["cron_error"] = cron.get("error")
+    if "schedule" in fields or "whatsapp_target" in fields:
+        cron = ensure_brief_cron(user_id, user.schedule)
+        payload["cron_synced"] = cron["ok"]
+        payload["cron_id"] = cron.get("cron_id")
+        payload["cron_error"] = cron.get("error")
     return payload
 
 

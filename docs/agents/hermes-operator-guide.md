@@ -247,10 +247,18 @@ jobwright --user $USER_ID preflight            # --fix installs Playwright Chrom
 jobwright --user $USER_ID ops brief-report       # today's summary (alerts ops_target if not OK)
 jobwright ops watchdog                           # any user whose brief never ran/finished
 tail -50 "${JOBWRIGHT_DIR}/logs/brief_$(date +%Y%m%d).log"
-hermes cron list | grep jobwright-               # brief-<user>, ops-watchdog, backup; deliver local
+hermes cron list | grep jobwright-               # brief-<user>, ops-watchdog, backup, weekly-summary; deliver local
 test -f ~/.hermes/scripts/jobwright_brief.sh && echo scripts_OK
 test -f ~/.hermes/skills/autonomous-ai-agents/pp-job-apply/SKILL.md && cat ~/.hermes/skills/autonomous-ai-agents/pp-job-apply/JOBWRIGHT_REPO && echo skill OK
 ```
+
+## Weekly summary and follow-ups
+
+- **Weekly summary:** cron `jobwright-weekly-summary` (Sunday 18:00, `--deliver local`) runs `jobwright summary` for every profile in `users.yaml`. Each user gets one message in their own `whatsapp_target`: new jobs found, sent, applied, moved to interviews / offer, closed, top 3 open jobs worth a look (dashboard links), and due follow-ups. It skips a user who opted out (`weekly_summary: false`, or Profile → WhatsApp), had nothing happen, or already got one in the last 6 days (`logs/weekly_summary.json`).
+- **Preview:** `JOBWRIGHT_HERMES_DRY_RUN=1 jobwright --user $USER_ID summary --dry-run`. Resend after a failure: `jobwright --user $USER_ID summary --force`.
+- **Install / repair the cron:** `jobwright ops install-crons` (edits in place, never duplicates).
+- **Follow-ups:** a job in Applied with no stage change for `followup_days` (per user, default 10) is "follow-up due". It shows on the board card and job drawer; "Followed up" snoozes it for the same number of days, "No response" closes it (`close_reason: no_response`). Up to 3 due follow-ups are appended to the daily list and the weekly summary. If a user says "I followed up with <company>", open the job in the dashboard and tap **Followed up**.
+- **Costs:** admins see 30-day tokens and estimated cost per profile on `/admin` (`GET /api/admin/costs`). Set `JOBWRIGHT_LLM_PRICES` for dollar estimates.
 
 ## Safety (never break)
 

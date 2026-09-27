@@ -89,6 +89,10 @@ export type JobCard = {
   applied_at: string | null
   first_response_at: string | null
   follow_up_at: string | null
+  followed_up_at?: string | null
+  followup_due?: boolean
+  applied_days_ago?: number | null
+  followup_due_at?: string | null
   notes: string | null
   board_updated_by: string | null
   board_updated_at: string | null
@@ -129,6 +133,8 @@ export type Profile = {
   schedule_label?: string
   timezone?: string
   whatsapp_target?: string
+  weekly_summary?: boolean
+  followup_days?: number
   brief_cron_name?: string
   cron_synced?: boolean
   cron_id?: string | null
@@ -331,6 +337,8 @@ export function notifyWhatsApp(): Promise<NotifyResponse> {
 export function updateProfile(body: {
   schedule?: string
   whatsapp_target?: string
+  weekly_summary?: boolean
+  followup_days?: number
 }): Promise<Profile> {
   return apiFetch<Profile>('/profile', { method: 'PUT', body: JSON.stringify(body) })
 }
@@ -517,6 +525,10 @@ export function moveJob(
   })
 }
 
+export function followUpJob(job: JobCard, action: 'followed_up' | 'no_response') {
+  return apiFetch<JobCard>(`${jobPath(job)}/followup`, { method: 'POST', body: JSON.stringify({ action }) })
+}
+
 export type EvalMetrics = {
   threshold: number
   predicted_pos: number
@@ -593,6 +605,20 @@ export function patchAdminUser(userId: string, body: Partial<Pick<AdminUser, 'na
 export function deleteAdminUser(userId: string, deleteData = false) {
   return apiFetch(`/admin/users/${encodeURIComponent(userId)}?delete_data=${deleteData}`, { method: 'DELETE' })
 }
+
+export type UsageTotals = {
+  prompt_tokens: number
+  completion_tokens: number
+  total_tokens: number
+  calls: number
+  cost_usd: number | null
+}
+export type AdminCosts = {
+  days: number
+  users: (UsageTotals & { user_id: string; name: string; error: string | null })[]
+  total: UsageTotals
+}
+export const getAdminCosts = (days = 30) => apiFetch<AdminCosts>(`/admin/costs?days=${days}`)
 
 export type AdminSettings = { admins: string[]; ops_target: string; access_sync?: AccessSyncResult }
 export const getAdminSettings = () => apiFetch<AdminSettings>('/admin/settings')

@@ -62,7 +62,17 @@ def _duplicate_of(job_id: str | None) -> dict | None:
     }
 
 
-def _row_to_card(row) -> dict:
+def _followup_fields(d: dict, days: int | None) -> dict:
+    from jobwright.followups import followup_state, last_stage_change, resolve_days
+
+    empty = {"followup_due": False, "applied_days_ago": None, "followup_due_at": None}
+    if (d.get("funnel_stage") or "backlog") != "applied":
+        return empty
+    last = d["last_stage_at"] if "last_stage_at" in d else last_stage_change(get_connection(), d.get("url"))
+    return followup_state(d, last, resolve_days(days)) or empty
+
+
+def _row_to_card(row, followup_days: int | None = None) -> dict:
     d = dict(row)
     gates = _gates(d)
     if gates:
@@ -113,6 +123,8 @@ def _row_to_card(row) -> dict:
         "applied_at": d.get("applied_at"),
         "first_response_at": d.get("first_response_at"),
         "follow_up_at": d.get("follow_up_at"),
+        "followed_up_at": d.get("followed_up_at"),
+        **_followup_fields(d, followup_days),
         "notes": d.get("notes"),
         "board_updated_by": d.get("board_updated_by"),
         "board_updated_at": d.get("board_updated_at"),
@@ -134,9 +146,13 @@ CLOSED_ON_BOARD = 150
 @router.get("/board")
 def get_board() -> dict:
     """Every open job plus the most recently closed ones (closed history is long)."""
+    from jobwright.followups import LAST_CHANGE_SQL, resolve_days
+
     conn = get_connection()
+    days = resolve_days(None)
     rows = conn.execute(
-        "SELECT * FROM jobs WHERE COALESCE(funnel_stage, 'backlog') != 'closed' "
+        f"SELECT *, {LAST_CHANGE_SQL} AS last_stage_at FROM jobs "
+        "WHERE COALESCE(funnel_stage, 'backlog') != 'closed' "
         "ORDER BY COALESCE(user_fit_score, fit_score) DESC NULLS LAST, discovered_at DESC"
     ).fetchall()
     closed = conn.execute(
@@ -147,7 +163,7 @@ def get_board() -> dict:
     closed_total = conn.execute("SELECT COUNT(*) FROM jobs WHERE funnel_stage = 'closed'").fetchone()[0]
     columns = {stage: [] for stage in FUNNEL_STAGES}
     for row in [*rows, *closed]:
-        card = _row_to_card(row)
+        card = _row_to_card(row, days)
         stage = card["funnel_stage"] if card["funnel_stage"] in columns else "backlog"
         columns[stage].append(card)
     return {
@@ -349,6 +365,32 @@ def clear_response(url: str) -> dict:
         (now, url),
     )
     conn.commit()
+    row = conn.execute("SELECT * FROM jobs WHERE url = ?", (url,)).fetchone()
+    return _row_to_card(row)
+
+
+class FollowupBody(BaseModel):
+    action: str
+
+
+@router.post("/jobs/{url:path}/followup")
+def followup(url: str, body: FollowupBody) -> dict:
+    """"Followed up" snoozes the reminder; "No response" closes the job."""
+    from jobwright.followups import record_followed_up, record_no_response
+
+    url = resolve_job_key(url)
+    conn = get_connection()
+    row = conn.execute("SELECT funnel_stage FROM jobs WHERE url = ?", (url,)).fetchone()
+    if not row:
+        raise HTTPException(404, "Job not found")
+    if row["funnel_stage"] != "applied":
+        raise HTTPException(400, "Only applied jobs have follow-ups")
+    if body.action == "followed_up":
+        record_followed_up(url, conn=conn)
+    elif body.action == "no_response":
+        record_no_response(url, conn=conn)
+    else:
+        raise HTTPException(400, "action must be followed_up or no_response")
     row = conn.execute("SELECT * FROM jobs WHERE url = ?", (url,)).fetchone()
     return _row_to_card(row)
 
