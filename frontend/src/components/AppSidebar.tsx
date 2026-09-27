@@ -111,20 +111,20 @@ export function AppSidebar({
           setPinned(true)
         }}
         className={cn(
-          'group sidebar-shell absolute top-0 left-0 z-30 hidden h-full flex-col overflow-hidden border-r border-sidebar-border bg-sidebar/70 text-sidebar-foreground backdrop-blur-xl md:flex',
-          expanded && !pinned && 'shadow-lg',
+          'group sidebar-shell absolute top-0 left-0 z-30 hidden h-full flex-col overflow-hidden border-r border-sidebar-border bg-sidebar text-sidebar-foreground md:flex',
+          expanded && !pinned && 'shadow-e2',
         )}
       >
         <div className={cn(APP_SHELL_HEADER_HEIGHT, 'w-[var(--sidebar-panel)] gap-2')}>
           <Link
             to="/"
-            className="flex min-w-0 flex-1 items-center gap-2 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+            className="flex min-w-0 flex-1 items-center gap-2 rounded-md"
             aria-label="Back to board"
             onClick={(event) => event.stopPropagation()}
           >
             <BrandLogo className="size-7" />
             <div className="sidebar-label min-w-0 flex-1">
-              <p className="truncate text-sm font-semibold uppercase tracking-[0.14em]">
+              <p className="truncate text-subheading tracking-tight">
                 jobwright
               </p>
             </div>

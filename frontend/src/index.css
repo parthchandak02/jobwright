@@ -3,13 +3,63 @@
 
 @custom-variant dark (&:is(.dark *));
 
+@theme {
+  --font-sans: var(--app-font-sans);
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --container-form: 45rem;
+  --container-wide: 60rem;
+  --container-welcome: 35rem;
+}
+
 @theme inline {
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
+  --radius-lg: calc(var(--radius) + 2px);
+  --radius-xl: calc(var(--radius) + 2px);
+  --radius-popover: var(--radius);
+
+  --text-display: 1.75rem;
+  --text-display--line-height: 2.125rem;
+  --text-display--letter-spacing: -0.015em;
+  --text-display--font-weight: 600;
+  --text-title: 1.375rem;
+  --text-title--line-height: 1.75rem;
+  --text-title--letter-spacing: -0.01em;
+  --text-title--font-weight: 600;
+  --text-heading: 1.0625rem;
+  --text-heading--line-height: 1.5rem;
+  --text-heading--letter-spacing: -0.005em;
+  --text-heading--font-weight: 600;
+  --text-subheading: 0.9375rem;
+  --text-subheading--line-height: 1.375rem;
+  --text-subheading--font-weight: 600;
+  --text-body: var(--fs-body);
+  --text-body--line-height: var(--lh-body);
+  --text-label: 0.875rem;
+  --text-label--line-height: 1.25rem;
+  --text-label--font-weight: 500;
+  --text-caption: 0.8125rem;
+  --text-caption--line-height: 1.125rem;
+  --text-micro: 0.75rem;
+  --text-micro--line-height: 1rem;
+  --text-micro--letter-spacing: 0.01em;
+
+  --spacing-field: 1.25rem;
+  --spacing-section: var(--space-section);
+  --spacing-page-x: var(--page-pad-x);
+  --spacing-page-top: var(--page-pad-top);
+
+  --shadow-e1: var(--elev-1);
+  --shadow-e2: var(--elev-2);
+
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-surface-muted: var(--surface-muted);
+  --color-subtle-foreground: var(--subtle-foreground);
+  --color-border-strong: var(--border-strong);
+  --color-overlay: var(--overlay);
+  --color-pill-active: var(--pill-active);
   --color-card: var(--card);
   --color-card-foreground: var(--card-foreground);
   --color-popover: var(--popover);
@@ -23,6 +73,8 @@
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
@@ -38,55 +90,108 @@
   --color-linkedin-muted: var(--linkedin-muted);
 }
 
+@utility scrollbar-none {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@utility tone-tint {
+  border-color: color-mix(in oklch, var(--tone, var(--tone-neutral)) 22%, var(--surface));
+  background-color: color-mix(in oklch, var(--tone, var(--tone-neutral)) 10%, var(--surface));
+  color: color-mix(in oklch, var(--tone, var(--tone-neutral)) 75%, var(--foreground));
+}
+
+@utility touch-target {
+  @media (max-width: 767px), (pointer: coarse) {
+    &::after {
+      content: "";
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: max(100%, 2.75rem);
+      height: max(100%, 2.75rem);
+      transform: translate(-50%, -50%);
+    }
+  }
+}
+
 :root {
-  --radius: 0.5rem;
-  --background: oklch(0.985 0.004 95);
-  --foreground: oklch(0.22 0.02 255);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.22 0.02 255);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.22 0.02 255);
-  --primary: oklch(0.42 0.09 250);
+  --app-font-sans:
+    ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text", "Segoe UI", system-ui, Roboto,
+    "Helvetica Neue", Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+
+  --fs-body: 0.9375rem;
+  --lh-body: 1.5rem;
+  --space-section: 2rem;
+  --page-pad-x: 1rem;
+  --page-pad-top: 1.25rem;
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+
+  --radius: 0.625rem;
+
+  --background: oklch(0.985 0.002 80);
+  --surface: oklch(1 0 0);
+  --surface-muted: oklch(0.97 0.003 80);
+  --foreground: oklch(0.22 0.01 260);
+  --muted-foreground: oklch(0.5 0.01 260);
+  --subtle-foreground: oklch(0.62 0.008 260);
+  --border: oklch(0.915 0.004 80);
+  --border-strong: oklch(0.86 0.005 80);
+
+  --card: var(--surface);
+  --card-foreground: var(--foreground);
+  --popover: var(--surface);
+  --popover-foreground: var(--foreground);
+  --primary: oklch(0.52 0.15 262);
   --primary-foreground: oklch(0.99 0 0);
-  --secondary: oklch(0.95 0.01 95);
-  --secondary-foreground: oklch(0.28 0.02 255);
-  --muted: oklch(0.95 0.008 95);
-  --muted-foreground: oklch(0.5 0.02 255);
-  --accent: oklch(0.94 0.015 240);
-  --accent-foreground: oklch(0.28 0.04 250);
-  --destructive: oklch(0.55 0.2 25);
-  --border: oklch(0.9 0.01 95);
-  --input: oklch(0.9 0.01 95);
-  --ring: oklch(0.55 0.08 250);
-  --sidebar: oklch(0.975 0.006 95);
-  --sidebar-foreground: oklch(0.28 0.02 255);
-  --sidebar-border: oklch(0.9 0.01 95);
-  --sidebar-accent: oklch(0.93 0.02 240);
-  --sidebar-accent-foreground: oklch(0.28 0.05 250);
-  /* Kanban lane accents — 6 distinct, well-spaced hues */
-  --stage-backlog: oklch(0.6 0.03 255);
-  --stage-prepare: oklch(0.72 0.16 100);
-  --stage-in-progress: oklch(0.64 0.18 50);
-  --stage-offer: oklch(0.58 0.16 150);
-  --query-daily: var(--stage-offer);
-  --query-weekly: oklch(0.62 0.07 150);
-  --stage-applied: oklch(0.55 0.17 255);
-  --stage-closed: oklch(0.56 0.17 330);
-  /* Liquid glass surfaces */
-  --glass: oklch(1 0 0 / 0.55);
-  --glass-strong: oklch(1 0 0 / 0.78);
-  --glass-border: oklch(0.45 0.03 255 / 0.14);
-  --glass-highlight: oklch(1 0 0 / 0.65);
-  --glass-shadow: 0 1px 2px oklch(0.3 0.03 255 / 0.06), 0 8px 24px -12px oklch(0.3 0.03 255 / 0.22);
-  --glass-shadow-hover: 0 2px 4px oklch(0.3 0.03 255 / 0.08), 0 16px 40px -16px oklch(0.3 0.03 255 / 0.3);
-  /* App background depth */
-  --mesh-1: oklch(0.55 0.08 250 / 0.1);
-  --mesh-2: oklch(0.7 0.14 95 / 0.07);
-  /* Motion */
+  --secondary: var(--surface-muted);
+  --secondary-foreground: var(--foreground);
+  --muted: var(--surface-muted);
+  --accent: oklch(0.96 0.02 262);
+  --accent-foreground: oklch(0.4 0.12 262);
+  --destructive: oklch(0.55 0.17 25);
+  --success: oklch(0.55 0.11 155);
+  --warning: oklch(0.62 0.12 70);
+  --input: var(--border-strong);
+  --ring: oklch(0.52 0.15 262 / 0.45);
+
+  --sidebar: oklch(0.975 0.003 80);
+  --sidebar-foreground: var(--foreground);
+  --sidebar-border: var(--border);
+  --sidebar-accent: var(--accent);
+  --sidebar-accent-foreground: var(--accent-foreground);
+
+  --stage-backlog: oklch(0.6 0.02 260);
+  --stage-prepare: oklch(0.66 0.1 85);
+  --stage-applied: oklch(0.56 0.11 255);
+  --stage-in-progress: oklch(0.62 0.12 50);
+  --stage-offer: oklch(0.58 0.11 155);
+  --stage-closed: oklch(0.56 0.1 330);
+  --tone-neutral: oklch(0.55 0.01 260);
+  --query-daily: var(--tone-neutral);
+  --query-weekly: var(--tone-neutral);
+
+  --elev-1: 0 1px 2px oklch(0.2 0.01 260 / 0.05), 0 2px 8px -2px oklch(0.2 0.01 260 / 0.06);
+  --elev-2: 0 8px 32px -8px oklch(0.2 0.01 260 / 0.18);
+  --overlay: oklch(0.2 0.01 260 / 0.32);
+  --pill-active: var(--surface);
+
+  --glass: var(--surface);
+  --glass-strong: var(--surface);
+  --glass-border: var(--border);
+  --glass-highlight: transparent;
+  --glass-shadow: 0 0 0 0 transparent;
+  --glass-shadow-hover: var(--elev-1);
+
   --ease-glass: cubic-bezier(0.22, 1, 0.36, 1);
+  --dur-1: 120ms;
+  --dur-2: 180ms;
+  --dur-3: 240ms;
+
   --sidebar-rail: 3.5rem;
   --sidebar-panel: 14rem;
-  /* Job card layout */
   --job-card-pad: 0.75rem;
   --job-card-section-gap: 0.5rem;
   --job-card-header-gap: 0.125rem;
@@ -95,7 +200,6 @@
   --job-card-score-offset: 2.25rem;
   --job-card-action-size: 1.75rem;
   --job-card-icon-gap: 0.375rem;
-  /* Jobs table (desktop Table view) */
   --jobs-table-cell-y: 0.5rem;
   --jobs-table-cell-x: 0.75rem;
   --jobs-table-head-gap: 0.125rem;
@@ -107,156 +211,181 @@
   --jobs-table-col-work: 6.75rem;
   --jobs-table-col-source: 7rem;
   --jobs-table-col-materials: 9.5rem;
-  /* LinkedIn accent (connections panel) */
   --linkedin: #0a66c2;
-  --linkedin-muted: color-mix(in srgb, #0a66c2 16%, transparent);
-  --linkedin-subtle: color-mix(in srgb, #0a66c2 22%, transparent);
-  --whatsapp: oklch(0.72 0.19 145);
-  /* Custom Tailor (AI) */
-  --tailor: oklch(0.5 0.16 305);
-  --tailor-muted: oklch(0.5 0.16 305 / 0.12);
-  --tailor-subtle: oklch(0.5 0.16 305 / 0.22);
-  /* Job drawer — description pane */
+  --linkedin-muted: color-mix(in srgb, #0a66c2 10%, transparent);
+  --linkedin-subtle: color-mix(in srgb, #0a66c2 18%, transparent);
+  --whatsapp: oklch(0.66 0.15 150);
+  --tailor: var(--primary);
+  --tailor-muted: var(--accent);
+  --tailor-subtle: color-mix(in oklch, var(--primary) 22%, var(--surface));
   --job-drawer-jd-max-height: 24rem;
   --job-drawer-jd-pad: 0.75rem;
-  --job-drawer-jd-hint-size: 0.625rem;
+  --job-drawer-jd-hint-size: 0.75rem;
+}
+
+@media (min-width: 768px) {
+  :root {
+    --fs-body: 0.875rem;
+    --lh-body: 1.375rem;
+    --space-section: 2.5rem;
+    --page-pad-x: 2rem;
+    --page-pad-top: 2.5rem;
+  }
 }
 
 .dark {
-  /* Neutral greyscale (no blue hue) */
-  --background: oklch(0.15 0 0);
-  --foreground: oklch(0.95 0 0);
-  --card: oklch(0.19 0 0);
-  --card-foreground: oklch(0.95 0 0);
-  --popover: oklch(0.19 0 0);
-  --popover-foreground: oklch(0.95 0 0);
-  --primary: oklch(0.9 0 0);
-  --primary-foreground: oklch(0.2 0 0);
-  --secondary: oklch(0.25 0 0);
-  --secondary-foreground: oklch(0.92 0 0);
-  --muted: oklch(0.25 0 0);
-  --muted-foreground: oklch(0.68 0 0);
-  --accent: oklch(0.27 0 0);
-  --accent-foreground: oklch(0.95 0 0);
-  --destructive: oklch(0.62 0.2 25);
-  --border: oklch(0.28 0 0);
-  --input: oklch(0.3 0 0);
-  --ring: oklch(0.55 0 0);
-  --sidebar: oklch(0.13 0 0);
-  --sidebar-foreground: oklch(0.92 0 0);
-  --sidebar-border: oklch(0.26 0 0);
-  --sidebar-accent: oklch(0.24 0 0);
-  --sidebar-accent-foreground: oklch(0.95 0 0);
-  /* Kanban lane accents — 6 distinct, well-spaced hues */
-  --stage-backlog: oklch(0.72 0.03 255);
-  --stage-prepare: oklch(0.84 0.17 100);
-  --stage-in-progress: oklch(0.76 0.17 50);
-  --stage-offer: oklch(0.76 0.16 150);
-  --query-daily: var(--stage-offer);
-  --query-weekly: oklch(0.74 0.07 150);
-  --stage-applied: oklch(0.72 0.16 255);
-  --stage-closed: oklch(0.74 0.16 330);
-  /* Liquid glass surfaces (neutral) */
-  --glass: oklch(0.2 0 0 / 0.55);
-  --glass-strong: oklch(0.22 0 0 / 0.75);
-  --glass-border: oklch(1 0 0 / 0.06);
-  --glass-highlight: oklch(1 0 0 / 0.07);
-  --glass-shadow: 0 1px 2px oklch(0 0 0 / 0.3), 0 8px 24px -12px oklch(0 0 0 / 0.5);
-  --glass-shadow-hover: 0 2px 4px oklch(0 0 0 / 0.35), 0 16px 40px -16px oklch(0 0 0 / 0.6);
-  /* App background depth (subtle neutral, no color cast) */
-  --mesh-1: oklch(0.6 0 0 / 0.05);
-  --mesh-2: oklch(0.6 0 0 / 0.03);
+  --background: oklch(0.16 0.004 260);
+  --surface: oklch(0.195 0.004 260);
+  --surface-muted: oklch(0.22 0.004 260);
+  --foreground: oklch(0.95 0.003 260);
+  --muted-foreground: oklch(0.7 0.005 260);
+  --subtle-foreground: oklch(0.58 0.005 260);
+  --border: oklch(0.28 0.004 260);
+  --border-strong: oklch(0.34 0.004 260);
+
+  --popover: oklch(0.23 0.004 260);
+  --primary: oklch(0.7 0.13 262);
+  --primary-foreground: oklch(0.16 0.02 262);
+  --accent: oklch(0.26 0.04 262);
+  --accent-foreground: oklch(0.86 0.06 262);
+  --destructive: oklch(0.68 0.15 25);
+  --success: oklch(0.74 0.11 155);
+  --warning: oklch(0.78 0.11 70);
+  --ring: oklch(0.7 0.13 262 / 0.5);
+
+  --sidebar: oklch(0.145 0.004 260);
+
+  --stage-backlog: oklch(0.72 0.02 260);
+  --stage-prepare: oklch(0.8 0.1 85);
+  --stage-applied: oklch(0.74 0.1 255);
+  --stage-in-progress: oklch(0.76 0.11 50);
+  --stage-offer: oklch(0.76 0.1 155);
+  --stage-closed: oklch(0.74 0.09 330);
+  --tone-neutral: oklch(0.72 0.008 260);
+
+  --elev-1: 0 1px 2px oklch(0 0 0 / 0.15), 0 2px 8px -2px oklch(0 0 0 / 0.18);
+  --elev-2: 0 8px 32px -8px oklch(0 0 0 / 0.54);
+  --overlay: oklch(0 0 0 / 0.55);
+  --pill-active: oklch(0.3 0.004 260);
+
   --linkedin: #70b5f9;
-  --linkedin-muted: color-mix(in srgb, #70b5f9 18%, transparent);
-  --linkedin-subtle: color-mix(in srgb, #70b5f9 28%, transparent);
-  --whatsapp: oklch(0.78 0.18 145);
-  --tailor: oklch(0.78 0.14 305);
-  --tailor-muted: oklch(0.78 0.14 305 / 0.16);
-  --tailor-subtle: oklch(0.78 0.14 305 / 0.28);
+  --linkedin-muted: color-mix(in srgb, #70b5f9 10%, transparent);
+  --linkedin-subtle: color-mix(in srgb, #70b5f9 20%, transparent);
+  --whatsapp: oklch(0.74 0.14 150);
 }
 
 @layer base {
   * {
-    @apply border-border outline-ring/50;
+    @apply border-border;
+  }
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
   }
   html,
   body,
   #root {
     height: 100%;
   }
-  body {
-    @apply bg-background text-foreground antialiased;
-    margin: 0;
-    font-family:
-      "IBM Plex Sans",
-      "Segoe UI",
-      system-ui,
-      -apple-system,
-      sans-serif;
-    /* Layered depth so glass surfaces have something to refract */
-    background-image:
-      radial-gradient(60rem 60rem at 12% -8%, var(--mesh-1), transparent 60%),
-      radial-gradient(48rem 48rem at 108% 12%, var(--mesh-2), transparent 55%);
-    background-attachment: fixed;
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
   }
-  @media (max-width: 767px) {
-    body {
-      /* iOS WKWebView (WhatsApp) janks hard on background-attachment: fixed */
-      background-attachment: scroll;
+  body {
+    @apply bg-background font-sans text-body text-foreground antialiased;
+    margin: 0;
+    text-rendering: optimizeLegibility;
+  }
+  ::placeholder {
+    color: var(--subtle-foreground);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
     }
   }
 }
 
 @layer components {
-  /* Liquid-glass surface: translucent fill, blur, hairline border + top highlight */
+  .surface {
+    background-color: var(--surface);
+    border: 1px solid var(--border);
+  }
+  .surface-muted {
+    background-color: var(--surface-muted);
+  }
   .glass {
-    background-color: var(--glass);
-    -webkit-backdrop-filter: blur(16px) saturate(1.4);
-    backdrop-filter: blur(16px) saturate(1.4);
-    border: 1px solid var(--glass-border);
-    box-shadow:
-      var(--glass-shadow),
-      inset 0 1px 0 0 var(--glass-highlight);
+    background-color: var(--surface);
+    border: 1px solid var(--border);
   }
   .glass-strong {
-    background-color: var(--glass-strong);
-    -webkit-backdrop-filter: blur(20px) saturate(1.5);
-    backdrop-filter: blur(20px) saturate(1.5);
-    border: 1px solid var(--glass-border);
-    box-shadow:
-      var(--glass-shadow),
-      inset 0 1px 0 0 var(--glass-highlight);
+    background-color: var(--surface);
+    border: 1px solid var(--border);
+    box-shadow: var(--elev-1);
   }
   .glass-interactive {
     transition:
-      transform 0.2s var(--ease-glass),
-      box-shadow 0.2s var(--ease-glass),
-      border-color 0.2s var(--ease-glass);
+      box-shadow var(--dur-1) var(--ease-out),
+      border-color var(--dur-1) var(--ease-out),
+      background-color var(--dur-1) var(--ease-out);
   }
   .glass-interactive:hover {
-    box-shadow:
-      var(--glass-shadow-hover),
-      inset 0 1px 0 0 var(--glass-highlight);
-    transform: translateY(-1px);
+    border-color: var(--border-strong);
+    box-shadow: var(--elev-1);
   }
   .app-shell-header {
-    background-color: color-mix(in oklch, var(--background) 70%, transparent);
-    -webkit-backdrop-filter: blur(24px);
-    backdrop-filter: blur(24px);
+    background-color: var(--background);
+  }
+  @media (min-width: 768px) {
+    .app-shell-header {
+      background-color: color-mix(in oklch, var(--background) 85%, transparent);
+      -webkit-backdrop-filter: blur(12px);
+      backdrop-filter: blur(12px);
+    }
+  }
+
+  .scroll-fade-x {
+    --fade-start: 0px;
+    --fade-end: 0px;
+    -webkit-mask-image: linear-gradient(
+      to right,
+      transparent,
+      black var(--fade-start),
+      black calc(100% - var(--fade-end)),
+      transparent
+    );
+    mask-image: linear-gradient(
+      to right,
+      transparent,
+      black var(--fade-start),
+      black calc(100% - var(--fade-end)),
+      transparent
+    );
+  }
+  .scroll-fade-x[data-fade-start="true"] {
+    --fade-start: 1.5rem;
+  }
+  .scroll-fade-x[data-fade-end="true"] {
+    --fade-end: 1.5rem;
   }
 
   .sidebar-shell {
     width: var(--sidebar-rail);
     transition:
-      width 0.2s var(--ease-glass),
-      box-shadow 0.2s var(--ease-glass);
+      width var(--dur-2) var(--ease-out),
+      box-shadow var(--dur-2) var(--ease-out);
   }
   .sidebar-shell[data-expanded='true'] {
     width: var(--sidebar-panel);
   }
   .sidebar-spacer {
     width: var(--sidebar-rail);
-    transition: width 0.2s var(--ease-glass);
+    transition: width var(--dur-2) var(--ease-out);
   }
   .sidebar-spacer[data-pinned='true'] {
     width: var(--sidebar-panel);
@@ -267,7 +396,7 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     opacity: 1;
-    transition: opacity 0.15s var(--ease-glass) 0.05s;
+    transition: opacity 0.15s var(--ease-out) 0.05s;
   }
   .group[data-expanded='false'] .sidebar-label {
     opacity: 0;
@@ -282,13 +411,11 @@
     }
   }
 
-  /* Full-card lane tint — uses the same --lane token as the column header.
-     Strong enough that each lane's hue is clearly distinguishable, no border needed. */
   .lane-card {
-    background-color: color-mix(in srgb, var(--lane) 30%, var(--glass));
+    background-color: color-mix(in oklch, var(--lane) 7%, var(--surface));
   }
   .lane-card:hover {
-    background-color: color-mix(in srgb, var(--lane) 38%, var(--glass));
+    background-color: color-mix(in oklch, var(--lane) 10%, var(--surface));
   }
 
   /* Job card — shared spacing + typography rhythm */
@@ -414,20 +541,8 @@
       transparent 100%
     );
   }
-  /* One native scroller on small screens: nested overflow + backdrop-filter
-     is what makes WhatsApp/iOS in-app browsers feel like they barely scroll. */
+  /* One native scroller on small screens (WhatsApp/iOS in-app browsers). */
   @media (max-width: 767px) {
-    .glass,
-    .glass-strong {
-      -webkit-backdrop-filter: none;
-      backdrop-filter: none;
-      background-color: var(--card);
-    }
-    .app-shell-header {
-      background-color: var(--background);
-      -webkit-backdrop-filter: none;
-      backdrop-filter: none;
-    }
     .job-drawer-jd-scroll {
       max-height: none;
       overflow: visible;
@@ -648,13 +763,6 @@
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .glass-interactive,
-  .glass-interactive:hover {
-    transition: none;
-    transform: none;
-  }
-}
 
 .materials-preview :is(h1, h2, h3) {
   margin: 0.75rem 0 0.35rem;
