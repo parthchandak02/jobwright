@@ -597,4 +597,26 @@ export function putAdminSettings(body: Partial<AdminSettings>) {
 export const ensureWatchdog = () => apiFetch<{ ok: boolean; error?: string }>('/admin/watchdog', { method: 'POST' })
 export const sendOpsTest = () => apiFetch<{ result: string }>('/admin/ops-test', { method: 'POST' })
 
+export type HermesChannelEntry = {
+  user_id: string
+  name: string
+  jid: string
+  status: 'add' | 'update' | 'unchanged'
+  changes: string[]
+}
+export type HermesChannelsPlan = {
+  config_path: string
+  entries: HermesChannelEntry[]
+  skipped: { user_id: string; name: string; reason: string }[]
+  orphans: string[]
+  changed: boolean
+  diff: string
+  backup?: string | null
+  written?: boolean
+  dry_run?: boolean
+}
+export const getHermesChannels = () => apiFetch<HermesChannelsPlan>('/admin/hermes-channels')
+export const applyHermesChannels = () =>
+  apiFetch<HermesChannelsPlan>('/admin/hermes-channels/apply', { method: 'POST', body: '{}' })
+
 export const previewNotify = () => apiFetch<NotifyResponse & { dry_run?: boolean }>('/notify/preview')

@@ -128,3 +128,32 @@ def ops_test(request: Request) -> dict:
 
     rep = Report(user=config.get_active_user_id() or "admin", level="warn", lines=["test alert from the dashboard"])
     return {"result": deliver(rep, force=True)}
+
+
+def _channels(prune: bool = False, write: bool = False) -> dict:
+    from jobwright import hermes_channels
+
+    try:
+        if write:
+            return hermes_channels.apply(prune=prune)
+        return hermes_channels.plan(prune=prune).as_dict()
+    except FileNotFoundError as exc:
+        raise HTTPException(404, f"Hermes config not found: {exc.filename}") from exc
+    except (OSError, ValueError) as exc:
+        raise HTTPException(500, f"Could not read the Hermes config: {exc}") from exc
+
+
+@router.get("/hermes-channels")
+def hermes_channels_plan(request: Request) -> dict:
+    require_admin(request)
+    return _channels()
+
+
+class HermesChannelsApply(BaseModel):
+    prune: bool = False
+
+
+@router.post("/hermes-channels/apply")
+def hermes_channels_apply(request: Request, body: HermesChannelsApply | None = None) -> dict:
+    require_admin(request)
+    return _channels(prune=bool(body and body.prune), write=True)

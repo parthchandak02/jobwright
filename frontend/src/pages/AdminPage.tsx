@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Bell, Loader2, Plus, RefreshCw, Shield, Trash2, UserPlus } from 'lucide-react'
+import { Bell, Loader2, MessageSquare, Plus, RefreshCw, Shield, Trash2, UserPlus } from 'lucide-react'
 import { toast } from 'sonner'
 import { APP_SHELL_HEADER } from '@/components/BrandLogo'
 import { ChipInput } from '@/components/ChipInput'
@@ -17,17 +17,20 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import {
+  applyHermesChannels,
   createProfile,
   deleteAdminUser,
   ensureWatchdog,
   getAdminSettings,
   getAdminUsers,
+  getHermesChannels,
   patchAdminUser,
   putAdminSettings,
   sendOpsTest,
   switchProfile,
   type AdminSettings,
   type AdminUser,
+  type HermesChannelsPlan,
 } from '@/lib/api'
 import { useMe } from '@/lib/me'
 import { cn, errorMessage } from '@/lib/utils'
@@ -41,6 +44,93 @@ function HealthChip({ user }: { user: AdminUser }) {
     <Chip tone={tone} title={[...(user.health?.lines || []), today].join('\n')}>
       {level === 'fail' ? 'Problem' : level === 'warn' ? 'Warning' : 'Healthy'}
     </Chip>
+  )
+}
+
+/** Hermes per-profile WhatsApp group instructions (~/.hermes/config.yaml). */
+function HermesChannelsCard() {
+  const [plan, setPlan] = useState<HermesChannelsPlan | null>(null)
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  const load = useCallback(() => {
+    setError('')
+    void getHermesChannels()
+      .then(setPlan)
+      .catch((e) => setError(errorMessage(e)))
+  }, [])
+
+  useEffect(load, [load])
+
+  async function apply() {
+    setBusy(true)
+    try {
+      const r = await applyHermesChannels()
+      setPlan(r)
+      if (r.dry_run) toast.info('Dry run: nothing written')
+      else if (r.written) toast.success('Saved. Restart Hermes to pick it up.')
+      else toast.info('Already up to date')
+      load()
+    } catch (e) {
+      toast.error(errorMessage(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const pending = plan?.entries.filter((e) => e.status !== 'unchanged') ?? []
+  return (
+    <section className="space-y-3">
+      <h2 className="text-sm font-semibold">WhatsApp group instructions</h2>
+      <p className="text-xs text-muted-foreground">
+        Each profile’s WhatsApp group gets its own Hermes instructions (only that person’s data). Hermes needs a restart
+        (<code>hermes gateway restart</code>) to pick up changes.
+      </p>
+      <div className="glass space-y-3 rounded-xl p-4">
+        {error ? (
+          <p className="text-sm text-destructive">{error}</p>
+        ) : !plan ? (
+          <p className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="size-4 animate-spin" /> Loading…
+          </p>
+        ) : (
+          <>
+            <ul className="space-y-1.5">
+              {plan.entries.map((e) => (
+                <li key={e.user_id} className="flex flex-wrap items-center gap-2 text-sm">
+                  <span className="font-medium">{e.name}</span>
+                  {e.status === 'unchanged' ? (
+                    <Chip tone="--stage-offer">Up to date</Chip>
+                  ) : (
+                    <Chip tone="--stage-in-progress" title={e.changes.join(', ')}>
+                      {e.status === 'add' ? 'Not set up' : 'Needs update'}
+                    </Chip>
+                  )}
+                </li>
+              ))}
+              {plan.skipped.map((s) => (
+                <li key={s.user_id} className="flex flex-wrap items-center gap-2 text-sm">
+                  <span className="font-medium">{s.name}</span>
+                  <Chip muted>{s.reason}</Chip>
+                </li>
+              ))}
+              {plan.orphans.map((jid) => (
+                <li key={jid} className="text-xs text-muted-foreground">
+                  Old jobwright entry for a group no profile uses: {jid}
+                </li>
+              ))}
+            </ul>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button size="sm" onClick={() => void apply()} disabled={busy || !plan.changed}>
+                {busy ? <Loader2 className="animate-spin" /> : <MessageSquare />}
+                {plan.changed ? `Apply (${pending.length})` : 'Up to date'}
+              </Button>
+              <span className="text-xs text-muted-foreground">{plan.config_path}</span>
+            </div>
+          </>
+        )}
+      </div>
+    </section>
   )
 }
 
@@ -247,6 +337,8 @@ export function AdminPage() {
               </>
             ) : null}
           </section>
+
+          {me?.is_admin ? <HermesChannelsCard /> : null}
         </div>
       </main>
 
