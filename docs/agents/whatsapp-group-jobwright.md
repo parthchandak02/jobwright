@@ -31,7 +31,7 @@ bash "${JOBWRIGHT_REPO}/scripts/resolve_user_from_whatsapp.sh" 'whatsapp:1203639
 
 ## Live `config.yaml` (whatsapp section)
 
-Put the durable prompt below into `~/.hermes/config.yaml` (do not commit secrets). Set `JOBWRIGHT_REPO` in it to the real checkout path and update it whenever the checkout moves. After edit: `hermes gateway restart`, then `/new` in the group.
+Generated, do not hand-edit: `jobwright hermes channels --apply` writes this group's entries from `users/users.yaml` (see [hermes-operator-guide.md](hermes-operator-guide.md#whatsapp-group-instructions-generated)). Then `hermes gateway restart`, then `/new` in the group. The block below is the older hand-written shape, kept for reference.
 
 ```yaml
   channel_skill_bindings:

@@ -173,6 +173,23 @@ Per-user brief config: `human_gate` (default off; on for richa) and `brief_top_n
 (notify cap, default 0 = uncapped; richa = 10) live in the registry `users/users.yaml`,
 settable via `jobwright users set <id> --human-gate/--no-human-gate --brief-top-n <n>`.
 
+## WhatsApp group instructions (generated)
+
+Each profile whose `whatsapp_target` is a group (`whatsapp:<jid>@g.us`) gets its own Hermes entry in `~/.hermes/config.yaml`, generated from `users/users.yaml` by `src/jobwright/hermes_channels.py`: `channel_overrides.<jid>.system_prompt` (that user only: `--user <id>`, `jobwright-brief-<id>`, `apply_enabled`, dashboard URL, no model lines), `channel_prompts.<jid>`, a `channel_skill_bindings` entry (pp-job-apply, hermes-cron-jobs, graphify, cursor-agent) and `group_allow_from`.
+
+```bash
+jobwright hermes channels                 # show the diff (default ~/.hermes/config.yaml, or $HERMES_CONFIG / --config PATH)
+jobwright hermes channels --apply         # backup to <config>.bak-jobwright-<ts>, atomic write, re-parse
+jobwright hermes channels --apply --prune # also drop managed entries whose group no longer belongs to a profile
+hermes gateway restart                    # Hermes only reads the file at start
+```
+
+- Managed prompts carry the line `# managed by jobwright (hermes_channels)`. Entries for other groups are never touched; comments and key order are preserved (ruamel.yaml round-trip).
+- A managed entry whose group no profile uses is reported as `orphan` and kept unless `--prune`.
+- DMs and empty targets are skipped. Idempotent: a second run reports everything `unchanged`.
+- `JOBWRIGHT_HERMES_DRY_RUN=1` never writes. Admin page → "WhatsApp group instructions" shows the same plan with an Apply button (`GET /api/admin/hermes-channels`, `POST /api/admin/hermes-channels/apply`).
+- Re-run after adding a profile, changing a group, toggling `apply_enabled`/`human_gate`, or moving the checkout.
+
 ## File upload handling (WhatsApp)
 
 | File type | Move to |

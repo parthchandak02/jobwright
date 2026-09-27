@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `jobwright hermes channels [--apply] [--prune] [--config PATH]`: per-profile Hermes WhatsApp group instructions generated from `users.yaml` (system prompt scoped to that user only, channel prompt, skill binding, `group_allow_from`). ruamel.yaml round-trip keeps comments and key order; backup + atomic write; orphans reported, removed only with `--prune`; honors `JOBWRIGHT_HERMES_DRY_RUN`. Admin page card "WhatsApp group instructions" with Apply (`/api/admin/hermes-channels`). New dependency `ruamel.yaml>=0.18`.
+
 ## [0.6.0] - 2026-09-26
 
 Multi-user, high-confidence matching, robust ops. See ADR-005, ADR-006, ADR-007.
