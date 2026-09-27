@@ -27,13 +27,26 @@ def _count(conn: sqlite3.Connection, sql: str, params: tuple) -> int:
     return int(conn.execute(sql, params).fetchone()[0] or 0)
 
 
+_STILL_AT = {
+    "applied": ("applied", "in_progress", "offer"),
+    "in_progress": ("in_progress", "offer"),
+    "offer": ("offer",),
+    "closed": ("closed",),
+}
+
+
 def _moved(conn: sqlite3.Connection, stages: tuple[str, ...], since: str, human_only: bool = False) -> int:
+    """Jobs moved into ``stages`` since ``since`` that are still there (or further along)."""
     marks = ", ".join("?" for _ in stages)
-    actor = " AND actor = 'human'" if human_only else ""
+    current = sorted({s for st in stages for s in _STILL_AT.get(st, (st,))})
+    cur_marks = ", ".join("?" for _ in current)
+    actor = " AND h.actor = 'human'" if human_only else ""
     return _count(
         conn,
-        f"SELECT COUNT(DISTINCT job_url) FROM stage_history WHERE to_stage IN ({marks}) AND at >= ?{actor}",
-        (*stages, since),
+        f"SELECT COUNT(DISTINCT h.job_url) FROM stage_history h JOIN jobs j ON j.url = h.job_url "
+        f"WHERE h.to_stage IN ({marks}) AND h.at >= ?{actor} "
+        f"AND COALESCE(j.funnel_stage, 'backlog') IN ({cur_marks})",
+        (*stages, since, *current),
     )
 
 
