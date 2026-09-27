@@ -49,6 +49,19 @@ def _gates(d: dict) -> dict:
         return {}
 
 
+def _duplicate_of(job_id: str | None) -> dict | None:
+    if not job_id:
+        return None
+    row = get_connection().execute(
+        "SELECT title, company FROM jobs WHERE job_id = ?", (job_id,)
+    ).fetchone()
+    return {
+        "job_id": job_id,
+        "title": row["title"] if row else None,
+        "company": row["company"] if row else None,
+    }
+
+
 def _row_to_card(row) -> dict:
     d = dict(row)
     gates = _gates(d)
@@ -91,6 +104,7 @@ def _row_to_card(row) -> dict:
         "location_ok": gates.get("location_ok"),
         "seniority": gates.get("seniority"),
         "close_reason": d.get("close_reason"),
+        "duplicate_of": _duplicate_of(d.get("duplicate_of")),
         "funnel_stage": d.get("funnel_stage") or "backlog",
         "outcome": d.get("outcome"),
         "is_dead": is_dead,

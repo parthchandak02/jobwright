@@ -1214,6 +1214,45 @@ def labels_export(path: str = typer.Argument(..., help="Output .jsonl path.")) -
 
 
 @app.command()
+def dedupe(
+    apply_changes: bool = typer.Option(
+        False, "--apply", help="Close duplicates and tombstone their URLs (default: preview only).",
+    ),
+    dry_run: bool = typer.Option(True, "--dry-run", help="Preview duplicate groups (the default)."),
+) -> None:
+    """Find duplicate open jobs; keep the best card per group, close the rest as duplicates."""
+    _bootstrap()
+    from jobwright.database import get_connection
+    from jobwright.discovery.dedupe import collapse_duplicates
+
+    out = collapse_duplicates(get_connection(), apply=apply_changes)
+    for group in out["groups"]:
+        keeper = group["keeper"]
+        console.print(
+            f"\n[bold]{keeper['title']}[/bold] @ {keeper['company'] or '?'}  "
+            f"[dim]({group['match']} match, {len(group['losers']) + 1} cards)[/dim]"
+        )
+        console.print(
+            f"  [green]keep[/green]   {keeper['job_id']}  {keeper['funnel_stage'] or 'backlog'}  "
+            f"fit {keeper['fit_score'] if keeper['fit_score'] is not None else '-'}  {keeper['location'] or ''}"
+        )
+        for loser in group["losers"]:
+            tag = f"[yellow]keep ({loser['blocked']})[/yellow]" if loser["blocked"] else "[red]close[/red]"
+            console.print(
+                f"  {tag}  {loser['job_id']}  {loser['funnel_stage'] or 'backlog'}  "
+                f"fit {loser['fit_score'] if loser['fit_score'] is not None else '-'}  {loser['location'] or ''}"
+            )
+    verb = "Closed" if apply_changes else "Would close"
+    console.print(
+        f"\n{out['group_count']} duplicate group(s), {out['duplicates']} extra card(s). "
+        f"{verb} {out['closed'] if apply_changes else out['duplicates'] - len(out['blocked'])}; "
+        f"{len(out['blocked'])} left open (applied or added by hand)."
+    )
+    if not apply_changes:
+        console.print("[dim]Preview only. Re-run with --apply to close duplicates.[/dim]")
+
+
+@app.command()
 def preflight(
     fix: bool = typer.Option(False, "--fix", help="Repair what can be repaired (e.g. install Playwright Chromium)."),
     as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),

@@ -388,6 +388,8 @@ _ALL_COLUMNS: dict[str, str] = {
     "score_model": "TEXT",
     # Close reason captured from the board (why the human rejected / closed)
     "close_reason": "TEXT",
+    # job_id of the card this one was closed as a duplicate of (discovery.dedupe)
+    "duplicate_of": "TEXT",
 }
 
 # Canonical Kanban lanes (single shared axis).
@@ -408,6 +410,7 @@ CLOSED_OUTCOMES = (
     "withdrawn",
     "ghosted",
     "cancelled",
+    "duplicate",
 )
 
 # Skip agent pipeline work on human-held cards and post-handoff stages.

@@ -20,7 +20,7 @@ export function WorkModelBadge({ workModel, className }: Props) {
   if (!config) {
     return (
       <Chip icon={HelpCircle} muted className={className}>
-        Work model: NA
+        Work model unknown
       </Chip>
     )
   }
