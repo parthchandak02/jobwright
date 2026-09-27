@@ -316,25 +316,22 @@ def spawn_logged_run(
 
 @router.post("/run")
 def start_run(body: RunBody, request: Request) -> dict:
-    from jobwright.pipeline import default_brief_stages
-
     explicit = [s for s in body.stages if s in ALLOWED_STAGES]
     if body.stages and not explicit:
         raise HTTPException(400, f"No valid stages; allowed: {ALLOWED_STAGES}")
-    stages = explicit or default_brief_stages()
+    return start_pipeline_run(_user_id(request), explicit, workers=body.workers, min_score=body.min_score)
 
+
+def start_pipeline_run(user_id: str, explicit: list[str] | None = None, *, workers: int = 2,
+                       min_score: int = 7) -> dict:
+    """Spawn ``jobwright run`` for the profile bound in the current context (empty = default brief stages)."""
+    from jobwright.pipeline import default_brief_stages
+
+    explicit = list(explicit or [])
     return spawn_logged_run(
-        args=[
-            "run",
-            *explicit,
-            "-w",
-            str(max(1, min(body.workers, 4))),
-            "--min-score",
-            str(body.min_score),
-            "--verbose",
-        ],
-        user_id=_user_id(request),
-        stages=stages,
+        args=["run", *explicit, "-w", str(max(1, min(workers, 4))), "--min-score", str(min_score), "--verbose"],
+        user_id=user_id,
+        stages=explicit or default_brief_stages(),
         log_name="web_run",
         kind="pipeline",
     )

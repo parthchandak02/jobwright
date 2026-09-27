@@ -24,6 +24,27 @@ def _profile() -> dict:
         return {}
 
 
+def write_profile(profile: dict) -> None:
+    """Atomically replace the active profile's profile.json (owner-only)."""
+    path = Path(config.PROFILE_PATH)
+    tmp = path.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(profile, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    tmp.chmod(0o600)
+    tmp.replace(path)
+
+
+def latest_eval_report() -> dict | None:
+    """Newest stored eval report for the active profile (full runs preferred over --limit runs)."""
+    parsed = []
+    for path in sorted(Path(config.LOG_DIR).glob("eval_*.json")):
+        try:
+            parsed.append(json.loads(path.read_text(encoding="utf-8")))
+        except (OSError, ValueError):
+            continue
+    full = [r for r in parsed if not (r.get("config") or {}).get("limit")]
+    return (full or parsed or [None])[-1]
+
+
 @router.get("/criteria")
 def get_criteria(request: Request) -> dict:
     from jobwright.scoring.criteria import load_criteria
@@ -45,11 +66,7 @@ def put_criteria(body: CriteriaBody, request: Request) -> dict:
     parsed = parse_criteria(body.criteria)
     profile = _profile()
     profile["match_criteria"] = parsed.to_dict()
-    path = Path(config.PROFILE_PATH)
-    tmp = path.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(profile, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    tmp.chmod(0o600)
-    tmp.replace(path)
+    write_profile(profile)
     return {"criteria": parsed.to_dict(), "derived": False}
 
 
@@ -116,14 +133,7 @@ def quality(request: Request) -> dict:
         "FROM jobs j WHERE j.whatsapp_notified_at >= datetime('now', '-30 days')"
     ).fetchone()
     latest_eval = None
-    parsed = []
-    for path in sorted(Path(config.LOG_DIR).glob("eval_*.json")):
-        try:
-            parsed.append(json.loads(path.read_text(encoding="utf-8")))
-        except (OSError, ValueError):
-            continue
-    full = [r for r in parsed if not (r.get("config") or {}).get("limit")]
-    rep = (full or parsed or [None])[-1]
+    rep = latest_eval_report()
     recommended = None
     if rep:
         latest_eval = {k: rep.get(k) for k in ("run_id", "at", "prompt_version", "config", "metrics",

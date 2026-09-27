@@ -82,6 +82,7 @@ Single-user doctor: `jobwright doctor`. Multi-profile: `jobwright --user <id> do
 | `tests/test_materials_tailor_api.py` | `POST /api/jobs/{url}/tailor` (spawns `tailor-job`) |
 | `tests/test_subtle_tailor.py` | Dashboard instruction prompts |
 | `tests/test_cover_letter_examples.py` | Cover-letter example PDF settings API |
+| `tests/test_admin_console.py` | Admin v2 API: overview shape + broken profile, patch validation/threshold storage/cron side effects, test message, per-user run |
 | `tests/test_cf_access.py` | Access allowlist plan/apply against a mocked Cloudflare API, admin-only routes, best-effort sync hooks |
 | `tests/test_followups_summary.py` | Follow-up due logic, snooze, no-response close, notify appendix, weekly summary content and mark-then-send, weekly cron |
 | `tests/test_hermes_channels.py` | Hermes config round-trip, per-user prompts, orphans, idempotency, dry-run, backup, CLI + admin API |
