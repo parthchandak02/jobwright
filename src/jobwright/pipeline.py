@@ -159,6 +159,18 @@ def _dedupe() -> dict:
         return {"error": str(e)}
 
 
+def _collapse_duplicates() -> dict:
+    """Close duplicate open cards (existing backlog, multi-location reposts); no LLM."""
+    try:
+        from jobwright.discovery.dedupe import collapse_duplicates
+
+        out = collapse_duplicates(get_connection(), apply=True)
+        return {k: out[k] for k in ("group_count", "closed")} | {"blocked": len(out["blocked"])}
+    except Exception as e:  # noqa: BLE001 - dedupe must never sink a run
+        log.warning("Duplicate collapse skipped: %s", e)
+        return {"error": str(e)}
+
+
 def _run_enrich(workers: int = 1) -> dict:
     """Stage: Detail enrichment — scrape full descriptions and apply URLs."""
     try:
@@ -194,6 +206,7 @@ def _run_score() -> dict:
             result["prune"] = prune_stats
         except Exception as prune_err:
             log.warning("Post-score prune skipped: %s", prune_err)
+        result["collapse"] = _collapse_duplicates()
         return {"status": "ok", **result}
     except Exception as e:
         log.error("Scoring failed: %s", e)

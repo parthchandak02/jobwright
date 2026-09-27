@@ -6,7 +6,7 @@ Nested agent notes for the Python package. Root context: [../../AGENTS.md](../..
 
 | Module | Role |
 |--------|------|
-| `cli.py` | Typer entry; `--user` before subcommands. Stages: discover, enrich, score, portfolio, tailor, cover, pdf, docx, connect. Also `tailor-job`, `notify`, `briefstats`, `eval`, `rescore`, `criteria show\|suggest`, `labels list\|export`, `preflight`, `ops brief-report\|watchdog\|set-target\|backup`, `users`. `apply` is dry-run unless `--live` |
+| `cli.py` | Typer entry; `--user` before subcommands. Stages: discover, enrich, score, portfolio, tailor, cover, pdf, docx, connect. Also `tailor-job`, `notify`, `briefstats`, `dedupe` (`--apply`), `eval`, `rescore`, `criteria show\|suggest`, `labels list\|export`, `preflight`, `ops brief-report\|watchdog\|set-target\|backup`, `users`. `apply` is dry-run unless `--live` |
 | `__main__.py` | `python -m jobwright` (dashboard spawns); records the exit code in the run registry |
 | `pipeline.py` | `STAGE_ORDER`, stage runners, `default_brief_stages()` (honors `human_gate`), per-user `pipeline_lock()` (flock), `logs/last_run.json`; prunes backlog junk after `score` |
 | `run_registry.py` | Durable pipeline runs in `users/<id>/logs/web_runs.json`; honors `JOBWRIGHT_WEB_RUN_ID` |
@@ -24,7 +24,7 @@ Nested agent notes for the Python package. Root context: [../../AGENTS.md](../..
 | `llm.py` | Fireworks (default `accounts/fireworks/models/glm-5p3-flash`) / Gemini failover / OpenAI-compatible; `reasoning_effort`, structured output, usage flushed to `llm_usage` |
 | `database.py` | SQLite schema: `jobs`, `stage_history`, `job_tombstones` (+ triggers), `score_labels`, `score_history`, `llm_usage`, `schema_meta`; `job_id` (blake2b of URL), `advance_funnel`, stats |
 | `web/` | FastAPI: `auth.py` (Cloudflare Access JWT / dev), `session.py` (identity + per-request profile middleware), `jobkeys.py` (job routes accept `job_id`), routers `board`, `materials`, `runs`, `settings`, `notify`, `system` (`/me`, `/session`, `/profile`, `/status`), `onboarding`, `whatsapp`, `admin`, `quality`, `connections`, `jobs` |
-| `discovery/` | `jobspy.py` (`-w` / `JOBWRIGHT_DISCOVER_WORKERS`, known-URL skip), `workday.py`, `filters.py` (fit caps; `mission_guard` opt-in), `dedupe.py` (cross-board `dedupe_key`), `cleanup.py` (`prune_after_score`), `known_urls.py`, `smartextract.py` (`DISCOVER_MODE`) |
+| `discovery/` | `jobspy.py` (`-w` / `JOBWRIGHT_DISCOVER_WORKERS`, known-URL skip), `workday.py`, `filters.py` (fit caps; `mission_guard` opt-in), `dedupe.py` (cross-board `dedupe_key`; `collapse_duplicates` closes duplicate open cards after score), `cleanup.py` (`prune_after_score`), `known_urls.py`, `smartextract.py` (`DISCOVER_MODE`) |
 | `enrichment/` | `detail.py` (full JD), `sponsorship.py` (LLM, not on discover hot path) |
 | `scoring/` | v2: `matcher.py` (structured judgment + gates), `pipeline_v2.py` (select, Jev reject-only, persist, `score_history`), `criteria.py` (`match_criteria`), `examples.py` (TF-IDF retrieval), `evaluate.py` (`jobwright eval`), `criteria_miner.py`. Legacy: `scorer.py` (`JOBWRIGHT_SCORER=v1`, `SCORE_BATCH_SIZE`), `fastpath.py` (Jev). Also `tailor`, `tailor_instructions`, `cover_letter`, `portfolio`, `pdf`, `docx_export`, `validator` |
 | `network/` | CSV rank, per-job connect, Exa research |
@@ -67,6 +67,7 @@ Single-user doctor: `jobwright doctor`. Multi-profile: `jobwright --user <id> do
 | `tests/test_scorer.py` | Legacy batch score JSON mapping |
 | `tests/test_llm_hardening.py` | LLM retries, structured-output fallback, usage + cost |
 | `tests/test_pipeline_integrity.py` | Tombstones, dedupe, run lock, run summary / stage failures |
+| `tests/test_dedupe_backlog.py` | Duplicate open cards: grouping, keeper choice, close + tombstone, CLI, drawer link |
 | `tests/test_ops.py` | Brief report, watchdog, preflight, backups |
 | `tests/test_notify.py` | Notify formatting and status lines |
 | `tests/test_resume.py` | PDF → markdown, cache |
