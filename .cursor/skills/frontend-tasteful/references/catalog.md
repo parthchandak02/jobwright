@@ -11,7 +11,8 @@ Do not dump every component or every CSS value here. If a pattern is missing, re
 | Tokens | `index.css` (`:root`, `.dark`, `@layer components`) | Color, glass, stage, job-card, sidebar, table, drawer |
 | shadcn | `components/ui/` | Button, Tabs, Badge, Dialog, Sheet, Input, Select, … |
 | Domain | `components/` (not `ui/`) | Product layout |
-| Pages | `App.tsx`, `ProfilePage`, `JobDrawer` | Composition only |
+| Pages | `App.tsx`, `ProfilePage`, `JobDrawer`, `pages/` (`WelcomePage`, `QualityPage`, `AdminPage`) | Composition only |
+| Data / identity | `lib/api.ts` (typed API), `lib/me.tsx` (`MeProvider` / `useMe`: login, admin, profiles), `lib/reasons.ts`, `lib/useRunStream.ts` | Shared hooks; no page-local fetch wrappers |
 
 Reuse order: shadcn defaults → domain primitive → new token/class. Tailwind v4 is CSS-first (`@theme inline` in `index.css`; no `tailwind.config`).
 
@@ -24,6 +25,9 @@ Reuse order: shadcn defaults → domain primitive → new token/class. Tailwind 
 | Desktop rail (hover expand + click pin) | `AppSidebar` |
 | Stage filters | `SidebarNav` + `NavItem` |
 | Profile / theme rows in the rail | `SidebarActionButton` |
+| Switch profile (admins: all) | `ProfileSwitcher` (reloads the app) |
+| Identity gate (no profile → `/welcome`) | `AppGate` |
+| Last run / ops / WhatsApp bridge warning | `StatusBanner` |
 | 56px header chrome | `BrandLogo` (`APP_SHELL_HEADER`) |
 | Light / dark | `ThemeToggle` (`sidebar` vs icon) |
 | Board vs table | `ViewModeTabs` (default pill `TabsList`) |
@@ -40,20 +44,25 @@ Reuse order: shadcn defaults → domain primitive → new token/class. Tailwind 
 | Work model / sponsorship / materials / WhatsApp | `WorkModelBadge`, `SponsorshipBadge`, `JobMetaBadges` |
 | Meta rows (`Label: NA`) | `MetaField` |
 | Fit score | `ScoreBadge` / `ScoreEditor` (`lib/scoreColor.ts`) |
+| Why this score (gates, fit, confidence, reasoning) | `MatchExplanation` |
+| One-tap relevance rating (thumbs + reasons → label) | `RateJob` |
+| Multi-select reason pills | `ReasonChips` (options from `lib/reasons.ts`, merged with the user's dealbreakers) |
+| Move to any lane (scrolls on narrow screens) | `StagePicker` |
 | Stage color anywhere | `laneTone()` / `STAGE_TONE` from `lib/api.ts` |
 
 ### Drawer, materials, runs
 
 | Use | Primitive |
 |-----|-----------|
-| Drawer section chrome / prev-next stage | `DrawerSection`, `DrawerStageNav` |
+| Drawer section chrome | `DrawerSection` |
 | Per-job resume/cover + Auto/Custom Tailor | `JobResumeMaterials`, `JobCoverMaterials`, `JobMaterialsPreview` |
 | Profile documents (PDF iframe + markdown) | `ProfileMaterials` + `ResumePreview` |
-| Live pipeline / tailor logs | `RunProgressDialog` + `RunProgressButton` |
+| Live pipeline / tailor logs | `RunProgressDialog` + `RunProgressButton`; attach to a started run with `useRunStream` |
 | Board Auto Search dialog | `AutoSearchDialog` (wrapper over `RunProgressDialog`) |
 | Edit tailor instructions then run | `CustomTailorDialog` |
 | LinkedIn-tinted contacts | `ConnectionsPanel` |
-| Gated dialogs | `CloseJobDialog`, `ManualAddModal`, `DailyBriefDialog` (WhatsApp brief time + send) |
+| Gated dialogs | `DismissDialog` (close with outcome; "Not for me" asks why), `ManualAddModal`, `DailyBriefDialog` (pending count, next send, Send now; links to Profile → WhatsApp) |
+| WhatsApp chat selection + test send | `WhatsAppChatPicker` (Profile WhatsApp tab, onboarding, Admin) |
 
 ### Profile / forms
 
@@ -62,6 +71,7 @@ Reuse order: shadcn defaults → domain primitive → new token/class. Tailwind 
 | Labeled field + help | `FormField`, `FieldHint`, `SectionLabel` |
 | Auto Search editors | `ChipInput`, `QueryChipInput`, `LocationChipInput`, `BoardToggles` |
 | Read-only pairs in dialogs | `DetailRow` / `DetailGrid` |
+| Match rules (fit, dealbreakers, locations, level, pay) | `CriteriaEditor` (`compact` in onboarding) |
 
 ### Buttons
 

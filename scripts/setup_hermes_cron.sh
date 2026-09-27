@@ -6,11 +6,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-DEFAULT_DELIVER="${HERMES_JOB_APPLY_DELIVER:-whatsapp:120363999999999905}"
-UPSERT="${SCRIPT_DIR}/_upsert_one_cron.sh"
 
 "${SCRIPT_DIR}/install_hermes_scripts.sh"
-chmod +x "${UPSERT}"
 
 pause_or_delete_legacy() {
   local name="$1"
@@ -39,53 +36,22 @@ for name in job-apply-discover job-apply-submit \
   pause_or_delete_legacy "${name}"
 done
 
-USERS_JSON="$(
-  cd "${REPO_ROOT}" && PYTHONPATH="${REPO_ROOT}/src${PYTHONPATH:+:$PYTHONPATH}" python3 -c "
-import json
+PY="${REPO_ROOT}/.venv/bin/python3"
+[[ -x "${PY}" ]] || PY="python3"
+USER_IDS="$(cd "${REPO_ROOT}" && PYTHONPATH="${REPO_ROOT}/src${PYTHONPATH:+:$PYTHONPATH}" "${PY}" -c "
 from jobwright.users import list_users
-users = [
-    {
-        'user_id': u.user_id,
-        'whatsapp_target': u.whatsapp_target,
-        'schedule': u.schedule,
-    }
-    for u in list_users()
-]
-print(json.dumps(users))
-" 2>/dev/null || echo '[]'
-)"
-
-USER_COUNT="$(python3 -c "import json,sys; print(len(json.loads(sys.argv[1])))" "${USERS_JSON}")"
-
-if [[ "${USER_COUNT}" -eq 0 ]]; then
-  echo "No registry users - registering single-user brief cron."
-  bash "${UPSERT}" "jobwright-brief" "0 6 * * *" "jobwright_brief.sh" "${DEFAULT_DELIVER}" ""
-else
-  python3 - <<PY
-import json, subprocess, sys
-users = json.loads("""${USERS_JSON}""")
-upsert = "${UPSERT}"
-default_deliver = "${DEFAULT_DELIVER}"
-for u in users:
-    uid = u["user_id"]
-    deliver = u.get("whatsapp_target") or default_deliver
-    if not deliver:
-        print(f"SKIP {uid}: no whatsapp_target", file=sys.stderr)
-        continue
-    sched = u.get("schedule") or "0 6 * * *"
-    env = f"JOBWRIGHT_USER={uid}"
-    subprocess.check_call(
-        ["bash", upsert, f"jobwright-brief-{uid}", sched, "jobwright_brief.sh", deliver, env]
-    )
-PY
-  for uid in $(python3 -c "import json,sys; print(' '.join(u['user_id'] for u in json.loads(sys.argv[1])))" "${USERS_JSON}"); do
-    # Retire per-user crons from the old dual-delivery / watchdog flow.
-    for legacy in "job-apply-morning-${uid}" "job-apply-digest-${uid}" \
-      "job-apply-watchdog-${uid}" "jobwright-send-${uid}" "jobwright-check-${uid}"; do
-      pause_or_delete_legacy "${legacy}"
-    done
+print(' '.join(u.user_id for u in list_users()))
+")"
+for uid in ${USER_IDS}; do
+  for legacy in "job-apply-morning-${uid}" "job-apply-digest-${uid}" \
+    "job-apply-watchdog-${uid}" "jobwright-send-${uid}" "jobwright-check-${uid}"; do
+    pause_or_delete_legacy "${legacy}"
   done
-fi
+done
+
+# Brief crons deliver to "local": the brief sends its own WhatsApp list, so a
+# bridge outage cannot turn a finished run into a failed delivery.
+(cd "${REPO_ROOT}" && PYTHONPATH="${REPO_ROOT}/src${PYTHONPATH:+:$PYTHONPATH}" "${PY}" -m jobwright.cli ops install-crons "$@")
 
 echo "Hermes cron jobs registered (scripts in ${HOME}/.hermes/scripts):"
 hermes cron list

@@ -11,7 +11,6 @@ mkdir -p "${HERMES_SCRIPTS}"
 for src in "${REPO_ROOT}"/scripts/jobwright_*.sh \
            "${REPO_ROOT}"/scripts/run_daily_brief.sh \
            "${REPO_ROOT}"/scripts/resolve_user_from_whatsapp.sh \
-           "${REPO_ROOT}"/scripts/_upsert_one_cron.sh \
            "${REPO_ROOT}"/scripts/_jobwright_repo.sh; do
   [[ -f "${src}" ]] || continue
   chmod +x "${src}" 2>/dev/null || true
@@ -25,7 +24,7 @@ for legacy in \
   job_apply_stage6.sh run_morning_pipeline.sh \
   jobwright_send.sh jobwright_check.sh jobwright_deliver_digest.sh \
   jobwright_deliver_materials.sh jobwright_send_materials.sh \
-  jobwright_confirm.sh jobwright_on_confirm.sh; do
+  jobwright_confirm.sh jobwright_on_confirm.sh _upsert_one_cron.sh; do
   rm -f "${HERMES_SCRIPTS}/${legacy}"
 done
 

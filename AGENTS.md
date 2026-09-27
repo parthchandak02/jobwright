@@ -8,11 +8,21 @@ Entry point for **Cursor, Claude Code, Hermes, and cron wrappers**. Read this fi
 
 ## What this is
 
-**Product model:** jobwright is a daily career advisor. Each user supplies a base resume, profile, and search criteria. The pipeline discovers jobs, scores fit with an LLM, tailors resume + cover letter per strong match (from base materials only), exports DOCX, and ranks LinkedIn connections per job. The web dashboard is the primary surface: it shows every job as a card with tailored materials, connections, and a gated apply button. Once per day the pipeline sends ONE WhatsApp message listing the newly prepared jobs, each with a deep link to open that job in the dashboard. The user reviews and applies from the dashboard; optional browser apply is gated and never runs from cron. When LinkedIn jobs are discovered (included in default boards), they appear as cards and in connections; only auto-apply is blocked (`apply_blocked` in `sites.yaml`).
+**Product model:** jobwright is a daily career advisor for **any number of invited users**. Each user supplies a base resume, profile, search criteria and match criteria. The pipeline discovers jobs, scores fit with an LLM (scoring v2), tailors resume + cover letter per strong match (from base materials only), exports DOCX, and ranks LinkedIn connections per job. The web dashboard is the primary surface: every job is a card with tailored materials, connections, a match explanation, one-tap rating, and a gated apply button. Once per day the pipeline sends ONE WhatsApp message listing newly ready jobs, each with a deep link into the dashboard. The user reviews and applies from the dashboard; optional browser apply is gated and never runs from cron. LinkedIn jobs appear as cards; only auto-apply is blocked (`apply_blocked` in `sites.yaml`).
 
-**Pipeline:** discover → enrich → score → portfolio → tailor → cover → **docx** → **connect**, then `jobwright notify` (one WhatsApp list of new jobs). CLI also has a **pdf** stage (`run pdf` / `run all`); the daily brief and dashboard Auto Search skip it. Optional **apply** (browser agent) is opt-in. Brief stages are cron-safe. Apply is dry-run by default, never auto-submit from cron. **Human gate** (`human_gate` per-user config, on for richa): the *default* brief stage list stops before material generation (`discover enrich score portfolio connect`), and notify sends a review-first top-N list with `/jobs/<id>` deep links — materials are generated on demand after approval (dashboard Auto Tailor, or `jobwright run tailor cover docx` scoped to the job). Explicit stage lists always run verbatim. **Scoring:** single-shot concurrent calls (`JOBWRIGHT_SCORE_WORKERS`, default 20; `0` = legacy batch-of-10), full 6000-char description, temp 0, structured JSON output; `brief_top_n` (default 0 = uncapped) caps the notify list; `jobwright --user <id> briefstats --days 14` reports per-brief precision. Optional TypeSafe Jev fast-path (`jev_hybrid: off|shadow|on`, key `TYPESAFE_API_KEY` in the user `.env`): shadow logs `jev_*` columns only; `on` fast-accepts ≥8 (conf ≥0.6) and fast-rejects ≤4 past the default LLM (glm-5p3-flash), escalating the 5-7 band and low-confidence jobs.
+**Multi-user model (v0.6, [ADR-005](docs/adr/ADR-005-multi-user-auth-and-request-context.md)):** profiles live in `users/users.yaml` + `users/<id>/`. Each profile lists the Cloudflare Access login `emails` that may open it; a top-level `admins` list (plus `JOBWRIGHT_ADMIN_EMAILS`) may open, switch to, create and edit any profile; `ops_target` is where operator alerts go. A login with no profile lands on `/welcome` (onboarding: resume upload → LLM-drafted profile, searches and match criteria → review → WhatsApp chat picker + schedule). The API binds the active profile per request (`config.user_context`, a ContextVar), so concurrent users never share paths. New users also need their email added to the Cloudflare Access policy (owner, Zero Trust dashboard).
 
-**Kanban dashboard (optional):** FastAPI + React board at `jobwright.parthchandak.info` (local `:8002`). Cloudflare Access email OTP at edge; tune Application session to 30d (`720h`) so devices re-auth monthly (see [dashboard-hosting.md](docs/agents/dashboard-hosting.md)). Single-axis lanes `backlog → prepare → applied → in_progress → offer → closed`; agent auto-advances to prepare; human owns Applied+. See [docs/agents/dashboard-hosting.md](docs/agents/dashboard-hosting.md) and [docs/adr/ADR-004-kanban-funnel-stage.md](docs/adr/ADR-004-kanban-funnel-stage.md).
+**Auth:** `JOBWRIGHT_AUTH_MODE=cloudflare` (production pm2) verifies the `Cf-Access-Jwt-Assertion` header (or `CF_Authorization` cookie) against the team JWKS at `https://$JOBWRIGHT_CF_TEAM_DOMAIN/cdn-cgi/access/certs`, audience `JOBWRIGHT_CF_AUD`. `dev` (local, `restart.sh --tmux`) trusts the caller (`JOBWRIGHT_DEV_EMAIL`, or anonymous admin) and refuses requests carrying Cloudflare edge headers. Default: `cloudflare` when `JOBWRIGHT_CF_TEAM_DOMAIN` is set, else `dev`.
+
+**Pipeline:** discover → enrich → score → portfolio → tailor → cover → **docx** → **connect**, then `jobwright notify`. CLI also has a **pdf** stage (`run pdf` / `run all`); the daily brief and Auto Search skip it. `jobwright run` with no stages runs the default brief list (honors `human_gate`); explicit stage lists run verbatim. Runs hold a per-user `flock` (`<user dir>/.pipeline.lock`) so cron, dashboard and CLI never overlap, and write `logs/last_run.json`. Discovery computes a cross-board `dedupe_key` (company | title | place); pruned or duplicate jobs are **tombstoned** (`job_tombstones`) so they never come back. **Human gate** (`human_gate` per user): default stages stop before materials (`discover enrich score portfolio connect`); notify sends a review-first top-N list; materials are generated on demand (dashboard Auto Tailor, or `jobwright run tailor cover docx`).
+
+**Scoring v2 ([ADR-006](docs/adr/ADR-006-scoring-v2-labels-and-evals.md)):** one structured-output call per job (`scoring/matcher.py`) returns dealbreakers / concerns / location_ok / seniority / fit / confidence / reasoning, judged against the user's **match criteria** (`profile.json` `match_criteria`; derived from `job_preferences` when absent) and the 12 most similar **labeled past decisions** (TF-IDF, at least 4 positives). Gates are applied in code: hard dealbreaker or bad location caps at 3, salary below floor at 4, unknown location at 6. Default model `accounts/fireworks/models/glm-5p3-flash` with `reasoning_effort=low` (`JOBWRIGHT_REASONING_T1`), `JOBWRIGHT_SCORE_WORKERS` concurrent calls (default 16). Optional Jev prefilter (`jev_hybrid` in the user config; `on` = reject-only, never accepts). Escalation to a stronger model is opt-in (`LLM_ESCALATION_MODEL`, off). Every machine score goes to `score_history`, token use to `llm_usage`. `JOBWRIGHT_SCORER=v1` restores the legacy single-number scorer (the only path that still reads `SCORE_BATCH_SIZE`). Social-impact title caps/pruning are opt-in per user (`searches.yaml` `scoring: {mission_guard: true}`).
+
+**Labels and evals:** human ratings are append-only in `score_labels` (with a job snapshot, so they survive pruning); `jobs.user_fit_score` mirrors the latest. Dashboard ratings (thumbs + reason chips) and "Not for me" dismissals with reasons both append labels and become retrieved examples on the next scoring run. `jobwright eval` replays the scorer on the labeled set and reports precision/recall at 6/7/8 versus stored production scores (report JSON in the user's `logs/`); run it before changing prompts, models or criteria logic.
+
+**Ops ([ADR-007](docs/adr/ADR-007-ops-alerts-backups-internal-disk.md)):** `run_daily_brief.sh` runs `jobwright preflight --fix` (installs the Playwright Chromium the package needs), the pipeline, `notify` (writes `notify_sent N` / `notify_skipped <reason>` / `notify_failed <error>`), and always ends with `jobwright ops brief-report`, which alerts `ops_target` on any problem and writes `logs/ops_health.json` for the dashboard banner. Hermes crons (all `--no-agent`, `--deliver local`): `jobwright-brief-<user>`, `jobwright-ops-watchdog` (08:30, missed runs), `jobwright-backup` (02:30, `jobwright ops backup` to `JOBWRIGHT_BACKUP_DIR`). Recommended deployment: a checkout on the internal disk (e.g. `/Users/parthchandak/apps/jobwright`) with pm2 running uvicorn without `--reload`; the external SSD only holds backups.
+
+**Kanban dashboard:** FastAPI + React at `jobwright.parthchandak.info` (local `:8002`). Lanes `backlog → prepare → applied → in_progress → offer → closed`; agent auto-advances to prepare; human owns Applied+. Pages: board, `/jobs/:jobId` (deep link, mobile-first drawer), `/profile` (searches, resume, cover letters, Match rules), `/quality` (ratings, eval, token use), `/admin` (admins only), `/welcome`. See [dashboard-hosting.md](docs/agents/dashboard-hosting.md) and [ADR-004](docs/adr/ADR-004-kanban-funnel-stage.md).
 
 **Human-readable overview:** [README.md#the-daily-brief-how-it-works-with-hermes](README.md#the-daily-brief-how-it-works-with-hermes).
 
@@ -24,15 +34,19 @@ Version: `pyproject.toml` / `jobwright --version`.
 
 - Put `--user` **before** subcommands: `jobwright --user <id> status`
 - Resolve WhatsApp sender before profile commands: `scripts/resolve_user_from_whatsapp.sh`
+- Export `JOBWRIGHT_HERMES_DRY_RUN=1` in any sandbox, worktree or test run that could touch Hermes (cron create/edit and `hermes send` become log lines). `restart.sh --tmux` sets it by default.
+- Run `jobwright --user <id> eval` before and after any scoring prompt/model/criteria change; report the precision/recall delta
 - Run quality gate before commit: `pytest tests/ -v` and `ruff check src/`
 - Sync [AGENTS.md](AGENTS.md) before commit/push if you changed CLI, stages, paths, scripts, or safety gates (see [.cursor/rules/agents-doc-sync.mdc](.cursor/rules/agents-doc-sync.mdc))
 - Hermes ops: set `JOBWRIGHT_REPO` to your clone; install thin skill via `./scripts/install_skills.sh` ([docs/agents/install-hermes-skill.md](docs/agents/install-hermes-skill.md))
 
 ## Ask first
 
-- Live apply (`jobwright apply` without `--dry-run`)
+- Live apply (`jobwright apply --live`)
 - `jobwright users set <id> --apply` (enables live apply for that profile)
-- Deleting user data (`users remove --delete-data`)
+- Deleting user data (`users remove --delete-data`, Admin page delete)
+- Changing `admins`, a profile's `emails`, or `ops_target`
+- `jobwright rescore` on a real profile (replaces current scores; history is kept)
 - Multi-file refactors outside the task scope
 - Committing or pushing (only when user asks)
 
@@ -41,8 +55,11 @@ Version: `pyproject.toml` / `jobwright --version`.
 - Auto-apply from cron
 - LinkedIn job apply (blocked in code)
 - `jobwright apply --live` from cron (apply only from the dashboard or an explicit manual command)
+- Send test WhatsApp messages to a real user's group (e.g. richa's). Test sends go only to a chat the owner picks, or run with `JOBWRIGHT_HERMES_DRY_RUN=1`
+- Run `jobwright_smoke.sh` or a brief for a real profile from a sandbox without `JOBWRIGHT_HERMES_DRY_RUN=1` (it sends the real WhatsApp list)
+- Run prod uvicorn with `--reload`, or point prod pm2 at a working tree agents edit
+- Use `gpt-oss*` models (banned by the owner)
 - Commit `.env`, `users/`, `~/.jobwright/`, or secrets
-- Extend `src/applypilot/` (legacy snapshot; use `src/jobwright/`)
 
 ---
 
@@ -50,69 +67,84 @@ Version: `pyproject.toml` / `jobwright --version`.
 
 ```bash
 # Setup
-pip install -e ".[dev]"
-pip install -e ".[web]"          # Kanban dashboard (FastAPI + uvicorn)
-playwright install chromium   # stage 6 only
+pip install -e ".[dev,web]"        # or run everything via: uv run --extra dev --extra web ...
+.venv/bin/playwright install chromium   # enrich + apply; `jobwright preflight --fix` does this
 
 # Health
 jobwright doctor
+jobwright --user <id> preflight [--fix] [--json]   # exit 1 on a blocking failure
 pytest tests/ -v
 ruff check src/
 bash scripts/validate_pipeline.sh
 
 # Daily Brief pipeline (multi-profile)
-# DISCOVER_MODE=fast (default for cron): JobSpy + Workday tier-1 only; skip smart-extract
-# DISCOVER_MODE=full: all query tiers + smart-extract (weekly deep crawl)
-DISCOVER_MODE=fast jobwright --user <id> run discover enrich score portfolio tailor cover docx connect -w 4 --min-score 7
+jobwright --user <id> run -w 4 --min-score 7          # default brief stages (honors human_gate)
+DISCOVER_MODE=full jobwright --user <id> run discover enrich score portfolio tailor cover docx connect -w 4
+jobwright --user <id> notify [--dry-run]              # ONE WhatsApp list; --dry-run previews only
+jobwright --user <id> briefstats --days 14            # per-brief precision proxy
 
-# Send ONE WhatsApp list of newly prepared jobs (deep links to the dashboard).
-# --dry-run previews the message without sending or marking jobs notified.
-jobwright --user <id> notify
-jobwright --user <id> notify --dry-run
+# Scoring v2: criteria, labels, evals
+jobwright --user <id> criteria show
+jobwright --user <id> criteria suggest [--save]      # draft from resume + ratings
+jobwright --user <id> labels list --limit 30
+jobwright --user <id> labels export /tmp/labels.jsonl
+jobwright --user <id> eval [--limit 60] [--examples 12] [--escalation-model <m>]
+jobwright --user <id> rescore --scope active|labeled|all|since:<days> [--dry-run]
+
+# Ops
+jobwright --user <id> ops brief-report [--status-file F] [--force]
+jobwright ops watchdog [--grace 120]
+jobwright ops set-target 'whatsapp:<jid>'            # '' clears
+jobwright ops backup [--dest DIR] [--keep 14]
+jobwright ops install-crons [--backup-dest DIR]   # upsert every jobwright Hermes cron
 
 # Per-job materials (dashboard Auto/Custom Tailor)
-jobwright --user <id> tailor-job --url "https://example.com/job"
-
-# Per-job tailor (dashboard Auto/Custom Tailor; verbose stdout)
 jobwright --user <id> tailor-job --url "https://example.com/jobs/123"
 jobwright --user <id> tailor-job --url "https://..." --resume-only --resume-instructions-file /tmp/r.txt
 jobwright --user <id> tailor-job --url "https://..." --cover-only --cover-instructions-file /tmp/c.txt
 
-# Kanban dashboard (local hot reload)
+# Apply: dry-run unless --live (and live needs apply_enabled)
+jobwright --user <id> apply --limit 1
+jobwright --user <id> apply --live --url "https://..."
+
+# Kanban dashboard
 cp ecosystem.config.example.js ecosystem.config.js   # once
-./scripts/restart.sh                                 # api :8002 + Vite :5120
-# open http://127.0.0.1:5120
-# ./scripts/restart.sh --backend-only | --frontend-only | --prod-ui | --tmux
+./scripts/restart.sh --tmux                          # dev: api --reload (auth dev, Hermes dry-run) + Vite :5120
+./scripts/restart.sh                                 # pm2 api :8002 + Vite :5120
+# ./scripts/restart.sh --backend-only | --frontend-only | --prod-ui
 # Prod on this host: ./scripts/dashboard_deploy.sh  (docs/agents/dashboard-hosting.md)
 
 # Agent JSON
 ./bin/job-apply-pp-cli status --agent --user <id>
 
-# Users
+# Users (CLI; emails/admins are edited in the dashboard Admin page or users.yaml)
 jobwright users list
 jobwright users add <id> --name "Name" --whatsapp "whatsapp:..." --template nontech-bay-area
+jobwright users set <id> --human-gate --brief-top-n 10
 
 # Hermes install (from clone)
 ./scripts/install_skills.sh
 ./scripts/install_hermes_scripts.sh
-# Crons: ask Hermes agent — docs/agents/hermes-setup.md (paste block at top)
+# Crons: docs/agents/hermes-setup.md (the dashboard creates/edits jobwright-brief-<user> on save)
 ```
 
-Env: `FIREWORKS_API_KEY` (stages 3-5, preferred), `GEMINI_API_KEY` (runtime failover: retried automatically when Fireworks returns empty content), `GEMINI_FALLBACK_MODEL` (default `gemini-3.7-flash`), `GEMINI_THINKING_LEVEL` (default `low`; `minimal|low|medium|high` for Gemini 3.x), optional `EXA_API_KEY` (per-job web connections), `CURSOR_API_KEY` + `AGENT_PROVIDER=cursor-sdk` (stage 6), `DISCOVER_MODE=fast|full` (default `fast`: skip smart-extract, tier-1 queries; Workday and JobSpy skip known URLs), `SCORE_BATCH_SIZE` (default `10`: jobs per scoring LLM call; set `1` for sequential), `JOBWRIGHT_HOURS_OLD` (override discover freshness window; default 72 in the non-tech template), `JOBWRIGHT_DISCOVER_BOARDS` (restrict JobSpy boards, e.g. `indeed`, without editing searches.yaml), `JOBWRIGHT_DISCOVER_WORKERS` (JobSpy parallel query×location cap; default 4), `JOBWRIGHT_WEB_RUN_ID` (set by dashboard spawn so CLI does not double-register a run), `JOBWRIGHT_LOG_LEVEL` (`DEBUG` with `run --verbose`), `BRIEF_SMOKE=1` (narrow E2E: 3 queries, SF+Remote, Indeed-only, 168h; `jobwright_smoke.sh` pins gpt-oss-120b, waits for `done RC=`, and reports the `notify` result), `JOBWRIGHT_PUBLIC_BASE_URL` (deep-link base for `notify`; default `https://jobwright.parthchandak.info`), `JOBWRIGHT_DASHBOARD_USER` (Kanban API active profile; default `richa`). Templates: `.env.example`.
+`--stream` was removed from `jobwright run`. The dashboard spawns runs with `python -m jobwright` so the run registry records real exit codes.
+
+Env (full list with comments: `.env.example`): `FIREWORKS_API_KEY` (preferred), `LLM_MODEL` (default `accounts/fireworks/models/glm-5p3-flash`), `JOBWRIGHT_LLM_MODEL` (brief scripts: overrides `LLM_MODEL`), `GEMINI_API_KEY` (failover on empty content; `GEMINI_FALLBACK_MODEL` default `gemini-3.7-flash`, `GEMINI_THINKING_LEVEL` default `low`), `JOBWRIGHT_SCORE_WORKERS` (default 16), `JOBWRIGHT_REASONING_T1` (default `low`), `LLM_ESCALATION_MODEL` (off), `JOBWRIGHT_SCORER` (`v2` default, `v1` rollback), `JOBWRIGHT_LLM_PRICES` (cost estimates), `JOBWRIGHT_BRIEF_MAX_AGE_DAYS` (default 7), `JOBWRIGHT_AUTH_MODE`, `JOBWRIGHT_CF_TEAM_DOMAIN`, `JOBWRIGHT_CF_AUD`, `JOBWRIGHT_ADMIN_EMAILS`, `JOBWRIGHT_DEV_EMAIL` (dev-mode identity), `JOBWRIGHT_PUBLIC_BASE_URL` (deep-link base, default `https://jobwright.parthchandak.info`), `JOBWRIGHT_BACKUP_DIR` (default `~/jobwright-backups`), `JOBWRIGHT_OPS_TARGET`, `JOBWRIGHT_OPS_HEARTBEAT`, `JOBWRIGHT_HERMES_DRY_RUN`, `DISCOVER_MODE=fast|full`, `JOBWRIGHT_HOURS_OLD`, `JOBWRIGHT_DISCOVER_BOARDS`, `JOBWRIGHT_DISCOVER_WORKERS` (default 4), `JOBWRIGHT_CONNECT_LIMIT` (default 15), `EXA_API_KEY`, `CURSOR_API_KEY` + `AGENT_PROVIDER=cursor-sdk` (apply), `JOBWRIGHT_WEB_RUN_ID` (set by dashboard spawns), `JOBWRIGHT_LOG_LEVEL`, `JOBWRIGHT_DASHBOARD_USER` (fallback active profile when a login may open several), `BRIEF_SMOKE=1` (narrow E2E; `jobwright_smoke.sh` waits for `done RC=` and reports notify). A profile may add `users/<id>/.env` (e.g. `TYPESAFE_API_KEY`); only that profile's CLI runs see it.
 
 ---
 
 ## End-to-end flow (dashboard + one daily notice)
 
-**User inputs (once per profile):** `resume/base.pdf`, `profile.json`, `searches.yaml`, `cover-letter/examples/`, optional `connections.csv`.
+**User inputs (once per profile, usually via `/welcome`):** `resume/base.pdf`, `profile.json` (incl. `match_criteria`), `searches.yaml`, `cover-letter/examples/`, optional `connections.csv`, WhatsApp chat + brief time.
 
-**Daily brief cron** (`jobwright-brief-<user>`, ~6:00): runs discover → connect via `run_daily_brief.sh`, then `jobwright --user <id> notify`. Notify sends ONE plain-text WhatsApp message to the user's `whatsapp_target` group listing the newly prepared jobs, each with a `jobwright.parthchandak.info/jobs/<job_id>` deep link. Each job is marked `whatsapp_notified_at` so it is never re-sent; notify skips silently when nothing new is ready.
+**Daily brief cron** (`jobwright-brief-<user>`, default 6:00, `--deliver local`): `jobwright_brief.sh` launches `run_daily_brief.sh` detached (an already-running brief is left alone): preflight → default stages → `notify` → `ops brief-report`. Notify sends ONE plain-text WhatsApp message to the user's `whatsapp_target` listing new jobs (discovered within `JOBWRIGHT_BRIEF_MAX_AGE_DAYS`), each with a `/jobs/<job_id>` deep link, stamps `whatsapp_notified_at`, and skips when nothing is new. Problems alert `ops_target`, not the user's chat.
 
-**Dashboard (primary surface):** the user opens a deep link (or the board directly). Cards show tailored resume + cover letter, ranked connections, a "WhatsApp Notified" chip, and a gated apply button. **Auto Search** runs the same prep pipeline as the daily brief (`discover` → `connect` via `POST /api/run`, live SSE at `GET /api/stream/{run_id}`). Closing the dialog does not stop the run; **Stop** does (`POST /api/runs/{run_id}/stop`). Runs persist in `users/<id>/logs/web_runs.json` so the UI can attach after a reload or a CLI `jobwright run`. **WhatsApp** (header) edits daily brief time and `whatsapp_target` (`PUT /api/profile`, then `hermes cron edit` on `jobwright-brief-<user>`) and can **Send now** (`POST /api/notify`). Profile page (`/profile`) edits Auto Search (query/location/exclude chips + board toggles; searches autosave), the base resume PDF (`GET`/`PUT /api/settings/resume.pdf`), and cover-letter example PDFs (`PUT`/`DELETE /api/settings/cover-letters`). Job drawer **Resume** and **Cover Letter** sections: Base vs Tailored tabs (base resume and cover samples from Profile). Separate Auto/Custom Tailor per section (`POST /api/jobs/{url}/tailor/resume`, `POST /api/jobs/{url}/tailor/cover`; defaults from `GET /api/tailor/defaults`). DOCX/PDF download tailored files only. Click Auto Tailor again while running for live logs (`GET /api/stream/{run_id}`).
+**Dashboard:** `GET /api/me` returns the login, admin flag and openable profiles; `POST /api/session` switches profile (only to allowed ones). **Auto Search** runs the prep pipeline (`POST /api/run`, SSE `GET /api/stream/{run_id}`, **Stop** `POST /api/runs/{run_id}/stop`; runs persist in `users/<id>/logs/web_runs.json`). **WhatsApp** header dialog: pending count and **Send now** (`POST /api/notify`). Profile → WhatsApp: chat picker (`GET /api/whatsapp/chats`: admins see every chat Hermes can post to, others only chats that include their phone), test send (`POST /api/whatsapp/test`), brief time; Save (`PUT /api/profile`) creates or edits `jobwright-brief-<user>`. Job drawer: match explanation, rating (`PATCH /api/jobs/{url}` → label), stage picker, dismiss with reasons, materials with Auto/Custom Tailor (`POST /api/jobs/{url}/tailor/resume|cover`). Status banner (`GET /api/status`): last run, ops health, WhatsApp bridge. Quality (`/api/quality`, `/api/quality/eval`, `/api/quality/rescore`), criteria (`GET`/`PUT /api/criteria`, `POST /api/criteria/suggest`), admin (`/api/admin/users`, `/api/admin/settings`, `/api/admin/watchdog`, `/api/admin/ops-test`), onboarding (`/api/onboarding/status|profile|draft|confirm`).
 
-**Apply:** dry-run by default. Live apply requires `apply_enabled=true` for the profile and runs only from the dashboard apply button (confirm gate) or an explicit `jobwright apply --live`. Never from cron.
+**Apply:** dry-run by default. Live apply requires `apply_enabled=true` and runs only from the dashboard apply button (confirm gate) or an explicit `jobwright apply --live`. Never from cron.
 
-**User's job:** review curated roles from the dashboard, use tailored DOCX, act on network suggestions, apply manually or via gated agent apply.
+**User's job:** review curated roles, rate them (this trains the scorer), use tailored DOCX, act on network suggestions, apply manually or via gated agent apply.
 
 Detail: [docs/agents/hermes-operator-guide.md](docs/agents/hermes-operator-guide.md), [docs/agents/whatsapp-routing.md](docs/agents/whatsapp-routing.md).
 
@@ -128,7 +160,10 @@ Detail: [docs/agents/hermes-operator-guide.md](docs/agents/hermes-operator-guide
 | WhatsApp phrases | [docs/agents/whatsapp-routing.md](docs/agents/whatsapp-routing.md) |
 | Cron / scripts | [docs/agents/hermes-setup.md](docs/agents/hermes-setup.md) |
 | Paths / scripts map | [docs/agents/repo-map.md](docs/agents/repo-map.md) |
-| Kanban dashboard hosting + app surfaces | [docs/agents/dashboard-hosting.md](docs/agents/dashboard-hosting.md) |
+| Kanban dashboard hosting, auth, app surfaces | [docs/agents/dashboard-hosting.md](docs/agents/dashboard-hosting.md) |
+| Multi-user auth / request context | [ADR-005](docs/adr/ADR-005-multi-user-auth-and-request-context.md) |
+| Scoring v2, labels, evals | [ADR-006](docs/adr/ADR-006-scoring-v2-labels-and-evals.md) |
+| Alerts, backups, internal disk | [ADR-007](docs/adr/ADR-007-ops-alerts-backups-internal-disk.md) |
 | Dashboard UI (build / polish / primitives) | [.cursor/skills/frontend-tasteful/SKILL.md](.cursor/skills/frontend-tasteful/SKILL.md) |
 | Cursor stage 6 | [docs/agents/cursor-setup.md](docs/agents/cursor-setup.md) |
 | Human WhatsApp UX | [docs/agents/whatsapp-user-guide.md](docs/agents/whatsapp-user-guide.md) |
@@ -151,13 +186,14 @@ Full agent doc index: [docs/agents/README.md](docs/agents/README.md). Cursor ski
 | Code, tests, scripts | This git clone (`JOBWRIGHT_REPO`) |
 | Agent docs | `AGENTS.md`, `docs/agents/` (in clone) |
 | Hermes skill | `~/.hermes/skills/autonomous-ai-agents/pp-job-apply/` (thin loader + `JOBWRIGHT_REPO` file) |
-| Hermes cron scripts | `~/.hermes/scripts/jobwright_*.sh` |
+| Hermes cron scripts | `~/.hermes/scripts/jobwright_*.sh`; generated `wrap_jobwright-brief-<user>.sh`, `jobwright_ops_watchdog.sh`, `jobwright_backup.sh` |
+| Repo path references | `~/.hermes/scripts/_jobwright_repo.sh`, the skill `JOBWRIGHT_REPO` file, `~/.hermes/config.yaml` (jobwright channel prompt), generated wrappers; update all of them when the checkout moves |
 
 Cloning this repo does **not** register Hermes skills automatically. Run `./scripts/install_skills.sh` from your clone path.
 
 ---
 
-**Last verified:** `0.5.0` (2026-09-07). Graphify: `.graphifyignore` + `graphify update .`; query by symbol ([.cursor/rules/graphify.mdc](.cursor/rules/graphify.mdc)). Quality gate: `uv run --extra dev --extra web pytest tests/ -q`; scoped `ruff check` on changed `src/` files. Dashboard Access session: 30d (`720h`) via Cloudflare Zero Trust ([dashboard-hosting.md](docs/agents/dashboard-hosting.md)). Brief default LLM: `gpt-oss-120b` via `JOBWRIGHT_LLM_MODEL`. Kanban dashboard is the primary surface (`src/jobwright/web/`, funnel_stage + stage_history, ADR-004). WhatsApp is one daily `jobwright notify` list of new `prepare` jobs with `/jobs/<job_id>` deep links (`src/jobwright/notify.py`, `POST /api/notify`), stamped `whatsapp_notified_at`. Daily cron `jobwright-brief-<user>` runs `run_daily_brief.sh` (pipeline then notify). Auto Search = full prep `discover`→`connect` (`POST /api/run` + run registry `src/jobwright/run_registry.py` / `logs/web_runs.json`). Resume PDF is source of truth (`src/jobwright/resume.py`, pymupdf4llm → `resume/base.md`). Profile page is Auto Search + resume + cover-letter example PDFs (`GET`/`PUT`/`DELETE /api/settings/cover-letters`). Per-job Auto/Custom Tailor: separate resume and cover endpoints (`POST /api/jobs/{url}/tailor/resume`, `POST /api/jobs/{url}/tailor/cover`; defaults from `GET /api/tailor/defaults`; CLI `--resume-only` / `--cover-only`). JobSpy `-w` / `JOBWRIGHT_DISCOVER_WORKERS` + known-URL skip. Old `jobwright-send` / `jobwright-check` crons and digest/materials-N/CONFIRM-APPLY-over-WhatsApp are removed. LinkedIn discover OK, auto-apply blocked (`apply_blocked`). Fireworks LLM with Gemini failover (`gemini-3.7-flash` + `GEMINI_THINKING_LEVEL=low`), `SCORE_BATCH_SIZE=10`, `DISCOVER_MODE=fast|full`, `cursor-sdk` default apply provider. Hermes loader template is `3.1.0`; re-run `./scripts/install_skills.sh` after pull. Commit/push/deploy: `.cursor/skills/deploy` (standalone commit skills were removed).
+**Last verified:** `0.6.0` (2026-09-26). Multi-user: Cloudflare Access JWT → `users.yaml` `emails` / `admins` / `ops_target`, per-request `config.user_context` (`src/jobwright/web/auth.py`, `web/session.py`, `config.py`). Scoring v2 (`scoring/matcher.py`, `pipeline_v2.py`, `criteria.py`, `examples.py`, `evaluate.py`, `criteria_miner.py`; tables `score_labels`, `score_history`, `llm_usage`; default `glm-5p3-flash` + `reasoning_effort=low`). Tombstones + cross-board dedupe (`job_tombstones`, `discovery/dedupe.py`). Ops (`ops.py`, `preflight.py`, `hermes_cron.py`: brief/watchdog/backup crons, `--deliver local`). Onboarding + WhatsApp chat picker (`onboarding.py`, `whatsapp.py`, `web/routers/{onboarding,whatsapp,admin,quality}.py`). Apply dry-run unless `--live`. Quality gate: `uv run --extra dev --extra web pytest tests/ -q`; scoped `ruff check` on changed `src/` files. Dashboard Access session: 30d (`720h`). Hermes loader template is `3.1.0`; re-run `./scripts/install_skills.sh` after pull.
 
 ## graphify
 

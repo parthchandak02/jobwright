@@ -100,3 +100,23 @@ def test_backup_snapshots_db_and_files_and_prunes(tmp_path):
     rep2 = ops.backup_users(dest, keep_days=14)
     snap2 = dest / rep2["snapshot"].rsplit("/", 1)[-1]
     assert (snap2 / "bk" / "profile.json").stat().st_ino == (snap / "bk" / "profile.json").stat().st_ino
+
+
+def test_install_crons_upserts_every_brief_and_ops_cron(monkeypatch):
+    from types import SimpleNamespace
+
+    from typer.testing import CliRunner
+
+    import jobwright.hermes_cron as hc
+    import jobwright.users as users
+    from jobwright.cli import app
+
+    calls = []
+    monkeypatch.setattr(users, "list_users", lambda: [SimpleNamespace(user_id="a", schedule=""),
+                                                     SimpleNamespace(user_id="b", schedule="0 7 * * *")])
+    monkeypatch.setattr(hc, "ensure_brief_cron", lambda uid, sched: calls.append((uid, sched)) or {"ok": True})
+    monkeypatch.setattr(hc, "ensure_watchdog_cron", lambda: calls.append("watchdog") or {"ok": True})
+    monkeypatch.setattr(hc, "ensure_backup_cron", lambda dest="": calls.append(("backup", dest)) or {"ok": False, "error": "x"})
+    res = CliRunner().invoke(app, ["ops", "install-crons", "--backup-dest", "/b"])
+    assert calls == [("a", "0 6 * * *"), ("b", "0 7 * * *"), "watchdog", ("backup", "/b")]
+    assert res.exit_code == 1

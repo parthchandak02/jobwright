@@ -5,7 +5,7 @@ This is the **primary guide for Hermes agents** operating jobwright. Hermes load
 ## Constants
 
 ```bash
-export JOBWRIGHT_REPO="${JOBWRIGHT_REPO:-/Volumes/ExternalSSD/Projects/jobwright}"
+export JOBWRIGHT_REPO="${JOBWRIGHT_REPO:-$(cat ~/.hermes/skills/autonomous-ai-agents/pp-job-apply/JOBWRIGHT_REPO)}"
 export JOBWRIGHT_USERS_ROOT="${JOBWRIGHT_USERS_ROOT:-${JOBWRIGHT_REPO}/users}"
 cd "${JOBWRIGHT_REPO}"
 ```
@@ -13,11 +13,14 @@ cd "${JOBWRIGHT_REPO}"
 | What | Path |
 |------|------|
 | Repo | `${JOBWRIGHT_REPO}` |
-| Registry | `${JOBWRIGHT_USERS_ROOT}/users.yaml` |
+| Registry | `${JOBWRIGHT_USERS_ROOT}/users.yaml` (users with `emails`; top-level `admins`, `ops_target`) |
 | User data | `${JOBWRIGHT_USERS_ROOT}/<user_id>/` |
 | Hermes scripts | `~/.hermes/scripts/jobwright_*.sh` |
 | Skill (this doc) | `${JOBWRIGHT_REPO}/docs/agents/hermes-operator-guide.md` |
 | Human WhatsApp guide | `${JOBWRIGHT_REPO}/docs/agents/whatsapp-user-guide.md` |
+| Backups | `${JOBWRIGHT_BACKUP_DIR:-~/jobwright-backups}/<snapshot>/<user_id>/` |
+
+Recommended production checkout: internal disk (e.g. `/Users/parthchandak/apps/jobwright`); the external SSD holds backups only.
 
 ## Per-user folder layout (canonical)
 
@@ -25,7 +28,7 @@ Each user lives at `users/<user_id>/`:
 
 ```
 <user_id>/
-├── profile.json              # prefs, tailor_mode, cover_letter_mode
+├── profile.json              # prefs, match_criteria, tailor_mode, cover_letter_mode
 ├── searches.yaml             # job discovery filters
 ├── connections.csv           # LinkedIn export (1st-degree network)
 ├── resume/
@@ -38,9 +41,13 @@ Each user lives at `users/<user_id>/`:
 ├── tailored_resumes/         # generated per job
 ├── cover_letters/            # generated per job
 ├── target_companies.yaml     # from `targets` command
-├── jobwright.db
+├── jobwright.db              # jobs, job_tombstones, score_labels, score_history, llm_usage
+├── .pipeline.lock            # per-user run lock (flock)
 └── logs/
     ├── brief_YYYYMMDD.log
+    ├── last_run.json             # last pipeline summary (stages, errors)
+    ├── ops_health.json           # last ops brief-report (dashboard banner)
+    ├── eval_<ts>_<id>.json       # jobwright eval reports
     ├── web_run_<id>.log          # Auto Search / POST /api/run
     └── web_runs.json             # run registry (attach/stop after reload)
 ```
@@ -64,13 +71,16 @@ export JOBWRIGHT_DIR="${JOBWRIGHT_USERS_ROOT}/${USER_ID}"
 
 | Trigger | Action |
 |---------|--------|
-| Cron (daily 6:00) | `jobwright_brief.sh` -> `run_daily_brief.sh` (pipeline then `jobwright notify`) -> one WhatsApp list |
-| User: "find jobs now" | `JOBWRIGHT_USER=$USER_ID bash ~/.hermes/scripts/jobwright_brief.sh` |
+| Cron (daily 6:00) | `jobwright_brief.sh` -> `run_daily_brief.sh` (`preflight --fix`, pipeline, `jobwright notify`, `ops brief-report`) -> one WhatsApp list; problems alert `ops_target` |
+| User: "find jobs now" | `JOBWRIGHT_USER=$USER_ID bash ~/.hermes/scripts/jobwright_brief.sh` (no-op if a brief is already running) |
 | User: "notify" / resend list | `jobwright --user $USER_ID notify` (top-N review-first list when human_gate on; `--dry-run` to preview) |
 | User: "materials" / open job | Point to the dashboard deep link from the notify (`jobwright.parthchandak.info/jobs/<job_id>`) |
 | User: "job status" | `jobwright --user $USER_ID status` |
 | User: "prepare <job>" | On-demand material generation for the approved job: `jobwright --user $USER_ID run tailor cover docx` (or dashboard Auto Tailor). No command parser — the agent interprets it. |
 | Operator check: scoreboard | `jobwright --user $USER_ID briefstats --days 14` (precision@K per brief: advanced / shown) |
+| User: "this job is not a fit because ..." | Ask them to tap "Not for me" (with reasons) or rate it in the dashboard; each rating is a label the scorer learns from on the next run |
+| Operator check: scorer accuracy | `jobwright --user $USER_ID eval` (precision/recall at 6/7/8 on labeled jobs); dashboard `/quality` |
+| User changes what they want | Dashboard Profile → Match rules, or `jobwright --user $USER_ID criteria suggest --save` (review first), then `jobwright --user $USER_ID rescore --scope active` |
 
 Human gate (on for richa): the default brief pipeline stops before material
 generation — `discover enrich score portfolio connect` — and `notify` sends a
@@ -141,6 +151,10 @@ Dry-run remains the default; `--live` is required to submit, and LinkedIn apply 
 
 ## Onboarding a new user
 
+Preferred (v0.6): the owner adds the person's email to the Cloudflare Access policy, then the person opens the dashboard and completes `/welcome` (resume → drafted profile, searches, match criteria → WhatsApp chat picker → brief time, which creates `jobwright-brief-<id>`). An admin can also create a profile for someone else on the Admin page (binds their email).
+
+CLI fallback (then bind the email on the Admin page or in `users.yaml` `emails`):
+
 ```bash
 cd "${JOBWRIGHT_REPO}"
 jobwright users add <id> --name "Full Name" --whatsapp "whatsapp:..." --template nontech-bay-area
@@ -148,8 +162,9 @@ jobwright users add <id> --name "Full Name" --whatsapp "whatsapp:..." --template
 # Write resume/base.pdf, profile.json, searches.yaml
 # Optional: connections.csv, cover-letter/examples/*.pdf
 ./scripts/install_hermes_scripts.sh
-# Crons: Hermes agent registers via docs/agents/hermes-setup.md
+# Crons: save the brief time in the dashboard, or docs/agents/hermes-setup.md
 jobwright --user <id> doctor
+jobwright --user <id> preflight
 ```
 
 Apply stays OFF unless: `jobwright users set <id> --apply`
@@ -177,10 +192,13 @@ After filing, confirm with user on WhatsApp.
    jobwright --user $USER_ID doctor
    jobwright --user $USER_ID status
    tail -80 "${JOBWRIGHT_DIR}/logs/brief_$(date +%Y%m%d).log"
+   cat "${JOBWRIGHT_DIR}/BRIEF_STATUS_$(date +%Y%m%d)"   # notify_sent / notify_skipped / notify_failed, done RC=
+   cat "${JOBWRIGHT_DIR}/logs/last_run.json"
    ```
+   Reproduce in a sandbox with `JOBWRIGHT_HERMES_DRY_RUN=1` so nothing reaches WhatsApp.
 3. **Fix:**
    - Data/prefs: edit user files; confirm on WhatsApp; optional re-run `jobwright_brief.sh`
-   - Code: `agent -p --force '…'` (tight scope) or tiny patch; no drive-by refactors
+   - Code: `agent -p --force '…'` (tight scope) or tiny patch; no drive-by refactors. Scoring changes: `jobwright --user $USER_ID eval` before and after
    - Ops: `hermes cron edit` (never duplicate); update live config only for JID/prompt/bindings
 4. **Verify:** `pytest tests/ -v` (code), `ruff check src/`, `jobwright --user $USER_ID doctor`
 5. **Sync:** `./scripts/install_hermes_scripts.sh` and/or `./scripts/install_skills.sh` if scripts/skill changed
@@ -194,7 +212,7 @@ Always `cd "${JOBWRIGHT_REPO}"` before repo commands. Optional in `~/.hermes/con
 ```yaml
 terminal:
   backend: local
-  cwd: /Volumes/ExternalSSD/Projects/jobwright
+  cwd: /path/to/jobwright   # same as JOBWRIGHT_REPO
 ```
 
 ### Invoke Cursor Agent for code
@@ -225,8 +243,11 @@ cd "${JOBWRIGHT_REPO}"
 
 ```bash
 jobwright --user $USER_ID doctor
+jobwright --user $USER_ID preflight            # --fix installs Playwright Chromium
+jobwright --user $USER_ID ops brief-report       # today's summary (alerts ops_target if not OK)
+jobwright ops watchdog                           # any user whose brief never ran/finished
 tail -50 "${JOBWRIGHT_DIR}/logs/brief_$(date +%Y%m%d).log"
-hermes cron list | grep jobwright-
+hermes cron list | grep jobwright-               # brief-<user>, ops-watchdog, backup; deliver local
 test -f ~/.hermes/scripts/jobwright_brief.sh && echo scripts_OK
 test -f ~/.hermes/skills/autonomous-ai-agents/pp-job-apply/SKILL.md && cat ~/.hermes/skills/autonomous-ai-agents/pp-job-apply/JOBWRIGHT_REPO && echo skill OK
 ```
@@ -238,6 +259,9 @@ test -f ~/.hermes/skills/autonomous-ai-agents/pp-job-apply/SKILL.md && cat ~/.he
 3. Live apply only from the dashboard apply button (confirm gate) or an explicit `jobwright apply --live`
 4. Registry `apply_enabled` defaults false
 5. Never commit user data or secrets
+6. Never send test WhatsApp messages to a real user's group (e.g. richa's). Test sends go only to a chat the owner picks; sandboxes use `JOBWRIGHT_HERMES_DRY_RUN=1`
+7. Operator alerts go to `ops_target`, never to a user's chat
+8. A user only sees their own profile; do not bind someone's email to another person's profile
 
 ## Example: Richa (user `richa`)
 

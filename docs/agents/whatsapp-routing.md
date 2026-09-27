@@ -11,7 +11,7 @@ Normalize to `whatsapp:<id>` format.
 ## Step 2: Resolve user
 
 ```bash
-cd "${JOBWRIGHT_REPO:-/Volumes/ExternalSSD/Projects/jobwright}"
+cd "${JOBWRIGHT_REPO:?set JOBWRIGHT_REPO to the checkout}"
 USER_ID="$(bash scripts/resolve_user_from_whatsapp.sh 'whatsapp:120363...@g.us')" \
   || { echo "Unknown sender — not registered."; exit 1; }
 export JOBWRIGHT_USER="${USER_ID}"
@@ -26,9 +26,10 @@ Or via Python: `jobwright users list`.
 |--------------------------------|--------------|
 | `job status`, `how are my jobs` | `jobwright --user $USER_ID status` |
 | `verify brief`, `health check` | `JOBWRIGHT_USER=$USER_ID bash ~/.hermes/scripts/jobwright_verify.sh` |
-| `find jobs now`, `run pipeline`, `run brief` | `JOBWRIGHT_USER=$USER_ID bash ~/.hermes/scripts/jobwright_brief.sh` (detached; ~20-30 min). Uses `run_daily_brief.sh`: discover->connect then `jobwright notify`, `JOBWRIGHT_LLM_MODEL` default `gpt-oss-120b`, `--validation lenient`. Monitor: `users/$USER_ID/logs/brief_YYYYMMDD.log`, `BRIEF_STATUS_YYYYMMDD`. |
+| `find jobs now`, `run pipeline`, `run brief` | `JOBWRIGHT_USER=$USER_ID bash ~/.hermes/scripts/jobwright_brief.sh` (detached; ~20-30 min). Uses `run_daily_brief.sh`: `preflight --fix`, default stages (honors `human_gate`), `jobwright notify`, `ops brief-report`; model `glm-5p3-flash` (`JOBWRIGHT_LLM_MODEL` overrides), `--validation lenient`. No-op if a brief is already running. Monitor: `users/$USER_ID/logs/brief_YYYYMMDD.log`, `BRIEF_STATUS_YYYYMMDD`. |
 | `notify`, `send jobs`, `resend list` | `jobwright --user $USER_ID notify` (one WhatsApp list of new prepare jobs with dashboard deep links; `--dry-run` to preview). Skips silently when nothing new. |
-| `smoke test`, `run smoke brief` | `BRIEF_SMOKE=1 JOBWRIGHT_USER=$USER_ID bash ~/.hermes/scripts/jobwright_smoke.sh` (narrow: 3 queries, SF+Remote; JobSpy only - **not** for daily cron) |
+| `smoke test`, `run smoke brief` | `SMOKE_LIVE=1 BRIEF_SMOKE=1 JOBWRIGHT_USER=$USER_ID bash ~/.hermes/scripts/jobwright_smoke.sh` (narrow: 3 queries, SF+Remote; JobSpy only - **not** for daily cron). `SMOKE_LIVE=1` sends the real list to the user's chat; without it WhatsApp is dry-run |
+| `not a fit`, `good one` (about a job) | Ask them to rate it or tap "Not for me" with reasons in the dashboard; ratings are labels the scorer learns from |
 | `materials`, `resume`, `open job` | Point the user to the dashboard deep link from the daily notify (`jobwright.parthchandak.info/jobs/<job_id>`); tailored DOCX + connections live on the card. |
 | `update resume`, resume attachment | File upload recipe -> `resume/base.pdf` (or user uploads PDF on dashboard Profile) |
 | `connections`, LinkedIn `Connections.csv` | File upload recipe -> `connections.csv`; smoke-test with `jobwright --user $USER_ID network --top 5` |
@@ -57,8 +58,8 @@ Brief pipeline defaults (in `run_daily_brief.sh`):
 
 | Env | Default | Notes |
 |-----|---------|--------|
-| `JOBWRIGHT_LLM_MODEL` | `accounts/fireworks/models/gpt-oss-120b` | Overrides global `.env` `LLM_MODEL` for scoring/tailor/cover |
-| `SCORE_BATCH_SIZE` | `10` | Jobs per scoring LLM call. Do not send the full jobs table in one shot. |
+| `JOBWRIGHT_LLM_MODEL` | `accounts/fireworks/models/glm-5p3-flash` | Overrides global `.env` `LLM_MODEL` for scoring/tailor/cover. `gpt-oss*` is banned |
+| `JOBWRIGHT_SCORE_WORKERS` | `16` | Concurrent scoring calls (scoring v2, one job per call). `SCORE_BATCH_SIZE` only applies with `JOBWRIGHT_SCORER=v1` |
 | `DISCOVER_MODE` | `fast` | Tier-1 queries; weekly `full` for deep crawl |
 | `APPLY_MIN_SCORE` | `7` | Min fit score for tailor/cover in the brief (user `.env` may override) |
 | `BRIEF_SMOKE` | unset | Set only via `jobwright_smoke.sh` - do not use for production brief |
@@ -111,7 +112,7 @@ Live apply is not driven over WhatsApp. It runs only from the dashboard apply bu
 1. Collect name, resume, role prefs, WhatsApp chat JID, apply preference (default: find-only).
 2. `jobwright users add <id> --name "..." --whatsapp "whatsapp:..." --template nontech-bay-area`
 3. Write `resume/base.pdf`, tune `profile.json` and `searches.yaml` in `users/<id>/`.
-4. Ask Hermes to register crons per [docs/agents/hermes-setup.md](hermes-setup.md).
+4. Bind their login email (Admin page or `users.yaml` `emails`) and save the brief time in the dashboard (creates the cron), or register it per [docs/agents/hermes-setup.md](hermes-setup.md). Preferred: the owner adds their email to Cloudflare Access and they self-onboard at `/welcome`.
 5. `./scripts/install_hermes_scripts.sh` + `./scripts/install_skills.sh` after repo updates.
 6. Test: `jobwright --user <id> doctor` then `JOBWRIGHT_USER=<id> bash ~/.hermes/scripts/jobwright_brief.sh`.
 
@@ -122,6 +123,7 @@ USER_ID=richa
 LOG="${JOBWRIGHT_REPO}/users/${USER_ID}/logs/brief_$(date +%Y%m%d).log"
 hermes cron list | grep jobwright-
 tail -50 "$LOG"
-# BRIEF_STATUS_YYYYMMDD ends with `done RC=` plus `notify_sent` or `notify_failed`.
+# BRIEF_STATUS_YYYYMMDD has notify_sent N / notify_skipped <reason> / notify_failed <error>, then done RC=.
+# preflight_failed means the brief never ran: jobwright --user $USER_ID preflight --fix
 cat "${JOBWRIGHT_REPO}/users/${USER_ID}/BRIEF_STATUS_$(date +%Y%m%d)" 2>/dev/null
 ```

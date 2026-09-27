@@ -11,11 +11,12 @@ Use this when Parth asks whether Hermes has **everything needed for jobwright** 
 | `apply_enabled` | `false` (find-only until user opts in) |
 | `human_gate` | `true` — brief stops before material generation; review-first notify |
 | `brief_top_n` | `10` — per-brief notify cap (top N by fit score; 0 = uncapped) |
-| Repo | `/Volumes/ExternalSSD/Projects/jobwright` |
-| User data | `/Volumes/ExternalSSD/Projects/jobwright/users/richa/` |
+| Repo | `${JOBWRIGHT_REPO}` (recommended internal-disk checkout, e.g. `/Users/parthchandak/apps/jobwright`) |
+| User data | `${JOBWRIGHT_REPO}/users/richa/` |
+| Test sends | Never to this group. Use a chat the owner picks, or `JOBWRIGHT_HERMES_DRY_RUN=1` |
 
 ```bash
-bash /Volumes/ExternalSSD/Projects/jobwright/scripts/resolve_user_from_whatsapp.sh 'whatsapp:120363999999999902@g.us'
+bash "${JOBWRIGHT_REPO}/scripts/resolve_user_from_whatsapp.sh" 'whatsapp:120363999999999902@g.us'
 # → richa
 ```
 
@@ -30,7 +31,7 @@ bash /Volumes/ExternalSSD/Projects/jobwright/scripts/resolve_user_from_whatsapp.
 
 ## Live `config.yaml` (whatsapp section)
 
-Put the durable prompt below into `~/.hermes/config.yaml` (do not commit secrets). After edit: `hermes gateway restart`, then `/new` in the group.
+Put the durable prompt below into `~/.hermes/config.yaml` (do not commit secrets). Set `JOBWRIGHT_REPO` in it to the real checkout path and update it whenever the checkout moves. After edit: `hermes gateway restart`, then `/new` in the group.
 
 ```yaml
   channel_skill_bindings:
@@ -44,7 +45,7 @@ Put the durable prompt below into `~/.hermes/config.yaml` (do not commit secrets
     120363999999999902@g.us:
       system_prompt: |
         You are the Hermes operator for jobwright (user: richa).
-        JOBWRIGHT_REPO=/Volumes/ExternalSSD/Projects/jobwright
+        JOBWRIGHT_REPO=/Users/parthchandak/apps/jobwright
         apply_enabled: false until opted in.
 
         Every turn: load pp-job-apply; resolve WhatsApp sender -> user before profile commands.
@@ -61,7 +62,9 @@ Put the durable prompt below into `~/.hermes/config.yaml` (do not commit secrets
           jobwright --user richa run tailor cover docx (or the dashboard Auto Tailor buttons).
           No WhatsApp command parser exists; the Hermes agent interprets the message.
         Review + apply happen in the dashboard (jobwright.parthchandak.info/jobs/<job_id>), not over WhatsApp.
-        Brief LLM: JOBWRIGHT_LLM_MODEL=gpt-oss-120b (Fireworks). Validation: lenient. Never use BRIEF_SMOKE for daily cron.
+        Brief LLM: glm-5p3-flash (Fireworks; JOBWRIGHT_LLM_MODEL overrides; gpt-oss banned). Validation: lenient. Never use BRIEF_SMOKE for daily cron.
+        Ratings: when she says a job is or is not a fit, ask her to rate it or tap "Not for me" in the dashboard (the scorer learns from it).
+        Never send test messages to this group. Brief problems alert the operator (ops_target), not this chat.
         Code/bugs: reproduce with doctor/status/logs; fix via cursor-agent or small patches;
           never commit users/ or .env; re-run install_hermes_scripts.sh / install_skills.sh if needed.
         Docs: docs/agents/whatsapp-group-jobwright.md, hermes-operator-guide.md, whatsapp-routing.md
@@ -71,9 +74,11 @@ Put the durable prompt below into `~/.hermes/config.yaml` (do not commit secrets
 
 | Name | Schedule | Script |
 |------|----------|--------|
-| `jobwright-brief-richa` | `0 6 * * *` | `wrap_jobwright-brief-richa.sh` |
+| `jobwright-brief-richa` | `0 6 * * *` | `wrap_jobwright-brief-richa.sh` (deliver `local`) |
+| `jobwright-ops-watchdog` | `30 8 * * *` | `jobwright_ops_watchdog.sh` (shared) |
+| `jobwright-backup` | `30 2 * * *` | `jobwright_backup.sh` (shared) |
 
-One cron per user. Delete any `job-apply-*`, `jobwright-send-*`, or `jobwright-check-*` crons if still present.
+One brief cron per user. Delete any `job-apply-*`, `jobwright-send-*`, or `jobwright-check-*` crons if still present.
 
 ```bash
 hermes cron list | grep -E 'jobwright-|job-apply-'
@@ -82,7 +87,7 @@ hermes cron list | grep -E 'jobwright-|job-apply-'
 ## Scripts
 
 ```bash
-cd /Volumes/ExternalSSD/Projects/jobwright
+cd "${JOBWRIGHT_REPO}"
 ./scripts/install_hermes_scripts.sh
 ```
 
@@ -95,7 +100,7 @@ Need: `jobwright_brief.sh`, `run_daily_brief.sh`, `jobwright_smoke.sh`, `resolve
 | `job status` | `jobwright --user richa status` |
 | `verify brief` | `JOBWRIGHT_USER=richa bash ~/.hermes/scripts/jobwright_verify.sh` |
 | `find jobs now` | `JOBWRIGHT_USER=richa bash ~/.hermes/scripts/jobwright_brief.sh` (~20-30 min; sends notify when done; monitor `logs/brief_YYYYMMDD.log`) |
-|| `notify` / resend | `jobwright --user richa notify` (review-first, top-N by fit score, with dashboard deep links) |
+| `notify` / resend | `jobwright --user richa notify` (review-first, top-N by fit score, with dashboard deep links) |
 | `prepare <job>` / `prepare <link or name>` | Scoped on-demand material generation for the approved job: `jobwright --user richa run tailor cover docx` (or point to dashboard Auto Tailor). No command parser — the Hermes agent interprets this. |
 | open a job / materials | Point to the dashboard deep link from the notify (`jobwright.parthchandak.info/jobs/<job_id>`) |
 | resume / Connections.csv | File into `users/richa/` (backup first) |
@@ -107,7 +112,7 @@ Need: `jobwright_brief.sh`, `run_daily_brief.sh`, `jobwright_smoke.sh`, `resolve
 ```text
 Show me Daily Brief end to end for user richa in this WhatsApp group.
 
-1. cd /Volumes/ExternalSSD/Projects/jobwright
+1. cd "${JOBWRIGHT_REPO}"
 2. ./scripts/install_hermes_scripts.sh && ./scripts/install_skills.sh
 3. Confirm ~/.hermes/scripts/jobwright_brief.sh exists
 4. Follow docs/agents/hermes-setup.md: register a single jobwright-brief-richa at 6:00 daily
@@ -124,8 +129,9 @@ Also confirm you know: resolve sender -> richa, file uploads go to users/richa/ 
 ## Health check
 
 ```bash
-export JOBWRIGHT_REPO=/Volumes/ExternalSSD/Projects/jobwright
+export JOBWRIGHT_REPO="$(cat ~/.hermes/skills/autonomous-ai-agents/pp-job-apply/JOBWRIGHT_REPO)"
 jobwright --user richa doctor
+jobwright --user richa preflight
 jobwright --user richa status
 test -f ~/.hermes/scripts/jobwright_brief.sh && echo scripts_OK
 ```

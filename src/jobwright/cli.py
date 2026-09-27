@@ -1302,6 +1302,40 @@ def ops_backup(
         raise typer.Exit(code=1)
 
 
+@ops_app.command("install-crons")
+def ops_install_crons(
+    backup_dest: Optional[str] = typer.Option(None, "--backup-dest", help="Backup root for the nightly backup cron."),
+    skip_ops: bool = typer.Option(False, "--skip-ops", help="Only the per-user brief crons."),
+) -> None:
+    """Create or update every jobwright Hermes cron: one brief per profile, watchdog, backup."""
+    import os as _os
+
+    from jobwright.config import load_env
+    from jobwright.hermes_cron import (
+        BACKUP_CRON_NAME,
+        WATCHDOG_CRON_NAME,
+        ensure_backup_cron,
+        ensure_brief_cron,
+        ensure_watchdog_cron,
+    )
+    from jobwright.users import list_users
+
+    load_env()
+    results = [(f"jobwright-brief-{u.user_id}", ensure_brief_cron(u.user_id, u.schedule or "0 6 * * *"))
+               for u in list_users()]
+    if not skip_ops:
+        results.append((WATCHDOG_CRON_NAME, ensure_watchdog_cron()))
+        dest = backup_dest or _os.environ.get("JOBWRIGHT_BACKUP_DIR", "")
+        results.append((BACKUP_CRON_NAME, ensure_backup_cron(dest=dest)))
+    failed = False
+    for name, r in results:
+        ok = bool(r.get("ok"))
+        failed = failed or not ok
+        console.print(f"{'[green]ok[/green]' if ok else '[red]FAIL[/red]'}  {name}  {r.get('error') or ''}")
+    if failed:
+        raise typer.Exit(code=1)
+
+
 # Keep last: every command above must be registered before the app runs.
 if __name__ == "__main__":
     app()

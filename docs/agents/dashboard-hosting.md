@@ -10,24 +10,30 @@ The public URL is the **Kanban board**, not a separate app. Agents should treat 
 | Surface | Behavior |
 |---------|----------|
 | **Auto Search** | Full prep pipeline (`discover` → `enrich` → `score` → `portfolio` → `tailor` → `cover` → `docx` → `connect`). After score, backlog junk is pruned (score 1-3 and off-track below 7); human-held and Prepare+ cards are kept. Tailor batch defaults to `APPLY_PREP_LIMIT=25`. Progress + SSE logs live in `AutoSearchControls` so log ticks do not re-render Kanban cards. Closing the dialog does not stop the run; **Stop** sends SIGTERM/SIGKILL. Attaches to in-flight runs via `GET /api/runs` (`web_runs.json`). |
-| **WhatsApp** | Header control next to Auto Search. One modal for daily brief time, WhatsApp target, pending job count, **Save** (`PUT /api/profile` writes `users.yaml` and edits existing `jobwright-brief-<user>` via `hermes cron edit`), and **Send now** (`POST /api/notify`). Does not create a missing cron. |
-| **Profile** | `/profile`. Auto Search chips (daily/weekly queries, locations, excludes, boards) autosave on edit; resume PDF; cover-letter example PDFs. Identity stays in `profile.json`. |
-| **Job drawer** | Summary, stage, job description, connections, materials. **Auto Tailor** starts `jobwright tailor-job` (`POST /api/jobs/{url}/tailor`) with defaults from `GET /api/tailor/defaults`. Click again while running to open logs. **Custom Tailor** edits instructions first. Shared progress UI: `RunProgressDialog`. Deep links: `/jobs/:jobId`. On mobile the drawer is a full-screen native scroller (opaque, no nested `ScrollArea` / glass blur) so WhatsApp in-app browser links stay scrollable. |
+| **WhatsApp** | Header control next to Auto Search opens `DailyBriefDialog`: pending job count, next send, **Send now** (`POST /api/notify`), and "Change chat or time" → `/profile?tab=whatsapp`. There, `WhatsAppChatPicker` (`GET /api/whatsapp/chats`; admins see every chat Hermes can post to, others only chats that include their phone) with a test message (`POST /api/whatsapp/test`) and the brief time; **Save** (`PUT /api/profile`) writes `users.yaml` and creates or edits `jobwright-brief-<user>` (`--no-agent --deliver local`). |
+| **Profile** | `/profile`. Auto Search chips (daily/weekly queries, locations, excludes, boards) autosave on edit; resume PDF; cover-letter example PDFs; **WhatsApp** tab (chat picker, test message, brief time); **Match rules** (`CriteriaEditor`, `GET`/`PUT /api/criteria`, "Suggest from my ratings" `POST /api/criteria/suggest`). Identity stays in `profile.json`. |
+| **Job drawer** | Summary, `MatchExplanation` (gates, fit, confidence, reasoning), `RateJob` (thumbs + reason chips → append-only label), `StagePicker`, `DismissDialog` ("Not for me" asks why → label), job description, connections, materials. **Auto Tailor** starts `jobwright tailor-job` (`POST /api/jobs/{url}/tailor`) with defaults from `GET /api/tailor/defaults`. Click again while running to open logs. **Custom Tailor** edits instructions first. Shared progress UI: `RunProgressDialog`. Deep links: `/jobs/:jobId`. On mobile the drawer is a full-screen native scroller (opaque, no nested `ScrollArea` / glass blur) so WhatsApp in-app browser links stay scrollable. |
 | **Apply** | Confirm gate on the card; never from cron. LinkedIn auto-apply blocked. |
+| **Onboarding** | `/welcome` (`AppGate` sends logins with no profile here): create profile bound to the login email, upload resume, review the LLM draft (profile, searches, match criteria), confirm, then WhatsApp chat + time (`/api/onboarding/*`). |
+| **Match quality** | `/quality`: ratings count, sent-and-advanced rate, latest eval, token use; run eval / rescore (`/api/quality/*`). |
+| **Admin** | `/admin` (admins only): profiles with emails, human gate, notify cap, brief health; admins list; `ops_target`; create watchdog cron; send test alert (`/api/admin/*`). |
+| **Profile switcher / status** | `ProfileSwitcher` lists profiles this login may open (`GET /api/me`, `POST /api/session`). `StatusBanner` shows a failed last run, an ops warning, or WhatsApp bridge down (`GET /api/status`). |
 
 Public traffic is the Cloudflare tunnel → `:8002` serving `frontend/dist`. Vite HMR (`:5120`) is local only. Rebuild production UI with `./scripts/restart.sh --prod-ui` (or `./scripts/dashboard_deploy.sh`).
 
 ## Local hot-reload (recommended for testing)
 
 ```bash
-cd /Volumes/ExternalSSD/Projects/jobwright
+cd "$JOBWRIGHT_REPO"
 pip install -e ".[web]"          # once
 cd frontend && pnpm install && cd ..
 
 # First time: copy PM2 config
 cp ecosystem.config.example.js ecosystem.config.js
 
-# Start / restart API (:8002, --reload) + Vite (:5120, HMR)
+# Dev: tmux with API --reload (JOBWRIGHT_AUTH_MODE=dev, JOBWRIGHT_HERMES_DRY_RUN=1) + Vite (:5120, HMR)
+./scripts/restart.sh --tmux
+# or PM2 (uses ecosystem.config.js; prod-like, auth cloudflare, no --reload)
 ./scripts/restart.sh
 
 # Open the hot-reloading UI
@@ -42,7 +48,7 @@ open http://127.0.0.1:5120
 | `./scripts/restart.sh --tunnel-only` | cloudflared only |
 | `./scripts/restart.sh --all` | api + ui + tunnel |
 | `./scripts/restart.sh --prod-ui` | `pnpm build` + restart API + health check |
-| `./scripts/restart.sh --tmux` | **No PM2:** tmux session with uvicorn `--reload` + Vite |
+| `./scripts/restart.sh --tmux` | **No PM2:** tmux session with uvicorn `--reload` (dev auth, Hermes dry-run) + Vite |
 | `./scripts/restart.sh --status` | `pm2 list` |
 | `./scripts/restart.sh stop` | Stop PM2 apps |
 | `./scripts/restart.sh stop --tmux` | Kill tmux session `jobwright-dash` |
@@ -60,7 +66,9 @@ Alias: `./scripts/ops_pm2.sh` → same script. Deploy helper: `./scripts/dashboa
 ### Hot reload notes
 
 - **Frontend:** Vite HMR on `:5120` updates instantly. Use this URL while developing.
-- **Backend:** ecosystem example includes uvicorn `--reload`. After editing Python, wait a second for reload (or `./scripts/restart.sh --backend-only`).
+- **Backend:** `--tmux` runs uvicorn `--reload`. The PM2 ecosystem example does not (production); after editing Python there, `./scripts/restart.sh --backend-only`.
+- **Auth locally:** `--tmux` sets `JOBWRIGHT_AUTH_MODE=dev`; you are an anonymous admin unless `JOBWRIGHT_DEV_EMAIL` is set (use it to test a non-admin login). Dev mode refuses requests that carry Cloudflare headers.
+- **Sandboxes/worktrees:** keep `JOBWRIGHT_HERMES_DRY_RUN=1` so saving a schedule or a test send never touches real Hermes crons or WhatsApp. Vite binds `127.0.0.1` (override with `VITE_HOST`).
 - **Production URL** (`:8002` serving `dist/`): rebuild with `./scripts/restart.sh --prod-ui`.
 - **Do not** restart `jobwright-ui` expecting the public site to update; PM2 `jobwright-ui` is dev-only. Public traffic hits `jobwright-api` + `frontend/dist`.
 
@@ -92,7 +100,7 @@ cp cloudflared-config-jobwright.example.yml cloudflared-config-jobwright.yml
 
 ### 3. PM2 (prod)
 
-For production, edit `ecosystem.config.js` and **remove `--reload`** from `jobwright-api` args. Prefer not running `jobwright-ui` in prod (API serves `frontend/dist`).
+The ecosystem example runs `jobwright-api` **without `--reload`** and with `JOBWRIGHT_AUTH_MODE=cloudflare`. Put `JOBWRIGHT_CF_TEAM_DOMAIN` and `JOBWRIGHT_CF_AUD` in the repo `.env`. Prefer not running `jobwright-ui` in prod (API serves `frontend/dist`). Run prod from a dedicated checkout on the internal disk (recommended `/Users/parthchandak/apps/jobwright`), never from a working tree agents edit; the external SSD holds backups only (`JOBWRIGHT_BACKUP_DIR`).
 
 ```bash
 ./scripts/restart.sh start          # or: pm2 start ecosystem.config.js
@@ -106,8 +114,9 @@ pm2 save
 
 1. Zero Trust → Access → Applications → Self-hosted
 2. Domain: `jobwright.parthchandak.info`
-3. Policy: Allow + email OTP (same as litreview)
-4. **Session duration:** set Application session to **30 days** (`720h`) so household devices re-auth monthly, not daily. Dashboard: Application → Configure → Session Duration. CLI (requires `CLOUDFLARE_API_TOKEN` with Access edit):
+3. Policy: Allow + email OTP (same as litreview). **Every user's email must be in this policy** (owner adds it); the app then maps the email to a profile via `users.yaml` `emails`
+4. Copy the application **AUD tag** into `JOBWRIGHT_CF_AUD` and the team domain (`<team>.cloudflareaccess.com`) into `JOBWRIGHT_CF_TEAM_DOMAIN`. The API verifies `Cf-Access-Jwt-Assertion` (RS256, team JWKS, audience, issuer); a missing or invalid token is 401, a missing config is 503
+5. **Session duration:** set Application session to **30 days** (`720h`) so household devices re-auth monthly, not daily. Dashboard: Application → Configure → Session Duration. CLI (requires `CLOUDFLARE_API_TOKEN` with Access edit):
 
 ```bash
 source ~/.hermes/.env
@@ -123,7 +132,8 @@ Optional: Zero Trust → Settings → Authentication → Global session duration
 
 ```bash
 curl -sf http://127.0.0.1:8002/api/health
-# Browser: https://jobwright.parthchandak.info  → email OTP → Kanban
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8002/api/me   # 401 in cloudflare mode (no token)
+# Browser: https://jobwright.parthchandak.info  → email OTP → your profile (or /welcome for a new email)
 # Or local HMR: http://127.0.0.1:5120
 ```
 

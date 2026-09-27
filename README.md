@@ -16,7 +16,7 @@ Each day (or on demand), the pipeline:
 
 1. **Discovers** jobs across job boards and company career sites, filtered to your criteria.
 2. **Enriches** each listing with the full description and apply link.
-3. **Scores** every job with an LLM (1–10 fit against your profile). Weak matches are dropped early.
+3. **Scores** every job with an LLM against your own match rules (dealbreakers, locations, level, pay floor) and your past ratings of similar jobs. Hard rules are enforced in code; weak matches are dropped early.
 4. **Selects portfolio highlights** (when configured): the most relevant projects from your profile for each role.
 5. **Tailors** your resume per strong match. Facts come from your base resume only; the LLM rewrites emphasis and wording, it does not invent experience.
 6. **Writes a cover letter** per job, also from your base materials and examples you provide.
@@ -57,6 +57,10 @@ connections.csv (opt.)
 
 Multi-profile setups use `users/<id>/` under the repo (or `~/.jobwright/` for a single user). Each profile gets its own daily notify list and dashboard materials.
 
+### Multiple users
+
+The dashboard sits behind Cloudflare Access. Each person logs in with their own email and sees only their own profile; admin emails can switch to or create any profile. A new login with no profile gets a short onboarding at `/welcome`: upload a resume, review the drafted profile, searches and match rules, pick the WhatsApp chat for the daily list, and choose a time. Rating jobs (thumbs up/down with reasons) and saying why a job is "not for me" teaches the scorer; the Match quality page shows how accurate it has been.
+
 ### Safety defaults
 
 - **Find and prepare only** by default. Nothing is submitted without an explicit opt-in.
@@ -64,6 +68,7 @@ Multi-profile setups use `users/<id>/` under the repo (or `~/.jobwright/` for a 
 - Live apply runs only from the dashboard apply button (with a confirm step) or an explicit `jobwright apply --live`, and only when the profile has apply enabled.
 - LinkedIn jobs can appear in the brief with materials; auto-apply to LinkedIn is blocked by design.
 - **Partial success is OK:** if some pipeline stages fail, the notify list still includes whatever jobs are ready, with a short run-stats footer.
+- **No silent failures:** every brief ends with an operator report; problems (failed preflight, failed stages, zero scored jobs, notify failure) go to the operator's WhatsApp, not the user's chat. A watchdog flags briefs that never ran, and nightly backups snapshot every profile.
 - **Quality gate:** failed resume validation is not saved or delivered as DOCX.
 
 Hermes setup: [docs/agents/hermes-setup.md](docs/agents/hermes-setup.md). Human-facing WhatsApp guide: [docs/agents/whatsapp-user-guide.md](docs/agents/whatsapp-user-guide.md).
@@ -76,7 +81,7 @@ Hermes setup: [docs/agents/hermes-setup.md](docs/agents/hermes-setup.md). Human-
 |-------|---------|--------------|
 | 1. Discover | `run discover` | Scrapes Indeed, Google Jobs, ZipRecruiter, Workday portals, and direct career sites |
 | 2. Enrich | `run enrich` | Fetches the full job description (JSON-LD, CSS selectors, or LLM extraction) |
-| 3. Score | `run score` | LLM rates each job 1-10 against your resume; low-fit jobs stop here |
+| 3. Score | `run score` | LLM judges each job against your match rules and similar past ratings; code applies hard caps; low-fit jobs stop here |
 | 3b. Portfolio | `run portfolio` | Picks the 4-5 most relevant projects from your profile per job |
 | 4. Tailor | `run tailor` | Rewrites your resume per job from your base resume (never fabricates) |
 | 5. Cover letter | `run cover` | Writes a targeted cover letter per job from your examples and profile |
@@ -94,7 +99,9 @@ Stages 1–5c are fully automated and safe (5a is optional). Stage 6 (apply) is 
 | Component | Needed for | Notes |
 |-----------|-----------|-------|
 | Python 3.11+ | Everything | Core runtime |
-| `FIREWORKS_API_KEY` or `GEMINI_API_KEY` | Stages 3-5 (score, tailor, cover) | Fireworks is the default for daily brief; Gemini is used as fallback when configured |
+| `FIREWORKS_API_KEY` or `GEMINI_API_KEY` | Stages 3-5 (score, tailor, cover) | Fireworks (`glm-5p3-flash`) is the default; Gemini is used as fallback when configured |
+| Playwright Chromium | Enrich, stage 6 apply | `jobwright preflight --fix` installs the version the package needs |
+| Cloudflare Access (optional) | Hosted multi-user dashboard | `JOBWRIGHT_CF_TEAM_DOMAIN` + `JOBWRIGHT_CF_AUD`; see [dashboard-hosting.md](docs/agents/dashboard-hosting.md) |
 | Node.js 18+ | Stage 6 apply | Runs the Playwright MCP server |
 | `CURSOR_API_KEY` | Stage 6 apply | Default agent provider (`cursor-sdk`) |
 | Chrome/Chromium | Stage 6 apply | Auto-detected on most systems |
@@ -114,7 +121,7 @@ pip install -e .
 pip install --no-deps python-jobspy
 pip install pydantic tls-client requests markdownify regex
 
-playwright install chromium   # only needed for stage 6 apply
+playwright install chromium   # enrich + stage 6 apply (or: jobwright preflight --fix)
 ```
 
 Then run the one-time setup wizard and verify your environment:
@@ -134,6 +141,7 @@ Your per-profile data lives under `~/.jobwright/` (single user) or `users/<id>/`
 
 - **`profile.json`** - contact info, work authorization, compensation, experience, skills, and your `portfolio` projects. Start from [`profile.example.json`](profile.example.json).
 - **`searches.yaml`** - your search queries, target titles, locations, and boards.
+- **`profile.json` → `match_criteria`** - what makes a posting worth your time (dealbreakers, good-fit role types, locations, seniority, pay floor, notify threshold). Derived from your preferences until you edit it (dashboard Profile → Match rules, or `jobwright criteria suggest --save`).
 
 Board and site definitions ship inside the package at `src/jobwright/config/` (`employers.yaml`, `sites.yaml`, `searches.example.yaml`).
 
@@ -148,6 +156,12 @@ jobwright run discover enrich score portfolio tailor cover docx connect -w 4 --m
 
 jobwright status      # pipeline statistics
 jobwright dashboard   # open the local HTML results snapshot
+
+# Scoring quality: your ratings are the ground truth
+jobwright criteria show          # the rules the scorer uses
+jobwright labels list            # your most recent ratings
+jobwright eval                   # precision / recall of the scorer on your rated jobs
+jobwright rescore --scope active # re-score open jobs after changing rules
 
 # Hosted Kanban (optional): install .[web], then:
 # ./scripts/restart.sh          # API :8002 + Vite HMR :5120
@@ -169,11 +183,11 @@ Stage 6 launches a browser agent that navigates the application form, fills your
 ```bash
 export CURSOR_API_KEY=...
 
-# Fill forms WITHOUT submitting (recommended first pass)
-jobwright apply --dry-run --limit 1
+# Fill forms WITHOUT submitting (the default)
+jobwright apply --limit 1
 
-# Submit for real, one job at a time
-jobwright apply --url "https://boards.greenhouse.io/example/jobs/123"
+# Submit for real, one job at a time (requires apply_enabled for the profile)
+jobwright apply --live --url "https://boards.greenhouse.io/example/jobs/123"
 ```
 
 Agent provider is selectable via `AGENT_PROVIDER`:
@@ -192,7 +206,8 @@ Safety: dry-run is the default, LinkedIn jobs can appear in the brief with mater
 
 jobwright runs per-profile prep on a Hermes cron and sends one WhatsApp notification per day to each user's group:
 
-- **Morning brief:** one cron per user runs discover through connect, then `jobwright notify`.
+- **Morning brief:** one cron per user (`jobwright-brief-<user>`, created or updated when the brief time is saved in the dashboard) runs preflight, the pipeline, `jobwright notify`, then an operator report.
+- **Ops crons:** `jobwright-ops-watchdog` (missed runs) and `jobwright-backup` (nightly `jobwright ops backup`). Alerts go to `ops_target` in `users/users.yaml` (`jobwright ops set-target`). `jobwright ops install-crons` creates or updates all of them.
 - **Notification:** a single text message listing the newly prepared jobs, each with a dashboard deep link (`jobwright.parthchandak.info/jobs/<job_id>`). If nothing new is ready, nothing is sent.
 - **Review + apply:** happen in the dashboard, not over chat. Open a job's deep link to see its details, materials, and connections; live apply stays gated behind per-user enablement.
 
@@ -225,6 +240,8 @@ jobwright/
 ├── AGENTS.md                 # agent entry point (Cursor, Claude, Hermes)
 ├── CLAUDE.md                 # pointer to AGENTS.md
 ├── docs/agents/              # Hermes/WhatsApp ops (canonical, in repo)
+├── docs/adr/                 # architecture decisions (multi-user auth, scoring v2, ops)
+├── frontend/                 # React dashboard (Vite)
 ├── templates/hermes-skill/   # thin loader copied to ~/.hermes/skills/
 ├── skills/README.md          # how to install Hermes skill (not a skill itself)
 ├── LICENSE                   # AGPL-3.0

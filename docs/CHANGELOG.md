@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-09-26
+
+Multi-user, high-confidence matching, robust ops. See ADR-005, ADR-006, ADR-007.
+
+### Added
+- **Cloudflare Access auth** (`web/auth.py`): `JOBWRIGHT_AUTH_MODE=cloudflare|dev`, JWT verified against `JOBWRIGHT_CF_TEAM_DOMAIN` JWKS and `JOBWRIGHT_CF_AUD`; dev mode refuses requests that came through Cloudflare
+- **Per-email profiles**: `users.yaml` users carry `emails`, top-level `admins` (plus `JOBWRIGHT_ADMIN_EMAILS`) and `ops_target`; each login sees only its own profile, admins can switch and create (`GET /api/me`, `POST /api/session`)
+- **Onboarding** at `/welcome`: resume upload, LLM-drafted profile / searches / match criteria, review, confirm (`/api/onboarding/*`)
+- **WhatsApp chat picker** (`GET /api/whatsapp/chats` from `hermes send --list whatsapp`, names from the bridge) and test send (`POST /api/whatsapp/test`); saving the brief time creates the Hermes cron if missing
+- **Admin page** (`/admin`): profiles, emails, human gate, notify cap, admins, ops target, watchdog cron, test alert
+- **Scoring v2** (`scoring/matcher.py`, `pipeline_v2.py`): per-user `match_criteria`, retrieved labeled examples, structured output, gates in code (dealbreaker / location cap 3, salary cap 4, unknown location cap 6), Jev reject-only prefilter, opt-in escalation (`LLM_ESCALATION_MODEL`)
+- **Labels and history**: append-only `score_labels` (with job snapshot), `score_history` for every machine score, `llm_usage` token ledger; pre-v0.6 human rescores imported once (`source=import_pre_v06`)
+- Dashboard **ratings** (thumbs + reason chips), **dismiss with reasons**, **match explanation**, **Match rules** editor, **Match quality** page (`/quality`), status banner
+- CLI: `eval`, `rescore`, `criteria show|suggest`, `labels list|export`, `preflight [--fix]`, `ops brief-report|watchdog|set-target|backup`
+- **Operator alerts**: every brief ends with `ops brief-report` (alerts `ops_target`, writes `logs/ops_health.json`); `jobwright-ops-watchdog` cron for missed runs
+- **Backups**: `jobwright ops backup` (SQLite online backup + rsync `--link-dest` snapshots, 14-day retention) to `JOBWRIGHT_BACKUP_DIR`; `jobwright-backup` cron
+- **Job tombstones** (`job_tombstones`) so pruned jobs never return; **cross-board dedupe** (`discovery/dedupe.py`)
+- Pipeline per-user `flock` lock and `logs/last_run.json`; run registry records real exit codes (`python -m jobwright`)
+- `JOBWRIGHT_HERMES_DRY_RUN=1` turns cron changes and WhatsApp sends into log lines (default in `restart.sh --tmux`)
+
+### Changed
+- Default LLM `accounts/fireworks/models/glm-5p3-flash` with `reasoning_effort=low` for scoring; `gpt-oss*` banned
+- Active profile is bound per request (`config.user_context` ContextVar) instead of mutating module globals; per-user `.env` overlay applies only to CLI processes
+- `jobwright apply` is dry-run unless `--live`; `APPLY_DRY_RUN` removed from `.env.example`
+- Brief crons are created `--no-agent --deliver local`; the brief sends its own WhatsApp list and leaves an already-running brief alone
+- `run_daily_brief.sh` runs `preflight --fix`, lets the pipeline pick stages from `human_gate`, and writes truthful `notify_sent` / `notify_skipped` / `notify_failed` status lines
+- Social-impact mission guard is opt-in per user (`searches.yaml` `scoring: {mission_guard: true}`)
+- Generated materials are named `<company>_<title>_<job_id>` so postings never overwrite each other; company comes from the job, never the board name
+- Deep links use `/jobs/:jobId` routes; mobile-first job drawer with stage picker
+- Production pm2 runs uvicorn without `--reload`; Vite binds to `127.0.0.1`
+- Recommended deployment moves the checkout and `users/` to the internal disk; the external SSD holds backups
+
+### Removed
+- `jobwright run --stream`
+- `SCORE_BATCH_SIZE` as a primary knob (read only by the `JOBWRIGHT_SCORER=v1` fallback)
+
+## [0.3.0 - 0.5.0] (not itemized per release)
+
 ### Added
 - Dashboard **WhatsApp** header control: schedule time + target + pending count; Save writes `users.yaml` and edits `jobwright-brief-<user>` (`PUT /api/profile`)
 - Dashboard **Auto Search** runs the full prep pipeline (`discover` through `connect`) with live SSE logs, stop, and attach after reload (`run_registry` / `logs/web_runs.json`)
