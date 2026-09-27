@@ -114,7 +114,7 @@ pm2 save
 
 1. Zero Trust → Access → Applications → Self-hosted
 2. Domain: `jobwright.parthchandak.info`
-3. Policy: Allow + email OTP (same as litreview). **Every user's email must be in this policy** (owner adds it); the app then maps the email to a profile via `users.yaml` `emails`
+3. Policy: Allow + email OTP (same as litreview). **Every user's email must be allowed** (automatic with the allowlist sync below); the app then maps the email to a profile via `users.yaml` `emails`
 4. Copy the application **AUD tag** into `JOBWRIGHT_CF_AUD` and the team domain (`<team>.cloudflareaccess.com`) into `JOBWRIGHT_CF_TEAM_DOMAIN`. The API verifies `Cf-Access-Jwt-Assertion` (RS256, team JWKS, audience, issuer); a missing or invalid token is 401, a missing config is 503
 5. **Session duration:** set Application session to **30 days** (`720h`) so household devices re-auth monthly, not daily. Dashboard: Application → Configure → Session Duration. CLI (requires `CLOUDFLARE_API_TOKEN` with Access edit):
 
@@ -127,6 +127,15 @@ cloudflare-pp-cli accounts access applications-update-an-application \
 ```
 
 Optional: Zero Trust → Settings → Authentication → Global session duration → match (7–30d). WhatsApp in-app browser uses a separate cookie jar; users may OTP once per in-app context even with 30d app session.
+
+#### Allowlist sync (`jobwright access`)
+
+jobwright owns one allow policy on the Access app, named **`jobwright users`**, and keeps its include list equal to every `users.yaml` profile email plus admins (lowercased, deduped). Other policies are read for reporting and never modified.
+
+- Env: `CLOUDFLARE_API_TOKEN` (Account → Access: Apps and Policies → Edit) and `CLOUDFLARE_ACCOUNT_ID` (falls back to the `accountID` in `~/.cloudflared/cert.pem`; its embedded token is never used). The app is found by `JOBWRIGHT_CF_AUD`, else by `JOBWRIGHT_CF_HOSTNAME` (default `jobwright.parthchandak.info`).
+- `jobwright access status` prints current / desired / add / remove and emails allowed by other policies. `jobwright access sync` is a dry-run diff; `--yes` applies (creates the policy after the existing ones if missing). An empty desired list is refused.
+- Dashboard: Admin → Cloudflare Access card (`GET /api/admin/access`, `POST /api/admin/access/sync`). Changing a profile's emails, the admin list, or creating a profile (admin or `/welcome`) triggers a best-effort sync when the token is set; the response carries `access_sync` and the request never fails because of it.
+- Removing an email from `jobwright users` does not revoke access if another allow policy still includes it (see `other_policies_emails`).
 
 ### 5. Verify
 
