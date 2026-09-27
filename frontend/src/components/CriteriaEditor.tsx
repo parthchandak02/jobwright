@@ -152,7 +152,7 @@ export function CriteriaEditor({ value, onChange, compact }: Props) {
           >
             {[5, 6, 7, 8, 9].map((n) => (
               <option key={n} value={n}>
-                {n} {n === 7 ? '(recommended)' : n >= 8 ? '(fewer, stricter)' : '(more, looser)'}
+                {n} {n === 7 ? '(default)' : n >= 8 ? '(fewer, stricter)' : '(more, looser)'}
               </option>
             ))}
           </select>

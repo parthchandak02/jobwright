@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Optional
 
 import typer
@@ -1103,6 +1104,14 @@ def eval_cmd(
     escalation_model: Optional[str] = typer.Option(None, "--escalation-model", help="Also test a stronger tier."),
     k_examples: int = typer.Option(12, "--examples", help="Retrieved past decisions per job (0 disables)."),
     workers: int = typer.Option(12, "--workers", "-w"),
+    borderline: Optional[str] = typer.Option(
+        None, "--borderline", help="Second opinion for first-pass scores in this band, e.g. 5-6 (default: JOBWRIGHT_BORDERLINE_BAND)."
+    ),
+    borderline_model: Optional[str] = typer.Option(None, "--borderline-model", help="Model for the second opinion."),
+    borderline_combine: str = typer.Option("max", "--borderline-combine", help="max or mean."),
+    reuse: Optional[Path] = typer.Option(
+        None, "--reuse", help="Reuse first-pass judgments from an eval report (re-gated); only new calls cost tokens."
+    ),
 ) -> None:
     """Replay the scorer over your labeled jobs and report precision / recall."""
     _bootstrap()
@@ -1110,12 +1119,18 @@ def eval_cmd(
     from jobwright.database import get_connection
     from jobwright.resume import load_resume_text
     from jobwright.scoring.evaluate import run_eval
+    from jobwright.scoring.matcher import Borderline, borderline_from_env, parse_band
 
+    if borderline is None:
+        band = borderline_from_env()
+    else:
+        lo, hi = parse_band(borderline)
+        band = Borderline(low=lo, high=hi, model=borderline_model, combine=borderline_combine)
     report = run_eval(
         conn=get_connection(), resume_text=load_resume_text(), profile=_load_profile_or_none(),
         search_cfg=load_search_config(), strong_model=escalation_model, escalate=bool(escalation_model),
         use_examples=k_examples > 0, k_examples=max(k_examples, 1), min_positive_examples=4,
-        limit=limit, workers=workers,
+        limit=limit, workers=workers, borderline=band, reuse_report=reuse,
     )
     cfg_ = report["config"]
     console.print(f"[bold]Eval[/bold] {report['run_id']}  prompt {report['prompt_version']}  "
@@ -1131,6 +1146,21 @@ def eval_cmd(
             table.add_row(t, label, str(m["precision"]), str(m["recall"]), str(m["predicted_pos"]),
                           str(b["precision"]), str(b["recall"]))
     console.print(table)
+    sweep = Table(show_header=True, header_style="bold", title="Threshold sweep")
+    for col in ("threshold", "P explicit", "R explicit", "F0.5 explicit", "P all", "R all", "surfaced"):
+        sweep.add_column(col)
+    for row in report["sweep"]:
+        e, a = row["explicit"], row["all"]
+        sweep.add_row(str(row["threshold"]), str(e["precision"]), str(e["recall"]), str(e["f05"]),
+                      str(a["precision"]), str(a["recall"]), str(a["predicted_pos"]))
+    console.print(sweep)
+    rec = report.get("recommended")
+    if rec:
+        bar = "meets" if rec["meets_bar"] else "no threshold meets"
+        console.print(f"Recommended threshold: {rec['threshold']}+ ({bar} explicit precision >= {rec['min_precision']}; "
+                      f"P {rec['precision']} R {rec['recall']})")
+    if report.get("second_opinions"):
+        console.print(f"Second opinions: {report['second_opinions']}")
     tokens = sum(u["prompt_tokens"] + u["completion_tokens"] for u in report["usage"])
     console.print(f"Tokens: {tokens:,}   Report: {report['report_path']}")
 

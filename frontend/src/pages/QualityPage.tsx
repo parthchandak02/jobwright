@@ -41,6 +41,23 @@ function MetricRow({ label, m, base }: { label: string; m?: EvalMetrics; base?: 
   )
 }
 
+function Recommendation({ rec }: { rec: NonNullable<QualitySummary['recommended_threshold']> }) {
+  const same = rec.threshold === rec.current
+  return (
+    <div className="rounded-lg border border-border/60 p-3 text-sm">
+      <p className="font-medium">
+        Suggested cutoff: {rec.threshold}+{same ? ' (what you use now)' : ` (you use ${rec.current}+ now)`}
+      </p>
+      <p className="text-muted-foreground">
+        {rec.meets_bar
+          ? `At ${rec.threshold}+, about ${pct(rec.precision)} of the jobs sent to you would be ones you wanted, and it would catch ${pct(rec.recall)} of them. This is the lowest cutoff that keeps at least ${pct(rec.min_precision)} of sent jobs relevant.`
+          : `No cutoff keeps ${pct(rec.min_precision)} of sent jobs relevant yet. ${rec.threshold}+ is the best balance so far (${pct(rec.precision)} relevant, catches ${pct(rec.recall)}). More ratings will help.`}
+        {!same ? ' You can change the cutoff in Profile → Match rules.' : ''}
+      </p>
+    </div>
+  )
+}
+
 /** How well matching works for this profile, and how ratings improve it. */
 export function QualityPage() {
   const [q, setQ] = useState<QualitySummary | null>(null)
@@ -71,6 +88,7 @@ export function QualityPage() {
 
   const stream = useRunStream(handle, load)
   const ev = q?.latest_eval
+  const rec = q?.recommended_threshold
   const tokens = (q?.usage_30d || []).reduce((n, u) => n + u.prompt_tokens + u.completion_tokens, 0)
   const cost = (q?.usage_30d || []).reduce((n, u) => n + (u.cost_usd || 0), 0)
 
@@ -153,6 +171,7 @@ export function QualityPage() {
                       <MetricRow label="6+ (your ratings)" m={ev.metrics_explicit?.['6']} base={ev.baseline_explicit?.['6']} />
                     </tbody>
                   </table>
+                  {rec ? <Recommendation rec={rec} /> : null}
                 </>
               ) : (
                 <p className="text-sm">No accuracy check yet.</p>

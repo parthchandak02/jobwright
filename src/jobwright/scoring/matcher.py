@@ -9,7 +9,9 @@ Tiers (cost-optimized):
   1. cheap model (LLM_MODEL, default glm-5p3-flash) scores every job
   2. jobs that could reach the notify list (tier-1 score >= escalate_at) or
      that tier 1 was unsure about go to a stronger model, whose verdict wins
-Optional Jev fast-reject runs before tier 1 (see fastpath.py).
+Optional Jev fast-reject runs before tier 1 (see fastpath.py). Optional
+borderline second opinion (JOBWRIGHT_BORDERLINE_BAND, default off) re-asks for
+tier-1 scores inside a band; evals showed no gain, so it stays off.
 """
 
 from __future__ import annotations
@@ -36,7 +38,7 @@ from jobwright.scoring.examples import ExampleIndex, render_examples
 
 log = logging.getLogger(__name__)
 
-PROMPT_VERSION = "v2.3"
+PROMPT_VERSION = "v2.4"
 DESC_CHARS = 6000
 RESUME_CHARS = 7000
 MAX_TOKENS = 2500
@@ -65,7 +67,7 @@ How to judge:
 3. Check location against the candidate's rules (onsite outside the acceptable areas or outside the country is a NO; remote within the country is fine unless stated otherwise). When the posting's LOCATION is "not stated", infer it only from explicit evidence in the description or the company name (e.g. "Goodwill of Central Arizona" is Arizona); never assume the candidate's own city. If you cannot tell, set location_ok to null.
 4. Check seniority: "too_senior" when the role needs far more experience or a higher level than the candidate has, "too_junior" when clearly entry-level or an internship relative to them, otherwise "match" or "stretch".
 5. Use the candidate's past decisions on similar postings as the strongest guide to their taste.
-6. Then give fit 1-10 for how well the role matches what they want: 9-10 exactly the kind of role they want and are qualified for; 7-8 strong, would likely apply; 5-6 plausible but meaningful mismatch; 3-4 weak; 1-2 wrong field.
+6. Then give fit 1-10 for how well the role matches what they want: 9-10 exactly the kind of role they want and are qualified for; 7-8 strong, would likely apply; 5-6 plausible but meaningful mismatch; 3-4 weak; 1-2 wrong field. Seniority is not a veto: when the role type is what they want, "stretch" or "too_senior" lowers fit by 1-2 points, not into 1-4 (candidates apply to stretch roles; follow their past decisions on where the line is).
 7. confidence 0-1: how sure you are, given how much the posting actually says.
 
 === CANDIDATE RESUME ===
@@ -111,6 +113,7 @@ class MatchResult:
     caps: list[str] = field(default_factory=list)
     escalated_from: dict[str, Any] | None = None
     concerns: list[str] = field(default_factory=list)
+    second_opinion: dict[str, Any] | None = None
 
     def gates_json(self) -> str:
         return json.dumps(
@@ -122,6 +125,7 @@ class MatchResult:
                 "seniority": self.seniority,
                 "caps": self.caps,
                 "escalated_from": self.escalated_from,
+                "second_opinion": self.second_opinion,
             }
         )
 
@@ -162,7 +166,7 @@ def _job_block(job: dict) -> str:
     )
 
 
-def _user_message(ctx: MatchContext, job: dict) -> str:
+def _user_message(ctx: MatchContext, job: dict, *, min_positive: int | None = None) -> str:
     examples = ""
     if ctx.index is not None:
         exclude = {job["url"]} if ctx.leave_one_out else set()
@@ -179,7 +183,7 @@ def _user_message(ctx: MatchContext, job: dict) -> str:
                 k=ctx.k_examples,
                 exclude_urls=exclude,
                 exclude_keys=keys,
-                min_positive=ctx.min_positive_examples,
+                min_positive=ctx.min_positive_examples if min_positive is None else min_positive,
             )
         )
     parts = [examples, "=== POSTING TO JUDGE ===", _job_block(job)]
@@ -271,11 +275,14 @@ def _parse(raw_text: str) -> dict[str, Any]:
     return data
 
 
-def judge_job(ctx: MatchContext, job: dict, client, *, tier: str, stop: threading.Event | None = None) -> MatchResult | None:
+def judge_job(
+    ctx: MatchContext, job: dict, client, *, tier: str, stop: threading.Event | None = None,
+    min_positive: int | None = None,
+) -> MatchResult | None:
     """One structured call with retries. None when the job could not be scored."""
     messages = [
         {"role": "system", "content": ctx.system_prompt},
-        {"role": "user", "content": _user_message(ctx, job)},
+        {"role": "user", "content": _user_message(ctx, job, min_positive=min_positive)},
     ]
     rng = random.Random()
     for attempt in range(1, ATTEMPTS + 1):
@@ -285,7 +292,9 @@ def judge_job(ctx: MatchContext, job: dict, client, *, tier: str, stop: threadin
             with llm_purpose(f"score:{tier}"):
                 text = client.chat_structured(
                     messages, SCHEMA, max_tokens=MAX_TOKENS, temperature=0.0,
-                    reasoning_effort=os.environ.get(f"JOBWRIGHT_REASONING_{tier.upper()}", TIER_REASONING.get(tier)),
+                    reasoning_effort=os.environ.get(
+                        f"JOBWRIGHT_REASONING_{tier.upper()}", TIER_REASONING.get(tier, TIER_REASONING["t1"])
+                    ),
                 )
             raw = _parse(text)
             score, deals, caps = apply_gates(raw, job, ctx)
@@ -305,6 +314,65 @@ def judge_job(ctx: MatchContext, job: dict, client, *, tier: str, stop: threadin
                 return None
             time.sleep(min(8.0, 1.0 * 2 ** (attempt - 1) + rng.uniform(0, 0.5)))
     return None
+
+
+@dataclass
+class Borderline:
+    """Second opinion for jobs the first pass scored inside [low, high].
+
+    The second call sees a positive-balanced example set (and optionally a
+    different model); ``combine`` merges the two scores.
+    """
+
+    low: int = 0
+    high: int = 0
+    model: str | None = None
+    combine: str = "max"
+
+    @property
+    def enabled(self) -> bool:
+        return 1 <= self.low <= self.high <= 10
+
+    def applies(self, result: MatchResult) -> bool:
+        # A capped score is deterministic: a second opinion cannot lift it.
+        return self.enabled and self.low <= result.score <= self.high and not result.caps
+
+
+def parse_band(text: str | None) -> tuple[int, int]:
+    raw = (text or "").strip().lower()
+    if raw in ("", "off", "none", "0"):
+        return 0, 0
+    parts = [p for p in re.split(r"[-:,\s]+", raw) if p]
+    try:
+        nums = [int(p) for p in parts[:2]]
+    except ValueError:
+        return 0, 0
+    lo, hi = (nums[0], nums[-1]) if nums else (0, 0)
+    return (min(lo, hi), max(lo, hi)) if 1 <= min(lo, hi) and max(lo, hi) <= 10 else (0, 0)
+
+
+def borderline_from_env() -> Borderline:
+    lo, hi = parse_band(os.environ.get("JOBWRIGHT_BORDERLINE_BAND"))
+    combine = os.environ.get("JOBWRIGHT_BORDERLINE_COMBINE", "max").strip().lower()
+    return Borderline(
+        low=lo, high=hi, model=os.environ.get("JOBWRIGHT_BORDERLINE_MODEL", "").strip() or None,
+        combine=combine if combine in ("max", "mean") else "max",
+    )
+
+
+def combine_opinions(first: MatchResult, second: MatchResult, how: str) -> MatchResult:
+    if how == "mean":
+        score = int((first.score + second.score) / 2 + 0.5)
+        base = second if second.score > first.score else first
+    else:
+        base = second if second.score > first.score else first
+        score = base.score
+    out = MatchResult(**{**base.__dict__, "score": score})
+    out.second_opinion = {
+        "model": second.model, "first_score": first.score, "second_score": second.score,
+        "second_fit": second.fit, "combine": how,
+    }
+    return out
 
 
 def escalation_model() -> str | None:
@@ -331,9 +399,20 @@ def score_jobs(
     on_result=None,
     cheap_model: str | None = None,
     strong_model: str | None = None,
+    borderline: Borderline | None = None,
+    prior: dict[str, MatchResult] | None = None,
 ) -> tuple[list[MatchResult], int]:
-    """Tiered concurrent scoring. ``on_result`` is called per final result (for incremental saves)."""
+    """Tiered concurrent scoring. ``on_result`` is called per final result (for incremental saves).
+
+    ``prior`` maps url -> an existing first-pass result (evals reuse a stored run
+    so only second opinions cost tokens).
+    """
     cheap = get_client_for_model(cheap_model) if cheap_model else get_client()
+    borderline = borderline if borderline is not None else borderline_from_env()
+    second_client = None
+    if borderline.enabled:
+        second_client = get_client_for_model(borderline.model) if borderline.model else cheap
+    balanced = max(ctx.min_positive_examples, ctx.k_examples // 2)
     if escalate:
         strong_model = strong_model or escalation_model()
     else:
@@ -348,7 +427,11 @@ def score_jobs(
     t2 = {"tried": 0, "failed": 0}
 
     def run(job: dict) -> MatchResult | None:
-        first = judge_job(ctx, job, cheap, tier="t1", stop=stop)
+        first = (prior or {}).get(job["url"]) or judge_job(ctx, job, cheap, tier="t1", stop=stop)
+        if first is not None and second_client is not None and borderline.applies(first):
+            other = judge_job(ctx, job, second_client, tier="b2", stop=stop, min_positive=balanced)
+            if other is not None:
+                first = combine_opinions(first, other, borderline.combine)
         if first is None or strong is None or not should_escalate(first, escalate_at, min_confidence):
             return first
         with lock:
