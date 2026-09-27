@@ -1426,8 +1426,14 @@ def ops_install_crons(
     from jobwright.users import list_users
 
     load_env()
-    results = [(f"jobwright-brief-{u.user_id}", ensure_brief_cron(u.user_id, u.schedule or "0 6 * * *"))
-               for u in list_users()]
+    from jobwright.onboarding import is_set_up
+
+    results = []
+    for u in list_users():
+        if not is_set_up(u.user_id):
+            console.print(f"[dim]skip  jobwright-brief-{u.user_id}  (setup not finished)[/dim]")
+            continue
+        results.append((f"jobwright-brief-{u.user_id}", ensure_brief_cron(u.user_id, u.schedule or "0 6 * * *")))
     if not skip_ops:
         results.append((WATCHDOG_CRON_NAME, ensure_watchdog_cron()))
         dest = backup_dest or _os.environ.get("JOBWRIGHT_BACKUP_DIR", "")

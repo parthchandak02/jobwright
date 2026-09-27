@@ -208,6 +208,13 @@ def apply_draft(draft: dict[str, Any]) -> None:
     search_path.write_text(yaml.safe_dump(searches, sort_keys=False, allow_unicode=True), encoding="utf-8")
 
 
+def is_set_up(user_id: str) -> bool:
+    """Resume and profile present: the brief has what it needs to run."""
+    with config.user_context(user_id):
+        steps = onboarding_status()["steps"]
+    return bool(steps.get("resume") and steps.get("profile"))
+
+
 def onboarding_status() -> dict[str, Any]:
     """Which setup steps the active profile has completed."""
     from jobwright.users import get_user as _get_user

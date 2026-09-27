@@ -114,9 +114,32 @@ def test_install_crons_upserts_every_brief_and_ops_cron(monkeypatch):
     calls = []
     monkeypatch.setattr(users, "list_users", lambda: [SimpleNamespace(user_id="a", schedule=""),
                                                      SimpleNamespace(user_id="b", schedule="0 7 * * *")])
+    import jobwright.onboarding as ob
+
+    monkeypatch.setattr(ob, "is_set_up", lambda uid: True)
     monkeypatch.setattr(hc, "ensure_brief_cron", lambda uid, sched: calls.append((uid, sched)) or {"ok": True})
     monkeypatch.setattr(hc, "ensure_watchdog_cron", lambda: calls.append("watchdog") or {"ok": True})
     monkeypatch.setattr(hc, "ensure_backup_cron", lambda dest="": calls.append(("backup", dest)) or {"ok": False, "error": "x"})
     res = CliRunner().invoke(app, ["ops", "install-crons", "--backup-dest", "/b"])
     assert calls == [("a", "0 6 * * *"), ("b", "0 7 * * *"), "watchdog", ("backup", "/b")]
     assert res.exit_code == 1
+
+
+def test_install_crons_skips_profiles_without_setup(monkeypatch):
+    from types import SimpleNamespace
+
+    from typer.testing import CliRunner
+
+    import jobwright.hermes_cron as hc
+    import jobwright.onboarding as ob
+    import jobwright.users as users
+    from jobwright.cli import app
+
+    calls = []
+    monkeypatch.setattr(users, "list_users", lambda: [SimpleNamespace(user_id="done", schedule=""),
+                                                     SimpleNamespace(user_id="new", schedule="")])
+    monkeypatch.setattr(ob, "is_set_up", lambda uid: uid == "done")
+    monkeypatch.setattr(hc, "ensure_brief_cron", lambda uid, sched: calls.append(uid) or {"ok": True})
+    res = CliRunner().invoke(app, ["ops", "install-crons", "--skip-ops"])
+    assert calls == ["done"] and res.exit_code == 0
+    assert "setup not finished" in res.output
