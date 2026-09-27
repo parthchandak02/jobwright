@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
@@ -52,6 +52,63 @@ def users(request: Request) -> dict:
             for u in list_users()
         ],
     }
+
+
+def _user_usage(user, days: int) -> dict[str, Any]:
+    """Token use and estimated cost from one profile's llm_usage (read-only)."""
+    import sqlite3
+
+    from jobwright.llm import estimate_cost
+
+    out: dict[str, Any] = {
+        "user_id": user.user_id, "name": user.name or user.user_id, "calls": 0,
+        "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "cost_usd": None, "error": None,
+    }
+    db = user.resolve_data_dir() / "jobwright.db"
+    if not db.exists():
+        return out
+    try:
+        conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=5)
+        try:
+            rows = conn.execute(
+                "SELECT model, SUM(prompt_tokens), SUM(completion_tokens), SUM(cost_usd), COUNT(cost_usd), COUNT(*) "
+                "FROM llm_usage WHERE at >= ? GROUP BY model",
+                ((datetime.now(UTC) - timedelta(days=days)).isoformat(),),
+            ).fetchall()
+        finally:
+            conn.close()
+    except sqlite3.Error as exc:
+        out["error"] = "no usage table" if "no such table" in str(exc) else str(exc)
+        return out
+    cost: float | None = None
+    for model, prompt, completion, stored, priced_rows, n in rows:
+        prompt, completion = int(prompt or 0), int(completion or 0)
+        out["calls"] += int(n)
+        out["prompt_tokens"] += prompt
+        out["completion_tokens"] += completion
+        estimate = estimate_cost(model or "", prompt, completion) if priced_rows != n else None
+        value = estimate if estimate is not None else stored
+        if value is not None:
+            cost = (cost or 0.0) + float(value)
+    out["total_tokens"] = out["prompt_tokens"] + out["completion_tokens"]
+    out["cost_usd"] = round(cost, 4) if cost is not None else None
+    return out
+
+
+@router.get("/costs")
+def costs(request: Request, days: int = 30) -> dict:
+    require_admin(request)
+    days = max(1, min(days, 365))
+    rows = [_user_usage(u, days) for u in list_users()]
+    priced = [r["cost_usd"] for r in rows if r["cost_usd"] is not None]
+    total = {
+        "prompt_tokens": sum(r["prompt_tokens"] for r in rows),
+        "completion_tokens": sum(r["completion_tokens"] for r in rows),
+        "total_tokens": sum(r["total_tokens"] for r in rows),
+        "calls": sum(r["calls"] for r in rows),
+        "cost_usd": round(sum(priced), 4) if priced else None,
+    }
+    return {"days": days, "users": rows, "total": total}
 
 
 class AdminUserPatch(BaseModel):

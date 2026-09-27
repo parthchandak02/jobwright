@@ -20,12 +20,14 @@ import {
   createProfile,
   deleteAdminUser,
   ensureWatchdog,
+  getAdminCosts,
   getAdminSettings,
   getAdminUsers,
   patchAdminUser,
   putAdminSettings,
   sendOpsTest,
   switchProfile,
+  type AdminCosts,
   type AdminSettings,
   type AdminUser,
 } from '@/lib/api'
@@ -44,11 +46,64 @@ function HealthChip({ user }: { user: AdminUser }) {
   )
 }
 
+function fmtCost(v: number | null): string {
+  return v == null ? 'no price set' : `$${v.toFixed(2)}`
+}
+
+function CostsSection({ costs }: { costs: AdminCosts | null }) {
+  return (
+    <section className="space-y-3">
+      <h2 className="text-sm font-semibold">AI usage, last {costs?.days ?? 30} days</h2>
+      <p className="text-xs text-muted-foreground">
+        Tokens per profile from each profile’s own usage log. Cost is an estimate from JOBWRIGHT_LLM_PRICES.
+      </p>
+      {!costs ? (
+        <p className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="size-4 animate-spin" /> Loading…
+        </p>
+      ) : (
+        <div className="glass overflow-x-auto rounded-xl p-4">
+          <table className="w-full text-sm">
+            <thead className="text-left text-xs text-muted-foreground">
+              <tr>
+                <th className="pb-2 font-medium">Profile</th>
+                <th className="pb-2 text-right font-medium">Calls</th>
+                <th className="pb-2 text-right font-medium">Tokens</th>
+                <th className="pb-2 text-right font-medium">Est. cost</th>
+              </tr>
+            </thead>
+            <tbody className="tabular-nums">
+              {costs.users.map((u) => (
+                <tr key={u.user_id} className="border-t border-border/60">
+                  <td className="py-1.5">
+                    {u.name}
+                    {u.error ? <span className="ml-2 text-xs text-muted-foreground">({u.error})</span> : null}
+                  </td>
+                  <td className="py-1.5 text-right">{u.calls.toLocaleString()}</td>
+                  <td className="py-1.5 text-right">{u.total_tokens.toLocaleString()}</td>
+                  <td className="py-1.5 text-right">{fmtCost(u.cost_usd)}</td>
+                </tr>
+              ))}
+              <tr className="border-t border-border font-semibold">
+                <td className="pt-2">Total</td>
+                <td className="pt-2 text-right">{costs.total.calls.toLocaleString()}</td>
+                <td className="pt-2 text-right">{costs.total.total_tokens.toLocaleString()}</td>
+                <td className="pt-2 text-right">{fmtCost(costs.total.cost_usd)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  )
+}
+
 /** Admin: who can log in to which profile, alert routing, health. */
 export function AdminPage() {
   const { me, refresh: refreshMe } = useMe()
   const [users, setUsers] = useState<AdminUser[] | null>(null)
   const [settings, setSettings] = useState<AdminSettings | null>(null)
+  const [costs, setCosts] = useState<AdminCosts | null>(null)
   const [newName, setNewName] = useState('')
   const [newEmail, setNewEmail] = useState('')
   const [busy, setBusy] = useState(false)
@@ -61,6 +116,9 @@ export function AdminPage() {
         setUsers(u.users)
         setSettings(s)
       })
+      .catch((e) => toast.error(errorMessage(e)))
+    void getAdminCosts()
+      .then(setCosts)
       .catch((e) => toast.error(errorMessage(e)))
   }, [])
 
@@ -198,6 +256,8 @@ export function AdminPage() {
               </Button>
             </div>
           </section>
+
+          <CostsSection costs={costs} />
 
           <section className="space-y-4">
             <h2 className="text-sm font-semibold">Admins and alerts</h2>

@@ -373,6 +373,7 @@ _ALL_COLUMNS: dict[str, str] = {
     "applied_manually": "INTEGER DEFAULT 0",
     "notes": "TEXT",
     "follow_up_at": "TEXT",
+    "followed_up_at": "TEXT",
     "first_response_at": "TEXT",
     "board_updated_by": "TEXT",
     "board_updated_at": "TEXT",

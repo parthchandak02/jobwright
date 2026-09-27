@@ -6,17 +6,19 @@ Nested agent notes for the Python package. Root context: [../../AGENTS.md](../..
 
 | Module | Role |
 |--------|------|
-| `cli.py` | Typer entry; `--user` before subcommands. Stages: discover, enrich, score, portfolio, tailor, cover, pdf, docx, connect. Also `tailor-job`, `notify`, `briefstats`, `eval`, `rescore`, `criteria show\|suggest`, `labels list\|export`, `preflight`, `ops brief-report\|watchdog\|set-target\|backup`, `users`. `apply` is dry-run unless `--live` |
+| `cli.py` | Typer entry; `--user` before subcommands. Stages: discover, enrich, score, portfolio, tailor, cover, pdf, docx, connect. Also `tailor-job`, `notify`, `briefstats`, `eval`, `rescore`, `criteria show\|suggest`, `labels list\|export`, `preflight`, `summary`, `ops brief-report\|watchdog\|set-target\|backup\|install-crons`, `users`. `apply` is dry-run unless `--live` |
 | `__main__.py` | `python -m jobwright` (dashboard spawns); records the exit code in the run registry |
 | `pipeline.py` | `STAGE_ORDER`, stage runners, `default_brief_stages()` (honors `human_gate`), per-user `pipeline_lock()` (flock), `logs/last_run.json`; prunes backlog junk after `score` |
 | `run_registry.py` | Durable pipeline runs in `users/<id>/logs/web_runs.json`; honors `JOBWRIGHT_WEB_RUN_ID` |
 | `resume.py` | PDF source of truth; pymupdf4llm markdown cache at `resume/base.md` for LLM stages |
 | `notify.py` | One WhatsApp list of new jobs + dashboard deep links; `send_via_hermes` (honors `JOBWRIGHT_HERMES_DRY_RUN`) |
+| `summary.py` | Weekly WhatsApp recap per profile (`jobwright summary`); mark-then-send via `logs/weekly_summary.json`; `run_summary_all` loops `users.yaml` |
+| `followups.py` | Follow-up reminders: Applied with no stage change for `followup_days`; `due_followups`, `record_followed_up` (snooze), `record_no_response` (close) |
 | `config.py` | Per-user paths on a `_PathState`; `set_active_user` (CLI, process default), `user_context(user_id)` (web, per request via ContextVar), `user_env()` (per-user `.env` read without touching `os.environ`) |
-| `users.py` | Registry at `<repo>/users/users.yaml`: users (`emails`, schedule, `human_gate`, `brief_top_n`, `apply_enabled`), `admins`, `ops_target`; `users_for_email`, `is_admin_email` |
+| `users.py` | Registry at `<repo>/users/users.yaml`: users (`emails`, schedule, `human_gate`, `brief_top_n`, `apply_enabled`, `weekly_summary`, `followup_days`), `admins`, `ops_target`; `users_for_email`, `is_admin_email` |
 | `onboarding.py` | New profile bound to a login email; LLM draft of profile / searches / criteria from a resume; `apply_draft` |
 | `whatsapp.py` | Chat picker (`hermes send --list whatsapp --json` + bridge names; non-admins see only chats with their phone) and test send |
-| `hermes_cron.py` | Create/edit/remove `jobwright-brief-<user>` (`--no-agent --deliver local`, generated wrapper), `jobwright-ops-watchdog`, `jobwright-backup`; `hermes_dry_run()` |
+| `hermes_cron.py` | Create/edit/remove `jobwright-brief-<user>` (`--no-agent --deliver local`, generated wrapper), `jobwright-ops-watchdog`, `jobwright-backup`, `jobwright-weekly-summary`; `hermes_dry_run()` |
 | `ops.py` | Brief report, missed-run watchdog, alert delivery to `ops_target`, `logs/ops_health.json`, `backup_users` |
 | `preflight.py` | Pre-run checks (profile/resume, LLM key, disk, Playwright with `--fix`, Hermes CLI, WhatsApp bridge) |
 | `labels.py` | Append-only `score_labels`, `record_label`, eval set (explicit labels + board signals) |
@@ -75,6 +77,7 @@ Single-user doctor: `jobwright doctor`. Multi-profile: `jobwright --user <id> do
 | `tests/test_materials_tailor_api.py` | `POST /api/jobs/{url}/tailor` (spawns `tailor-job`) |
 | `tests/test_subtle_tailor.py` | Dashboard instruction prompts |
 | `tests/test_cover_letter_examples.py` | Cover-letter example PDF settings API |
+| `tests/test_followups_summary.py` | Follow-up due logic, snooze, no-response close, notify appendix, weekly summary content and mark-then-send, weekly cron |
 | `tests/test_hermes_cron.py` | Parse `hermes cron list`; create/edit brief cron; dry-run |
 
 Add tests for new provider behavior, user-resolution logic, or dashboard APIs.

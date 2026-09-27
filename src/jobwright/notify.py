@@ -27,6 +27,7 @@ from jobwright.database import (
     job_id_for_url,
     mark_whatsapp_notified,
 )
+from jobwright.followups import format_followups
 from jobwright.users import get_brief_top_n, get_human_gate, get_user
 
 
@@ -139,6 +140,24 @@ def count_worth_a_look(conn=None, max_age_days: int | None = None, threshold: in
 
 
 DEFAULT_BASE_URL = "https://jobwright.parthchandak.info"
+MAX_FOLLOWUPS = 3
+
+
+def public_base_url() -> str:
+    return os.environ.get("JOBWRIGHT_PUBLIC_BASE_URL", DEFAULT_BASE_URL)
+
+
+def followup_appendix(conn=None, limit: int = MAX_FOLLOWUPS) -> list[dict]:
+    """Due follow-ups for the end of a message; never breaks the notice."""
+    from jobwright.followups import due_followups
+
+    try:
+        return due_followups(conn, limit=limit)
+    except Exception:
+        import logging
+
+        logging.getLogger(__name__).exception("follow-up lookup failed")
+        return []
 
 
 def build_notification(jobs: list[dict], base_url: str) -> str:
@@ -252,7 +271,7 @@ def run_notify(dry_run: bool = False) -> dict:
         )
         return {"sent": 0, "skipped": True, "reason": reason, "jobs": [], "threshold": threshold}
 
-    base_url = os.environ.get("JOBWRIGHT_PUBLIC_BASE_URL", DEFAULT_BASE_URL)
+    base_url = public_base_url()
 
     top_n = get_brief_top_n(active)
     shown = jobs if top_n == 0 else jobs[:top_n]
@@ -269,6 +288,9 @@ def run_notify(dry_run: bool = False) -> dict:
             f"\n\n+ {worth} more worth a look (just under your bar): "
             f"{base_url.rstrip('/')}/?view=list&worth=1"
         )
+    followups = followup_appendix(conn)
+    if followups:
+        message += "\n\n" + format_followups(followups, base_url)
 
     job_summaries = [
         {
@@ -289,6 +311,7 @@ def run_notify(dry_run: bool = False) -> dict:
             "top_n": top_n,
             "capped": capped,
             "jobs": job_summaries,
+            "followups": len(followups),
         }
 
     user = get_user(active) if active else None
@@ -323,4 +346,5 @@ def run_notify(dry_run: bool = False) -> dict:
         "top_n": top_n,
         "capped": capped,
         "jobs": job_summaries,
+        "followups": len(followups),
     }

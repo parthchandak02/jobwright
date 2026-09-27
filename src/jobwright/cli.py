@@ -945,6 +945,40 @@ def notify(
         console.print(f"  {j['title']} @ {j.get('company') or '?'}  [dim]{j['job_id']}[/dim]")
 
 
+@app.command()
+def summary(
+    dry_run: bool = typer.Option(False, "--dry-run", help="Preview each message without sending."),
+    days: int = typer.Option(7, "--days", help="How many days the summary covers."),
+    force: bool = typer.Option(False, "--force", help="Send even if a summary went out recently."),
+) -> None:
+    """Weekly WhatsApp summary: every profile, or only the --user one."""
+    _configure_logging()
+    from jobwright.config import get_active_user_id, load_env
+    from jobwright.summary import run_summary_all
+
+    load_env()
+    active = get_active_user_id()
+    results = run_summary_all([active] if active else None, dry_run=dry_run, days=days, force=force)
+    failed = False
+    for r in results:
+        if r.get("error"):
+            failed = True
+            console.print(f"[red]{r['user']}: failed[/red] {r['error']}")
+        elif r.get("skipped"):
+            console.print(f"[yellow]{r['user']}: skipped[/yellow] {r.get('reason', '')}")
+        elif r.get("dry_run"):
+            console.print(f"[bold]{r['user']}[/bold] (preview)\n{r['message']}\n")
+        else:
+            console.print(f"[green]{r['user']}: sent[/green]")
+    if failed:
+        if not dry_run:
+            from jobwright.ops import Report, deliver
+
+            errors = [f"{r['user']}: {r['error']}" for r in results if r.get("error")]
+            console.print(deliver(Report("weekly-summary", "fail", errors[:5])))
+        raise typer.Exit(code=1)
+
+
 @app.command("briefstats")
 def briefstats_cmd(
     days: int = typer.Option(14, "--days", help="Number of days of brief history to report."),
@@ -1307,16 +1341,18 @@ def ops_install_crons(
     backup_dest: Optional[str] = typer.Option(None, "--backup-dest", help="Backup root for the nightly backup cron."),
     skip_ops: bool = typer.Option(False, "--skip-ops", help="Only the per-user brief crons."),
 ) -> None:
-    """Create or update every jobwright Hermes cron: one brief per profile, watchdog, backup."""
+    """Create or update every jobwright Hermes cron: briefs, watchdog, backup, weekly summary."""
     import os as _os
 
     from jobwright.config import load_env
     from jobwright.hermes_cron import (
         BACKUP_CRON_NAME,
         WATCHDOG_CRON_NAME,
+        WEEKLY_SUMMARY_CRON_NAME,
         ensure_backup_cron,
         ensure_brief_cron,
         ensure_watchdog_cron,
+        ensure_weekly_summary_cron,
     )
     from jobwright.users import list_users
 
@@ -1327,6 +1363,7 @@ def ops_install_crons(
         results.append((WATCHDOG_CRON_NAME, ensure_watchdog_cron()))
         dest = backup_dest or _os.environ.get("JOBWRIGHT_BACKUP_DIR", "")
         results.append((BACKUP_CRON_NAME, ensure_backup_cron(dest=dest)))
+        results.append((WEEKLY_SUMMARY_CRON_NAME, ensure_weekly_summary_cron()))
     failed = False
     for name, r in results:
         ok = bool(r.get("ok"))

@@ -142,3 +142,39 @@ def test_job_id_routes_and_labels(api_env):
     q = client.get("/api/quality", headers=ann).json()
     assert q["labels_total"] == 1
     assert client.get("/api/jobs/000000000000", headers=ann).status_code == 404
+
+
+def test_admin_costs_per_profile_admin_only(api_env, monkeypatch):
+    import sqlite3
+    from datetime import UTC, datetime, timedelta
+
+    from jobwright.database import close_connection, init_db
+
+    client, h, root = api_env
+    for name in ("Ann", "Bo"):
+        client.post("/api/onboarding/profile", json={"name": name}, headers=h(f"{name.lower()}@example.com"))
+    monkeypatch.setenv("JOBWRIGHT_LLM_PRICES", '{"glm": [1.0, 2.0]}')
+    db = root / "ann" / "jobwright.db"
+    close_connection(db)
+    init_db(db)
+    close_connection(db)
+    conn = sqlite3.connect(db)
+    now = datetime.now(UTC)
+    rows = [
+        ((now - timedelta(days=1)).isoformat(), "accounts/fireworks/models/glm", 1_000_000, 500_000, None),
+        ((now - timedelta(days=2)).isoformat(), "other", 100, 50, 0.25),
+        ((now - timedelta(days=45)).isoformat(), "other", 999_999, 999_999, 9.0),
+    ]
+    conn.executemany("INSERT INTO llm_usage (at, model, prompt_tokens, completion_tokens, cost_usd) "
+                     "VALUES (?, ?, ?, ?, ?)", rows)
+    conn.commit()
+    conn.close()
+
+    assert client.get("/api/admin/costs", headers=h("ann@example.com")).status_code == 403
+    data = client.get("/api/admin/costs", headers=h("boss@example.com")).json()
+    by_user = {u["user_id"]: u for u in data["users"]}
+    assert data["days"] == 30
+    assert by_user["ann"]["total_tokens"] == 1_500_150 and by_user["ann"]["calls"] == 2
+    assert by_user["ann"]["cost_usd"] == 2.25
+    assert by_user["bo"]["total_tokens"] == 0 and by_user["bo"]["cost_usd"] is None
+    assert data["total"]["cost_usd"] == 2.25 and data["total"]["total_tokens"] == 1_500_150
