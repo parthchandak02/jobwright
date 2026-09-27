@@ -1,551 +1,370 @@
-import { useCallback, useEffect, useState } from 'react'
-import { Bell, CloudCog, Loader2, MessageSquare, Plus, RefreshCw, Shield, Trash2, UserPlus } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { RefreshCw, Shield, UserPlus } from 'lucide-react'
 import { toast } from 'sonner'
 import { APP_SHELL_HEADER } from '@/components/BrandLogo'
-import { ChipInput } from '@/components/ChipInput'
-import { Chip } from '@/components/Chip'
-import { FormField } from '@/components/FormField'
-import { WhatsAppChatPicker } from '@/components/WhatsAppChatPicker'
+import { RunProgressDialog } from '@/components/RunProgressDialog'
+import { AddPersonDialog } from '@/components/admin/AddPersonDialog'
+import { AdminsAlertsSection } from '@/components/admin/AdminsAlertsSection'
+import { AiUsageSection } from '@/components/admin/AiUsageSection'
+import { ConfirmDialog } from '@/components/admin/ConfirmDialog'
+import { PersonRow, PersonRowSkeleton } from '@/components/admin/PersonRow'
+import type { SaveState } from '@/components/admin/PersonSettings'
+import { SystemStrip } from '@/components/admin/SystemStrip'
+import { chatName, reportAccessSync, scheduleLabel } from '@/components/admin/adminFormat'
 import { Button } from '@/components/ui/button'
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
-import {
-  applyHermesChannels,
-  createProfile,
   deleteAdminUser,
-  ensureWatchdog,
-  getAccessPlan,
-  getAdminCosts,
-  getAdminSettings,
-  getAdminUsers,
-  getHermesChannels,
+  getAdminOverview,
   patchAdminUser,
-  putAdminSettings,
-  sendOpsTest,
+  sendAdminTestMessage,
+  startAdminRun,
   switchProfile,
-  syncAccess,
-  type AccessPlan,
-  type AccessSyncResult,
-  type AdminCosts,
-  type AdminSettings,
-  type AdminUser,
-  type HermesChannelsPlan,
+  type AdminOverview,
+  type AdminOverviewUser,
+  type AdminUserPatch,
+  type RunHandle,
 } from '@/lib/api'
 import { useMe } from '@/lib/me'
+import { RUN_STAGE_LABELS } from '@/lib/useAutoSearch'
+import { useRunStream } from '@/lib/useRunStream'
 import { cn, errorMessage } from '@/lib/utils'
 
-function HealthChip({ user }: { user: AdminUser }) {
-  const level = user.health?.level
-  const today = user.brief_today.join(' · ')
-  if (!level && !today) return <Chip muted>No brief yet today</Chip>
-  const tone = level === 'fail' ? '--destructive' : level === 'warn' ? '--stage-in-progress' : '--stage-offer'
-  return (
-    <Chip tone={tone} title={[...(user.health?.lines || []), today].join('\n')}>
-      {level === 'fail' ? 'Problem' : level === 'warn' ? 'Warning' : 'Healthy'}
-    </Chip>
-  )
+type UserFields = keyof AdminOverviewUser
+
+const PATCH_FIELDS: Record<keyof AdminUserPatch, UserFields[]> = {
+  name: ['name'],
+  emails: ['emails'],
+  whatsapp_target: ['whatsapp'],
+  hour: ['hour', 'schedule', 'schedule_label'],
+  minute: ['minute', 'schedule', 'schedule_label'],
+  schedule: ['schedule', 'schedule_label', 'hour', 'minute'],
+  notify_threshold: ['notify_threshold'],
+  brief_top_n: ['brief_top_n'],
+  human_gate: ['human_gate'],
+  weekly_summary: ['weekly_summary'],
+  followup_days: ['followup_days'],
 }
 
-function EmailChips({ emails, tone }: { emails: string[]; tone?: string }) {
-  return (
-    <div className="flex flex-wrap gap-1.5">
-      {emails.map((e) => (
-        <Chip key={e} tone={tone}>
-          {e}
-        </Chip>
-      ))}
-    </div>
-  )
-}
-
-function AccessCard({ plan, syncing, onSync }: { plan: AccessPlan | null; syncing: boolean; onSync: () => void }) {
-  if (!plan) {
-    return (
-      <p className="flex items-center gap-2 text-sm text-muted-foreground">
-        <Loader2 className="size-4 animate-spin" /> Checking Cloudflare Access…
-      </p>
-    )
+function applyPatch(u: AdminOverviewUser, p: AdminUserPatch): AdminOverviewUser {
+  const next: AdminOverviewUser = { ...u }
+  if (p.name !== undefined) next.name = p.name
+  if (p.emails !== undefined) next.emails = p.emails
+  if (p.whatsapp_target !== undefined) next.whatsapp = { target: p.whatsapp_target || null, name: null, type: null }
+  if (p.hour !== undefined) {
+    next.hour = p.hour
+    next.minute = p.minute ?? 0
+    next.schedule = `${next.minute} ${next.hour} * * *`
+    next.schedule_label = scheduleLabel(next.hour, next.minute)
   }
-  if (!plan.configured) {
-    return (
-      <div className="glass space-y-1 rounded-xl p-4 text-xs text-muted-foreground">
-        <Chip muted>Not configured</Chip>
-        <p>
-          Set CLOUDFLARE_API_TOKEN (Account → Access: Apps and Policies → Edit) and CLOUDFLARE_ACCOUNT_ID in .env to
-          sync logins automatically. Until then, add emails in Zero Trust → Access → Applications → jobwright.
-        </p>
-      </div>
-    )
+  if (p.notify_threshold !== undefined) next.notify_threshold = p.notify_threshold
+  if (p.brief_top_n !== undefined) next.brief_top_n = p.brief_top_n
+  if (p.human_gate !== undefined) next.human_gate = p.human_gate
+  if (p.weekly_summary !== undefined) next.weekly_summary = p.weekly_summary
+  if (p.followup_days !== undefined) next.followup_days = p.followup_days
+  return next
+}
+
+function revertPatch(u: AdminOverviewUser, before: AdminOverviewUser, p: AdminUserPatch): AdminOverviewUser {
+  const next = { ...u } as Record<UserFields, unknown>
+  for (const key of Object.keys(p) as (keyof AdminUserPatch)[]) {
+    for (const f of PATCH_FIELDS[key] ?? []) next[f] = before[f]
   }
-  const add = plan.add ?? []
-  const remove = plan.remove ?? []
-  return (
-    <div className="glass space-y-3 rounded-xl p-4">
-      <div className="flex flex-wrap items-center gap-2">
-        {plan.error ? (
-          <Chip tone="--destructive" title={plan.error}>
-            Error
-          </Chip>
-        ) : plan.in_sync ? (
-          <Chip tone="--stage-offer">In sync</Chip>
-        ) : (
-          <Chip tone="--stage-in-progress">Out of sync</Chip>
-        )}
-        {plan.app ? (
-          <span className="text-xs text-muted-foreground">
-            {plan.app.domain} · policy “{plan.managed_policy?.name}”
-            {plan.managed_policy?.exists ? '' : ' (created on first sync)'}
-          </span>
-        ) : null}
-        <Button size="sm" variant="outline" className="ml-auto" onClick={onSync} disabled={syncing || !!plan.error}>
-          {syncing ? <Loader2 className="animate-spin" /> : <RefreshCw />} Sync now
-        </Button>
-      </div>
-      {plan.error ? <p className="text-xs text-destructive">{plan.error}</p> : null}
-      {add.length ? (
-        <FormField label="Will be allowed">
-          <EmailChips emails={add} tone="--stage-offer" />
-        </FormField>
-      ) : null}
-      {remove.length ? (
-        <FormField label="Will be removed">
-          <EmailChips emails={remove} tone="--destructive" />
-        </FormField>
-      ) : null}
-      {plan.other_policies_emails?.length ? (
-        <FormField label="Also allowed by other policies (not managed here)">
-          <EmailChips emails={plan.other_policies_emails} />
-        </FormField>
-      ) : null}
-    </div>
-  )
+  return next as AdminOverviewUser
 }
 
-function reportAccessSync(result: AccessSyncResult | undefined) {
-  if (result && !result.ok) toast.error(`Cloudflare Access sync failed: ${result.error}`)
+type Pending = { kind: 'test' | 'run' | 'remove'; user: AdminOverviewUser; open: boolean } | null
+
+function chatLabel(u: AdminOverviewUser) {
+  return chatName(u.whatsapp?.name) || 'their WhatsApp chat'
 }
 
-function fmtCost(v: number | null): string {
-  return v == null ? 'no price set' : `$${v.toFixed(2)}`
-}
-
-function CostsSection({ costs }: { costs: AdminCosts | null }) {
-  return (
-    <section className="space-y-3">
-      <h2 className="text-sm font-semibold">AI usage, last {costs?.days ?? 30} days</h2>
-      <p className="text-xs text-muted-foreground">
-        Tokens per profile from each profile’s own usage log. Cost is an estimate from JOBWRIGHT_LLM_PRICES.
-      </p>
-      {!costs ? (
-        <p className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Loader2 className="size-4 animate-spin" /> Loading…
-        </p>
-      ) : (
-        <div className="glass overflow-x-auto rounded-xl p-4">
-          <table className="w-full text-sm">
-            <thead className="text-left text-xs text-muted-foreground">
-              <tr>
-                <th className="pb-2 font-medium">Profile</th>
-                <th className="pb-2 text-right font-medium">Calls</th>
-                <th className="pb-2 text-right font-medium">Tokens</th>
-                <th className="pb-2 text-right font-medium">Est. cost</th>
-              </tr>
-            </thead>
-            <tbody className="tabular-nums">
-              {costs.users.map((u) => (
-                <tr key={u.user_id} className="border-t border-border/60">
-                  <td className="py-1.5">
-                    {u.name}
-                    {u.error ? <span className="ml-2 text-xs text-muted-foreground">({u.error})</span> : null}
-                  </td>
-                  <td className="py-1.5 text-right">{u.calls.toLocaleString()}</td>
-                  <td className="py-1.5 text-right">{u.total_tokens.toLocaleString()}</td>
-                  <td className="py-1.5 text-right">{fmtCost(u.cost_usd)}</td>
-                </tr>
-              ))}
-              <tr className="border-t border-border font-semibold">
-                <td className="pt-2">Total</td>
-                <td className="pt-2 text-right">{costs.total.calls.toLocaleString()}</td>
-                <td className="pt-2 text-right">{costs.total.total_tokens.toLocaleString()}</td>
-                <td className="pt-2 text-right">{fmtCost(costs.total.cost_usd)}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      )}
-    </section>
-  )
-}
-
-/** Hermes per-profile WhatsApp group instructions (~/.hermes/config.yaml). */
-function HermesChannelsCard() {
-  const [plan, setPlan] = useState<HermesChannelsPlan | null>(null)
-  const [error, setError] = useState('')
-  const [busy, setBusy] = useState(false)
-
-  const load = useCallback(() => {
-    setError('')
-    void getHermesChannels()
-      .then(setPlan)
-      .catch((e) => setError(errorMessage(e)))
-  }, [])
-
-  useEffect(load, [load])
-
-  async function apply() {
-    setBusy(true)
-    try {
-      const r = await applyHermesChannels()
-      setPlan(r)
-      if (r.dry_run) toast.info('Dry run: nothing written')
-      else if (r.written) toast.success('Saved. Restart Hermes to pick it up.')
-      else toast.info('Already up to date')
-      load()
-    } catch (e) {
-      toast.error(errorMessage(e))
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  const pending = plan?.entries.filter((e) => e.status !== 'unchanged') ?? []
-  return (
-    <section className="space-y-3">
-      <h2 className="text-sm font-semibold">WhatsApp group instructions</h2>
-      <p className="text-xs text-muted-foreground">
-        Each profile’s WhatsApp group gets its own Hermes instructions (only that person’s data). Hermes needs a restart
-        (<code>hermes gateway restart</code>) to pick up changes.
-      </p>
-      <div className="glass space-y-3 rounded-xl p-4">
-        {error ? (
-          <p className="text-sm text-destructive">{error}</p>
-        ) : !plan ? (
-          <p className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Loader2 className="size-4 animate-spin" /> Loading…
-          </p>
-        ) : (
-          <>
-            <ul className="space-y-1.5">
-              {plan.entries.map((e) => (
-                <li key={e.user_id} className="flex flex-wrap items-center gap-2 text-sm">
-                  <span className="font-medium">{e.name}</span>
-                  {e.status === 'unchanged' ? (
-                    <Chip tone="--stage-offer">Up to date</Chip>
-                  ) : (
-                    <Chip tone="--stage-in-progress" title={e.changes.join(', ')}>
-                      {e.status === 'add' ? 'Not set up' : 'Needs update'}
-                    </Chip>
-                  )}
-                </li>
-              ))}
-              {plan.skipped.map((s) => (
-                <li key={s.user_id} className="flex flex-wrap items-center gap-2 text-sm">
-                  <span className="font-medium">{s.name}</span>
-                  <Chip muted>{s.reason}</Chip>
-                </li>
-              ))}
-              {plan.orphans.map((jid) => (
-                <li key={jid} className="text-xs text-muted-foreground">
-                  Old jobwright entry for a group no profile uses: {jid}
-                </li>
-              ))}
-            </ul>
-            <div className="flex flex-wrap items-center gap-2">
-              <Button size="sm" onClick={() => void apply()} disabled={busy || !plan.changed}>
-                {busy ? <Loader2 className="animate-spin" /> : <MessageSquare />}
-                {plan.changed ? `Apply (${pending.length})` : 'Up to date'}
-              </Button>
-              <span className="text-xs text-muted-foreground">{plan.config_path}</span>
-            </div>
-          </>
-        )}
-      </div>
-    </section>
-  )
-}
-
-/** Admin: who can log in to which profile, alert routing, health. */
+/** Admin: people, their daily list settings, logins, alerts and system health. */
 export function AdminPage() {
   const { me, refresh: refreshMe } = useMe()
-  const [users, setUsers] = useState<AdminUser[] | null>(null)
-  const [settings, setSettings] = useState<AdminSettings | null>(null)
-  const [costs, setCosts] = useState<AdminCosts | null>(null)
-  const [newName, setNewName] = useState('')
-  const [newEmail, setNewEmail] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [toDelete, setToDelete] = useState<AdminUser | null>(null)
+  const [overview, setOverview] = useState<AdminOverview | null>(null)
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [expanded, setExpanded] = useState<string | null>(null)
+  const [saveState, setSaveState] = useState<Record<string, SaveState>>({})
+  const [adding, setAdding] = useState(false)
+  const [pending, setPending] = useState<Pending>(null)
   const [deleteData, setDeleteData] = useState(false)
-  const [access, setAccess] = useState<AccessPlan | null>(null)
-  const [syncing, setSyncing] = useState(false)
+  const [run, setRun] = useState<{ handle: RunHandle; name: string } | null>(null)
 
-  const loadAccess = useCallback(() => {
-    void getAccessPlan()
-      .then(setAccess)
-      .catch((e) => setAccess({ configured: true, error: errorMessage(e) }))
-  }, [])
+  const overviewRef = useRef(overview)
+  useEffect(() => {
+    overviewRef.current = overview
+  }, [overview])
+  const seq = useRef<Record<string, number>>({})
+  const savedTimers = useRef<Record<string, number>>({})
 
   const load = useCallback(() => {
-    void Promise.all([getAdminUsers(), getAdminSettings()])
-      .then(([u, s]) => {
-        setUsers(u.users)
-        setSettings(s)
-      })
-      .catch((e) => toast.error(errorMessage(e)))
-    void getAdminCosts()
-      .then(setCosts)
-      .catch((e) => toast.error(errorMessage(e)))
-    loadAccess()
-  }, [loadAccess])
+    setLoading(true)
+    setError('')
+    void getAdminOverview()
+      .then(setOverview)
+      .catch((e) => setError(errorMessage(e)))
+      .finally(() => setLoading(false))
+  }, [])
 
-  async function runAccessSync() {
-    setSyncing(true)
-    try {
-      const res = await syncAccess()
-      toast.success(res.applied ? 'Cloudflare Access updated' : 'Cloudflare Access already in sync')
-    } catch (e) {
-      toast.error(errorMessage(e))
-    } finally {
-      setSyncing(false)
-      loadAccess()
-    }
-  }
+  const refreshSystem = useCallback(() => {
+    void getAdminOverview()
+      .then((res) =>
+        setOverview((prev) => {
+          if (!prev) return res
+          const byId = new Map(res.users.map((u) => [u.user_id, u]))
+          return {
+            ...res,
+            users: prev.users.map((u) => {
+              const fresh = byId.get(u.user_id)
+              return fresh ? { ...u, hermes_status: fresh.hermes_status, whatsapp: fresh.whatsapp } : u
+            }),
+          }
+        }),
+      )
+      .catch(() => undefined)
+  }, [])
 
   useEffect(() => {
     if (me?.is_admin) load()
   }, [me?.is_admin, load])
 
-  async function saveEmails(u: AdminUser, emails: string[]) {
+  const stream = useRunStream(run?.handle ?? null, load)
+
+  const updateUser = useCallback((userId: string, fn: (u: AdminOverviewUser) => AdminOverviewUser) => {
+    setOverview((prev) =>
+      prev ? { ...prev, users: prev.users.map((u) => (u.user_id === userId ? fn(u) : u)) } : prev,
+    )
+  }, [])
+
+  const markSave = useCallback((userId: string, state: SaveState) => {
+    window.clearTimeout(savedTimers.current[userId])
+    setSaveState((s) => ({ ...s, [userId]: state }))
+    if (state === 'saved') {
+      savedTimers.current[userId] = window.setTimeout(
+        () => setSaveState((s) => ({ ...s, [userId]: undefined })),
+        2000,
+      )
+    }
+  }, [])
+
+  const patchUser = useCallback(
+    async (userId: string, patch: AdminUserPatch) => {
+      const before = overviewRef.current?.users.find((u) => u.user_id === userId)
+      if (!before) return
+      const n = (seq.current[userId] ?? 0) + 1
+      seq.current[userId] = n
+      updateUser(userId, (u) => applyPatch(u, patch))
+      markSave(userId, 'saving')
+      try {
+        const res = await patchAdminUser(userId, patch)
+        if (seq.current[userId] === n) {
+          if (res.user) updateUser(userId, () => res.user!)
+          markSave(userId, 'saved')
+        }
+        reportAccessSync(res.access_sync)
+        if (res.cron && (res.cron.ok === false || res.cron.error)) {
+          toast.error(`Saved, but the daily schedule was not updated: ${res.cron.error || 'unknown error'}`)
+        }
+        if (patch.emails || patch.whatsapp_target !== undefined || patch.name) refreshSystem()
+      } catch (e) {
+        updateUser(userId, (u) => revertPatch(u, before, patch))
+        if (seq.current[userId] === n) markSave(userId, 'error')
+        toast.error(`Could not save ${before.name}: ${errorMessage(e)}`)
+      }
+    },
+    [markSave, refreshSystem, updateUser],
+  )
+
+  const openAs = useCallback((userId: string, path: string) => {
+    void switchProfile(userId)
+      .then(() => window.location.assign(path))
+      .catch((e) => toast.error(errorMessage(e)))
+  }, [])
+
+  async function confirmPending() {
+    if (!pending) return
+    const u = pending.user
     try {
-      const res = await patchAdminUser(u.user_id, { emails })
-      setUsers((prev) => prev?.map((x) => (x.user_id === u.user_id ? { ...x, emails } : x)) ?? prev)
-      toast.success(`Logins updated for ${u.name}`)
-      reportAccessSync(res.access_sync)
-      loadAccess()
+      if (pending.kind === 'test') {
+        await sendAdminTestMessage(u.user_id)
+        toast.success(`Test message sent to ${chatLabel(u)}`)
+      } else if (pending.kind === 'run') {
+        const handle = await startAdminRun(u.user_id)
+        try {
+          await switchProfile(u.user_id)
+          void refreshMe()
+          toast.info(`Switched to ${u.name} to follow the run`)
+        } catch (e) {
+          toast.error(`Run started, but live progress is unavailable: ${errorMessage(e)}`)
+          return
+        }
+        setRun({ handle, name: u.name })
+      } else {
+        await deleteAdminUser(u.user_id, deleteData)
+        toast.success(`Removed ${u.name}`)
+        setDeleteData(false)
+        if (expanded === u.user_id) setExpanded(null)
+        load()
+        void refreshMe()
+      }
     } catch (e) {
       toast.error(errorMessage(e))
+      throw e
     }
   }
 
-  async function create() {
-    if (!newName.trim() || !newEmail.trim()) return
-    setBusy(true)
-    try {
-      const res = await createProfile(newName.trim(), [newEmail.trim().toLowerCase()])
-      toast.success('Profile created. They finish setup the first time they log in.')
-      reportAccessSync(res.access_sync)
-      setNewName('')
-      setNewEmail('')
-      load()
-      void refreshMe()
-    } catch (e) {
-      toast.error(errorMessage(e))
-    } finally {
-      setBusy(false)
-    }
+  function closePending(open: boolean) {
+    if (!open) setPending((p) => (p ? { ...p, open: false } : p))
   }
 
-  async function saveSettings(patch: Partial<AdminSettings>) {
-    try {
-      const res = await putAdminSettings(patch)
-      setSettings(res)
-      toast.success('Saved')
-      reportAccessSync(res.access_sync)
-      if (patch.admins) loadAccess()
-    } catch (e) {
-      toast.error(errorMessage(e))
-    }
-  }
-
-  async function confirmDelete() {
-    if (!toDelete) return
-    setBusy(true)
-    try {
-      await deleteAdminUser(toDelete.user_id, deleteData)
-      toast.success(`Removed ${toDelete.name}`)
-      setToDelete(null)
-      load()
-      void refreshMe()
-    } catch (e) {
-      toast.error(errorMessage(e))
-    } finally {
-      setBusy(false)
-    }
-  }
+  const pendingName = pending?.user.name ?? ''
+  const pendingChat = pending ? chatLabel(pending.user) : ''
 
   if (me && !me.is_admin) {
     return <p className="p-6 text-sm text-muted-foreground">Admins only.</p>
   }
+
+  const users = overview?.users ?? null
+  const setupPending = users?.filter((u) => !u.setup_complete).length ?? 0
 
   return (
     <div className="flex min-w-0 flex-1 flex-col">
       <header className={cn(APP_SHELL_HEADER, 'sticky top-0 z-20')}>
         <Shield className="size-4 text-muted-foreground" />
         <h1 className="text-xs font-bold uppercase tracking-wider">Admin</h1>
-        <Button size="icon-sm" variant="ghost" className="ml-auto" onClick={load} aria-label="Refresh">
-          <RefreshCw />
+        <Button
+          size="icon-sm"
+          variant="ghost"
+          className="ml-auto"
+          onClick={load}
+          disabled={loading}
+          aria-label="Refresh"
+        >
+          <RefreshCw className={cn(loading && 'animate-spin')} />
         </Button>
       </header>
       <main className="min-h-0 flex-1 overflow-auto p-4 md:p-6">
-        <div className="mx-auto w-full max-w-5xl space-y-8">
-          <section className="space-y-3">
-            <h2 className="text-sm font-semibold">Profiles</h2>
-            <p className="text-xs text-muted-foreground">
-              Each login email sees only its own profile. Login emails and admins are allowed in Cloudflare Access
-              automatically when it is configured below; otherwise add them by hand (Zero Trust → Access →
-              Applications → jobwright → policy).
-            </p>
-            {!users ? (
-              <p className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Loader2 className="size-4 animate-spin" /> Loading…
-              </p>
-            ) : (
-              <div className="space-y-3">
-                {users.map((u) => (
-                  <div key={u.user_id} className="glass space-y-3 rounded-xl p-4">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="text-sm font-semibold">{u.name}</p>
-                      <span className="text-xs text-muted-foreground">{u.user_id}</span>
-                      <HealthChip user={u} />
-                      <div className="ml-auto flex gap-1.5">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() =>
-                            void switchProfile(u.user_id)
-                              .then(() => window.location.assign('/'))
-                              .catch((e) => toast.error(errorMessage(e)))
-                          }
-                        >
-                          Open
-                        </Button>
-                        <Button size="icon-sm" variant="ghost" aria-label={`Remove ${u.name}`} onClick={() => setToDelete(u)}>
-                          <Trash2 />
-                        </Button>
-                      </div>
-                    </div>
-                    <FormField label="Login emails">
-                      <ChipInput
-                        values={u.emails}
-                        onChange={(emails) => void saveEmails(u, emails)}
-                        placeholder="name@example.com"
-                        addLabel="Add email"
-                      />
-                    </FormField>
-                    <p className="text-xs text-muted-foreground">
-                      WhatsApp: {u.whatsapp_target ? 'set' : 'not set'} · {u.schedule_label || u.schedule} ·{' '}
-                      {u.human_gate ? 'review first' : 'materials automatically'} · top {u.brief_top_n || 'all'}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            )}
-            <div className="glass grid gap-2 rounded-xl p-4 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
-              <FormField label="New person’s name">
-                <Input value={newName} onChange={(e) => setNewName(e.target.value)} className="h-8" />
-              </FormField>
-              <FormField label="Their login email">
-                <Input value={newEmail} type="email" onChange={(e) => setNewEmail(e.target.value)} className="h-8" />
-              </FormField>
-              <Button size="sm" onClick={() => void create()} disabled={busy || !newName.trim() || !newEmail.trim()}>
-                <UserPlus /> Create profile
+        <div className="mx-auto w-full max-w-5xl space-y-6">
+          {error && !overview ? (
+            <div className="flex flex-wrap items-center gap-2 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm">
+              <span className="min-w-0 flex-1 text-destructive">Could not load the admin overview: {error}</span>
+              <Button size="xs" variant="outline" onClick={load}>
+                Retry
               </Button>
             </div>
-          </section>
+          ) : (
+            <SystemStrip overview={overview} onChanged={refreshSystem} />
+          )}
 
-          <section className="space-y-3">
-            <h2 className="flex items-center gap-2 text-sm font-semibold">
-              <CloudCog className="size-4 text-muted-foreground" /> Cloudflare Access
-            </h2>
-            <p className="text-xs text-muted-foreground">
-              The “jobwright users” allow policy is kept equal to every login email plus admins. Other policies are
-              never changed.
-            </p>
-            <AccessCard plan={access} syncing={syncing} onSync={() => void runAccessSync()} />
-          </section>
-          <CostsSection costs={costs} />
-
-          <section className="space-y-4">
-            <h2 className="text-sm font-semibold">Admins and alerts</h2>
-            {settings ? (
-              <>
-                <FormField label="Admin emails" hint="Admins can open and manage every profile.">
-                  <ChipInput
-                    values={settings.admins}
-                    onChange={(admins) => void saveSettings({ admins })}
-                    placeholder="admin@example.com"
-                    addLabel="Add admin"
+          <section className="space-y-2">
+            <div className="flex items-center gap-2">
+              <h2 className="text-sm font-semibold">People</h2>
+              {users ? (
+                <span className="text-xs text-muted-foreground">
+                  {users.length}
+                  {setupPending ? ` · ${setupPending} setting up` : ''}
+                </span>
+              ) : null}
+              <Button size="sm" variant="outline" className="ml-auto" onClick={() => setAdding(true)}>
+                <UserPlus /> Add person
+              </Button>
+            </div>
+            <ul className="glass divide-y divide-border/60 overflow-hidden rounded-xl" aria-busy={!users && !error}>
+              {!users ? (
+                error ? (
+                  <li className="px-3 py-6 text-center text-xs text-muted-foreground">People could not be loaded.</li>
+                ) : (
+                  [0, 1, 2].map((i) => <PersonRowSkeleton key={i} />)
+                )
+              ) : !users.length ? (
+                <li className="px-3 py-6 text-center text-xs text-muted-foreground">
+                  No one yet. Add a person to start their daily list.
+                </li>
+              ) : (
+                users.map((u) => (
+                  <PersonRow
+                    key={u.user_id}
+                    user={u}
+                    expanded={expanded === u.user_id}
+                    onToggle={() => setExpanded((cur) => (cur === u.user_id ? null : u.user_id))}
+                    saveState={saveState[u.user_id]}
+                    onPatch={(patch) => void patchUser(u.user_id, patch)}
+                    onOpen={(path) => openAs(u.user_id, path)}
+                    onSendTest={() => setPending({ kind: 'test', user: u, open: true })}
+                    onRun={() => setPending({ kind: 'run', user: u, open: true })}
+                    onRemove={() => {
+                      setDeleteData(false)
+                      setPending({ kind: 'remove', user: u, open: true })
+                    }}
                   />
-                </FormField>
-                <FormField
-                  label="Send operator alerts to"
-                  hint="Where problems go: failed searches, empty lists, WhatsApp delivery failures, missed runs."
-                >
-                  <WhatsAppChatPicker
-                    value={settings.ops_target}
-                    onChange={(ops_target) => void saveSettings({ ops_target })}
-                  />
-                </FormField>
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() =>
-                      void ensureWatchdog()
-                        .then((r) => (r.ok ? toast.success('Daily health check scheduled (8:30 AM)') : toast.error(r.error || 'Failed')))
-                        .catch((e) => toast.error(errorMessage(e)))
-                    }
-                  >
-                    <Plus /> Schedule daily health check
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() =>
-                      void sendOpsTest()
-                        .then((r) => toast.info(r.result))
-                        .catch((e) => toast.error(errorMessage(e)))
-                    }
-                  >
-                    <Bell /> Send test alert
-                  </Button>
-                </div>
-              </>
-            ) : null}
+                ))
+              )}
+            </ul>
           </section>
 
-          {me?.is_admin ? <HermesChannelsCard /> : null}
+          <AdminsAlertsSection
+            settings={overview?.settings ?? null}
+            onSaved={(settings, refresh) => {
+              setOverview((prev) => (prev ? { ...prev, settings } : prev))
+              if (refresh) refreshSystem()
+            }}
+          />
+          <AiUsageSection />
         </div>
       </main>
 
-      <Dialog open={!!toDelete} onOpenChange={(v) => !v && setToDelete(null)}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Remove {toDelete?.name}?</DialogTitle>
-            <DialogDescription>
-              Their daily search stops and they lose access. Keep the data unless you are sure.
-            </DialogDescription>
-          </DialogHeader>
-          <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={deleteData} onChange={(e) => setDeleteData(e.target.checked)} />
-            Also delete their jobs, resume and files (cannot be undone)
-          </label>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setToDelete(null)}>
-              Cancel
-            </Button>
-            <Button variant="destructive" onClick={() => void confirmDelete()} disabled={busy}>
-              Remove
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <AddPersonDialog
+        open={adding}
+        onOpenChange={setAdding}
+        onCreated={() => {
+          load()
+          void refreshMe()
+        }}
+      />
+
+      <ConfirmDialog
+        open={pending?.kind === 'test' && pending.open}
+        onOpenChange={closePending}
+        title={`Send a test message to ${pendingName}?`}
+        description={`This posts a hello in ${pendingChat}. It is a real chat, so ${pendingName} will see it.`}
+        confirmLabel="Send test"
+        onConfirm={confirmPending}
+      />
+      <ConfirmDialog
+        open={pending?.kind === 'run' && pending.open}
+        onOpenChange={closePending}
+        title={`Run ${pendingName}’s search now?`}
+        description={`Searches and scores new jobs, then sends the list to ${pendingChat}. ${pendingName} will get a WhatsApp message.`}
+        confirmLabel="Run and send"
+        onConfirm={confirmPending}
+      />
+      <ConfirmDialog
+        open={pending?.kind === 'remove' && pending.open}
+        onOpenChange={closePending}
+        title={`Remove ${pendingName}?`}
+        description="Their daily search stops and they lose access. Keep the data unless you are sure."
+        confirmLabel="Remove"
+        destructive
+        onConfirm={confirmPending}
+      >
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={deleteData} onChange={(e) => setDeleteData(e.target.checked)} />
+          Also delete their jobs, resume and files (cannot be undone)
+        </label>
+      </ConfirmDialog>
+
+      <RunProgressDialog
+        open={!!run}
+        onClose={() => {
+          setRun(null)
+          load()
+        }}
+        title={run ? `Daily list for ${run.name}` : 'Daily list'}
+        description="Search, score, then send their WhatsApp list. Closing this window does not stop the run."
+        stageLabels={{ ...RUN_STAGE_LABELS, notify: 'Sending list' }}
+        run={stream}
+      />
     </div>
   )
 }

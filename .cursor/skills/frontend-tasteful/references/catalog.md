@@ -62,7 +62,7 @@ Reuse order: shadcn defaults → domain primitive → new token/class. Tailwind 
 | Edit tailor instructions then run | `CustomTailorDialog` |
 | LinkedIn-tinted contacts | `ConnectionsPanel` |
 | Gated dialogs | `DismissDialog` (close with outcome; "Not for me" asks why), `ManualAddModal`, `DailyBriefDialog` (pending count, next send, Send now; links to Profile → WhatsApp) |
-| WhatsApp chat selection + test send | `WhatsAppChatPicker` (Profile WhatsApp tab, onboarding, Admin) |
+| WhatsApp chat selection + test send | `WhatsAppChatPicker` (Profile WhatsApp tab, onboarding, Admin; `hideTest` when the caller owns test-send) |
 
 ### Profile / forms
 
@@ -73,9 +73,23 @@ Reuse order: shadcn defaults → domain primitive → new token/class. Tailwind 
 | Read-only pairs in dialogs | `DetailRow` / `DetailGrid` |
 | Match rules (fit, dealbreakers, locations, level, pay) | `CriteriaEditor` (`compact` in onboarding) |
 
+### Admin (`components/admin/`)
+
+| Use | Primitive |
+|-----|-----------|
+| System status chips (bridge, Access + Sync, Hermes + Apply, alerts target) with details popovers | `SystemStrip` |
+| One person per 44px expandable row (status dot, chat, time, cutoff, top N, new this week, cost) | `PersonRow` (+ `StatusDot`, `PersonRowSkeleton`) |
+| Inline auto-saving person settings (no Save button; optimistic + rollback in `AdminPage`) | `PersonSettings` (+ `SaveIndicator`) |
+| Current chat on one line, "Change" opens `WhatsAppChatPicker`, debounced commit | `ChatField` |
+| Create profile (name, email, optional chat) | `AddPersonDialog` |
+| Confirm before anything that reaches a real chat or deletes | `ConfirmDialog` (reject in `onConfirm` keeps it open) |
+| Collapsed-by-default page section with aria-expanded header | `CollapsibleSection` (`AdminsAlertsSection`, `AiUsageSection`) |
+| Status / time / cost formatting | `adminFormat.ts` (`personStatus`, `STATUS_TONE`, `fmtLastBrief`, `reportAccessSync`) |
+| Debounced save that flushes on unmount | `lib/useDebouncedCallback.ts` (600ms default) |
+
 ### Buttons
 
-`Button` from `ui/button`: `size="sm"` for actions; `outline` secondary; default primary; `variant="ai"` tailor; `prepare` for lane-tinted prepare CTAs; `icon-sm` for icon-only. Nav rows and list rows may use raw `<button>` (existing exception).
+`Button` from `ui/button`: `size="sm"` for actions; `size="xs"` (h-7, text-xs) for inline row actions and status-strip fixes; `outline` secondary; default primary; `variant="ai"` tailor; `prepare` for lane-tinted prepare CTAs; `icon-sm` for icon-only. Nav rows and list rows may use raw `<button>` (existing exception).
 
 **Chip vs Badge:** Chip = job/domain status. Badge = generic counts / run-stage chips in progress UI. Do not restyle `Badge` as a job chip.
 
