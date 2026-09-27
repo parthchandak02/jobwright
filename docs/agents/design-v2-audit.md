@@ -513,6 +513,29 @@ Files:
 - `.cursor/skills/frontend-tasteful/SKILL.md`, `references/catalog.md`: record v2 direction and new primitives.
 - Acceptance: the app builds with no page changes and looks calmer everywhere. No `text-[10px]`/`text-[11px]` left in `ui/` or the new primitives.
 
+### WP1 implementation notes
+
+Landed on branch `design-wp1`. Where the spec left a choice, the calm option was taken:
+
+- **Font:** system stack only (`--font-sans` → `--app-font-sans`). No Inter, no font package, no CDN. To self-host later, prepend the family to `--app-font-sans`.
+- **Radius:** `--radius` 10px; `rounded-md` 8px, `rounded-lg` 12px, `rounded-popover` 10px. `rounded-xl` is also 12px so the existing `rounded-xl` cards and lists match the card radius without page edits. Sheet and phone-dialog tops use `rounded-2xl` (16px).
+- **Body text:** `text-body` is 15/24 on phone and 14/22 from 768px (CSS variables `--fs-body` / `--lh-body`). `body` uses it.
+- **Chip size:** status chips keep the dense board size (`Chip size="sm"`, default) so the board keeps its density. The 28px / 32px phone size in 2.5 applies to removable form values (`ValueChip`, used by `ChipInput`). Chip text is `micro` (12px).
+- **Chip tint:** the 2.1 recipe is the `tone-tint` utility driven by `--tone`. `Chip tone` and the tinted `Badge` variants use it. `--query-daily` and `--query-weekly` now alias a neutral grey, so keyword chips read neutral before WP3 lands. Good-fit (`--stage-prepare`) and location (`--stage-applied`) chips are still set by their callers; WP3 should make them neutral.
+- **AI accent:** `Button variant="ai"` is accent-tinted (indigo) with no purple. `--tailor*` alias the accent, so no purple is left.
+- **Buttons:** added `primary` and `secondary`; `default` and `outline` are aliases. Added `destructive-ghost` for list-level Remove. Sizes: `default` 40/44, `sm` 36/44, `lg` 44/48, `icon` 40/44, `icon-sm` 32/36, `xs` 28 (32 on phone). `xs` and `icon-sm` keep their small look but get a 44px `touch-target` hit area on phones and coarse pointers.
+- **Focus ring:** a global `:focus-visible` outline (2px `--ring`, offset 2px). Text fields and select triggers use offset 0 plus an accent border, so the ring hugs the field. Legacy `focus-visible:ring-*` classes in pages still render; WP pages drop them as they migrate.
+- **Dialog → bottom sheet:** below 640px (Tailwind `sm`) rather than 768px, so existing `sm:max-w-*` page overrides keep working. Every phone is under 640px. Default desktop width is 480px (`size="form"`), with `picker` at 640px and `wide`.
+- **Safe area:** padding uses `env(safe-area-inset-bottom)` through `--safe-bottom`. `viewport-fit=cover` was not added to `index.html`. Without it iOS Safari reports 0 in normal browsing, which avoids content going under the notch in landscape. Add it only together with top and side insets.
+- **PageHeader on phone:** the sticky bar shows the menu, the title (`heading` size) and actions; the description stays visible under the bar as a caption. On desktop the header is not sticky (no bar), and the title is `title` 22px.
+- **MobileNav:** `MobileNavProvider` holds the open state in `App.tsx`. `MobileNav` (one sheet) renders there, and any page opens it through `PageHeader` / `MobileNavTrigger`. Welcome sits outside the provider, so the trigger renders nothing there. The phone menu theme row now shows its label, like the rail.
+- **Dark mode:** pill tabs and `Segmented` use `--pill-active` (lighter than the tray in dark). Dialogs and sheets use `--popover` (0.23 L) so they lift by lightness, not shadow.
+- **Glass:** `.glass`, `.glass-strong` and `.glass-interactive` are flat aliases (surface, hairline border, e1 on hover, no blur, no lift). The phone-only glass override was removed, so lane cards show the 7% tint on phones too.
+- **Extra primitives:** `ui/dropdown-menu` (for "⋯" menus and chip move actions), `ui/segmented` (Daily/Weekly per row), `ui/skeleton` and `PageColumn` / `Page` (a page shell composing `PageHeader`). These were added because WP2-WP5 can't edit `ui/*`.
+- **FormField:** `hint` is now visible text under the control. Existing callers' tooltip hints (all under 120 characters) become visible without page edits. `help` is the new popover prop. `label` accepts any node.
+- **Textarea:** auto-grows by default (`field-sizing: content`, with a JS fallback where unsupported). `rows` sets the minimum height, capped at 60vh. `autoGrow={false}` restores a fixed, resizable textarea.
+- **Not done in WP1 (owned elsewhere):** the sidebar stage icon colours and the board header control heights (WP6), the `QueryChipInput` embedded move button and its `text-[10px]` (WP3), the `ScoreBadge`/`ScoreEditor`/`JobsTable` `text-[10px]`/`[11px]` and the connections panel's 10-11px sizes (WP6).
+
 ### WP2: Welcome (one engineer)
 Files: `pages/WelcomePage.tsx` (split into `pages/welcome/` step components if it passes about 400 lines: `WelcomeShell.tsx`, `StepAbout.tsx`, `StepResume.tsx`, `StepSearch.tsx`, `StepFit.tsx`, `StepDailyList.tsx`, `StepFinish.tsx`), `components/ConnectedChat.tsx` (add `hideTest` prop only).
 - Uses `CriteriaEditor` read-only as-is, or passes `compact`; if a phone layout change to dealbreakers is needed, coordinate with WP3 (WP3 owns `CriteriaEditor`). WP2 may render its own simplified fit form to avoid conflict.
