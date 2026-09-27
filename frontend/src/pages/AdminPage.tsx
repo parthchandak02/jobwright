@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Bell, Loader2, Plus, RefreshCw, Shield, Trash2, UserPlus } from 'lucide-react'
+import { Bell, CloudCog, Loader2, Plus, RefreshCw, Shield, Trash2, UserPlus } from 'lucide-react'
 import { toast } from 'sonner'
 import { APP_SHELL_HEADER } from '@/components/BrandLogo'
 import { ChipInput } from '@/components/ChipInput'
@@ -20,12 +20,16 @@ import {
   createProfile,
   deleteAdminUser,
   ensureWatchdog,
+  getAccessPlan,
   getAdminSettings,
   getAdminUsers,
   patchAdminUser,
   putAdminSettings,
   sendOpsTest,
   switchProfile,
+  syncAccess,
+  type AccessPlan,
+  type AccessSyncResult,
   type AdminSettings,
   type AdminUser,
 } from '@/lib/api'
@@ -44,6 +48,85 @@ function HealthChip({ user }: { user: AdminUser }) {
   )
 }
 
+function EmailChips({ emails, tone }: { emails: string[]; tone?: string }) {
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {emails.map((e) => (
+        <Chip key={e} tone={tone}>
+          {e}
+        </Chip>
+      ))}
+    </div>
+  )
+}
+
+function AccessCard({ plan, syncing, onSync }: { plan: AccessPlan | null; syncing: boolean; onSync: () => void }) {
+  if (!plan) {
+    return (
+      <p className="flex items-center gap-2 text-sm text-muted-foreground">
+        <Loader2 className="size-4 animate-spin" /> Checking Cloudflare Access…
+      </p>
+    )
+  }
+  if (!plan.configured) {
+    return (
+      <div className="glass space-y-1 rounded-xl p-4 text-xs text-muted-foreground">
+        <Chip muted>Not configured</Chip>
+        <p>
+          Set CLOUDFLARE_API_TOKEN (Account → Access: Apps and Policies → Edit) and CLOUDFLARE_ACCOUNT_ID in .env to
+          sync logins automatically. Until then, add emails in Zero Trust → Access → Applications → jobwright.
+        </p>
+      </div>
+    )
+  }
+  const add = plan.add ?? []
+  const remove = plan.remove ?? []
+  return (
+    <div className="glass space-y-3 rounded-xl p-4">
+      <div className="flex flex-wrap items-center gap-2">
+        {plan.error ? (
+          <Chip tone="--destructive" title={plan.error}>
+            Error
+          </Chip>
+        ) : plan.in_sync ? (
+          <Chip tone="--stage-offer">In sync</Chip>
+        ) : (
+          <Chip tone="--stage-in-progress">Out of sync</Chip>
+        )}
+        {plan.app ? (
+          <span className="text-xs text-muted-foreground">
+            {plan.app.domain} · policy “{plan.managed_policy?.name}”
+            {plan.managed_policy?.exists ? '' : ' (created on first sync)'}
+          </span>
+        ) : null}
+        <Button size="sm" variant="outline" className="ml-auto" onClick={onSync} disabled={syncing || !!plan.error}>
+          {syncing ? <Loader2 className="animate-spin" /> : <RefreshCw />} Sync now
+        </Button>
+      </div>
+      {plan.error ? <p className="text-xs text-destructive">{plan.error}</p> : null}
+      {add.length ? (
+        <FormField label="Will be allowed">
+          <EmailChips emails={add} tone="--stage-offer" />
+        </FormField>
+      ) : null}
+      {remove.length ? (
+        <FormField label="Will be removed">
+          <EmailChips emails={remove} tone="--destructive" />
+        </FormField>
+      ) : null}
+      {plan.other_policies_emails?.length ? (
+        <FormField label="Also allowed by other policies (not managed here)">
+          <EmailChips emails={plan.other_policies_emails} />
+        </FormField>
+      ) : null}
+    </div>
+  )
+}
+
+function reportAccessSync(result: AccessSyncResult | undefined) {
+  if (result && !result.ok) toast.error(`Cloudflare Access sync failed: ${result.error}`)
+}
+
 /** Admin: who can log in to which profile, alert routing, health. */
 export function AdminPage() {
   const { me, refresh: refreshMe } = useMe()
@@ -54,6 +137,14 @@ export function AdminPage() {
   const [busy, setBusy] = useState(false)
   const [toDelete, setToDelete] = useState<AdminUser | null>(null)
   const [deleteData, setDeleteData] = useState(false)
+  const [access, setAccess] = useState<AccessPlan | null>(null)
+  const [syncing, setSyncing] = useState(false)
+
+  const loadAccess = useCallback(() => {
+    void getAccessPlan()
+      .then(setAccess)
+      .catch((e) => setAccess({ configured: true, error: errorMessage(e) }))
+  }, [])
 
   const load = useCallback(() => {
     void Promise.all([getAdminUsers(), getAdminSettings()])
@@ -62,7 +153,21 @@ export function AdminPage() {
         setSettings(s)
       })
       .catch((e) => toast.error(errorMessage(e)))
-  }, [])
+    loadAccess()
+  }, [loadAccess])
+
+  async function runAccessSync() {
+    setSyncing(true)
+    try {
+      const res = await syncAccess()
+      toast.success(res.applied ? 'Cloudflare Access updated' : 'Cloudflare Access already in sync')
+    } catch (e) {
+      toast.error(errorMessage(e))
+    } finally {
+      setSyncing(false)
+      loadAccess()
+    }
+  }
 
   useEffect(() => {
     if (me?.is_admin) load()
@@ -70,9 +175,11 @@ export function AdminPage() {
 
   async function saveEmails(u: AdminUser, emails: string[]) {
     try {
-      await patchAdminUser(u.user_id, { emails })
+      const res = await patchAdminUser(u.user_id, { emails })
       setUsers((prev) => prev?.map((x) => (x.user_id === u.user_id ? { ...x, emails } : x)) ?? prev)
       toast.success(`Logins updated for ${u.name}`)
+      reportAccessSync(res.access_sync)
+      loadAccess()
     } catch (e) {
       toast.error(errorMessage(e))
     }
@@ -82,8 +189,9 @@ export function AdminPage() {
     if (!newName.trim() || !newEmail.trim()) return
     setBusy(true)
     try {
-      await createProfile(newName.trim(), [newEmail.trim().toLowerCase()])
+      const res = await createProfile(newName.trim(), [newEmail.trim().toLowerCase()])
       toast.success('Profile created. They finish setup the first time they log in.')
+      reportAccessSync(res.access_sync)
       setNewName('')
       setNewEmail('')
       load()
@@ -97,8 +205,11 @@ export function AdminPage() {
 
   async function saveSettings(patch: Partial<AdminSettings>) {
     try {
-      setSettings(await putAdminSettings(patch))
+      const res = await putAdminSettings(patch)
+      setSettings(res)
       toast.success('Saved')
+      reportAccessSync(res.access_sync)
+      if (patch.admins) loadAccess()
     } catch (e) {
       toast.error(errorMessage(e))
     }
@@ -138,8 +249,9 @@ export function AdminPage() {
           <section className="space-y-3">
             <h2 className="text-sm font-semibold">Profiles</h2>
             <p className="text-xs text-muted-foreground">
-              Each login email sees only its own profile. New people also need their email allowed in Cloudflare
-              Access (Zero Trust → Access → Applications → jobwright → policy).
+              Each login email sees only its own profile. Login emails and admins are allowed in Cloudflare Access
+              automatically when it is configured below; otherwise add them by hand (Zero Trust → Access →
+              Applications → jobwright → policy).
             </p>
             {!users ? (
               <p className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -197,6 +309,17 @@ export function AdminPage() {
                 <UserPlus /> Create profile
               </Button>
             </div>
+          </section>
+
+          <section className="space-y-3">
+            <h2 className="flex items-center gap-2 text-sm font-semibold">
+              <CloudCog className="size-4 text-muted-foreground" /> Cloudflare Access
+            </h2>
+            <p className="text-xs text-muted-foreground">
+              The “jobwright users” allow policy is kept equal to every login email plus admins. Other policies are
+              never changed.
+            </p>
+            <AccessCard plan={access} syncing={syncing} onSync={() => void runAccessSync()} />
           </section>
 
           <section className="space-y-4">

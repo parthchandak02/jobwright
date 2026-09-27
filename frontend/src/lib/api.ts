@@ -374,7 +374,7 @@ export type OnboardingStatus = {
 
 export const getOnboardingStatus = () => apiFetch<OnboardingStatus>('/onboarding/status')
 
-export function createProfile(name: string, emails?: string[]): Promise<{ user_id: string; name: string }> {
+export function createProfile(name: string, emails?: string[]): Promise<{ user_id: string; name: string; access_sync?: AccessSyncResult }> {
   return apiFetch('/onboarding/profile', { method: 'POST', body: JSON.stringify({ name, emails }) })
 }
 
@@ -582,19 +582,40 @@ export type AdminUser = {
 export const getAdminUsers = () => apiFetch<{ users: AdminUser[] }>('/admin/users')
 
 export function patchAdminUser(userId: string, body: Partial<Pick<AdminUser, 'name' | 'emails' | 'human_gate' | 'brief_top_n'>>) {
-  return apiFetch(`/admin/users/${encodeURIComponent(userId)}`, { method: 'PATCH', body: JSON.stringify(body) })
+  return apiFetch<{ ok: boolean; emails: string[]; access_sync?: AccessSyncResult }>(
+    `/admin/users/${encodeURIComponent(userId)}`,
+    { method: 'PATCH', body: JSON.stringify(body) },
+  )
 }
 
 export function deleteAdminUser(userId: string, deleteData = false) {
   return apiFetch(`/admin/users/${encodeURIComponent(userId)}?delete_data=${deleteData}`, { method: 'DELETE' })
 }
 
-export type AdminSettings = { admins: string[]; ops_target: string }
+export type AdminSettings = { admins: string[]; ops_target: string; access_sync?: AccessSyncResult }
 export const getAdminSettings = () => apiFetch<AdminSettings>('/admin/settings')
 export function putAdminSettings(body: Partial<AdminSettings>) {
   return apiFetch<AdminSettings>('/admin/settings', { method: 'PUT', body: JSON.stringify(body) })
 }
 export const ensureWatchdog = () => apiFetch<{ ok: boolean; error?: string }>('/admin/watchdog', { method: 'POST' })
 export const sendOpsTest = () => apiFetch<{ result: string }>('/admin/ops-test', { method: 'POST' })
+
+export type AccessSyncResult = null | { ok: boolean; applied?: boolean; add?: string[]; remove?: string[]; error?: string }
+export type AccessPlan = {
+  configured: boolean
+  error?: string
+  app?: { id: string; name: string; domain: string }
+  managed_policy?: { id: string | null; name: string; exists: boolean }
+  current?: string[]
+  desired?: string[]
+  add?: string[]
+  remove?: string[]
+  other_policies_emails?: string[]
+  in_sync?: boolean
+  applied?: boolean
+  created?: boolean
+}
+export const getAccessPlan = () => apiFetch<AccessPlan>('/admin/access')
+export const syncAccess = () => apiFetch<AccessPlan>('/admin/access/sync', { method: 'POST' })
 
 export const previewNotify = () => apiFetch<NotifyResponse & { dry_run?: boolean }>('/notify/preview')

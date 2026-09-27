@@ -56,7 +56,9 @@ def create_profile(body: CreateProfileBody, request: Request, response: Response
     with config.user_context(uid):
         _ensure_user_storage()
     response.set_cookie(COOKIE_NAME, uid, httponly=True, samesite="lax", max_age=60 * 60 * 24 * 365, path="/")
-    return {"user_id": uid, "name": get_user(uid).name}
+    from jobwright.cf_access import auto_sync
+
+    return {"user_id": uid, "name": get_user(uid).name, "access_sync": auto_sync()}
 
 
 @router.post("/draft")

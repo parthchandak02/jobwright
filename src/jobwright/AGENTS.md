@@ -6,7 +6,7 @@ Nested agent notes for the Python package. Root context: [../../AGENTS.md](../..
 
 | Module | Role |
 |--------|------|
-| `cli.py` | Typer entry; `--user` before subcommands. Stages: discover, enrich, score, portfolio, tailor, cover, pdf, docx, connect. Also `tailor-job`, `notify`, `briefstats`, `eval`, `rescore`, `criteria show\|suggest`, `labels list\|export`, `preflight`, `ops brief-report\|watchdog\|set-target\|backup`, `users`. `apply` is dry-run unless `--live` |
+| `cli.py` | Typer entry; `--user` before subcommands. Stages: discover, enrich, score, portfolio, tailor, cover, pdf, docx, connect. Also `tailor-job`, `notify`, `briefstats`, `eval`, `rescore`, `criteria show\|suggest`, `labels list\|export`, `preflight`, `ops brief-report\|watchdog\|set-target\|backup`, `access status\|sync`, `users`. `apply` is dry-run unless `--live` |
 | `__main__.py` | `python -m jobwright` (dashboard spawns); records the exit code in the run registry |
 | `pipeline.py` | `STAGE_ORDER`, stage runners, `default_brief_stages()` (honors `human_gate`), per-user `pipeline_lock()` (flock), `logs/last_run.json`; prunes backlog junk after `score` |
 | `run_registry.py` | Durable pipeline runs in `users/<id>/logs/web_runs.json`; honors `JOBWRIGHT_WEB_RUN_ID` |
@@ -14,6 +14,7 @@ Nested agent notes for the Python package. Root context: [../../AGENTS.md](../..
 | `notify.py` | One WhatsApp list of new jobs + dashboard deep links; `send_via_hermes` (honors `JOBWRIGHT_HERMES_DRY_RUN`) |
 | `config.py` | Per-user paths on a `_PathState`; `set_active_user` (CLI, process default), `user_context(user_id)` (web, per request via ContextVar), `user_env()` (per-user `.env` read without touching `os.environ`) |
 | `users.py` | Registry at `<repo>/users/users.yaml`: users (`emails`, schedule, `human_gate`, `brief_top_n`, `apply_enabled`), `admins`, `ops_target`; `users_for_email`, `is_admin_email` |
+| `cf_access.py` | Cloudflare API v4 client: find the Access app (aud, else hostname), read app + reusable policies, `plan_sync` / `apply_sync` of the `jobwright users` allow policy only, `auto_sync` (best effort, web) |
 | `onboarding.py` | New profile bound to a login email; LLM draft of profile / searches / criteria from a resume; `apply_draft` |
 | `whatsapp.py` | Chat picker (`hermes send --list whatsapp --json` + bridge names; non-admins see only chats with their phone) and test send |
 | `hermes_cron.py` | Create/edit/remove `jobwright-brief-<user>` (`--no-agent --deliver local`, generated wrapper), `jobwright-ops-watchdog`, `jobwright-backup`; `hermes_dry_run()` |
@@ -75,6 +76,7 @@ Single-user doctor: `jobwright doctor`. Multi-profile: `jobwright --user <id> do
 | `tests/test_materials_tailor_api.py` | `POST /api/jobs/{url}/tailor` (spawns `tailor-job`) |
 | `tests/test_subtle_tailor.py` | Dashboard instruction prompts |
 | `tests/test_cover_letter_examples.py` | Cover-letter example PDF settings API |
+| `tests/test_cf_access.py` | Access allowlist plan/apply against a mocked Cloudflare API, admin-only routes, best-effort sync hooks |
 | `tests/test_hermes_cron.py` | Parse `hermes cron list`; create/edit brief cron; dry-run |
 
 Add tests for new provider behavior, user-resolution logic, or dashboard APIs.

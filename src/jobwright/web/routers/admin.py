@@ -9,7 +9,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from jobwright import config
+from jobwright import cf_access, config
 from jobwright.users import (
     describe_cron_schedule,
     get_user,
@@ -70,7 +70,8 @@ def patch_user(user_id: str, body: AdminUserPatch, request: Request) -> dict:
     if not fields:
         raise HTTPException(400, "Nothing to update")
     user = update_user(user_id, **fields)
-    return {"ok": True, "user_id": user.user_id, "emails": user.emails}
+    access = cf_access.auto_sync() if "emails" in fields else None
+    return {"ok": True, "user_id": user.user_id, "emails": user.emails, "access_sync": access}
 
 
 @router.delete("/users/{user_id}")
@@ -103,14 +104,33 @@ def put_settings(body: AdminSettings, request: Request) -> dict:
     identity = require_admin(request)
     from jobwright.ops import ops_target, set_ops_target
 
+    access = None
     if body.admins is not None:
         admins = [a for a in body.admins if a.strip()]
         if identity.email and identity.email not in [a.lower().strip() for a in admins]:
             raise HTTPException(400, "You cannot remove your own admin access.")
         set_admin_emails(admins)
+        access = cf_access.auto_sync()
     if body.ops_target is not None:
         set_ops_target(body.ops_target)
-    return {"admins": list_admin_emails(), "ops_target": ops_target()}
+    return {"admins": list_admin_emails(), "ops_target": ops_target(), "access_sync": access}
+
+
+@router.get("/access")
+def access_status(request: Request) -> dict:
+    require_admin(request)
+    return cf_access.status()
+
+
+@router.post("/access/sync")
+def access_sync(request: Request) -> dict:
+    require_admin(request)
+    if not cf_access.is_configured():
+        raise HTTPException(400, "CLOUDFLARE_API_TOKEN is not set.")
+    try:
+        return cf_access.apply_sync()
+    except cf_access.CFAccessError as exc:
+        raise HTTPException(502, str(exc)) from exc
 
 
 @router.post("/watchdog")
