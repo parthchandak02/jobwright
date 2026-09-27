@@ -586,28 +586,75 @@ export type AppStatus = {
 
 export const getStatus = () => apiFetch<AppStatus>('/status')
 
-export type AdminUser = {
+export type HealthLevel = 'ok' | 'warn' | 'fail' | null
+
+export type AdminOverviewUser = {
   user_id: string
   name: string
   emails: string[]
-  whatsapp_target: string
+  setup_complete: boolean
+  health: { level: HealthLevel; lines: string[] } | null
+  last_brief: { at: string | null; notified: number | null; status: 'ok' | 'failed' | 'skipped' | null } | null
+  whatsapp: { target: string | null; name: string | null; type: 'group' | 'dm' | null }
   schedule: string
-  schedule_label?: string
-  human_gate: boolean
+  schedule_label: string
+  hour: number | null
+  minute: number | null
+  notify_threshold: number | null
+  recommended_threshold: number | null
   brief_top_n: number
-  apply_enabled: boolean
-  cron: string
-  brief_today: string[]
-  health: AppStatus['health']
+  human_gate: boolean
+  weekly_summary: boolean
+  followup_days: number
+  counts: { new_7d: number; sent_7d: number; applied_total: number; open: number; followups_due: number }
+  cost_30d: { tokens: number; cost_usd: number | null }
+  hermes_status: 'unchanged' | 'add' | 'update' | 'skipped' | null
+  brief_cron: boolean | null
+  error: string | null
 }
 
-export const getAdminUsers = () => apiFetch<{ users: AdminUser[] }>('/admin/users')
+export type AdminOverview = {
+  bridge: string
+  access: { configured: boolean; in_sync: boolean; add: string[]; remove: string[]; error: string | null }
+  hermes: { changed: boolean; pending: number; error: string | null }
+  settings: { admins: string[]; ops_target: string; ops_target_name: string | null }
+  users: AdminOverviewUser[]
+}
 
-export function patchAdminUser(userId: string, body: Partial<Pick<AdminUser, 'name' | 'emails' | 'human_gate' | 'brief_top_n'>>) {
-  return apiFetch<{ ok: boolean; emails: string[]; access_sync?: AccessSyncResult }>(
+export const getAdminOverview = () => apiFetch<AdminOverview>('/admin/overview')
+
+export type AdminUserPatch = Partial<{
+  name: string
+  emails: string[]
+  whatsapp_target: string
+  hour: number
+  minute: number
+  schedule: string
+  notify_threshold: number
+  brief_top_n: number
+  human_gate: boolean
+  weekly_summary: boolean
+  followup_days: number
+}>
+
+export type AdminCronResult = null | { ok?: boolean; error?: string | null; [k: string]: unknown }
+
+export function patchAdminUser(userId: string, body: AdminUserPatch) {
+  return apiFetch<{ user?: AdminOverviewUser; access_sync?: AccessSyncResult; cron?: AdminCronResult }>(
     `/admin/users/${encodeURIComponent(userId)}`,
     { method: 'PATCH', body: JSON.stringify(body) },
   )
+}
+
+export function sendAdminTestMessage(userId: string) {
+  return apiFetch<{ sent: boolean; target: string }>(`/admin/users/${encodeURIComponent(userId)}/test-message`, {
+    method: 'POST',
+    body: '{}',
+  })
+}
+
+export function startAdminRun(userId: string) {
+  return apiFetch<RunHandle>(`/admin/users/${encodeURIComponent(userId)}/run`, { method: 'POST', body: '{}' })
 }
 
 export function deleteAdminUser(userId: string, deleteData = false) {
@@ -651,7 +698,6 @@ export type AccessPlan = {
   applied?: boolean
   created?: boolean
 }
-export const getAccessPlan = () => apiFetch<AccessPlan>('/admin/access')
 export const syncAccess = () => apiFetch<AccessPlan>('/admin/access/sync', { method: 'POST' })
 export type HermesChannelEntry = {
   user_id: string
@@ -671,7 +717,6 @@ export type HermesChannelsPlan = {
   written?: boolean
   dry_run?: boolean
 }
-export const getHermesChannels = () => apiFetch<HermesChannelsPlan>('/admin/hermes-channels')
 export const applyHermesChannels = () =>
   apiFetch<HermesChannelsPlan>('/admin/hermes-channels/apply', { method: 'POST', body: '{}' })
 

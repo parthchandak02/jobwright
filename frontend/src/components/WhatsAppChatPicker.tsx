@@ -13,13 +13,15 @@ type Props = {
   /** Phone (with country code) used to find chats that include the user. */
   phone?: string
   className?: string
+  /** Hide the built-in test-send button (when the caller provides its own). */
+  hideTest?: boolean
 }
 
 /**
  * Pick where the daily job list is posted. Admins see every chat the bot is in;
  * everyone else sees chats that include their phone number, or a direct message.
  */
-export function WhatsAppChatPicker({ value, onChange, phone, className }: Props) {
+export function WhatsAppChatPicker({ value, onChange, phone, className, hideTest }: Props) {
   const [data, setData] = useState<WhatsAppChats | null>(null)
   const [loading, setLoading] = useState(false)
   const [filter, setFilter] = useState('')
@@ -122,9 +124,11 @@ export function WhatsAppChatPicker({ value, onChange, phone, className }: Props)
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <Button type="button" size="sm" variant="outline" disabled={!value || testing} onClick={() => void test()}>
-          {testing ? <Loader2 className="animate-spin" /> : <Send />} Send a test message
-        </Button>
+        {hideTest ? null : (
+          <Button type="button" size="sm" variant="outline" disabled={!value || testing} onClick={() => void test()}>
+            {testing ? <Loader2 className="animate-spin" /> : <Send />} Send a test message
+          </Button>
+        )}
         <button
           type="button"
           className="text-xs text-muted-foreground underline-offset-2 hover:underline"
