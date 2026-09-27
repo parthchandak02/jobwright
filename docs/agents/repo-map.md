@@ -11,7 +11,7 @@ Detailed paths for agents. Summary: [../../AGENTS.md](../../AGENTS.md).
 | `src/jobwright/run_registry.py` | Durable Auto Search / CLI runs (`users/<id>/logs/web_runs.json`) |
 | `src/jobwright/resume.py` | PDF source of truth → cached `resume/base.md` |
 | `src/jobwright/notify.py` | Daily WhatsApp job list + deep links |
-| `src/jobwright/hermes_cron.py` | Create/edit/remove `jobwright-brief-<user>`, `jobwright-ops-watchdog`, `jobwright-backup` (`--no-agent --deliver local`); pause legacy send/check crons; `JOBWRIGHT_HERMES_DRY_RUN` |
+| `src/jobwright/hermes_cron.py` | Create/edit/remove `jobwright-brief-<user>`, `jobwright-ops-watchdog`, `jobwright-backup`, `jobwright-weekly-summary` (`--no-agent --deliver local`); pause legacy send/check crons; `JOBWRIGHT_HERMES_DRY_RUN` |
 | `src/jobwright/ops.py` | Brief report, watchdog, alerts to `ops_target`, backups |
 | `src/jobwright/preflight.py` | Pre-run checks; `--fix` installs Playwright Chromium |
 | `src/jobwright/onboarding.py` | New profile + LLM draft from resume |
@@ -72,7 +72,7 @@ WhatsApp resolve: `scripts/resolve_user_from_whatsapp.sh 'whatsapp:…'`.
 | `ops_pm2.sh` | Alias → `restart.sh` |
 | `dashboard_deploy.sh` | Alias → `restart.sh --prod-ui` |
 
-Cron names: `jobwright-brief-<id>` (one daily brief per user, ~6:00, `--deliver local`). It runs the pipeline then `jobwright notify`, which sends ONE WhatsApp message listing new jobs with dashboard deep links (`jobwright.parthchandak.info/jobs/<job_id>`), then `ops brief-report`. Plus `jobwright-ops-watchdog` (08:30) and `jobwright-backup` (02:30). No send/check crons.
+Cron names: `jobwright-brief-<id>` (one daily brief per user, ~6:00, `--deliver local`). It runs the pipeline then `jobwright notify`, which sends ONE WhatsApp message listing new jobs with dashboard deep links (`jobwright.parthchandak.info/jobs/<job_id>`), then `ops brief-report`. Plus `jobwright-ops-watchdog` (08:30), `jobwright-backup` (02:30) and `jobwright-weekly-summary` (Sunday 18:00, `jobwright summary`). No send/check crons.
 
 Kanban hosting: [dashboard-hosting.md](dashboard-hosting.md) (`jobwright.parthchandak.info`; local HMR `http://127.0.0.1:5120`).
 

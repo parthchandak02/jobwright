@@ -58,6 +58,7 @@ Answer: load **pp-job-apply** / **jobwright** (this skill), plus **hermes-cron-j
 | `jobwright-brief-<user_id>` | `wrap_jobwright-brief-<user_id>.sh` | `--no-agent --deliver local` | Daily Brief: preflight, pipeline, `jobwright notify` (one WhatsApp list), `ops brief-report` (detached) |
 | `jobwright-ops-watchdog` | `jobwright_ops_watchdog.sh` | `--no-agent --deliver local` | 08:30: `jobwright ops watchdog` alerts `ops_target` when a brief never started or never finished |
 | `jobwright-backup` | `jobwright_backup.sh` | `--no-agent --deliver local` | 02:30: `jobwright ops backup` to `JOBWRIGHT_BACKUP_DIR` (alerts on failure) |
+| `jobwright-weekly-summary` | `jobwright_weekly_summary.sh` | `--no-agent --deliver local` | Sunday 18:00: `jobwright summary` for every profile (per-user opt-out `weekly_summary`) |
 
 There is **one** brief cron per user plus the two shared ops crons. The old `jobwright-send-*` (digest delivery) and `jobwright-check-*` (watchdog) crons are retired: the brief sends the notify itself.
 
@@ -167,7 +168,7 @@ Repeat for every user in the registry. Pause any `job-apply-*`, `jobwright-send-
 
 ```bash
 cd "${JOBWRIGHT_REPO}"
-.venv/bin/jobwright ops install-crons --backup-dest "$JOBWRIGHT_BACKUP_DIR"   # briefs (deliver local) + watchdog 30 8 + backup 30 2
+.venv/bin/jobwright ops install-crons --backup-dest "$JOBWRIGHT_BACKUP_DIR"   # briefs (deliver local) + watchdog 30 8 + backup 30 2 + weekly summary 0 18 * * 0
 .venv/bin/jobwright ops set-target 'whatsapp:<operator jid>'                  # where alerts go
 ```
 

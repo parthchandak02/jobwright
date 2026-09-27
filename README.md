@@ -207,7 +207,7 @@ Safety: dry-run is the default, LinkedIn jobs can appear in the brief with mater
 jobwright runs per-profile prep on a Hermes cron and sends one WhatsApp notification per day to each user's group:
 
 - **Morning brief:** one cron per user (`jobwright-brief-<user>`, created or updated when the brief time is saved in the dashboard) runs preflight, the pipeline, `jobwright notify`, then an operator report.
-- **Ops crons:** `jobwright-ops-watchdog` (missed runs) and `jobwright-backup` (nightly `jobwright ops backup`). Alerts go to `ops_target` in `users/users.yaml` (`jobwright ops set-target`). `jobwright ops install-crons` creates or updates all of them.
+- **Ops crons:** `jobwright-ops-watchdog` (missed runs), `jobwright-backup` (nightly `jobwright ops backup`) and `jobwright-weekly-summary` (Sunday recap per user, `jobwright summary`). Alerts go to `ops_target` in `users/users.yaml` (`jobwright ops set-target`). `jobwright ops install-crons` creates or updates all of them.
 - **Notification:** a single text message listing the newly prepared jobs, each with a dashboard deep link (`jobwright.parthchandak.info/jobs/<job_id>`). If nothing new is ready, nothing is sent.
 - **Review + apply:** happen in the dashboard, not over chat. Open a job's deep link to see its details, materials, and connections; live apply stays gated behind per-user enablement.
 
