@@ -201,3 +201,12 @@ def test_unknown_location_caps_unless_remote_or_confirmed():
     job["full_description"] = "This is a fully remote role."
     score, _, _ = matcher.apply_gates(_reply(fit=9, loc=None), job, ctx)
     assert score == 9
+
+
+def test_derived_criteria_honor_stored_notify_threshold():
+    from jobwright.scoring.criteria import load_criteria
+
+    profile = {"job_preferences": {"target_roles": ["Program Manager"]}, "match_criteria": {"notify_threshold": 6}}
+    c = load_criteria(profile)
+    assert c.derived and c.notify_threshold == 6
+    assert load_criteria({"match_criteria": {"notify_threshold": "x"}}).notify_threshold == 7

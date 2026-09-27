@@ -149,7 +149,13 @@ def load_criteria(profile: dict[str, Any] | None) -> MatchCriteria:
     raw = (profile or {}).get("match_criteria")
     if isinstance(raw, dict) and (raw.get("dealbreakers") or raw.get("summary") or raw.get("must_haves")):
         return parse_criteria(raw)
-    return derive_criteria(profile)
+    criteria = derive_criteria(profile)
+    if isinstance(raw, dict) and raw.get("notify_threshold"):
+        try:
+            criteria.notify_threshold = max(1, min(10, int(raw["notify_threshold"])))
+        except (TypeError, ValueError):
+            pass
+    return criteria
 
 
 def render_criteria(criteria: MatchCriteria) -> str:
