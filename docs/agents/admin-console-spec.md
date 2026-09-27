@@ -56,6 +56,17 @@ Sends the standard hello to that user's `whatsapp_target` (403 unless admin; 400
 ### `POST /api/admin/users/{user_id}/run`
 Starts that user's daily brief (same as their Auto Search default stages, runs in that user's context, tagged in the run registry). Returns the run handle used by `RunProgressDialog`.
 
+### Implementation notes (backend, as built)
+
+- `access` also carries `configured: null` when the Cloudflare call errored or timed out; `in_sync` is `null` when not configured.
+- `hermes.pending` = users with status `add` or `update`; `hermes.error` is set when `~/.hermes/config.yaml` is missing or unreadable (rows then have `hermes_status: null`).
+- Each user row adds `"error": string|null` (the failure line when the profile could not be read). `brief_cron` is `null` when `hermes cron list` failed. `whatsapp.name` falls back to the chat id's local part when the chat list is slow or missing.
+- System sources (bridge, Access, Hermes plan, chat list, cron list) run in parallel, capped at 6 s total (`OVERVIEW_TIMEOUT`); a slow source degrades to its fallback, never an error.
+- `last_brief` reads the newest `BRIEF_STATUS_<date>` file: `at` = file mtime, `status` from its `notify_sent N` / `notify_skipped` / `notify_failed` (or `preflight_failed`) line.
+- `setup_complete` = the `resume` and `profile` steps of `onboarding_status` (not its full `complete`, which also needs searches + chat).
+- PATCH validation (400): `hour`/`minute` must come together and not with `schedule`; `notify_threshold` 1-10; `brief_top_n` 0-100 (0 = all); `followup_days` 1-90; `name` non-empty; `notify_threshold` needs an existing, valid `profile.json`. `whatsapp_target: ""` clears the chat. The response also keeps the legacy `ok`, `user_id`, `emails` keys so the v1 Admin page keeps working.
+- `/run` returns the same handle as `POST /api/run` (`run_id`, `pid`, `user`, `stages`, `log_path`, `kind`). The run is registered in that person's `web_runs.json`; `GET /api/stream/{run_id}` resolves runs for the caller's active profile, so the UI must switch to that profile (`POST /api/session`) before opening `RunProgressDialog`, or show the handle only.
+
 ## Quality bar
 
 - Compact: 44px collapsed rows on desktop, no card-in-card nesting, consistent 12/14px type scale from the existing design tokens, icons from lucide.
