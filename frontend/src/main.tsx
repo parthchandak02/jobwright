@@ -9,6 +9,7 @@ import App from './App'
 import './index.css'
 
 const WelcomePage = lazy(() => import('@/pages/WelcomePage').then((m) => ({ default: m.WelcomePage })))
+const CalibrationPage = lazy(() => import('@/pages/CalibrationPage').then((m) => ({ default: m.CalibrationPage })))
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
@@ -22,6 +23,14 @@ createRoot(document.getElementById('root')!).render(
                 element={
                   <Suspense fallback={null}>
                     <WelcomePage />
+                  </Suspense>
+                }
+              />
+              <Route
+                path="/welcome/rate"
+                element={
+                  <Suspense fallback={null}>
+                    <CalibrationPage />
                   </Suspense>
                 }
               />

@@ -122,8 +122,9 @@ export function StepFinish({ settings, profile, starting, onEdit, onBack, onBoar
         </MutedList>
       )}
       <p className="mt-6 text-body text-muted-foreground">
-        Your first search takes 30 to 60 minutes, and new matches appear on your board as they’re found. After that,
-        your daily list arrives once a day at the time you picked.
+        Your first search takes 30 to 60 minutes, and new matches appear on your board as they’re found. While we
+        search, rate a few jobs so your list gets sharper. After that, your daily list arrives once a day at the time
+        you picked.
       </p>
       <Button type="button" variant="link" className="touch-target mt-2 h-auto px-0 md:hidden" onClick={onBoard} disabled={starting}>
         Go to my board without searching

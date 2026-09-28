@@ -43,6 +43,7 @@ import { ManualAddModal } from '@/components/ManualAddModal'
 import { MobileNav, MobileNavProvider, MobileNavTrigger } from '@/components/MobileNav'
 import { SidebarActionButton } from '@/components/SidebarActionButton'
 import { StatusBanner } from '@/components/StatusBanner'
+import { CalibrationBanner } from '@/components/CalibrationBanner'
 import { ViewModeTabs, type ViewMode } from '@/components/ViewModeTabs'
 import {
   createKanbanCollisionDetection,
@@ -158,6 +159,7 @@ export default function App() {
   const search = searchQuery.trim().toLowerCase()
 
   const allJobs = useMemo(() => (board ? board.stages.flatMap((s) => board.columns[s] || []) : []), [board])
+  const ratedOnBoard = useMemo(() => allJobs.filter((j) => j.user_fit_score != null).length, [allJobs])
 
   function openJob(job: JobCard) {
     navigate(`/jobs/${job.job_id}${location.search}`)
@@ -386,6 +388,7 @@ export default function App() {
             </header>
 
             <main className="min-h-0 flex-1 overflow-auto p-3 md:p-4">
+              {board && allJobs.length > 0 ? <CalibrationBanner refreshKey={ratedOnBoard} /> : null}
               {worthOnly ? (
                 <div className="mb-3 flex items-center gap-2">
                   <Chip>Worth a look: scored 5–6, no dealbreakers</Chip>

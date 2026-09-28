@@ -429,6 +429,26 @@ export function draftSetup(file: File | null, hints: DraftHints): Promise<Onboar
   return sendForm<OnboardingDraft>('/onboarding/draft', body, 'POST')
 }
 
+export type CalibrationJob = {
+  job_id: string
+  url: string
+  title: string
+  company: string | null
+  location: string | null
+  fit_score: number
+  reason: string
+}
+
+export type Calibration = {
+  ready: boolean
+  scored_count: number
+  rated_count: number
+  target: number
+  jobs: CalibrationJob[]
+}
+
+export const getCalibration = () => apiFetch<Calibration>('/onboarding/calibration')
+
 export function confirmSetup(draft: OnboardingDraft): Promise<OnboardingStatus> {
   return apiFetch('/onboarding/confirm', { method: 'POST', body: JSON.stringify(draft) })
 }
@@ -505,7 +525,7 @@ export type StageHistoryEntry = { from_stage: string | null; to_stage: string; a
 export const getJobHistory = (job: JobCard) =>
   apiFetch<{ history: StageHistoryEntry[] }>(`${jobPath(job)}/history`)
 
-export function rateJob(job: JobCard, score: number, reasons: string[], note?: string) {
+export function rateJob(job: Pick<JobCard, 'job_id' | 'url'>, score: number, reasons: string[], note?: string) {
   return apiFetch<JobCard>(jobPath(job), {
     method: 'PATCH',
     body: JSON.stringify({ user_fit_score: score, user_score_reasons: reasons, user_score_rationale: note || '' }),

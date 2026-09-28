@@ -18,6 +18,7 @@ Nested agent notes for the Python package. Root context: [../../AGENTS.md](../..
 | `users.py` | Registry at `<repo>/users/users.yaml`: users (`emails`, schedule, `human_gate`, `brief_top_n`, `apply_enabled`, `weekly_summary`, `followup_days`), `admins`, `ops_target`; `users_for_email`, `is_admin_email` |
 | `cf_access.py` | Cloudflare API v4 client: find the Access app (aud, else hostname), read app + reusable policies, `plan_sync` / `apply_sync` of the `jobwright users` allow policy only, `auto_sync` (best effort, web) |
 | `onboarding.py` | New profile bound to a login email; LLM draft of profile / searches / criteria from a resume; `apply_draft`; `onboarding_status` (complete = resume + profile + searches; no chat needed), `is_set_up` (resume + profile: gates brief crons and the welcome) |
+| `calibration.py` | Optional post-setup "rate a few jobs": `select_jobs` mixes borderline (5-7, twice as often), high and low scores, one per company/title, skips labeled/closed/dead jobs; `calibration()` backs `GET /api/onboarding/calibration` (no LLM) |
 | `welcome.py` | One-time welcome in the person's chat + operator heads-up to `ops_target` when setup creates their brief cron (`PUT /api/profile`, admin `PATCH`); `send_welcome_async`; marker `logs/welcome_sent.json`; no-op in dry run. Real messages: never trigger for a real profile to test |
 | `whatsapp.py` | Chat list for the admin picker (`hermes send --list whatsapp --json` + bridge names; `GET /api/whatsapp/chats` is admin-only), `chat_name` (display name for a target; resolved group names cached 10 minutes in `_name_cache` so the admin overview doesn't flip to raw ids), test send |
 | `hermes_cron.py` | Create/edit/remove `jobwright-brief-<user>` (`--no-agent --deliver local`, generated wrapper), `jobwright-ops-watchdog`, `jobwright-backup`, `jobwright-weekly-summary`; `brief_cron_installed` (wrapper exists); `hermes_dry_run()` |
@@ -88,6 +89,7 @@ Single-user doctor: `jobwright doctor`. Multi-profile: `jobwright --user <id> do
 | `tests/test_cf_access.py` | Access allowlist plan/apply against a mocked Cloudflare API, admin-only routes, best-effort sync hooks |
 | `tests/test_followups_summary.py` | Follow-up due logic, snooze, no-response close, notify appendix, weekly summary content and mark-then-send, weekly cron |
 | `tests/test_hermes_channels.py` | Hermes config round-trip, per-user prompts, orphans, idempotency, dry-run, backup, CLI + admin API |
+| `tests/test_calibration.py` | Calibration selection (band mix, dedupe, exclusions) and `GET /api/onboarding/calibration` with ratings through the label route |
 | `tests/test_welcome.py` | Welcome text, send once + operator heads-up, skip without chat or in dry run, failed send retried next time |
 | `tests/test_hermes_cron.py` | Parse `hermes cron list`; create/edit brief cron; dry-run |
 
