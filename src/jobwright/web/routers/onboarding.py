@@ -116,3 +116,12 @@ def confirm(body: ConfirmBody, request: Request) -> dict:
         draft["profile"].pop(section, None)
     apply_draft(draft)
     return onboarding_status()
+
+
+@router.get("/calibration")
+def calibration(request: Request) -> dict:
+    """Up to 10 scored jobs worth rating right after setup (no LLM calls)."""
+    from jobwright.calibration import calibration as _calibration
+
+    current_user_id(request)
+    return _calibration()

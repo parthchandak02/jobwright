@@ -6,8 +6,8 @@ import { cn } from '@/lib/utils'
 export const PROGRESS_LABELS = ['About you', 'Resume', 'Your search', 'How we judge fit', 'Daily list', 'Cover letters']
 
 type ShellProps = {
-  /** Zero-based index into PROGRESS_LABELS; `PROGRESS_LABELS.length` means finished. */
-  progress: number
+  /** Zero-based index into PROGRESS_LABELS; `PROGRESS_LABELS.length` means finished. Omit to hide. */
+  progress?: number
   email?: string
   children: ReactNode
 }
@@ -59,7 +59,7 @@ export function WelcomeShell({ progress, email, children }: ShellProps) {
             <BrandLogo className="size-7 text-foreground" />
             <span className="text-subheading text-foreground">jobwright</span>
           </div>
-          <Progress progress={progress} />
+          {progress != null ? <Progress progress={progress} /> : null}
           <div className="pt-6 pb-8 md:pt-8 md:pb-12">{children}</div>
         </div>
       </div>

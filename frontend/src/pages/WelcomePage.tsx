@@ -209,8 +209,7 @@ export function WelcomePage() {
     setBusy(true)
     try {
       await startRun([])
-      toast.success('Your first search is running. New matches appear on the board over the next 30–60 minutes.')
-      navigate('/')
+      navigate('/welcome/rate')
     } catch (e) {
       toast.error(errorMessage(e))
       navigate('/')

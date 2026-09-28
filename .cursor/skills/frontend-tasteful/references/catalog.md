@@ -112,7 +112,9 @@ Reuse order: shadcn defaults → domain primitive → new token/class. Tailwind 
 | Use | Primitive |
 |-----|-----------|
 | Page shell (560px column, progress over 6 steps: About you, Resume, Your search, How we judge fit, Daily list, Cover letters) and one step (title, description, back, actions, submit) | `WelcomeShell` (+ `PROGRESS_LABELS`), `WelcomeStep` |
-| Steps (composed by `pages/WelcomePage.tsx`) | `StepAbout`, `StepResume`, `StepSearch`, `StepFit`, `StepDailyList` (picker for admins, `ConnectedChat hideTest` otherwise), `StepLetters`, `StepFinish` (review + start) |
+| Steps (composed by `pages/WelcomePage.tsx`) | `StepAbout`, `StepResume`, `StepSearch`, `StepFit`, `StepDailyList` (picker for admins, `ConnectedChat hideTest` otherwise), `StepLetters`, `StepFinish` (review + start; start opens `/welcome/rate`) |
+| Optional "Rate a few jobs" after Finish (`/welcome/rate`): waiting `EmptyState` + progress while jobs are scored (polls `GET /api/onboarding/calibration`), one card at a time with Good fit / Not for me + `ReasonChips`, Skip, Finish later | `pages/CalibrationPage.tsx` (inside `WelcomeShell` with no `progress`, which hides the 6-step bar) |
+| Board nudge until 10 ratings (dismissal per profile in localStorage, `lib/calibration.ts`) | `CalibrationBanner` (`refreshKey` = rated cards on the board) |
 | Welcome-local helpers (not yet promoted) | `parts.tsx`: `Disclosure` (optional/advanced fields), `DropZone` (PDF-only drop/upload), `MutedList` |
 
 ### Admin (`components/admin/`)
