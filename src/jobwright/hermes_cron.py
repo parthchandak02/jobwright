@@ -186,6 +186,11 @@ def write_brief_wrapper(user_id: str) -> str:
     return name
 
 
+def brief_cron_installed(user_id: str) -> bool:
+    """Cheap check: the per-user wrapper exists (written whenever the brief cron is ensured)."""
+    return (_hermes_scripts_dir() / f"wrap_{brief_cron_name(user_id)}.sh").exists()
+
+
 def ensure_brief_cron(user_id: str, schedule: str) -> dict:
     """Create or update ``jobwright-brief-<user>`` (no-agent, silent delivery).
 

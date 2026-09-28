@@ -7,7 +7,7 @@ from pydantic import BaseModel
 
 from jobwright import __version__, config
 from jobwright.database import FUNNEL_STAGES, get_connection, get_stats
-from jobwright.hermes_cron import brief_cron_name, ensure_brief_cron
+from jobwright.hermes_cron import brief_cron_installed, brief_cron_name, ensure_brief_cron
 from jobwright.users import (
     DEFAULT_FOLLOWUP_DAYS,
     _normalize_whatsapp_target,
@@ -124,6 +124,7 @@ class ProfileUpdate(BaseModel):
 def update_profile(body: ProfileUpdate, request: Request) -> dict:
     """Save daily-brief schedule and WhatsApp target, then edit the Hermes cron."""
     user_id = current_user_id(request)
+    before = get_user(user_id)
 
     fields: dict = {}
     if body.schedule is not None:
@@ -152,7 +153,8 @@ def update_profile(body: ProfileUpdate, request: Request) -> dict:
     user = get_user(user_id)
     assert user is not None
     payload = _profile_payload(user_id)
-    if "schedule" in fields or "whatsapp_target" in fields:
+    schedule_changed = "schedule" in fields and fields["schedule"] != (before.schedule if before else None)
+    if schedule_changed or "whatsapp_target" in fields or ("schedule" in fields and not brief_cron_installed(user_id)):
         cron = ensure_brief_cron(user_id, user.schedule)
         payload["cron_synced"] = cron["ok"]
         payload["cron_id"] = cron.get("cron_id")

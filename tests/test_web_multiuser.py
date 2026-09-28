@@ -189,3 +189,23 @@ def test_admin_costs_per_profile_admin_only(api_env, monkeypatch):
     assert by_user["ann"]["cost_usd"] == 2.25
     assert by_user["bo"]["total_tokens"] == 0 and by_user["bo"]["cost_usd"] is None
     assert data["total"]["cost_usd"] == 2.25 and data["total"]["total_tokens"] == 1_500_150
+
+
+def test_profile_autosave_does_not_resync_unchanged_cron(api_env, monkeypatch):
+    client, h, _ = api_env
+    ed = h("ed@example.com")
+    client.post("/api/onboarding/profile", json={"name": "Ed"}, headers=ed)
+    client.cookies.set("jobwright_user", "ed")
+    calls = []
+    monkeypatch.setattr("jobwright.web.routers.system.ensure_brief_cron",
+                        lambda uid, sched: calls.append(sched) or {"ok": True, "cron_id": "x", "error": None})
+    installed = {"v": False}
+    monkeypatch.setattr("jobwright.web.routers.system.brief_cron_installed", lambda uid: installed["v"])
+    current = client.get("/api/profile", headers=ed).json()["schedule"]
+    client.put("/api/profile", json={"schedule": current}, headers=ed)
+    assert calls == [current]
+    installed["v"] = True
+    client.put("/api/profile", json={"schedule": current, "weekly_summary": False}, headers=ed)
+    assert calls == [current]
+    client.put("/api/profile", json={"schedule": "15 8 * * *"}, headers=ed)
+    assert calls == [current, "15 8 * * *"]
