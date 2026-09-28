@@ -185,7 +185,8 @@ def usage_snapshot(reset: bool = False) -> list[dict]:
     return rows
 
 
-def estimate_cost(model: str, prompt_tokens: int, completion_tokens: int) -> float | None:
+def estimate_cost(model: str, prompt_tokens: int, completion_tokens: int, cached_tokens: int = 0) -> float | None:
+    """USD from JOBWRIGHT_LLM_PRICES {"model": [input, output] or [input, output, cached_input]} per 1M tokens."""
     import json
 
     raw = os.environ.get("JOBWRIGHT_LLM_PRICES", "").strip()
@@ -198,7 +199,14 @@ def estimate_cost(model: str, prompt_tokens: int, completion_tokens: int) -> flo
     price = prices.get(model) or prices.get(model.rsplit("/", 1)[-1])
     if not price:
         return None
-    return round(prompt_tokens / 1e6 * float(price[0]) + completion_tokens / 1e6 * float(price[1]), 6)
+    cached = min(max(int(cached_tokens or 0), 0), prompt_tokens) if len(price) > 2 else 0
+    cached_price = float(price[2]) if len(price) > 2 else 0.0
+    return round(
+        (prompt_tokens - cached) / 1e6 * float(price[0])
+        + cached / 1e6 * cached_price
+        + completion_tokens / 1e6 * float(price[1]),
+        6,
+    )
 
 
 def flush_usage(conn, run_id: str | None = None) -> int:
@@ -213,7 +221,7 @@ def flush_usage(conn, run_id: str | None = None) -> int:
             "completion_tokens, cached_tokens, cost_usd) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (now, run_id, r["purpose"], r["provider"], r["model"], r["prompt_tokens"],
              r["completion_tokens"], r["cached_tokens"],
-             estimate_cost(r["model"], r["prompt_tokens"], r["completion_tokens"])),
+             estimate_cost(r["model"], r["prompt_tokens"], r["completion_tokens"], r["cached_tokens"])),
         )
     conn.commit()
     return len(rows)

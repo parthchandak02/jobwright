@@ -64,7 +64,8 @@ def users(request: Request) -> dict:
 
 def _usage_rows(conn, days: int) -> list:
     return conn.execute(
-        "SELECT model, SUM(prompt_tokens), SUM(completion_tokens), SUM(cost_usd), COUNT(cost_usd), COUNT(*) "
+        "SELECT model, SUM(prompt_tokens), SUM(completion_tokens), SUM(cost_usd), COUNT(cost_usd), COUNT(*), "
+        "SUM(COALESCE(cached_tokens, 0)) "
         "FROM llm_usage WHERE at >= ? GROUP BY model",
         ((datetime.now(UTC) - timedelta(days=days)).isoformat(),),
     ).fetchall()
@@ -74,12 +75,12 @@ def _sum_usage(out: dict[str, Any], rows: list) -> dict[str, Any]:
     from jobwright.llm import estimate_cost
 
     cost: float | None = None
-    for model, prompt, completion, stored, priced_rows, n in rows:
+    for model, prompt, completion, stored, priced_rows, n, cached in rows:
         prompt, completion = int(prompt or 0), int(completion or 0)
         out["calls"] += int(n)
         out["prompt_tokens"] += prompt
         out["completion_tokens"] += completion
-        estimate = estimate_cost(model or "", prompt, completion) if priced_rows != n else None
+        estimate = estimate_cost(model or "", prompt, completion, int(cached or 0))
         value = estimate if estimate is not None else stored
         if value is not None:
             cost = (cost or 0.0) + float(value)

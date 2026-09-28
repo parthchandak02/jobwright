@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 import pytest
 
 from jobwright import config
@@ -41,6 +43,12 @@ def _hermetic(tmp_path_factory, monkeypatch):
     monkeypatch.setenv("JOBWRIGHT_AUTH_MODE", "dev")
     monkeypatch.setenv("HERMES_CONFIG", str(sandbox / "hermes-config.yaml"))
     monkeypatch.setenv("JOBWRIGHT_HERMES_SCRIPTS_DIR", str(sandbox / "hermes-scripts"))
+    shim = sandbox / "bin"
+    shim.mkdir()
+    (shim / "hermes").write_text("#!/bin/sh\necho 'hermes is disabled in tests' >&2\nexit 97\n")
+    (shim / "hermes").chmod(0o755)
+    monkeypatch.setenv("PATH", f"{shim}{os.pathsep}{os.environ.get('PATH', '')}")
+    monkeypatch.setattr("jobwright.hermes_cron._run_hermes", lambda args: {"stdout": "", "error": None})
     monkeypatch.setattr("jobwright.welcome.send_welcome_async", lambda user_id: None)
 
     users_root = sandbox / "users"

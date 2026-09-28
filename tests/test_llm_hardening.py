@@ -120,3 +120,12 @@ def test_cost_only_when_price_configured(monkeypatch):
     assert llm.estimate_cost("m", 1_000_000, 0) is None
     monkeypatch.setenv("JOBWRIGHT_LLM_PRICES", '{"m": [0.5, 2.0]}')
     assert llm.estimate_cost("m", 1_000_000, 500_000) == 1.5
+
+
+def test_estimate_cost_prices_cached_input_separately(monkeypatch):
+    from jobwright.llm import estimate_cost
+
+    monkeypatch.setenv("JOBWRIGHT_LLM_PRICES", '{"m": [0.15, 0.50, 0.03]}')
+    assert estimate_cost("m", 2_000_000, 100_000, 1_000_000) == round(0.15 + 0.03 + 0.05, 6)
+    monkeypatch.setenv("JOBWRIGHT_LLM_PRICES", '{"m": [0.15, 0.50]}')
+    assert estimate_cost("m", 2_000_000, 100_000, 1_000_000) == round(0.30 + 0.05, 6)

@@ -1405,6 +1405,43 @@ def ops_backup(
         raise typer.Exit(code=1)
 
 
+def eval_eligible(user_id: str, min_labels: int = 20, min_relevant: int = 3) -> bool:
+    from jobwright import config as _config
+    from jobwright.database import get_connection
+    from jobwright.labels import build_eval_set
+
+    with _config.user_context(user_id):
+        if not _config.DB_PATH.exists():
+            return False
+        items = build_eval_set(get_connection())
+    return len(items) >= min_labels and sum(i.label for i in items) >= min_relevant
+
+
+@ops_app.command("weekly-eval")
+def ops_weekly_eval(min_labels: int = typer.Option(20, "--min-labels", help="Skip profiles with fewer ratings.")) -> None:
+    """Accuracy check for every profile with enough ratings; alerts the operator on failure."""
+    import subprocess as _sp
+    import sys as _sys
+
+    from jobwright.config import load_env
+    from jobwright.ops import Report, deliver
+    from jobwright.users import list_users
+
+    load_env()
+    failed = []
+    for u in list_users():
+        if not eval_eligible(u.user_id, min_labels):
+            console.print(f"skip  {u.user_id}  (fewer than {min_labels} ratings)")
+            continue
+        proc = _sp.run([_sys.executable, "-m", "jobwright.cli", "--user", u.user_id, "eval", "-w", "8"], check=False)
+        console.print(f"{'ok' if proc.returncode == 0 else 'FAIL'}  {u.user_id}")
+        if proc.returncode != 0:
+            failed.append(u.user_id)
+    if failed:
+        console.print(deliver(Report("weekly-eval", "fail", [f"accuracy check failed for {', '.join(failed)}"])))
+        raise typer.Exit(code=1)
+
+
 @ops_app.command("install-crons")
 def ops_install_crons(
     backup_dest: Optional[str] = typer.Option(None, "--backup-dest", help="Backup root for the nightly backup cron."),
@@ -1417,10 +1454,12 @@ def ops_install_crons(
     from jobwright.hermes_cron import (
         BACKUP_CRON_NAME,
         WATCHDOG_CRON_NAME,
+        WEEKLY_EVAL_CRON_NAME,
         WEEKLY_SUMMARY_CRON_NAME,
         ensure_backup_cron,
         ensure_brief_cron,
         ensure_watchdog_cron,
+        ensure_weekly_eval_cron,
         ensure_weekly_summary_cron,
     )
     from jobwright.users import list_users
@@ -1439,6 +1478,7 @@ def ops_install_crons(
         dest = backup_dest or _os.environ.get("JOBWRIGHT_BACKUP_DIR", "")
         results.append((BACKUP_CRON_NAME, ensure_backup_cron(dest=dest)))
         results.append((WEEKLY_SUMMARY_CRON_NAME, ensure_weekly_summary_cron()))
+        results.append((WEEKLY_EVAL_CRON_NAME, ensure_weekly_eval_cron()))
     failed = False
     for name, r in results:
         ok = bool(r.get("ok"))
