@@ -40,6 +40,7 @@ def _hermetic(tmp_path_factory, monkeypatch):
     monkeypatch.setenv("JOBWRIGHT_ENV", str(sandbox / "no-global.env"))
     monkeypatch.setenv("JOBWRIGHT_AUTH_MODE", "dev")
     monkeypatch.setenv("HERMES_CONFIG", str(sandbox / "hermes-config.yaml"))
+    monkeypatch.setenv("JOBWRIGHT_HERMES_SCRIPTS_DIR", str(sandbox / "hermes-scripts"))
     monkeypatch.setattr("jobwright.welcome.send_welcome_async", lambda user_id: None)
 
     users_root = sandbox / "users"

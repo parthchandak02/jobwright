@@ -143,3 +143,12 @@ def test_install_crons_skips_profiles_without_setup(monkeypatch):
     res = CliRunner().invoke(app, ["ops", "install-crons", "--skip-ops"])
     assert calls == ["done"] and res.exit_code == 0
     assert "setup not finished" in res.output
+
+
+def test_hermes_scripts_never_written_to_real_home_in_tests(tmp_path):
+    import os
+
+    from jobwright.hermes_cron import _hermes_scripts_dir
+
+    assert ".hermes/scripts" not in str(_hermes_scripts_dir())
+    assert os.environ["JOBWRIGHT_HERMES_SCRIPTS_DIR"] in str(_hermes_scripts_dir())

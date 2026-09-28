@@ -154,7 +154,7 @@ def _repo_root():
 def _hermes_scripts_dir():
     from pathlib import Path
 
-    return Path(os.path.expanduser("~/.hermes/scripts"))
+    return Path(os.path.expanduser(os.environ.get("JOBWRIGHT_HERMES_SCRIPTS_DIR") or "~/.hermes/scripts"))
 
 
 def write_brief_wrapper(user_id: str) -> str:
