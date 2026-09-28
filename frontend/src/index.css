@@ -98,9 +98,9 @@
 }
 
 @utility tone-tint {
-  border-color: color-mix(in oklch, var(--tone, var(--tone-neutral)) 22%, var(--surface));
-  background-color: color-mix(in oklch, var(--tone, var(--tone-neutral)) 10%, var(--surface));
-  color: color-mix(in oklch, var(--tone, var(--tone-neutral)) 75%, var(--foreground));
+  border-color: color-mix(in oklab, var(--tone, var(--tone-neutral)) 22%, var(--surface));
+  background-color: color-mix(in oklab, var(--tone, var(--tone-neutral)) 10%, var(--surface));
+  color: color-mix(in oklab, var(--tone, var(--tone-neutral)) 75%, var(--foreground));
 }
 
 @utility touch-target {
@@ -217,10 +217,8 @@
   --whatsapp: oklch(0.66 0.15 150);
   --tailor: var(--primary);
   --tailor-muted: var(--accent);
-  --tailor-subtle: color-mix(in oklch, var(--primary) 22%, var(--surface));
-  --job-drawer-jd-max-height: 24rem;
-  --job-drawer-jd-pad: 0.75rem;
-  --job-drawer-jd-hint-size: 0.75rem;
+  --tailor-subtle: color-mix(in oklab, var(--primary) 22%, var(--surface));
+  --job-drawer-jd-max-height: 16rem;
 }
 
 @media (min-width: 768px) {
@@ -412,10 +410,13 @@
   }
 
   .lane-card {
-    background-color: color-mix(in oklch, var(--lane) 7%, var(--surface));
+    background-color: color-mix(in oklab, var(--lane) 7%, var(--surface));
   }
   .lane-card:hover {
-    background-color: color-mix(in oklch, var(--lane) 10%, var(--surface));
+    background-color: color-mix(in oklab, var(--lane) 10%, var(--surface));
+  }
+  .lane-label {
+    color: color-mix(in oklab, var(--lane) 75%, var(--foreground));
   }
 
   /* Job card — shared spacing + typography rhythm */
@@ -501,55 +502,14 @@
     -webkit-overflow-scrolling: touch;
     touch-action: pan-y;
   }
-  .job-drawer-summary {
-    background-color: var(--card);
-    border: 1px solid var(--glass-border);
-    box-shadow:
-      var(--glass-shadow),
-      inset 0 1px 0 0 var(--glass-highlight);
-  }
-  .job-drawer-jd {
-    position: relative;
-    border-radius: var(--radius);
-    border: 1px solid color-mix(in oklch, var(--border) 60%, transparent);
-    background: color-mix(in oklch, var(--muted) 10%, transparent);
-  }
-  .job-drawer-jd-scroll {
+  .job-drawer-jd[data-collapsed='true'] {
     max-height: var(--job-drawer-jd-max-height);
-    overflow-y: auto;
-    padding: var(--job-drawer-jd-pad);
-    @apply whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground;
-  }
-  .job-drawer-jd-hint {
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.125rem;
-    padding: 0.375rem 0.5rem 0.25rem;
-    pointer-events: none;
-    font-size: var(--job-drawer-jd-hint-size);
-    line-height: 1;
-    color: color-mix(in oklch, var(--muted-foreground) 55%, transparent);
-    background: linear-gradient(
-      to top,
-      color-mix(in oklch, var(--background) 92%, transparent) 0%,
-      color-mix(in oklch, var(--background) 55%, transparent) 55%,
-      transparent 100%
-    );
+    overflow: hidden;
+    -webkit-mask-image: linear-gradient(to bottom, black 70%, transparent);
+    mask-image: linear-gradient(to bottom, black 70%, transparent);
   }
   /* One native scroller on small screens (WhatsApp/iOS in-app browsers). */
   @media (max-width: 767px) {
-    .job-drawer-jd-scroll {
-      max-height: none;
-      overflow: visible;
-    }
-    .job-drawer-jd-hint {
-      display: none;
-    }
     .job-drawer-scroll .materials-preview {
       max-height: none;
       overflow: visible;
@@ -621,145 +581,20 @@
     text-align: left;
   }
   .jobs-table-sort:hover {
-    background-color: color-mix(in oklch, var(--accent) 50%, transparent);
-  }
-  .jobs-table-sort:focus-visible {
-    outline: none;
-    box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 50%, transparent);
+    background-color: var(--surface-muted);
+    color: var(--foreground);
   }
 
-  /* Connections panel — compact, LinkedIn-tinted */
-  .connections-section {
-    border-top-color: color-mix(in srgb, var(--linkedin) 40%, var(--border));
-    background: var(--linkedin-muted);
-    border-radius: calc(var(--radius) - 2px);
-    padding-inline: 0.75rem;
-  }
-  .connections-section > h3 {
-    color: var(--linkedin);
-  }
-  .connections-panel {
-    display: flex;
-    flex-direction: column;
-    gap: 0.625rem;
-  }
-  .connections-empty {
-    font-size: 0.75rem;
-    line-height: 1.4;
-    color: color-mix(in srgb, var(--linkedin) 78%, var(--foreground));
-  }
-  .connections-list {
-    display: flex;
-    flex-direction: column;
-    gap: 0;
-  }
   .connection-row {
     display: flex;
     min-width: 0;
     align-items: flex-start;
     gap: 0.5rem;
-    overflow: hidden;
-    padding: 0.375rem 0;
-    border-bottom: 1px solid color-mix(in oklch, var(--border) 55%, transparent);
+    padding: 0.625rem 0;
+    border-bottom: 1px solid var(--border);
   }
   .connection-row:last-child {
     border-bottom: none;
-  }
-  .connection-body {
-    min-width: 0;
-    flex: 1;
-    overflow: hidden;
-  }
-  .connection-name {
-    min-width: 0;
-    overflow-wrap: break-word;
-    font-size: 0.8125rem;
-    font-weight: 500;
-    line-height: 1.35;
-    color: var(--linkedin);
-  }
-  a.connection-name:hover {
-    text-decoration: underline;
-    text-underline-offset: 2px;
-  }
-  .connection-meta {
-    overflow-wrap: break-word;
-    font-size: 0.6875rem;
-    line-height: 1.35;
-    color: color-mix(in srgb, var(--linkedin) 55%, var(--muted-foreground));
-  }
-  .connection-why {
-    margin-top: 0.125rem;
-    display: -webkit-box;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
-    overflow: hidden;
-    overflow-wrap: break-word;
-    font-size: 0.6875rem;
-    line-height: 1.35;
-    color: color-mix(in srgb, var(--linkedin) 45%, var(--muted-foreground));
-  }
-  .connection-added {
-    font-size: 0.625rem;
-    font-weight: 400;
-    color: color-mix(in srgb, var(--linkedin) 55%, var(--muted-foreground));
-  }
-  .connections-add {
-    display: flex;
-    flex-direction: column;
-    gap: 0.375rem;
-  }
-  .connections-add-input {
-    height: 1.75rem;
-    border-color: color-mix(in srgb, var(--linkedin) 35%, var(--border));
-    background: color-mix(in srgb, var(--background) 88%, var(--linkedin-muted));
-    font-size: 0.8125rem;
-  }
-  .connections-add-input:focus-visible {
-    border-color: color-mix(in oklch, var(--linkedin) 45%, var(--border));
-    box-shadow: 0 0 0 2px var(--linkedin-subtle);
-  }
-  .connections-url-row {
-    display: flex;
-    min-width: 0;
-    align-items: center;
-    gap: 0.375rem;
-  }
-  .connections-url-row .connections-add-input {
-    min-width: 0;
-    flex: 1;
-  }
-  .connections-add-btn {
-    background: var(--linkedin);
-    color: #fff;
-  }
-  .connections-add-btn:hover {
-    background: color-mix(in srgb, var(--linkedin) 88%, black);
-    color: #fff;
-  }
-  .linkedin-link {
-    color: var(--linkedin);
-  }
-  .linkedin-link:hover {
-    color: color-mix(in oklch, var(--linkedin) 85%, var(--foreground));
-  }
-  .connections-search-item {
-    display: flex;
-    width: 100%;
-    align-items: flex-start;
-    gap: 0.375rem;
-    border-radius: calc(var(--radius) - 4px);
-    padding: 0.375rem 0.5rem;
-    text-align: left;
-    font-size: 0.8125rem;
-    transition: background-color 0.15s ease;
-  }
-  .connections-search-item:hover {
-    background: var(--linkedin-muted);
-  }
-  .connections-search-item-name {
-    font-weight: 500;
-    color: var(--linkedin);
   }
 }
 
@@ -777,7 +612,7 @@
 
 .materials-preview h2 {
   margin-top: 1rem;
-  font-size: 0.72rem;
+  font-size: 0.75rem;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: color-mix(in oklch, var(--foreground) 70%, transparent);
@@ -833,9 +668,9 @@
 /* Job drawer materials: one preview card with toolbar dropdowns */
 .materials-preview-frame {
   overflow: hidden;
-  border-radius: var(--radius);
-  border: 1px solid color-mix(in oklch, var(--border) 80%, transparent);
-  background: color-mix(in oklch, var(--muted) 35%, var(--background));
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  background: var(--surface);
 }
 
 .materials-preview-toolbar {
@@ -844,7 +679,8 @@
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
-  border-bottom: 1px solid color-mix(in oklch, var(--border) 70%, transparent);
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-muted);
   padding: 0.5rem 0.625rem;
 }
 
@@ -852,7 +688,7 @@
   min-height: 10rem;
   max-height: min(32rem, 70vh);
   overflow: hidden;
-  background: var(--background);
+  background: var(--surface);
 }
 
 .materials-pdf-frame {

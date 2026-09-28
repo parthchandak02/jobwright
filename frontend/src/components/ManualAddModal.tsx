@@ -110,7 +110,7 @@ export function ManualAddModal({ open, onClose, onCreated }: Props) {
             </FormField>
           </div>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={onClose}>
+            <Button type="button" variant="secondary" onClick={onClose}>
               Cancel
             </Button>
             <Button type="submit" disabled={busy}>

@@ -18,11 +18,8 @@ type Mode = null | 'up' | 'down'
 
 const UP_SCORE = 8
 const DOWN_SCORE = 2
+const PRESSED = 'border-primary/40 bg-accent text-accent-foreground hover:bg-accent'
 
-/**
- * One-tap relevance feedback. Every rating is kept and teaches the scorer:
- * it becomes an example for similar jobs on the very next scoring run.
- */
 export function RateJob({ job, onRated, className }: Props) {
   const notAFit = useNotAFitReasons()
   const [mode, setMode] = useState<Mode>(null)
@@ -40,6 +37,8 @@ export function RateJob({ job, onRated, className }: Props) {
 
   const rated = job.user_fit_score != null
   const ratedUp = rated && (job.user_fit_score ?? 0) >= 6
+  const upOn = mode === 'up' || (rated && ratedUp && !mode)
+  const downOn = mode === 'down' || (rated && !ratedUp && !mode)
 
   async function submit(score: number) {
     if (!reasons.length && !note.trim()) {
@@ -72,33 +71,45 @@ export function RateJob({ job, onRated, className }: Props) {
 
   return (
     <div className={cn('space-y-3', className)}>
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-sm font-medium">Is this a good match?</span>
-        <div className="flex gap-1.5">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <span className="text-label text-foreground">Is this a good match?</span>
+        <div className="flex gap-2">
           <Button
             type="button"
             size="sm"
-            variant={mode === 'up' || (rated && ratedUp && !mode) ? 'default' : 'outline'}
+            variant="secondary"
+            className={cn(upOn && PRESSED)}
             onClick={() => setMode(mode === 'up' ? null : 'up')}
-            aria-pressed={mode === 'up'}
+            aria-pressed={upOn}
           >
             <ThumbsUp /> Yes
           </Button>
           <Button
             type="button"
             size="sm"
-            variant={mode === 'down' || (rated && !ratedUp && !mode) ? 'destructive' : 'outline'}
+            variant="secondary"
+            className={cn(downOn && PRESSED)}
             onClick={() => setMode(mode === 'down' ? null : 'down')}
-            aria-pressed={mode === 'down'}
+            aria-pressed={downOn}
           >
-            <ThumbsDown /> Not for me
+            <ThumbsDown /> No
           </Button>
         </div>
         {rated && !mode ? (
-          <span className="flex items-center gap-1 text-xs text-muted-foreground">
-            You rated {job.user_fit_score}/10
-            {job.user_score_rationale ? ` · ${job.user_score_rationale}` : ''}
-            <Button type="button" size="icon-sm" variant="ghost" onClick={() => void undo()} disabled={busy} aria-label="Remove my rating">
+          <span className="flex min-w-0 items-center gap-1 text-caption text-muted-foreground">
+            <span className="min-w-0">
+              You rated it {job.user_fit_score}/10
+              {job.user_score_rationale ? ` · ${job.user_score_rationale}` : ''}
+            </span>
+            <Button
+              type="button"
+              size="icon-sm"
+              variant="ghost"
+              onClick={() => void undo()}
+              disabled={busy}
+              aria-label="Remove my rating"
+              title="Remove my rating"
+            >
               <RotateCcw className="size-3.5" />
             </Button>
           </span>
@@ -106,10 +117,11 @@ export function RateJob({ job, onRated, className }: Props) {
       </div>
 
       {mode ? (
-        <div className="space-y-3 rounded-lg border border-border/60 p-3">
-          <p className="text-xs text-muted-foreground">
-            {mode === 'up' ? 'What makes it a good fit?' : 'Why isn’t it a fit?'} Pick any that apply.
-          </p>
+        <div className="space-y-4 rounded-lg bg-surface-muted p-4">
+          <div>
+            <p className="text-label text-foreground">{mode === 'up' ? 'What makes it a good fit?' : 'Why isn’t it a fit?'}</p>
+            <p className="text-caption text-muted-foreground">Pick any that apply. Similar jobs are scored with this next time.</p>
+          </div>
           <ReasonChips
             options={mode === 'up' ? GOOD_FIT_REASONS : notAFit}
             selected={reasons}
@@ -120,25 +132,30 @@ export function RateJob({ job, onRated, className }: Props) {
             rows={2}
             value={note}
             onChange={(e) => setNote(e.target.value)}
-            placeholder="Anything else? (optional)"
-            className="text-sm"
+            placeholder="Add anything else (optional)"
+            aria-label="Anything else"
           />
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs text-muted-foreground">Exact score (optional)</span>
-            {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => (
-              <button
-                key={n}
-                type="button"
-                aria-pressed={precise === n}
-                onClick={() => setPrecise(precise === n ? null : n)}
-                className={cn(
-                  'size-7 rounded-md border text-xs tabular-nums focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
-                  precise === n ? 'border-primary bg-primary/10 text-primary' : 'border-border/60 text-muted-foreground hover:bg-accent/60',
-                )}
-              >
-                {n}
-              </button>
-            ))}
+          <div className="space-y-2">
+            <p className="text-caption text-muted-foreground">Exact score (optional)</p>
+            <div className="grid grid-cols-10 gap-1 md:flex md:gap-1.5" role="radiogroup" aria-label="Exact score">
+              {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  role="radio"
+                  aria-checked={precise === n}
+                  onClick={() => setPrecise(precise === n ? null : n)}
+                  className={cn(
+                    'h-10 rounded-md border text-caption tabular-nums transition-colors duration-(--dur-1) md:h-8 md:w-8',
+                    precise === n
+                      ? 'border-primary bg-accent font-medium text-accent-foreground'
+                      : 'border-border bg-surface text-muted-foreground hover:text-foreground',
+                  )}
+                >
+                  {n}
+                </button>
+              ))}
+            </div>
           </div>
           <div className="flex gap-2">
             <Button type="button" size="sm" disabled={busy} onClick={() => void submit(mode === 'up' ? UP_SCORE : DOWN_SCORE)}>

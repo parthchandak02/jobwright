@@ -1,5 +1,4 @@
-import { Building2, HelpCircle, Home, MapPin, type LucideIcon } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { Building2, Home, MapPin, type LucideIcon } from 'lucide-react'
 import { Chip } from '@/components/Chip'
 
 type Props = {
@@ -13,21 +12,16 @@ const CONFIG: Record<string, { icon: LucideIcon; label: string }> = {
   onsite: { icon: MapPin, label: 'Onsite' },
 }
 
-export function WorkModelBadge({ workModel, className }: Props) {
+export function workModelLabel(workModel?: string | null): string | null {
   const key = workModel?.toLowerCase().trim()
-  const config = key ? CONFIG[key] : undefined
+  return key && CONFIG[key] ? CONFIG[key].label : null
+}
 
-  if (!config) {
-    return (
-      <Chip icon={HelpCircle} muted className={className}>
-        Work model unknown
-      </Chip>
-    )
-  }
-
-  const Icon = config.icon
+export function WorkModelBadge({ workModel, className }: Props) {
+  const config = CONFIG[workModel?.toLowerCase().trim() || '']
+  if (!config) return <span className="text-caption text-muted-foreground">Not stated</span>
   return (
-    <Chip icon={Icon} className={className}>
+    <Chip icon={config.icon} className={className}>
       {config.label}
     </Chip>
   )

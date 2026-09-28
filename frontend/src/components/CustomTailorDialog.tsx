@@ -82,7 +82,7 @@ export function CustomTailorDialog({ open, onClose, onStart, starting, scope }: 
           </div>
         </div>
         <div className="flex shrink-0 justify-end gap-2">
-          <Button type="button" size="sm" variant="outline" onClick={onClose} disabled={starting}>
+          <Button type="button" size="sm" variant="secondary" onClick={onClose} disabled={starting}>
             Cancel
           </Button>
           <Button

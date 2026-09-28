@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type CSSProperties } from 'react'
 import { AlertTriangle, ChevronDown, X } from 'lucide-react'
 import { getStatus, type AppStatus } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -31,7 +31,6 @@ function summarize(s: AppStatus): { level: 'warn' | 'fail'; text: string; lines:
   return { level, text, lines }
 }
 
-/** Thin banner when the last run failed, the ops report warned, or WhatsApp is down. */
 export function StatusBanner() {
   const [status, setStatus] = useState<AppStatus | null>(null)
   const [open, setOpen] = useState(false)
@@ -50,21 +49,19 @@ export function StatusBanner() {
   return (
     <div
       role="status"
-      className={cn(
-        'border-b px-4 py-2 text-xs',
-        s.level === 'fail' ? 'border-destructive/40 bg-destructive/10' : 'border-amber-500/40 bg-amber-500/10',
-      )}
+      style={{ '--tone': s.level === 'fail' ? 'var(--destructive)' : 'var(--warning)' } as CSSProperties}
+      className="tone-tint border-x-0 border-t-0 border-b px-4 py-2 text-caption"
     >
-      <div className="flex items-center gap-2">
-        <AlertTriangle className={cn('size-3.5 shrink-0', s.level === 'fail' ? 'text-destructive' : 'text-amber-600')} />
-        <span className="min-w-0 flex-1">{s.text}</span>
+      <div className="flex items-center gap-3">
+        <AlertTriangle className="size-4 shrink-0" aria-hidden />
+        <span className="min-w-0 flex-1 text-foreground">{s.text}</span>
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
-          className="flex items-center gap-1 text-muted-foreground hover:text-foreground"
+          className="touch-target relative flex items-center gap-1 font-medium hover:underline"
           aria-expanded={open}
         >
-          Details <ChevronDown className={cn('size-3 transition-transform', open && 'rotate-180')} />
+          Details <ChevronDown className={cn('size-3.5 transition-transform duration-(--dur-2)', open && 'rotate-180')} />
         </button>
         <button
           type="button"
@@ -73,13 +70,13 @@ export function StatusBanner() {
             sessionStorage.setItem(DISMISS_KEY, key)
             setDismissed(key)
           }}
-          className="text-muted-foreground hover:text-foreground"
+          className="touch-target relative rounded-md p-0.5 hover:bg-current/10"
         >
-          <X className="size-3.5" />
+          <X className="size-4" />
         </button>
       </div>
       {open ? (
-        <ul className="mt-2 space-y-0.5 pl-5 text-muted-foreground">
+        <ul className="mt-2 space-y-0.5 pl-7 text-foreground">
           {s.lines.map((l, i) => (
             <li key={i}>{l}</li>
           ))}

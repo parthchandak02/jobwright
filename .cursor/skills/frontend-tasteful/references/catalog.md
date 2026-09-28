@@ -73,9 +73,9 @@ Reuse order: shadcn defaults → domain primitive → new token/class. Tailwind 
 | Lane column | `KanbanColumn` (sets `--lane`) |
 | Status pills | `Chip` (icon-led, neutral by default; `tone` = CSS var for the `tone-tint` recipe, e.g. `--stage-applied`, `--destructive`, `--success`) |
 | Stage as chip | `StageBadge` |
-| Work model / sponsorship / materials / WhatsApp | `WorkModelBadge`, `SponsorshipBadge`, `JobMetaBadges` |
+| Work model / key chips | `WorkModelBadge` (+ `workModelLabel`), `JobKeyChips` / `jobChips` (`JobMetaBadges.tsx`) |
 | Meta rows (`Label: NA`) | `MetaField` |
-| Fit score | `ScoreBadge` / `ScoreEditor` (`lib/scoreColor.ts`) |
+| Fit score (number + plain meaning) | `ScoreBadge` (`label`) / `ScoreEditor` (`lib/scoreColor.ts`) |
 | Why this score (gates, fit, confidence, reasoning) | `MatchExplanation` |
 | One-tap relevance rating (thumbs + reasons → label) | `RateJob` |
 | Multi-select reason pills | `ReasonChips` (options from `lib/reasons.ts`, merged with the user's dealbreakers) |
@@ -146,7 +146,7 @@ Hierarchy: one `primary` per view; `secondary` for ordinary actions; `ghost` for
 |--------|------------------|
 | Neutrals | `--background`, `--surface`, `--surface-muted`, `--foreground`, `--muted-foreground`, `--subtle-foreground` (placeholder/disabled only), `--border`, `--border-strong` (= `--input`); `--card` / `--popover` / `--secondary` / `--muted` alias them |
 | Accent + semantic | `--primary` (indigo, hue 262), `--accent` / `--accent-foreground` (selected tint), `--ring`, `--destructive`, `--success`, `--warning`, `--overlay`, `--pill-active` |
-| Tints | `tone-tint` utility + `--tone` (10% fill, 22% border, 75% text mix); used by `Chip tone` and `Badge` |
+| Tints | `tone-tint` utility + `--tone` (10% fill, 22% border, 75% text mix, mixed `in oklab` so white surfaces don't shift the hue); used by `Chip tone`, `Badge`, score pills, stage pills; `.lane-label` = the text mix for `--lane` |
 | Stages | `--stage-backlog/prepare/applied/in-progress/offer/closed` (softened chroma); runtime `--lane`; `.lane-card` = 7% tint; `--tone-neutral` (`--query-daily` / `--query-weekly` alias it) |
 | Type | `text-display` 28, `text-title` 22, `text-heading` 17, `text-subheading` 15, `text-body` 15 phone / 14 desktop, `text-label` 14/500, `text-caption` 13, `text-micro` 12 (floor); `--font-sans` = system stack |
 | Spacing / layout | `space-y-field` (20px), `mt-section` (40/32px), `px-page-x` (32/16px), `pt-page-top` (40/20px), `max-w-form` (720px), `max-w-wide` (960px), `max-w-welcome` (560px), `--safe-bottom` |
@@ -159,12 +159,12 @@ Hierarchy: one `primary` per view; `secondary` for ordinary actions; `ghost` for
 
 Theme: `lib/theme.tsx` + `.dark` on `<html>` (`jobwright-theme`). Dark neutrals are cool greys (hue 260, chroma 0.004); the accent stays indigo in dark (never a near-white primary).
 
-Typography: system font stack (SF Pro on Apple). Board cards keep `text-sm` title, `text-xs` meta. Nothing below 12px: no `text-[10px]` / `text-[11px]`.
+Typography: system font stack (SF Pro on Apple). Board cards keep `text-sm` title, `text-caption` meta. Nothing below 12px: no `text-[10px]` / `text-[11px]`.
 
 ## Little things (keep these)
 
 - **Sidebar:** hover open ~80ms / close ~180ms; click pins; Escape + outside click unpins; job drawer forces unpin; labels fade via `.sidebar-label`.
-- **Stage labels** on sidebar, column headers, and drawer current stage: ALL CAPS + `laneTone` on label and count (the only uppercase allowed). Table `StageBadge` stays Title Case inside Chip.
+- **Stage labels** on sidebar and column headers: ALL CAPS `text-micro` in `.lane-label` (the only uppercase allowed), counts muted. Drawer `StagePicker` and table `StageBadge` stay Title Case.
 - **No backdrop blur** except the md+ board header; phone and desktop render the same flat surfaces (WhatsApp / iOS scroll).
 - **Closing `RunProgressDialog` does not stop the run;** Stop does.
 - **Empty meta:** `MetaField` → `NA`; muted Chip for missing work model.
@@ -177,7 +177,6 @@ Typography: system font stack (SF Pro on Apple). Board cards keep `text-sm` titl
 Prefer extending the closest primitive. Do **not** promote these until they are reused in more than one place:
 
 - Header search field in `App.tsx`
-- `JobsTable` local `FilterChip` (not `Chip`)
 - Job drawer materials use `JobMaterialsPreview` (version dropdown + PDF/md); Profile keeps `ResumePreview`
 - `StatusDot` lives in `components/admin/`; promote it only when Quality or Profile need it
 - Confirm dialogs: `admin/ConfirmDialog` (also used by Quality) and `profile/ConfirmAction` overlap; merge before adding a third
@@ -185,13 +184,16 @@ Prefer extending the closest primitive. Do **not** promote these until they are 
 
 `ui/Card` (12px radius, hairline) is fine for grouped metrics. Settings and admin should prefer one `.surface` list with divided rows. `ui/ScrollArea` stays unused; overlays already scroll.
 
-## Applying v2 to remaining pages (WP6, pending)
+## Board and drawer (WP6, shipped 2026-09-28)
 
-The board (`App.tsx`, `KanbanColumn`, `JobCardView`, `JobCardLayout`), `JobsTable`, `JobDrawer` and `SidebarNav`/`NavItem` still carry pre-v2 styling. Keep their density; change tokens and primitives only:
+Board, table and drawer are on v2. Keep these when editing them:
 
-- **Buttons:** replace `variant="outline"` (board header, `JobDrawer`, `JobsTable`) with `secondary`; one `primary` per view; AI actions use `ai`.
-- **Surfaces:** job cards still use `.glass` / `.glass-strong` / `.glass-interactive` and `--glass-shadow-hover`; move to `.surface` + hairline border, `shadow-e1` on hover/drag, no scale or rotate beyond the drag affordance.
-- **Type:** remove the last sub-12px text: `ScoreBadge` (`text-[10px]` asterisk), `ScoreEditor` (`text-[10px]` pill, `text-[11px]` rationale), `JobsTable` (`text-[10px]` filter count), `ConnectionsPanel` (`text-[0.6875rem]`). Use `text-micro` / `text-caption`. Lane headers keep uppercase with `text-micro`-sized tokens rather than `text-xs font-bold tracking-wider`.
-- **Colour:** sidebar stage icons are tinted with `--lane` (`NavItem`); v2 wants neutral icons with the stage colour on the label/count or a dot only. The empty-lane drop zone in `KanbanColumn` uses an ad-hoc `color-mix` 6% tint and `duration-200`; use the `tone-tint` recipe and `duration-(--dur-2)`.
-- **Structure:** drawer sections via `DrawerSection` + `SectionHeader as="h3"` instead of `SectionLabel` (legacy; still used by `RunProgressDialog`); empty table via `EmptyState size="inline"`; loading via `Skeleton`; row "⋯" actions via `DropdownMenu`.
-- **Phone:** board header condensed to one row (menu, title, search icon); `JobsTable` local `FilterChip` → `Chip`; the filter `Sheet side="bottom"` drops its own `max-h`/`rounded-t-2xl` overrides.
+- **Card:** `JobCardView` = `bg-surface` + hairline, 3px `--lane` bar on the left, `shadow-e1` on hover/drag (drag adds `rotate-1`), no lane fill. `JobSummary`: 2-line title, company, one place line (`placeLine`: location · work model), pay only when stated, at most 2 chips (`JobKeyChips`), listing link bottom-right. `showStage` adds the lane label (phone list with mixed stages).
+- **Chips:** `jobChips(job, dealLabels)` in `JobMetaBadges.tsx` is the single priority list (alerts: posting closed, follow up, dealbreaker, location; then materials; then info). Cards show 2, the table title cell shows 1 alert/info, the Materials column shows materials only. Unknown work model and sponsorship are never shown as chips.
+- **Score:** `ScoreBadge` pill = number + plain meaning (`label` `short` "8 Strong", `long` "8 · Strong match", `none`), tinted `--success` (7+), `--warning` (5–6), neutral (≤4, unscored). Levels and words live in `lib/scoreColor.ts` (`scoreLevel`, `SCORE_LABEL`, `SCORE_SHORT`).
+- **Lanes:** `KanbanColumn` header = 8px `--lane` dot + uppercase `text-micro` label in `.lane-label` (the `tone-tint` 75% text mix) + muted count. Drop highlight uses `tone-tint` with `--tone: var(--lane)`. Empty lanes show a dashed box with the stage icon and per-stage copy (`EMPTY_COPY`); while dragging it says where the job will go.
+- **Sidebar:** `NavItem` icons are neutral with a 6px `--lane` dot on the icon; lane labels uppercase in `.lane-label`, counts muted. First item is "All jobs".
+- **Header:** desktop = title + count, `ViewModeTabs`, search, then Auto Search / WhatsApp (count `Badge`) / Add job, all `secondary`. Phone = one 56px row (menu, title + count, search icon that expands the field, Auto Search, WhatsApp with count dot, add). Board/Table toggle and sort/filters sit in a sticky toolbar under it (`JobsTable toolbarStart`). Sticky rows inside `main` use `-top-3` because `main` has `p-3`.
+- **Table:** `.surface` container, `bg-surface-muted` head, rows focusable (Enter opens), filters via column popovers (desktop) or bottom `Sheet` (phone, `FiltersPanel` with autocomplete), active filters as `ValueChip`s, empty states via `EmptyState`.
+- **Drawer:** top-down: header (title, company · place) → decision summary (`.surface`: `MatchExplanation` score pill, confidence, reasoning, dealbreakers/concerns/level as plain sentences; duplicate/closed line; `RateJob`) → follow-up callout → actions → Stage (`StagePicker`: Title Case pills with a lane dot, current = `tone-tint`) → Details (`DetailGrid`) → Job description (markdown, collapsed with "Show full description") → Resume / Cover letter → Who you know there → Notes (`SaveStatus`) → History. Actions: Prepare (`ai`) when no materials before applying, Open posting (`primary` once materials exist before applying, else `secondary`), I applied (`secondary`), Not for me / Close job (`ghost`). Phone: the same actions as a sticky bottom bar (icon over label, 56px, lead action keeps its variant, others ghost). `DrawerSection` wraps `SectionHeader as="h3"`.
+- **Dialogs:** `DismissDialog` (radio cards, reasons via `ReasonChips`), `DailyBriefDialog` (Send now is `secondary` and asks "Send N jobs to <chat> now?" before posting).

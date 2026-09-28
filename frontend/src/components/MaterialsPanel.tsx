@@ -116,6 +116,7 @@ function MaterialSectionShell({
                 <RunProgressButton
                   run={tailor}
                   idleLabel="Auto Tailor"
+                  variant="ai"
                   stageLabels={RUN_STAGE_LABELS}
                   titleIdle="Runs in the background. Click again for logs."
                   titleActive="Tailoring in progress. Click to view logs"

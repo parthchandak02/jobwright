@@ -1,55 +1,36 @@
 import type { CSSProperties } from 'react'
 
-const MIN = 1
-const MAX = 10
+export type ScoreLevel = 'strong' | 'partial' | 'weak' | 'none'
 
-/**
- * Red → amber → lime → emerald-teal. Hues skip lane tokens (~50, 100, 150, 255, 330)
- * so score color stays readable on every kanban lane tint.
- */
-export function scoreHue(score: number): number {
-  const t = (Math.min(MAX, Math.max(MIN, score)) - MIN) / (MAX - MIN)
-  if (t < 0.4) return 27 + (55 - 27) * (t / 0.4)
-  if (t < 0.75) return 55 + (125 - 55) * ((t - 0.4) / 0.35)
-  return 125 + (158 - 125) * ((t - 0.75) / 0.25)
+export function scoreLevel(score: number | null | undefined): ScoreLevel {
+  if (score == null) return 'none'
+  if (score >= 7) return 'strong'
+  if (score >= 5) return 'partial'
+  return 'weak'
 }
 
-export function scoreChroma(score: number): number {
-  const t = (Math.min(MAX, Math.max(MIN, score)) - MIN) / (MAX - MIN)
-  return 0.17 + 0.06 * Math.sin(t * Math.PI)
+export const SCORE_LABEL: Record<ScoreLevel, string> = {
+  strong: 'Strong match',
+  partial: 'Partial match',
+  weak: 'Weak match',
+  none: 'Not scored yet',
 }
 
-export type ScoreColors = {
-  accent: string
-  ring: string
-  soft: string
+export const SCORE_SHORT: Record<ScoreLevel, string> = {
+  strong: 'Strong',
+  partial: 'Partial',
+  weak: 'Weak',
+  none: 'New',
 }
 
-export function getScoreColors(score: number): ScoreColors {
-  const hue = scoreHue(score)
-  const chroma = scoreChroma(score)
-  const c = chroma.toFixed(3)
-  const h = hue.toFixed(1)
-  return {
-    accent: `oklch(0.74 ${c} ${h})`,
-    ring: `oklch(0.58 ${c} ${h} / 0.55)`,
-    soft: `oklch(0.58 ${c} ${h} / 0.14)`,
-  }
+const SCORE_TONE: Record<ScoreLevel, string | null> = {
+  strong: '--success',
+  partial: '--warning',
+  weak: null,
+  none: null,
 }
 
-export function scoreBadgeStyle(score: number | null | undefined): CSSProperties | undefined {
-  if (score == null) return undefined
-  const { accent, ring, soft } = getScoreColors(score)
-  return {
-    color: accent,
-    backgroundColor: 'color-mix(in oklch, var(--card) 94%, transparent)',
-    boxShadow: `0 0 0 2px var(--background), 0 1px 4px oklch(0.2 0.02 260 / 0.35), inset 0 0 0 1px ${ring}`,
-    ['--score-soft' as string]: soft,
-  }
-}
-
-export function scoreTextStyle(score: number | null | undefined): CSSProperties | undefined {
-  if (score == null) return undefined
-  const { accent } = getScoreColors(score)
-  return { color: accent }
+export function scoreToneStyle(score: number | null | undefined): CSSProperties | undefined {
+  const tone = SCORE_TONE[scoreLevel(score)]
+  return tone ? ({ '--tone': `var(${tone})` } as CSSProperties) : undefined
 }

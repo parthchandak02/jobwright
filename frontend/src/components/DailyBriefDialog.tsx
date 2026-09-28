@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Loader2, Send, Settings2 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -24,10 +24,14 @@ type Props = {
   onSaved: () => void
 }
 
-/** Today's WhatsApp list at a glance: what's waiting, when it goes, send it now. */
 export function DailyBriefDialog({ open, onClose, profile, pendingCount, onSaved }: Props) {
   const navigate = useNavigate()
   const [sending, setSending] = useState(false)
+  const [confirming, setConfirming] = useState(false)
+
+  useEffect(() => {
+    if (!open) setConfirming(false)
+  }, [open])
 
   async function handleSend() {
     setSending(true)
@@ -45,23 +49,23 @@ export function DailyBriefDialog({ open, onClose, profile, pendingCount, onSaved
   }
 
   const configured = Boolean(profile?.whatsapp_target)
+  const chat = profile?.whatsapp_chat_name?.trim() || (configured ? 'your WhatsApp chat' : null)
+  const waiting = pendingCount ? `${pendingCount} job${pendingCount === 1 ? '' : 's'}` : 'Nothing new yet'
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <WhatsAppIcon className="text-whatsapp" /> Daily WhatsApp list
+            <WhatsAppIcon className="size-5 text-whatsapp" /> Daily WhatsApp list
           </DialogTitle>
           <DialogDescription>
-            Every day jobwright searches, scores new jobs, and sends your best matches in one message.
+            Every day jobwright searches, scores new jobs and sends your best matches in one message.
           </DialogDescription>
         </DialogHeader>
-        <DetailGrid>
-          <DetailRow
-            label="Waiting to send"
-            value={pendingCount ? `${pendingCount} job${pendingCount === 1 ? '' : 's'}` : 'Nothing new yet'}
-          />
+        <DetailGrid className="rounded-lg bg-surface-muted p-4">
+          <DetailRow label="Waiting to send" value={waiting} />
+          <DetailRow label="Chat" value={chat || 'Not connected yet'} />
           <DetailRow
             label="Schedule"
             value={
@@ -71,22 +75,37 @@ export function DailyBriefDialog({ open, onClose, profile, pendingCount, onSaved
             }
           />
         </DetailGrid>
-        <DialogFooter className="gap-2 sm:justify-between">
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            onClick={() => {
-              onClose()
-              navigate('/profile?tab=whatsapp')
-            }}
-          >
-            <Settings2 /> Change chat or time
-          </Button>
-          <Button type="button" size="sm" disabled={sending || !configured} onClick={() => void handleSend()}>
-            {sending ? <Loader2 className="animate-spin" /> : <Send />} Send now
-          </Button>
-        </DialogFooter>
+        {confirming ? (
+          <div className="space-y-3 rounded-lg border border-border p-4" role="alert">
+            <p className="text-body text-foreground">
+              Send {pendingCount ? waiting : 'the list'} to {chat} now? Everyone in that chat will see it.
+            </p>
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <Button type="button" variant="ghost" disabled={sending} onClick={() => setConfirming(false)}>
+                Cancel
+              </Button>
+              <Button type="button" disabled={sending} onClick={() => void handleSend()}>
+                {sending ? <Loader2 className="animate-spin" /> : <Send />} Yes, send now
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <DialogFooter className="sm:justify-between">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => {
+                onClose()
+                navigate('/profile?tab=whatsapp')
+              }}
+            >
+              <Settings2 /> Change chat or time
+            </Button>
+            <Button type="button" variant="secondary" disabled={!configured} onClick={() => setConfirming(true)}>
+              <Send /> Send now
+            </Button>
+          </DialogFooter>
+        )}
       </DialogContent>
     </Dialog>
   )

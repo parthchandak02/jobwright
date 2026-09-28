@@ -25,7 +25,6 @@ type Props = {
   onCancel: () => void
 }
 
-/** Close a job with an outcome; "not for me" asks why so the scorer learns. */
 export function DismissDialog({ open, jobTitle, fromStage, onConfirm, onCancel }: Props) {
   const beforeApplying = !fromStage || fromStage === 'backlog' || fromStage === 'prepare'
   const reasonsList = useNotAFitReasons()
@@ -46,37 +45,60 @@ export function DismissDialog({ open, jobTitle, fromStage, onConfirm, onCancel }
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onCancel()}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent>
         <DialogHeader>
-          <DialogTitle>Close this job</DialogTitle>
-          <DialogDescription>{jobTitle ? `“${jobTitle}”` : 'Choose what happened.'}</DialogDescription>
+          <DialogTitle>{beforeApplying ? 'Close this job' : 'How did it end?'}</DialogTitle>
+          <DialogDescription>{jobTitle ? `“${jobTitle}” moves to Closed.` : 'The job moves to Closed.'}</DialogDescription>
         </DialogHeader>
-        <div className="grid grid-cols-2 gap-1.5" role="radiogroup" aria-label="Outcome">
-          {options.map((o) => (
-            <button
-              key={o}
-              type="button"
-              role="radio"
-              aria-checked={outcome === o}
-              onClick={() => setOutcome(o)}
-              className={cn(
-                'rounded-md border px-3 py-2 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
-                outcome === o ? 'border-primary bg-primary/10 font-medium' : 'border-border/60 hover:bg-accent/60',
-              )}
-            >
-              {OUTCOME_LABELS[o] || o}
-            </button>
-          ))}
+        <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="What happened">
+          {options.map((o) => {
+            const active = outcome === o
+            return (
+              <button
+                key={o}
+                type="button"
+                role="radio"
+                aria-checked={active}
+                onClick={() => setOutcome(o)}
+                className={cn(
+                  'flex min-h-11 items-center gap-2 rounded-md border px-3 text-left text-label transition-colors duration-(--dur-1) ease-out md:min-h-10',
+                  active
+                    ? 'border-primary bg-accent text-accent-foreground'
+                    : 'border-border bg-surface text-foreground hover:bg-surface-muted',
+                )}
+              >
+                <span
+                  aria-hidden
+                  className={cn(
+                    'flex size-4 shrink-0 items-center justify-center rounded-full border',
+                    active ? 'border-primary' : 'border-border-strong',
+                  )}
+                >
+                  {active ? <span className="size-2 rounded-full bg-primary" /> : null}
+                </span>
+                {OUTCOME_LABELS[o] || o}
+              </button>
+            )
+          })}
         </div>
         {needsReason ? (
-          <div className="space-y-2">
-            <p className="text-xs text-muted-foreground">Why? This teaches the scorer to skip jobs like this.</p>
+          <div className="space-y-3">
+            <div>
+              <p className="text-label text-foreground">Why isn’t it a fit?</p>
+              <p className="text-caption text-muted-foreground">Pick any that apply. This teaches the scorer to skip jobs like this.</p>
+            </div>
             <ReasonChips options={reasonsList} selected={reasons} onChange={setReasons} />
-            <Textarea rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Other reason (optional)" />
+            <Textarea
+              rows={2}
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="Add another reason (optional)"
+              aria-label="Other reason"
+            />
           </div>
         ) : null}
         <DialogFooter>
-          <Button type="button" variant="outline" onClick={onCancel}>
+          <Button type="button" variant="secondary" onClick={onCancel}>
             Cancel
           </Button>
           <Button type="button" disabled={!canSubmit} onClick={() => onConfirm({ outcome, reasons, note: note.trim() })}>
