@@ -27,7 +27,7 @@ ECOSYSTEM_LIVE="${ROOT}/ecosystem.config.js"
 TMUX_SESSION="${JOBWRIGHT_TMUX_SESSION:-jobwright-dash}"
 API_PORT="${JOBWRIGHT_API_PORT:-8002}"
 UI_PORT="${JOBWRIGHT_UI_PORT:-5120}"
-DASHBOARD_USER="${JOBWRIGHT_DASHBOARD_USER:-richa}"
+DASHBOARD_USER="${JOBWRIGHT_DASHBOARD_USER:-}"
 
 require_cmd() {
   command -v "$1" >/dev/null 2>&1 || {

@@ -352,7 +352,7 @@ def run(
         help=(
             "Pipeline stages to run. "
             f"Valid: {', '.join(VALID_STAGES)}, all. "
-            "Defaults to 'all' if omitted."
+            "Omit to run the default brief for this profile."
         ),
     ),
     min_score: int = typer.Option(7, "--min-score", help="Minimum fit score for tailor/cover stages."),
@@ -373,7 +373,7 @@ def run(
         ),
     ),
 ) -> None:
-    """Run pipeline stages: discover, enrich, score, tailor, cover, pdf."""
+    """Run pipeline stages: discover, enrich, score, portfolio, tailor, cover, pdf, docx, connect (no stages = the default brief)."""
     if verbose:
         import os
         os.environ["JOBWRIGHT_LOG_LEVEL"] = "DEBUG"
@@ -797,7 +797,7 @@ def doctor() -> None:
         results.append(("LLM API key", ok_mark, f"Local: {os.environ.get('LLM_URL')}"))
     else:
         results.append(("LLM API key", fail_mark,
-                        f"Set FIREWORKS_API_KEY in {config.ENV_PATH} (run 'jobwright init')"))
+                        f"Set FIREWORKS_API_KEY in {config.global_env_path()} (the repo-root .env)"))
 
     # Explicit gemini-* model without GEMINI_API_KEY is a misconfiguration.
     llm_model = os.environ.get("LLM_MODEL", "")
