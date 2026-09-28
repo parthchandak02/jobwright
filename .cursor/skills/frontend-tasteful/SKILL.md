@@ -10,7 +10,7 @@ Design v2, "calm & refined" (Linear/Notion-like): soft warm-grey neutrals, one i
 Two densities:
 
 - **Settings-style pages** (Welcome, Settings at `/profile`, Admin, Match quality): open whitespace, 720px (`form`) or 960px (`wide`) column, `PageHeader` + `SectionHeader` + `FormField` with visible hints.
-- **Board, table and job drawer**: keep their density. Only tokens change there (WP6, pending; see catalog "Applying v2 to remaining pages").
+- **Board, table and job drawer**: dense, on v2 since WP6 (catalog "Board and drawer").
 
 **Do not** load `design-taste-frontend` / leonxlnx taste-skill / Three Dials for this product. Do not revert v2 tokens to the old IBM Plex / glass / 30% lane tint look.
 

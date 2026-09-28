@@ -13,10 +13,12 @@ import {
   useSensors,
 } from '@dnd-kit/core'
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { Gauge, Plus, Search, Shield, X } from 'lucide-react'
+import { CloudOff, Gauge, Inbox, Plus, RefreshCw, Search, Shield, X } from 'lucide-react'
 import { toast } from 'sonner'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Skeleton } from '@/components/ui/skeleton'
 import {
   apiFetch,
   BoardResponse,
@@ -34,6 +36,7 @@ import { AutoSearchControls } from '@/components/AutoSearchControls'
 import { Chip } from '@/components/Chip'
 import { DailyBriefDialog } from '@/components/DailyBriefDialog'
 import { DismissDialog, type DismissResult } from '@/components/DismissDialog'
+import { EmptyState } from '@/components/EmptyState'
 import { WhatsAppIcon } from '@/components/WhatsAppIcon'
 import { JobCardView } from '@/components/JobCardView'
 import { JobDrawer } from '@/components/JobDrawer'
@@ -67,7 +70,6 @@ function jobMatchesQuery(job: JobCard, q: string): boolean {
   return hay.includes(q)
 }
 
-/** Fresh backlog jobs just under the notify bar with no hard dealbreaker. */
 function isWorthALook(job: JobCard): boolean {
   const s = job.fit_score
   return job.funnel_stage === 'backlog' && s != null && s >= 5 && s <= 6 && !(job.dealbreakers || []).length
@@ -77,6 +79,51 @@ function initialView(): ViewMode {
   const saved = localStorage.getItem(VIEW_KEY)
   if (saved === 'board' || saved === 'table') return saved
   return window.matchMedia('(max-width: 767px)').matches ? 'table' : 'board'
+}
+
+function BoardSearch({
+  value,
+  onChange,
+  autoFocus,
+  className,
+}: {
+  value: string
+  onChange: (v: string) => void
+  autoFocus?: boolean
+  className?: string
+}) {
+  return (
+    <div className={cn('relative', className)}>
+      <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
+      <Input
+        type="search"
+        value={value}
+        autoFocus={autoFocus}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') onChange('')
+        }}
+        placeholder="Search title, company or place"
+        className="pl-9 md:h-9"
+        aria-label="Search jobs"
+      />
+    </div>
+  )
+}
+
+function BoardSkeleton() {
+  return (
+    <div aria-label="Loading your jobs" role="status" className="flex gap-3 overflow-hidden">
+      {[0, 1, 2, 3, 4].map((col) => (
+        <div key={col} className="w-full shrink-0 space-y-2 md:w-[17.5rem]">
+          <Skeleton className="mx-1.5 my-2 h-4 w-24" />
+          {[0, 1, 2].map((i) => (
+            <Skeleton key={i} className="h-28 rounded-lg" />
+          ))}
+        </div>
+      ))}
+    </div>
+  )
 }
 
 type Page = 'board' | 'profile' | 'quality' | 'admin'
@@ -101,6 +148,7 @@ export default function App() {
   const [view, setViewState] = useState<ViewMode>(initialView)
   const [filterStage, setFilterStage] = useState<string | 'all'>('all')
   const [searchQuery, setSearchQuery] = useState('')
+  const [searchOpen, setSearchOpen] = useState(false)
   const [showAdd, setShowAdd] = useState(false)
   const [showSchedule, setShowSchedule] = useState(false)
   const [pendingNotify, setPendingNotify] = useState(0)
@@ -226,8 +274,11 @@ export default function App() {
     const job = allJobs.find((j) => j.url === url)
     if (!job) return
     if (toStage === 'closed') {
+      const before = revertBoard
+        ? revertBoard.stages.flatMap((s) => revertBoard.columns[s] || []).find((j) => j.url === url)
+        : undefined
       if (revertBoard) setBoard(revertBoard)
-      setCloseTarget(job)
+      setCloseTarget(before || job)
       return
     }
     await completeMove(job, toStage)
@@ -299,6 +350,7 @@ export default function App() {
   }
 
   const drawerOpen = Boolean(jobId)
+  const pageTitle = filterStage === 'all' ? 'All jobs' : STAGE_LABELS[filterStage] || filterStage
 
   const extraNav = (
     <>
@@ -348,46 +400,103 @@ export default function App() {
         ) : (
           <div className={cn('flex min-w-0 flex-1 flex-col', drawerOpen && 'max-md:hidden')}>
             <StatusBanner />
-            <header className={cn('sticky top-0 z-20', APP_SHELL_HEADER)}>
-              <MobileNavTrigger />
-
-              <ViewModeTabs value={view} onChange={setView} />
-
-              <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-2">
-                <div className="relative w-full max-w-xs max-md:order-last sm:w-56">
-                  <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
-                  <Input
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Search jobs…"
-                    className="h-8 pl-8"
-                    aria-label="Search jobs"
-                  />
+            <header
+              className={cn(
+                'sticky top-0 z-20',
+                APP_SHELL_HEADER,
+                'max-md:h-14 max-md:flex-nowrap max-md:gap-1 max-md:px-2 max-md:py-0',
+              )}
+            >
+              {searchOpen ? (
+                <div className="flex min-w-0 flex-1 items-center gap-1 md:hidden">
+                  <BoardSearch value={searchQuery} onChange={setSearchQuery} autoFocus className="flex-1" />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => {
+                      setSearchQuery('')
+                      setSearchOpen(false)
+                    }}
+                  >
+                    Cancel
+                  </Button>
                 </div>
+              ) : null}
+              <div className={cn('flex min-w-0 flex-1 items-center gap-1 md:gap-4', searchOpen && 'max-md:hidden')}>
+                <MobileNavTrigger />
+                <h1 className="min-w-0 truncate text-subheading text-foreground max-md:pl-1 md:text-heading">
+                  {pageTitle}
+                  {board ? (
+                    <span className="ml-2 font-normal text-muted-foreground tabular-nums">{tableJobs.length}</span>
+                  ) : null}
+                </h1>
+                <div className="max-md:hidden">
+                  <ViewModeTabs value={view} onChange={setView} />
+                </div>
+                <BoardSearch value={searchQuery} onChange={setSearchQuery} className="w-64 max-md:hidden" />
 
-                <AutoSearchControls onRunDone={() => void refresh()} />
+                <div className="ml-auto flex shrink-0 items-center gap-0.5 md:gap-2">
+                  <Button
+                    type="button"
+                    size="icon-sm"
+                    variant="ghost"
+                    className="md:hidden"
+                    onClick={() => setSearchOpen(true)}
+                    aria-label="Open search"
+                  >
+                    <Search />
+                  </Button>
 
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={() => setShowSchedule(true)}
-                  title="Daily WhatsApp list"
-                >
-                  <WhatsAppIcon className="text-whatsapp" />
-                  <span className="max-sm:sr-only">WhatsApp</span>
-                  {pendingNotify > 0 ? ` (${pendingNotify})` : ''}
-                </Button>
+                  <AutoSearchControls onRunDone={() => void refresh()} />
 
-                <Button size="sm" variant="outline" onClick={() => setShowAdd(true)} aria-label="Add a job">
-                  <Plus /> <span className="max-sm:sr-only">Add job</span>
-                </Button>
+                  <Button
+                    type="button"
+                    size="icon-sm"
+                    variant="ghost"
+                    className="md:hidden"
+                    onClick={() => setShowSchedule(true)}
+                    aria-label={`Daily WhatsApp list${pendingNotify ? `, ${pendingNotify} waiting` : ''}`}
+                  >
+                    <WhatsAppIcon className="text-whatsapp" />
+                    {pendingNotify > 0 ? (
+                      <span className="absolute top-0 right-0 min-w-4 rounded-full bg-primary px-1 text-center text-micro leading-4 text-primary-foreground tabular-nums">
+                        {pendingNotify}
+                      </span>
+                    ) : null}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    className="max-md:hidden"
+                    onClick={() => setShowSchedule(true)}
+                    title="Daily WhatsApp list"
+                  >
+                    <WhatsAppIcon className="text-whatsapp" />
+                    WhatsApp
+                    {pendingNotify > 0 ? <Badge variant="secondary">{pendingNotify}</Badge> : null}
+                  </Button>
+
+                  <Button
+                    type="button"
+                    size="icon-sm"
+                    variant="ghost"
+                    className="md:hidden"
+                    onClick={() => setShowAdd(true)}
+                    aria-label="Add a job"
+                  >
+                    <Plus />
+                  </Button>
+                  <Button size="sm" variant="secondary" className="max-md:hidden" onClick={() => setShowAdd(true)}>
+                    <Plus /> Add job
+                  </Button>
+                </div>
               </div>
             </header>
 
             <main className="min-h-0 flex-1 overflow-auto p-3 md:p-4">
               {worthOnly ? (
-                <div className="mb-3 flex items-center gap-2">
+                <div className="mb-3 flex flex-wrap items-center gap-2">
                   <Chip>Worth a look: scored 5–6, no dealbreakers</Chip>
                   <Button
                     size="sm"
@@ -402,58 +511,84 @@ export default function App() {
                 </div>
               ) : null}
               {!board ? (
-                <p className="text-sm text-muted-foreground">
-                  {loading ? 'Loading your jobs…' : 'Could not load your jobs. Refresh the page.'}
-                </p>
+                loading ? (
+                  <BoardSkeleton />
+                ) : (
+                  <EmptyState
+                    size="page"
+                    icon={CloudOff}
+                    title="Couldn’t load your jobs"
+                    description="Check your internet, then try again."
+                    action={
+                      <Button variant="secondary" onClick={() => void refresh()}>
+                        <RefreshCw /> Try again
+                      </Button>
+                    }
+                  />
+                )
               ) : allJobs.length === 0 ? (
-                <div className="mx-auto mt-16 max-w-md space-y-3 text-center">
-                  <h2 className="text-base font-semibold">No jobs yet</h2>
-                  <p className="text-sm text-muted-foreground">
-                    Your first search fills this board. Run it now, or wait for tomorrow morning’s automatic search.
-                  </p>
-                  <div className="flex justify-center gap-2">
-                    <AutoSearchControls onRunDone={() => void refresh()} />
-                    <Button size="sm" variant="outline" onClick={() => navigate('/profile?tab=search')}>
-                      Check search settings
-                    </Button>
-                  </div>
-                </div>
+                <EmptyState
+                  size="page"
+                  icon={Inbox}
+                  title="No jobs yet"
+                  description="Your first search fills this board. Run it now, or wait for tomorrow morning’s automatic search."
+                  action={
+                    <>
+                      <AutoSearchControls labelled onRunDone={() => void refresh()} />
+                      <Button size="sm" variant="ghost" onClick={() => navigate('/profile?tab=search')}>
+                        Check search settings
+                      </Button>
+                    </>
+                  }
+                />
               ) : view === 'board' && !worthOnly ? (
-                <DndContext
-                  sensors={sensors}
-                  collisionDetection={collisionDetection}
-                  onDragStart={onDragStart}
-                  onDragOver={onDragOver}
-                  onDragEnd={onDragEnd}
-                  onDragCancel={onDragCancel}
-                >
-                  <div className="flex h-full min-h-[70vh] gap-3 overflow-x-auto pb-2">
-                    {visibleStages.map((stage) => (
-                      <KanbanColumn
-                        key={stage}
-                        stage={stage}
-                        label={STAGE_LABELS[stage] || stage}
-                        jobs={filteredColumns[stage] || []}
-                        total={stage === 'closed' ? board.closed_total : undefined}
-                        isDropTarget={dropTargetStage === stage}
-                        isDragging={!!activeCard}
-                        onOpen={openJob}
-                        onScoreSaved={() => void refresh()}
-                      />
-                    ))}
+                <>
+                  <div className="sticky -top-3 left-0 z-10 -mx-3 -mt-3 mb-1 bg-background px-3 py-2 md:hidden">
+                    <ViewModeTabs value={view} onChange={setView} />
                   </div>
-                  <DragOverlay dropAnimation={dropAnimation}>
-                    {activeCard ? (
-                      <JobCardView job={activeCard} stage={dropTargetStage || activeCard.funnel_stage} dragging />
-                    ) : null}
-                  </DragOverlay>
-                </DndContext>
+                  <DndContext
+                    sensors={sensors}
+                    collisionDetection={collisionDetection}
+                    onDragStart={onDragStart}
+                    onDragOver={onDragOver}
+                    onDragEnd={onDragEnd}
+                    onDragCancel={onDragCancel}
+                  >
+                    <div className="-mx-3 flex h-full min-h-[70vh] gap-3 overflow-x-auto px-3 pb-2 md:mx-0 md:px-0">
+                      {visibleStages.map((stage) => (
+                        <KanbanColumn
+                          key={stage}
+                          stage={stage}
+                          label={STAGE_LABELS[stage] || stage}
+                          jobs={filteredColumns[stage] || []}
+                          total={stage === 'closed' ? board.closed_total : undefined}
+                          isDropTarget={dropTargetStage === stage}
+                          isDragging={!!activeCard}
+                          searching={!!search}
+                          onOpen={openJob}
+                          onScoreSaved={() => void refresh()}
+                        />
+                      ))}
+                    </div>
+                    <DragOverlay dropAnimation={dropAnimation}>
+                      {activeCard ? (
+                        <JobCardView job={activeCard} stage={dropTargetStage || activeCard.funnel_stage} dragging />
+                      ) : null}
+                    </DragOverlay>
+                  </DndContext>
+                </>
               ) : (
                 <JobsTable
                   jobs={tableJobs}
                   stages={board.stages}
                   onOpen={openJobByUrl}
                   onScoreSaved={() => void refresh()}
+                  searching={!!search}
+                  toolbarStart={
+                    <div className="md:hidden">
+                      <ViewModeTabs value={view} onChange={setView} />
+                    </div>
+                  }
                 />
               )}
             </main>

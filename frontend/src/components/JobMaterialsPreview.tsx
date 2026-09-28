@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { Download, Sparkles } from 'lucide-react'
+import { Download, SlidersHorizontal } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkBreaks from 'remark-breaks'
 import remarkGfm from 'remark-gfm'
@@ -83,7 +83,7 @@ export function JobMaterialsPreview({
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
           <Select value={viewKey} onValueChange={onViewKeyChange}>
             <SelectTrigger
-              className="h-8 min-w-0 flex-1 basis-[10rem] @min-[26rem]/preview:max-w-[16rem]"
+              className="h-9 min-w-0 flex-1 basis-[10rem] @min-[26rem]/preview:max-w-[16rem]"
               aria-label="Choose which version to preview"
             >
               <SelectValue placeholder="Choose version" />
@@ -102,11 +102,11 @@ export function JobMaterialsPreview({
             onValueChange={(v) => setFormat(v as 'pdf' | 'markdown')}
             className="shrink-0"
           >
-            <TabsList className="h-8">
-              <TabsTrigger value="pdf" disabled={!active.pdfUrl} className="px-2.5 text-xs">
+            <TabsList>
+              <TabsTrigger value="pdf" disabled={!active.pdfUrl} className="px-2.5 text-caption">
                 PDF
               </TabsTrigger>
-              <TabsTrigger value="markdown" className="px-2.5 text-xs">
+              <TabsTrigger value="markdown" className="px-2.5 text-caption">
                 Markdown
               </TabsTrigger>
             </TabsList>
@@ -120,7 +120,7 @@ export function JobMaterialsPreview({
               }}
             >
               <SelectTrigger
-                className="h-8 w-auto shrink-0 gap-1.5 px-2.5"
+                className="h-9 w-auto shrink-0 gap-1.5 px-2.5"
                 aria-label="Download tailored file"
               >
                 <Download className="size-3.5" />
@@ -181,8 +181,8 @@ export function MaterialsTailorActions({
   return (
     <>
       {autoButton}
-      <Button type="button" size="sm" variant="ai" disabled={customDisabled} onClick={onCustom}>
-        <Sparkles />
+      <Button type="button" size="sm" variant="secondary" disabled={customDisabled} onClick={onCustom}>
+        <SlidersHorizontal />
         Custom
       </Button>
     </>

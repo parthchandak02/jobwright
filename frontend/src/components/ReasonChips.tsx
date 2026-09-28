@@ -1,3 +1,5 @@
+import type { CSSProperties } from 'react'
+import { Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 type Props = {
@@ -8,11 +10,11 @@ type Props = {
   className?: string
 }
 
-/** Multi-select reason pills (toggle buttons, keyboard accessible). */
 export function ReasonChips({ options, selected, onChange, tone = 'negative', className }: Props) {
   const on = new Set(selected)
+  const toneStyle = { '--tone': tone === 'negative' ? 'var(--destructive)' : 'var(--primary)' } as CSSProperties
   return (
-    <div className={cn('flex flex-wrap gap-1.5', className)} role="group" aria-label="Reasons">
+    <div className={cn('flex flex-wrap gap-2', className)} role="group" aria-label="Reasons">
       {options.map((opt) => {
         const active = on.has(opt)
         return (
@@ -21,15 +23,13 @@ export function ReasonChips({ options, selected, onChange, tone = 'negative', cl
             type="button"
             aria-pressed={active}
             onClick={() => onChange(active ? selected.filter((s) => s !== opt) : [...selected, opt])}
+            style={active ? toneStyle : undefined}
             className={cn(
-              'rounded-full border px-2.5 py-1 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
-              active
-                ? tone === 'negative'
-                  ? 'border-destructive/50 bg-destructive/10 text-destructive'
-                  : 'border-primary/50 bg-primary/10 text-primary'
-                : 'border-border/70 text-muted-foreground hover:bg-accent/60 hover:text-foreground',
+              'touch-target relative inline-flex h-9 items-center gap-1.5 rounded-full border px-3 text-caption transition-colors duration-(--dur-1) ease-out md:h-8',
+              active ? 'tone-tint font-medium' : 'border-border bg-surface text-foreground hover:bg-surface-muted',
             )}
           >
+            {active ? <Check className="size-3.5" aria-hidden /> : null}
             {opt}
           </button>
         )

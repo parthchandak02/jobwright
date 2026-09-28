@@ -8,18 +8,17 @@ type Props = {
   onChange: (value: ViewMode) => void
 }
 
-/** Board / table switcher — matches default TabsList pill style (MaterialsPanel, etc.). */
 export function ViewModeTabs({ value, onChange }: Props) {
   return (
     <Tabs value={value} onValueChange={(v) => onChange(v as ViewMode)} className="gap-0">
       <TabsList>
-        <TabsTrigger value="board" className="gap-1.5">
-          <Columns3 className="size-3.5" />
-          Board
+        <TabsTrigger value="board" aria-label="Board" className="touch-target max-md:px-3.5">
+          <Columns3 aria-hidden />
+          <span className="max-md:sr-only">Board</span>
         </TabsTrigger>
-        <TabsTrigger value="table" className="gap-1.5">
-          <LayoutList className="size-3.5" />
-          Table
+        <TabsTrigger value="table" aria-label="Table" className="touch-target max-md:px-3.5">
+          <LayoutList aria-hidden />
+          <span className="max-md:sr-only">Table</span>
         </TabsTrigger>
       </TabsList>
     </Tabs>

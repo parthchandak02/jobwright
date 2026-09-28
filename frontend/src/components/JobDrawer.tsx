@@ -1,24 +1,27 @@
-import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import type { LucideIcon } from 'lucide-react'
 import {
   ArrowLeft,
   BellRing,
-  Building2,
   CheckCircle2,
   ChevronDown,
-  DollarSign,
+  Copy,
   ExternalLink,
   History,
   Loader2,
-  MapPin,
+  MoreHorizontal,
   Sparkles,
   XCircle,
 } from 'lucide-react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
 import { ConnectionsPanel, type ConnectionContact } from '@/components/ConnectionsPanel'
+import { DetailGrid, DetailRow } from '@/components/DetailRow'
 import { DismissDialog, type DismissResult } from '@/components/DismissDialog'
 import { DrawerSection } from '@/components/DrawerSection'
-import { followUpLabel, JobMetaBadges } from '@/components/JobMetaBadges'
+import { followUpLabel } from '@/components/JobMetaBadges'
 import { listingHref } from '@/components/JobSummary'
 import { LinkedInLogo } from '@/components/LinkedInLogo'
 import { MatchExplanation } from '@/components/MatchExplanation'
@@ -28,22 +31,27 @@ import {
   type MaterialsData,
 } from '@/components/MaterialsPanel'
 import { RateJob } from '@/components/RateJob'
-import { ScoreBadge } from '@/components/ScoreBadge'
-import { SponsorshipBadge } from '@/components/SponsorshipBadge'
+import { SaveStatus, type SaveState } from '@/components/SaveStatus'
 import { StagePicker } from '@/components/StagePicker'
-import { Button } from '@/components/ui/button'
+import { workModelLabel } from '@/components/WorkModelBadge'
+import { Button, type ButtonProps } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Textarea } from '@/components/ui/textarea'
-import { WorkModelBadge } from '@/components/WorkModelBadge'
 import {
   apiFetch,
   followUpJob,
   getJobHistory,
   getJobLabels,
   jobPath,
-  laneTone,
   listRuns,
   moveJob,
+  OUTCOME_LABELS,
   STAGE_LABELS,
   startJobTailor,
   type JobCard,
@@ -54,7 +62,6 @@ import {
 import { cn, errorMessage } from '@/lib/utils'
 
 type Props = {
-  /** job_id of the open job (null = closed). */
   jobKey: string | null
   onClose: () => void
   onChanged: () => void
@@ -66,17 +73,63 @@ type Connections = {
   manual_contacts: ConnectionContact[]
 }
 
+type DrawerAction = {
+  key: string
+  label: string
+  short: string
+  icon: LucideIcon
+  variant: NonNullable<ButtonProps['variant']>
+  href?: string
+  onClick?: () => void
+  disabled?: boolean
+  busy?: boolean
+}
+
 const NOTES_SAVE_MS = 800
 const PREPARE_POLL_MS = 5000
 
+const SPONSORSHIP: Record<string, string> = {
+  required: 'Employer would need to sponsor',
+  not_required: 'US citizens or green card holders only',
+  not_found: 'Not mentioned',
+}
+
 function JobDescriptionPane({ text }: { text: string }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [expanded, setExpanded] = useState(false)
+  const [overflows, setOverflows] = useState(false)
+
+  useLayoutEffect(() => {
+    setExpanded(false)
+  }, [text])
+
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (el && !expanded) setOverflows(el.scrollHeight > el.clientHeight + 8)
+  }, [text, expanded])
+
   return (
-    <div className="job-drawer-jd">
-      <div className="job-drawer-jd-scroll">{text}</div>
-      <div className="job-drawer-jd-hint" aria-hidden="true">
-        <span>Scroll</span>
-        <ChevronDown className="size-2.5 opacity-70" />
+    <div>
+      <div
+        ref={ref}
+        data-collapsed={!expanded ? 'true' : 'false'}
+        className="job-drawer-jd materials-preview text-body text-foreground"
+      >
+        <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>
       </div>
+      {overflows || expanded ? (
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          className="mt-1 -ml-3"
+          aria-expanded={expanded}
+          onClick={() => setExpanded((v) => !v)}
+        >
+          <ChevronDown className={cn('transition-transform duration-(--dur-2)', expanded && 'rotate-180')} />
+          {expanded ? 'Show less' : 'Show full description'}
+        </Button>
+      ) : null}
     </div>
   )
 }
@@ -86,7 +139,86 @@ function fmtWhen(iso: string): string {
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
 }
 
-/** Poll for (and start) the full resume + cover run for one job. */
+function fmtDay(iso: string | null | undefined): string | null {
+  if (!iso) return null
+  const d = new Date(iso)
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString(undefined, { dateStyle: 'medium' })
+}
+
+function ActionButton({ action, className, compact }: { action: DrawerAction; className?: string; compact?: boolean }) {
+  const Icon = action.busy ? Loader2 : action.icon
+  const content = (
+    <>
+      <Icon className={cn(action.busy && 'animate-spin')} aria-hidden />
+      <span className={cn(compact && 'truncate')}>{compact ? action.short : action.label}</span>
+    </>
+  )
+  const cls = cn(compact && 'h-14 min-w-0 flex-1 flex-col gap-1 px-1 text-micro has-[>svg]:px-1', className)
+  if (action.href) {
+    return (
+      <Button asChild variant={action.variant} className={cls}>
+        <a href={action.href} target="_blank" rel="noreferrer" aria-label={compact ? action.label : undefined}>
+          {content}
+        </a>
+      </Button>
+    )
+  }
+  return (
+    <Button
+      type="button"
+      variant={action.variant}
+      className={cls}
+      disabled={action.disabled}
+      onClick={action.onClick}
+      aria-label={compact ? action.label : undefined}
+    >
+      {content}
+    </Button>
+  )
+}
+
+function PhoneActionBar({ actions }: { actions: DrawerAction[] }) {
+  if (!actions.length) return null
+  const lead = actions.find((a) => a.variant === 'ai' || a.variant === 'primary')
+  const shown = actions.length > 4 ? actions.slice(0, 3) : actions
+  const more = actions.length > 4 ? actions.slice(3) : []
+  return (
+    <div className="flex shrink-0 gap-1 border-t border-border bg-background px-2 pt-1.5 pb-[calc(0.375rem+var(--safe-bottom))] shadow-e1 md:hidden">
+      {shown.map((a) => (
+        <ActionButton key={a.key} action={a === lead ? a : { ...a, variant: 'ghost' }} compact />
+      ))}
+      {more.length ? (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button type="button" variant="ghost" className="h-14 flex-1 flex-col gap-1 px-1 text-micro">
+              <MoreHorizontal aria-hidden /> More
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" side="top">
+            {more.map((a) => (
+              <DropdownMenuItem key={a.key} disabled={a.disabled} onSelect={() => a.onClick?.()}>
+                <a.icon /> {a.label}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      ) : null}
+    </div>
+  )
+}
+
+function Callout({ icon: Icon, children, actions, tone }: { icon: LucideIcon; children: ReactNode; actions?: ReactNode; tone?: string }) {
+  return (
+    <div className="flex flex-col gap-3 rounded-lg border border-border bg-surface p-4 sm:flex-row sm:items-center">
+      <div className="flex min-w-0 flex-1 items-start gap-3">
+        <Icon className="mt-[0.2rem] size-4 shrink-0" style={tone ? { color: `var(${tone})` } : undefined} aria-hidden />
+        <div className="min-w-0 text-body text-foreground">{children}</div>
+      </div>
+      {actions ? <div className="flex flex-wrap gap-2 max-sm:pl-7">{actions}</div> : null}
+    </div>
+  )
+}
+
 function usePrepareMaterials(jobKey: string | null, onDone: () => void) {
   const [runId, setRunId] = useState<string | null>(null)
   const [starting, setStarting] = useState(false)
@@ -153,7 +285,8 @@ export function JobDrawer({ jobKey, onClose, onChanged }: Props) {
   const [settings, setSettings] = useState<SettingsData | null>(null)
   const [connections, setConnections] = useState<Connections | null>(null)
   const [notes, setNotes] = useState('')
-  const [notesState, setNotesState] = useState<'idle' | 'saving' | 'saved'>('idle')
+  const [notesState, setNotesState] = useState<SaveState>('idle')
+  const [notesSavedAt, setNotesSavedAt] = useState<number | null>(null)
   const [busy, setBusy] = useState(false)
   const [dismissOpen, setDismissOpen] = useState(false)
   const [history, setHistory] = useState<{ stages: StageHistoryEntry[]; labels: JobLabels } | null>(null)
@@ -221,9 +354,10 @@ export function JobDrawer({ jobKey, onClose, onChanged }: Props) {
       await apiFetch(jobPath(job), { method: 'PATCH', body: JSON.stringify({ notes: next }) })
       savedNotes.current = next
       setNotesState('saved')
+      setNotesSavedAt(Date.now())
       onChanged()
     } catch (e) {
-      setNotesState('idle')
+      setNotesState('error')
       toast.error(errorMessage(e))
     }
   }
@@ -304,10 +438,58 @@ export function JobDrawer({ jobKey, onClose, onChanged }: Props) {
   }
 
   const href = job ? listingHref(job) : null
-  const lane = job ? laneTone(job.funnel_stage) : undefined
   const hasMaterials = Boolean(job?.has_resume || job?.has_cover || materials?.resume_md || materials?.cover_md)
   const beforeApplying = job ? job.funnel_stage === 'backlog' || job.funnel_stage === 'prepare' : false
+  const closed = job?.funnel_stage === 'closed'
   const showMaterials = !!job && (hasMaterials || job.funnel_stage !== 'backlog' || prepare.running)
+
+  const actions: DrawerAction[] = []
+  if (job) {
+    if (beforeApplying && !hasMaterials) {
+      actions.push({
+        key: 'prepare',
+        label: prepare.running ? 'Preparing resume + letter…' : 'Prepare resume + letter',
+        short: prepare.running ? 'Preparing…' : 'Prepare',
+        icon: Sparkles,
+        variant: 'ai',
+        busy: prepare.running || prepare.starting,
+        disabled: prepare.starting || prepare.running,
+        onClick: () => void prepare.start(),
+      })
+    }
+    if (href) {
+      actions.push({
+        key: 'open',
+        label: 'Open posting',
+        short: 'Posting',
+        icon: ExternalLink,
+        variant: beforeApplying && hasMaterials ? 'primary' : 'secondary',
+        href,
+      })
+    }
+    if (beforeApplying) {
+      actions.push({
+        key: 'applied',
+        label: 'I applied',
+        short: 'I applied',
+        icon: CheckCircle2,
+        variant: 'secondary',
+        disabled: busy,
+        onClick: () => void doMove('applied'),
+      })
+    }
+    if (!closed) {
+      actions.push({
+        key: 'dismiss',
+        label: beforeApplying ? 'Not for me' : 'Close job',
+        short: beforeApplying ? 'Not for me' : 'Close',
+        icon: XCircle,
+        variant: 'ghost',
+        disabled: busy,
+        onClick: () => setDismissOpen(true),
+      })
+    }
+  }
 
   const historyItems = history
     ? [
@@ -333,138 +515,124 @@ export function JobDrawer({ jobKey, onClose, onChanged }: Props) {
       ].sort((a, b) => (a.at < b.at ? 1 : -1))
     : []
 
+  const place = job ? [job.company || 'Unknown company', job.location].filter(Boolean).join(' · ') : ''
+  const closedText =
+    job && closed && !job.duplicate_of && (job.outcome || job.close_reason)
+      ? [
+          job.outcome ? OUTCOME_LABELS[job.outcome] || job.outcome.replace('_', ' ') : null,
+          job.close_reason ? (job.close_reason === 'no_response' ? 'No response' : job.close_reason) : null,
+        ]
+          .filter(Boolean)
+          .join(' · ')
+      : null
+
   return (
     <Sheet open={open} onOpenChange={(v) => !v && onClose()}>
       <SheetContent
         showClose={false}
-        className="flex h-dvh min-h-0 flex-col gap-0 overflow-hidden border-l-border/60 bg-background p-0 sm:w-3/5 sm:max-w-[60vw]"
+        className="flex h-dvh min-h-0 flex-col gap-0 overflow-hidden bg-background p-0 sm:w-3/5 sm:max-w-[52rem] md:min-w-[36rem]"
       >
         <SheetHeader className="sr-only">
           <SheetTitle>{job?.title || 'Job details'}</SheetTitle>
           <SheetDescription>{job?.company || 'Job details'}</SheetDescription>
         </SheetHeader>
 
-        <header
-          className="shrink-0 space-y-2 border-b border-border/60 bg-background px-3 pt-2 pb-2.5"
-          style={lane ? ({ '--lane': lane } as CSSProperties) : undefined}
-        >
-          <div className="flex items-start gap-2">
-            <Button type="button" size="icon-sm" variant="ghost" onClick={onClose} aria-label="Back to board">
-              <ArrowLeft />
-            </Button>
-            <div className="min-w-0 flex-1 pt-0.5">
-              <h2 className="truncate text-base leading-tight font-semibold">{job?.title || 'Loading…'}</h2>
-              {job ? (
-                <p className="flex items-center gap-1 truncate text-sm text-muted-foreground">
-                  <Building2 className="size-3.5 shrink-0" /> {job.company || 'Unknown company'}
-                </p>
-              ) : null}
-            </div>
-            {job ? (
-              <ScoreBadge
-                score={job.fit_score}
-                userModified={job.score_user_modified}
-                className="h-8 min-w-8 rounded-lg text-sm"
-              />
-            ) : null}
+        <header className="flex shrink-0 items-start gap-2 border-b border-border bg-background px-2 py-2 md:px-3 md:py-3">
+          <Button type="button" size="icon" variant="ghost" onClick={onClose} aria-label="Back to board" className="shrink-0">
+            <ArrowLeft />
+          </Button>
+          <div className="min-w-0 flex-1 py-1 md:py-0.5">
+            <h2 className="line-clamp-2 text-heading text-foreground">{job?.title || 'Loading…'}</h2>
+            {job ? <p className="mt-0.5 truncate text-caption text-muted-foreground">{place}</p> : null}
           </div>
-          {job ? (
-            <div className="-mx-3 flex gap-2 overflow-x-auto px-3 pb-0.5 md:mx-0 md:flex-wrap md:overflow-visible md:px-0 md:pl-10">
-              {href ? (
-                <Button asChild size="sm" variant={hasMaterials || !beforeApplying ? 'default' : 'outline'}>
-                  <a href={href} target="_blank" rel="noreferrer">
-                    <ExternalLink /> Open posting
-                  </a>
-                </Button>
-              ) : null}
-              {beforeApplying && !hasMaterials ? (
-                <Button
-                  size="sm"
-                  variant="ai"
-                  disabled={prepare.starting || prepare.running}
-                  onClick={() => void prepare.start()}
-                >
-                  {prepare.running || prepare.starting ? <Loader2 className="animate-spin" /> : <Sparkles />}
-                  {prepare.running ? 'Preparing materials…' : 'Prepare resume + letter'}
-                </Button>
-              ) : null}
-              {beforeApplying ? (
-                <Button size="sm" variant="outline" disabled={busy} onClick={() => void doMove('applied')}>
-                  <CheckCircle2 /> I applied
-                </Button>
-              ) : null}
-              {job.funnel_stage !== 'closed' ? (
-                <Button size="sm" variant="ghost" disabled={busy} onClick={() => setDismissOpen(true)}>
-                  <XCircle /> {beforeApplying ? 'Not for me' : 'Close'}
-                </Button>
-              ) : null}
-            </div>
-          ) : null}
         </header>
 
         <div className="job-drawer-scroll">
-          <div className="min-w-0 px-4 pb-8 pt-3">
+          <div className="mx-auto min-w-0 max-w-[46rem] px-4 pb-10 md:px-6">
             {!job ? (
-              <div className="flex items-center gap-2 py-8 text-sm text-muted-foreground">
+              <div className="flex items-center gap-2 py-8 text-body text-muted-foreground">
                 <Loader2 className="size-4 animate-spin" /> Loading job…
               </div>
             ) : (
               <>
-                <DrawerSection first>
-                  <div className="space-y-2.5">
-                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
-                      <span className="flex items-center gap-1">
-                        <MapPin className="size-3.5" /> {job.location || 'Location not stated'}
-                      </span>
-                      <span className="flex items-center gap-1">
-                        <DollarSign className="size-3.5" /> {job.salary || 'Pay not stated'}
-                      </span>
-                    </div>
-                    <div className="flex flex-wrap gap-1.5">
-                      <WorkModelBadge workModel={job.work_model} />
-                      <SponsorshipBadge status={job.sponsorship_status} />
-                      <JobMetaBadges job={job} />
-                    </div>
-                    <StagePicker stage={job.funnel_stage} disabled={busy} onMove={requestMove} />
-                    {job.followup_due ? (
-                      <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border/60 bg-muted/30 p-2.5 text-sm">
-                        <BellRing className="size-4 shrink-0 text-[var(--stage-in-progress)]" aria-hidden />
-                        <span className="min-w-0 flex-1">{followUpLabel(job.applied_days_ago)}. No reply yet.</span>
-                        <Button size="sm" variant="outline" disabled={busy} onClick={() => void doFollowUp('followed_up')}>
-                          Followed up
-                        </Button>
-                        <Button size="sm" variant="ghost" disabled={busy} onClick={() => void doFollowUp('no_response')}>
-                          No response
-                        </Button>
-                      </div>
-                    ) : null}
+                <DrawerSection first className="flex flex-col gap-4">
+                  <div className="surface space-y-4 rounded-lg p-4 md:p-5">
+                    <MatchExplanation job={job} />
                     {job.funnel_stage === 'closed' && job.duplicate_of ? (
-                      <p className="text-xs text-muted-foreground">
-                        Closed: duplicate of{' '}
-                        <Link to={jobPath(job.duplicate_of.job_id)} className="font-medium text-foreground underline underline-offset-2">
-                          {job.duplicate_of.title || 'another posting'}
-                        </Link>
+                      <p className="flex items-center gap-2 text-body text-muted-foreground">
+                        <Copy className="size-4 shrink-0" aria-hidden />
+                        <span>
+                          Closed as a duplicate of{' '}
+                          <Link
+                            to={jobPath(job.duplicate_of.job_id)}
+                            className="font-medium text-foreground underline underline-offset-2"
+                          >
+                            {job.duplicate_of.title || 'another posting'}
+                          </Link>
+                        </span>
                       </p>
-                    ) : job.funnel_stage === 'closed' && (job.outcome || job.close_reason) ? (
-                      <p className="text-xs text-muted-foreground">
-                        Closed{job.outcome ? `: ${job.outcome.replace('_', ' ')}` : ''}
-                        {job.close_reason ? ` · ${job.close_reason === 'no_response' ? 'no response' : job.close_reason}` : ''}
+                    ) : closedText ? (
+                      <p className="flex items-center gap-2 text-body text-muted-foreground">
+                        <XCircle className="size-4 shrink-0" aria-hidden /> Closed: {closedText}
                       </p>
                     ) : null}
+                    <div className="border-t border-border pt-4">
+                      <RateJob
+                        job={job}
+                        onRated={(updated) => {
+                          setJob({ ...job, ...updated })
+                          onChanged()
+                        }}
+                      />
+                    </div>
                   </div>
+
+                  {job.followup_due ? (
+                    <Callout
+                      icon={BellRing}
+                      tone="--stage-in-progress"
+                      actions={
+                        <>
+                          <Button size="sm" variant="secondary" disabled={busy} onClick={() => void doFollowUp('followed_up')}>
+                            I followed up
+                          </Button>
+                          <Button size="sm" variant="ghost" disabled={busy} onClick={() => void doFollowUp('no_response')}>
+                            No response
+                          </Button>
+                        </>
+                      }
+                    >
+                      {followUpLabel(job.applied_days_ago)}. No reply yet, so a short note can help.
+                    </Callout>
+                  ) : null}
+
+                  {actions.length ? (
+                    <div className="hidden flex-wrap gap-2 md:flex">
+                      {actions.map((a) => (
+                        <ActionButton key={a.key} action={a} />
+                      ))}
+                    </div>
+                  ) : null}
                 </DrawerSection>
 
-                <DrawerSection title="Why this match">
-                  <div className="space-y-4">
-                    <MatchExplanation job={job} />
-                    <RateJob
-                      job={job}
-                      onRated={(updated) => {
-                        setJob({ ...job, ...updated })
-                        onChanged()
-                      }}
+                <DrawerSection title="Stage">
+                  <StagePicker stage={job.funnel_stage} disabled={busy} onMove={requestMove} />
+                </DrawerSection>
+
+                <DrawerSection title="Details">
+                  <DetailGrid className="space-y-2">
+                    <DetailRow label="Location" value={job.location || 'Not stated'} />
+                    <DetailRow label="Work model" value={workModelLabel(job.work_model) || 'Not stated'} />
+                    <DetailRow label="Pay" value={job.salary || 'Not stated'} />
+                    <DetailRow label="Sponsorship" value={SPONSORSHIP[job.sponsorship_status] || SPONSORSHIP.not_found} />
+                    <DetailRow
+                      label="Found"
+                      value={job.source === 'manual' ? `Added by you${fmtDay(job.discovered_at) ? ` · ${fmtDay(job.discovered_at)}` : ''}` : [fmtDay(job.discovered_at), job.site ? `on ${job.site}` : null].filter(Boolean).join(' ')}
                     />
-                  </div>
+                    {job.applied_at ? <DetailRow label="Applied" value={fmtDay(job.applied_at)} /> : null}
+                    {job.whatsapp_notified_at ? <DetailRow label="On WhatsApp" value={`Sent ${fmtDay(job.whatsapp_notified_at)}`} /> : null}
+                    {job.is_dead ? <DetailRow label="Posting" value="No longer accepting applications" /> : null}
+                  </DetailGrid>
                 </DrawerSection>
 
                 {job.full_description?.trim() ? (
@@ -501,10 +669,9 @@ export function JobDrawer({ jobKey, onClose, onChanged }: Props) {
                 ) : null}
 
                 <DrawerSection
-                  className="connections-section"
                   title={
                     <span className="inline-flex items-center gap-2">
-                      <LinkedInLogo className="size-4 text-[var(--linkedin)]" />
+                      <LinkedInLogo className="size-4 text-linkedin" />
                       Who you know there
                     </span>
                   }
@@ -513,20 +680,15 @@ export function JobDrawer({ jobKey, onClose, onChanged }: Props) {
                 </DrawerSection>
 
                 <DrawerSection
-                  title={
-                    <span className="flex w-full items-center justify-between gap-2">
-                      Notes
-                      <span className="text-xs font-normal text-muted-foreground" aria-live="polite">
-                        {notesState === 'saving' ? 'Saving…' : notesState === 'saved' ? 'Saved' : ''}
-                      </span>
-                    </span>
-                  }
+                  title="Notes"
+                  actions={<SaveStatus state={notesState} savedAt={notesSavedAt} onRetry={() => void persistNotes(notes)} />}
                 >
                   <Textarea
                     id="notes"
                     value={notes}
                     rows={3}
-                    placeholder="Notes for yourself…"
+                    aria-label="Notes"
+                    placeholder="Write notes for yourself"
                     onChange={(e) => onNotesChange(e.target.value)}
                     onBlur={() => {
                       if (saveTimer.current) clearTimeout(saveTimer.current)
@@ -536,28 +698,30 @@ export function JobDrawer({ jobKey, onClose, onChanged }: Props) {
                 </DrawerSection>
 
                 <DrawerSection>
-                  <button
+                  <Button
                     type="button"
+                    size="sm"
+                    variant="ghost"
                     onClick={() => void toggleHistory()}
-                    className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                    className="-ml-3 text-muted-foreground"
                     aria-expanded={historyOpen}
                   >
-                    <History className="size-3.5" /> History
-                    <ChevronDown className={cn('size-3.5 transition-transform', historyOpen && 'rotate-180')} />
-                  </button>
+                    <History /> History
+                    <ChevronDown className={cn('transition-transform duration-(--dur-2)', historyOpen && 'rotate-180')} />
+                  </Button>
                   {historyOpen ? (
                     history ? (
-                      <ul className="mt-3 space-y-1.5 text-xs text-muted-foreground">
+                      <ul className="mt-3 space-y-2 text-caption">
                         {historyItems.map((e, i) => (
-                          <li key={i} className="flex gap-2">
-                            <span className="shrink-0 tabular-nums">{fmtWhen(e.at)}</span>
-                            <span className="text-foreground/80">{e.text}</span>
+                          <li key={i} className="flex flex-col gap-0.5 sm:flex-row sm:gap-3">
+                            <span className="shrink-0 text-muted-foreground tabular-nums sm:w-44">{fmtWhen(e.at)}</span>
+                            <span className="text-foreground">{e.text}</span>
                           </li>
                         ))}
-                        {!historyItems.length ? <li>No history yet.</li> : null}
+                        {!historyItems.length ? <li className="text-muted-foreground">No history yet.</li> : null}
                       </ul>
                     ) : (
-                      <p className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
+                      <p className="mt-3 flex items-center gap-2 text-caption text-muted-foreground">
                         <Loader2 className="size-3.5 animate-spin" /> Loading…
                       </p>
                     )
@@ -567,6 +731,8 @@ export function JobDrawer({ jobKey, onClose, onChanged }: Props) {
             )}
           </div>
         </div>
+
+        {job ? <PhoneActionBar actions={actions} /> : null}
       </SheetContent>
       <DismissDialog
         open={dismissOpen}

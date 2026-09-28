@@ -32,7 +32,7 @@ export function SidebarNav({
     <nav className={cn('flex flex-col gap-0.5 p-2', className)}>
       <NavItem
         active={filterStage === 'all'}
-        label="ALL"
+        label="All jobs"
         count={board?.total ?? 0}
         icon={NAV_ICONS.all}
         countVariant="secondary"

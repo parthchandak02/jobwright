@@ -13,10 +13,9 @@ type Props = {
   titleActive: string
   stageLabels: Record<string, string>
   className?: string
-  variant?: 'default' | 'prepare'
+  variant?: 'default' | 'prepare' | 'ai'
 }
 
-/** Idle Sparkles CTA that switches to elapsed time, stage, and a progress bar while a run is live. */
 export function RunProgressButton({
   run,
   idleLabel,
@@ -33,7 +32,7 @@ export function RunProgressButton({
     <Button
       type="button"
       size="sm"
-      variant={prepare ? 'outline' : 'default'}
+      variant={prepare ? 'secondary' : variant === 'ai' ? 'ai' : 'primary'}
       onClick={onClick}
       title={run.active ? titleActive : titleIdle}
       style={prepare ? ({ '--lane': laneTone('prepare') } as CSSProperties) : undefined}

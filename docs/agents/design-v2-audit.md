@@ -3,7 +3,7 @@
 ## Status
 
 - WP1 (tokens + primitives), WP2 (Welcome), WP3 (Profile, now "Settings"), WP4 (Admin), WP5 (Match quality): shipped 2026-09-27. Current primitives and rules: `.cursor/skills/frontend-tasteful/SKILL.md` and `references/catalog.md`.
-- WP6 (board + job drawer token alignment): pending. Checklist in the catalog section "Applying v2 to remaining pages".
+- WP6 (board, table, job drawer): shipped 2026-09-28 on `design-wp6`. Conventions in the catalog section "Board and drawer".
 
 Known gaps reported by engineers (todo):
 
@@ -13,6 +13,10 @@ Known gaps reported by engineers (todo):
 - [ ] `SectionHeader` has no subheading slot and does not stack `actions` under the title on phone.
 - [ ] Disabled `primary` buttons use `disabled:opacity-45`, which reads washed out on the accent; needs a dedicated disabled token.
 - [ ] `TabsContent` sets `outline-none`, so a focused tab panel has no visible focus.
+- [ ] `EmptyState` has no compact size (40px icon, `py-10`); `KanbanColumn` renders its own small empty box.
+- [ ] `ValueChip` remove hit area is 32px, below the 44px phone target (seen on the table filter chips).
+- [ ] Remaining `variant="outline"` outside WP6 scope: `AppGate`, `RunProgressDialog`, `ConnectedChat`. `RunProgressDialog` still uses `SectionLabel`.
+- [x] `tone-tint` / lane mixes used `in oklch`, which pulled light-mode tints toward red on the white surface (hue 0). Fixed in WP6 by mixing `in oklab`.
 
 Date: 2026-09-27. Branch `dev`. Scope: `/welcome`, `/profile` (search, rules, documents, whatsapp, about), `/admin`, `/quality`, with a consistency pass over the board and job drawer.
 
