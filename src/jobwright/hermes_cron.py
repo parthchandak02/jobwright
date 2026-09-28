@@ -252,6 +252,16 @@ def _ensure_script_cron(name: str, script_name: str, body: str, schedule: str) -
     return {"ok": not result.get("error"), "error": result.get("error"), "cron_id": cron_id}
 
 
+def _logged_run(py, command: str, log_name: str) -> str:
+    """Script lines that run a jobwright CLI command and append its output to logs/cron_<name>.log."""
+    log = f"{_repo_root()}/logs/cron_{log_name}.log"
+    return (
+        f'mkdir -p "{_repo_root()}/logs"\n'
+        f'echo "--- $(date +%FT%T)" >>"{log}"\n'
+        f'"{py}" -m jobwright.cli {command} >>"{log}" 2>&1 || echo "exit $?" >>"{log}"\n'
+    )
+
+
 def ensure_backup_cron(schedule: str = "30 2 * * *", dest: str = "") -> dict:
     """Nightly `jobwright ops backup` (alerts the operator on failure)."""
     from jobwright.users import USERS_ROOT
@@ -267,7 +277,7 @@ def ensure_backup_cron(schedule: str = "30 2 * * *", dest: str = "") -> dict:
         f'export PYTHONPATH="{_repo_root()}/src"\n'
         'export PATH="${HOME}/.local/bin:${PATH}"\n'
         f'cd "{_repo_root()}"\n'
-        f'"{py}" -m jobwright.cli ops backup >/dev/null 2>&1 || true\n'
+        + _logged_run(py, "ops backup", "backup")
     )
     return _ensure_script_cron(BACKUP_CRON_NAME, "jobwright_backup.sh", body, schedule)
 
@@ -291,7 +301,7 @@ def ensure_watchdog_cron(schedule: str = "30 8 * * *") -> dict:
         f'export PYTHONPATH="{_repo_root()}/src"\n'
         'export PATH="${HOME}/.local/bin:${PATH}"\n'
         f'cd "{_repo_root()}"\n'
-        f'"{py}" -m jobwright.cli ops watchdog >/dev/null 2>&1 || true\n',
+        + _logged_run(py, "ops watchdog", "watchdog"),
         encoding="utf-8",
     )
     path.chmod(0o755)
@@ -324,6 +334,6 @@ def ensure_weekly_summary_cron(schedule: str = "0 18 * * 0") -> dict:
         'export PATH="${HOME}/.local/bin:${PATH}"\n'
         "unset JOBWRIGHT_USER\n"
         f'cd "{_repo_root()}"\n'
-        f'"{py}" -m jobwright.cli summary >/dev/null 2>&1 || true\n'
+        + _logged_run(py, "summary", "weekly_summary")
     )
     return _ensure_script_cron(WEEKLY_SUMMARY_CRON_NAME, "jobwright_weekly_summary.sh", body, schedule)
