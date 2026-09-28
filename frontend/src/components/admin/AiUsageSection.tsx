@@ -1,14 +1,10 @@
 import { useState } from 'react'
-import { Loader2 } from 'lucide-react'
 import { CollapsibleSection } from '@/components/admin/CollapsibleSection'
-import { fmtTokens } from '@/components/admin/adminFormat'
+import { fmtTokens, fmtUsd } from '@/components/admin/adminFormat'
 import { Button } from '@/components/ui/button'
+import { Skeleton } from '@/components/ui/skeleton'
 import { getAdminCosts, type AdminCosts } from '@/lib/api'
 import { errorMessage } from '@/lib/utils'
-
-function fmtUsd(v: number | null): string {
-  return v == null ? '—' : `$${v.toFixed(2)}`
-}
 
 export function AiUsageSection() {
   const [costs, setCosts] = useState<AdminCosts | null>(null)
@@ -24,63 +20,70 @@ export function AiUsageSection() {
       .finally(() => setLoading(false))
   }
 
+  const cell = 'px-4 py-2.5 text-right md:px-5'
+
   return (
     <CollapsibleSection
       title="AI usage"
-      summary="Last 30 days, per profile"
+      summary="Last 30 days, per person"
       onOpenChange={(open) => {
         if (open && !costs) load()
       }}
     >
       {error ? (
-        <div className="flex items-center gap-2 text-xs text-destructive">
-          {error}
-          <Button size="xs" variant="outline" onClick={load}>
+        <div className="flex flex-wrap items-center gap-3 text-caption text-destructive">
+          <span className="min-w-0 flex-1">Couldn't load AI usage: {error}</span>
+          <Button size="sm" variant="secondary" onClick={load}>
             Retry
           </Button>
         </div>
       ) : !costs || loading ? (
-        <p className="flex items-center gap-2 text-xs text-muted-foreground">
-          <Loader2 className="size-3.5 animate-spin" /> Loading…
-        </p>
+        <div className="space-y-2" aria-busy>
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-10 w-full" />
+        </div>
       ) : (
         <div className="space-y-2">
-          <div className="overflow-x-auto rounded-lg border border-border/60">
-            <table className="w-full text-xs tabular-nums">
-              <thead className="text-left text-muted-foreground">
-                <tr>
-                  <th className="px-3 py-1.5 font-medium">Profile</th>
-                  <th className="px-3 py-1.5 text-right font-medium">Calls</th>
-                  <th className="px-3 py-1.5 text-right font-medium">Tokens</th>
-                  <th className="px-3 py-1.5 text-right font-medium">Est. cost</th>
+          <div className="surface overflow-x-auto rounded-lg">
+            <table className="w-full text-body tabular-nums">
+              <thead className="text-caption text-muted-foreground">
+                <tr className="border-b">
+                  <th className="px-4 py-2.5 text-left font-normal md:px-5">Person</th>
+                  <th className={`${cell} font-normal`}>AI calls</th>
+                  <th className={`${cell} font-normal`}>Tokens</th>
+                  <th className={`${cell} font-normal`}>Est. cost</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="divide-y">
                 {costs.users.map((u) => (
-                  <tr key={u.user_id} className="border-t border-border/60">
-                    <td className="px-3 py-1.5 text-sm">
+                  <tr key={u.user_id}>
+                    <td className="px-4 py-2.5 md:px-5">
                       {u.name}
-                      {u.error ? <span className="ml-2 text-xs text-muted-foreground">({u.error})</span> : null}
+                      {u.error ? <span className="ml-2 text-caption text-muted-foreground">({u.error})</span> : null}
                     </td>
-                    <td className="px-3 py-1.5 text-right">{u.calls.toLocaleString()}</td>
-                    <td className="px-3 py-1.5 text-right" title={u.total_tokens.toLocaleString()}>
+                    <td className={cell}>{u.calls.toLocaleString()}</td>
+                    <td className={cell} title={`${u.total_tokens.toLocaleString()} tokens`}>
                       {fmtTokens(u.total_tokens)}
                     </td>
-                    <td className="px-3 py-1.5 text-right">{fmtUsd(u.cost_usd)}</td>
+                    <td className={cell}>{fmtUsd(u.cost_usd)}</td>
                   </tr>
                 ))}
-                <tr className="border-t border-border font-semibold">
-                  <td className="px-3 py-1.5 text-sm">Total</td>
-                  <td className="px-3 py-1.5 text-right">{costs.total.calls.toLocaleString()}</td>
-                  <td className="px-3 py-1.5 text-right" title={costs.total.total_tokens.toLocaleString()}>
+              </tbody>
+              <tfoot>
+                <tr className="border-t font-medium">
+                  <td className="px-4 py-2.5 md:px-5">Total</td>
+                  <td className={cell}>{costs.total.calls.toLocaleString()}</td>
+                  <td className={cell} title={`${costs.total.total_tokens.toLocaleString()} tokens`}>
                     {fmtTokens(costs.total.total_tokens)}
                   </td>
-                  <td className="px-3 py-1.5 text-right">{fmtUsd(costs.total.cost_usd)}</td>
+                  <td className={cell}>{fmtUsd(costs.total.cost_usd)}</td>
                 </tr>
-              </tbody>
+              </tfoot>
             </table>
           </div>
-          <p className="text-xs text-muted-foreground">Cost is an estimate from JOBWRIGHT_LLM_PRICES.</p>
+          <p className="text-caption text-muted-foreground">
+            Costs are estimates. A dash means no price is set for that model.
+          </p>
         </div>
       )}
     </CollapsibleSection>

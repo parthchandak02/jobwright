@@ -17,6 +17,7 @@ type Props = {
   description: ReactNode
   confirmLabel: string
   destructive?: boolean
+  icon?: ReactNode
   /** Resolve to close; reject to keep the dialog open (the caller reports the error). */
   onConfirm: () => Promise<unknown>
   children?: ReactNode
@@ -29,6 +30,7 @@ export function ConfirmDialog({
   description,
   confirmLabel,
   destructive,
+  icon,
   onConfirm,
   children,
 }: Props) {
@@ -48,18 +50,18 @@ export function ConfirmDialog({
 
   return (
     <Dialog open={open} onOpenChange={(v) => !busy && onOpenChange(v)}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent size="form">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
         {children}
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>
+          <Button variant="secondary" onClick={() => onOpenChange(false)} disabled={busy}>
             Cancel
           </Button>
-          <Button variant={destructive ? 'destructive' : 'default'} onClick={() => void confirm()} disabled={busy}>
-            {busy ? <Loader2 className="animate-spin" /> : null}
+          <Button variant={destructive ? 'destructive' : 'primary'} onClick={() => void confirm()} disabled={busy}>
+            {busy ? <Loader2 className="animate-spin" /> : icon}
             {confirmLabel}
           </Button>
         </DialogFooter>

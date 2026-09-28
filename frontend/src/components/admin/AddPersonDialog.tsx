@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Loader2, UserPlus } from 'lucide-react'
+import { Loader2, UserPlus, Users } from 'lucide-react'
 import { toast } from 'sonner'
 import { FormField } from '@/components/FormField'
 import { WhatsAppChatPicker } from '@/components/WhatsAppChatPicker'
@@ -29,18 +29,22 @@ export function AddPersonDialog({ open, onOpenChange, onCreated }: Props) {
   const [pickChat, setPickChat] = useState(false)
   const [target, setTarget] = useState('')
   const [busy, setBusy] = useState(false)
+  const [tried, setTried] = useState(false)
 
   function reset() {
+    setTried(false)
     setName('')
     setEmail('')
     setPickChat(false)
     setTarget('')
   }
 
-  const valid = name.trim() && /^\S+@\S+\.\S+$/.test(email.trim())
+  const nameError = tried && !name.trim() ? 'Add their name.' : undefined
+  const emailError = tried && !/^\S+@\S+\.\S+$/.test(email.trim()) ? 'Enter a full email address.' : undefined
 
   async function create() {
-    if (!valid) return
+    setTried(true)
+    if (!name.trim() || !/^\S+@\S+\.\S+$/.test(email.trim())) return
     setBusy(true)
     try {
       const res = await createProfile(name.trim(), [email.trim().toLowerCase()])
@@ -72,49 +76,61 @@ export function AddPersonDialog({ open, onOpenChange, onCreated }: Props) {
         onOpenChange(v)
       }}
     >
-      <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-md">
+      <DialogContent size={pickChat ? 'picker' : 'form'} className="sm:max-h-[90dvh] sm:overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Add person</DialogTitle>
-          <DialogDescription>They can log in with this email and finish setup at /welcome.</DialogDescription>
+          <DialogDescription>They log in with this email and finish setup themselves (resume, searches, chat).</DialogDescription>
         </DialogHeader>
         <form
-          className="space-y-3"
+          className="space-y-field"
+          noValidate
           onSubmit={(e) => {
             e.preventDefault()
             void create()
           }}
         >
-          <FormField label="Name" htmlFor="add-person-name">
-            <Input id="add-person-name" value={name} onChange={(e) => setName(e.target.value)} className="h-8" autoFocus />
+          <FormField label="Name" htmlFor="add-person-name" error={nameError}>
+            <Input
+              id="add-person-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="First and last name"
+              autoComplete="off"
+              autoFocus
+            />
           </FormField>
-          <FormField label="Login email" htmlFor="add-person-email">
+          <FormField
+            label="Login email"
+            htmlFor="add-person-email"
+            hint="The email they use to sign in to jobwright."
+            error={emailError}
+          >
             <Input
               id="add-person-email"
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="name@example.com"
-              className="h-8"
+              placeholder="Their sign-in email"
+              autoComplete="off"
             />
           </FormField>
           {pickChat ? (
-            <FormField label="WhatsApp chat (optional)">
+            <FormField label="WhatsApp chat" optional hint="Where their daily list is posted. You can pick it later.">
               <WhatsAppChatPicker hideTest value={target} onChange={setTarget} />
             </FormField>
           ) : (
-            <button
-              type="button"
-              className="rounded text-xs text-muted-foreground underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-              onClick={() => setPickChat(true)}
-            >
-              Pick their WhatsApp chat now (optional)
-            </button>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <Button type="button" size="sm" variant="secondary" onClick={() => setPickChat(true)}>
+                <Users /> Choose their WhatsApp chat
+              </Button>
+              <span className="text-caption text-muted-foreground">Optional. You can do this later.</span>
+            </div>
           )}
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>
+            <Button type="button" variant="secondary" onClick={() => onOpenChange(false)} disabled={busy}>
               Cancel
             </Button>
-            <Button type="submit" disabled={busy || !valid}>
+            <Button type="submit" disabled={busy}>
               {busy ? <Loader2 className="animate-spin" /> : <UserPlus />} Add person
             </Button>
           </DialogFooter>

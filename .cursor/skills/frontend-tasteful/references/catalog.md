@@ -107,14 +107,16 @@ Reuse order: shadcn defaults → domain primitive → new token/class. Tailwind 
 
 | Use | Primitive |
 |-----|-----------|
-| System status chips (bridge, Access + Sync, Hermes + Apply, alerts target) with details popovers | `SystemStrip` |
-| One person per 44px expandable row (status dot, chat, time, cutoff, top N, new this week, cost) | `PersonRow` (+ `StatusDot`, `PersonRowSkeleton`) |
-| Inline auto-saving person settings (no Save button; optimistic + rollback in `AdminPage`) | `PersonSettings` (+ `SaveIndicator`; new code uses `SaveStatus`) |
-| Current chat on one line, "Change" opens `WhatsAppChatPicker`, debounced commit | `ChatField` |
+| System health list (bridge, login access + Sync, group instructions + Apply, alerts chat + Pick); one "All systems working" line when healthy, inline details disclosure | `SystemStrip` |
+| People list: `variant="table"` (lg+, `PeopleHeader` column labels, inline expand) or `variant="card"` (two-line phone row that opens `PersonSheet`) | `PersonRow` (+ `PeopleHeader`, `PersonRowSkeleton`) |
+| Status dot: filled success / warning / destructive, hollow = unknown, dashed = setup pending; always paired with text on phone | `StatusDot` (+ `STATUS_TEXT`) |
+| Phone/tablet person editor: 92dvh bottom sheet, sticky header + actions | `PersonSheet` |
+| Inline auto-saving person settings grouped Login / Daily list (no Save button; optimistic + rollback in `AdminPage`; `SaveStatus` at the top) | `PersonSettings` (+ `PersonHealth`, `PersonActionBar`: ghost navigation, secondary sends, Remove in "⋯") |
+| Current chat on one line (raw ids shown as "Unnamed group · …4902"), "Change" opens `WhatsAppChatPicker`, debounced commit | `ChatField` |
 | Create profile (name, email, optional chat) | `AddPersonDialog` |
 | Confirm before anything that reaches a real chat or deletes | `ConfirmDialog` (reject in `onConfirm` keeps it open) |
 | Collapsed-by-default page section with aria-expanded header | `CollapsibleSection` (`AdminsAlertsSection`, `AiUsageSection`) |
-| Status / time / cost formatting | `adminFormat.ts` (`personStatus`, `STATUS_TONE`, `fmtLastBrief`, `reportAccessSync`) |
+| Status / time / usage / chat-name formatting | `adminFormat.ts` (`personStatus`, `STATUS_LABEL`, `fmtLastBrief`, `fmtUsage`, `chatDisplay`, `reportAccessSync`) |
 | Debounced save that flushes on unmount | `lib/useDebouncedCallback.ts` (600ms default) |
 
 ### Buttons
