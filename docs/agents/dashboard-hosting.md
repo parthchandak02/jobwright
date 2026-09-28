@@ -26,7 +26,7 @@ The public URL is the **Kanban board**, not a separate app. Agents should treat 
 2. The person opens `jobwright.parthchandak.info`, enters their email and the Cloudflare one-time code, and lands on their profile. They finish `/welcome` (resume, search, fit, time, letters); an admin can also do it for them ("Do setup for them" opens `/welcome` on that profile).
 3. When setup is finished (resume + profile) and a chat is set, saving the schedule or chat creates `jobwright-brief-<user>` and `welcome.py` sends a one-time welcome to their chat plus a heads-up to `ops_target` (marker `users/<id>/logs/welcome_sent.json`; skipped under `JOBWRIGHT_HERMES_DRY_RUN`). It is a real message: never trigger it on a real profile to test.
 
-A login whose email has no profile goes to `/welcome` and creates its own. A profile that exists but hasn't finished setup is not redirected; send the person to `/welcome`.
+A login whose email has no profile goes to `/welcome` and creates its own. A non-admin whose profile exists but hasn't finished setup (`/api/me` `setup_complete: false`) is redirected to `/welcome` too, resuming at the first missing step; admins are never redirected.
 
 Public traffic is the Cloudflare tunnel → `:8002` serving `frontend/dist`. Vite HMR (`:5120`) is local only. Rebuild production UI with `./scripts/restart.sh --prod-ui` (or `./scripts/dashboard_deploy.sh`).
 
