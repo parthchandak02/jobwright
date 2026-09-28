@@ -464,6 +464,10 @@ def patch_user(user_id: str, body: AdminUserPatch, request: Request) -> dict:
     cron = None
     if ("schedule" in fields or "whatsapp_target" in fields) and _is_set_up(user_id):
         cron = ensure_brief_cron(user_id, user.schedule)
+        if cron.get("ok"):
+            from jobwright.welcome import send_welcome_async
+
+            send_welcome_async(user_id)
     return {"user": _single_row(user_id), "access_sync": access, "cron": cron,
             "ok": True, "user_id": user_id, "emails": user.emails}
 

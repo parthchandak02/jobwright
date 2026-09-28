@@ -156,6 +156,12 @@ def update_profile(body: ProfileUpdate, request: Request) -> dict:
     schedule_changed = "schedule" in fields and fields["schedule"] != (before.schedule if before else None)
     if schedule_changed or "whatsapp_target" in fields or ("schedule" in fields and not brief_cron_installed(user_id)):
         cron = ensure_brief_cron(user_id, user.schedule)
+        if cron["ok"]:
+            from jobwright.onboarding import is_set_up
+            from jobwright.welcome import send_welcome_async
+
+            if is_set_up(user_id):
+                send_welcome_async(user_id)
         payload["cron_synced"] = cron["ok"]
         payload["cron_id"] = cron.get("cron_id")
         payload["cron_error"] = cron.get("error")
