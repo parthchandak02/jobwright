@@ -6,12 +6,7 @@
 
 ## Users (done 2026-09-27)
 
-| Profile | Login email | Access |
-|---|---|---|
-| (admin) | user2@example.com | every profile, can switch and create |
-| richa | user3@example.com | own profile only |
-| muskaan | user1@example.com | own profile only |
-| suchi | user4@example.com | own profile only |
+One admin (can open, switch and create every profile) plus three profiles that each see only their own data. Emails live only in `users/users.yaml` (never committed).
 
 ## Todo
 
