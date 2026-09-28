@@ -354,6 +354,7 @@ export type Me = {
   is_admin: boolean
   auth_mode: 'cloudflare' | 'dev'
   active_user: string | null
+  setup_complete?: boolean | null
   profiles: { user_id: string; name: string }[]
   can_create_profile: boolean
 }

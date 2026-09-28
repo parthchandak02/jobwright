@@ -243,3 +243,12 @@ def test_chat_names_survive_flaky_bridge(monkeypatch):
     monkeypatch.setattr(w.httpx, "get", flaky)
     assert w.chat_name("whatsapp:1@g.us") == "Team Group"
     assert w.chat_name("whatsapp:1@g.us") == "Team Group"
+
+
+def test_me_reports_setup_complete_for_admin_created_profiles(api_env):
+    client, h, _ = api_env
+    gus = h("gus@example.com")
+    client.post("/api/onboarding/profile", json={"name": "Gus"}, headers=gus)
+    client.cookies.set("jobwright_user", "gus")
+    me = client.get("/api/me", headers=gus).json()
+    assert me["active_user"] == "gus" and me["setup_complete"] is False

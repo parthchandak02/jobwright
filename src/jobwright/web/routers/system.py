@@ -87,11 +87,22 @@ def me(request: Request) -> dict:
     """Who is logged in, which profiles they may open, and the active one."""
     identity = get_identity(request)
     profiles = [{"user_id": u.user_id, "name": u.name or u.user_id} for u in allowed_users(identity)]
+    active = getattr(request.state, "active_user", None)
+    setup_complete = None
+    if active:
+        from jobwright.onboarding import onboarding_status
+
+        try:
+            with config.user_context(active):
+                setup_complete = bool(onboarding_status()["complete"])
+        except Exception:  # noqa: BLE001
+            setup_complete = None
     return {
         "email": identity.email,
         "is_admin": identity.is_admin,
         "auth_mode": identity.mode,
-        "active_user": getattr(request.state, "active_user", None),
+        "active_user": active,
+        "setup_complete": setup_complete,
         "profiles": profiles,
         "can_create_profile": True,
     }

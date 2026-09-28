@@ -56,5 +56,8 @@ export function AppGate({ children }: { children: ReactNode }) {
 
   const onWelcome = location.pathname.startsWith('/welcome')
   if (!me.active_user && !onWelcome) return <Navigate to="/welcome" replace />
+  if (me.active_user && !me.is_admin && me.setup_complete === false && !onWelcome) {
+    return <Navigate to="/welcome" replace />
+  }
   return <>{children}</>
 }
