@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+- Purged personal data from the public git history (emails, names, WhatsApp ids, a real profile file, school/employer names in fixtures) with `git filter-repo`; all branches force-pushed on 2026-09-28.
+- Personal-data guard: `scripts/check_private_data.py` as pre-commit/pre-push hooks (`scripts/install_git_hooks.sh`), CI workflow `privacy.yml`, and `tests/test_privacy_guard.py`. `jobwright init --template nontech-bay-area` now seeds the generic `profile.example.json`.
+
 ### Documentation
 - **README rewritten as a landing page**: hero banner, why, how it works (5 steps + one Mermaid flowchart of the daily brief), screenshot grid, features table, a secret-free 5-minute demo, install split by audience, configuration tables, safety callout, and reference sections in `<details>` blocks.
 - Images in `docs/images/` (`hero.png`, `board.png`, `job-drawer.png`, `welcome.png`, `settings-daily-list.png`, `admin.png`, `whatsapp-list.png`) come from `scripts/readme_images.py`: the built dashboard in headless Chromium with every `/api/**` call answered by fake fixtures (a person "Alex Rivera", made-up companies, example.com links) and all other network requests blocked; the WhatsApp image renders the exact text `notify.build_review_notification` + `followups.format_followups` produce for those jobs. Regenerate: `cd frontend && pnpm run build`, then `uv run --extra web --with pillow python scripts/readme_images.py`; `--demo` opens the same fake-data dashboard in a visible window.

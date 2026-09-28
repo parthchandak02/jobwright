@@ -226,8 +226,8 @@ def test_login_changes_trigger_best_effort_sync(api_env, monkeypatch):
     uid = res.json()["user_id"]
     res = client.patch(f"/api/admin/users/{uid}", json={"emails": ["cy2@example.com"]}, headers=boss)
     assert res.status_code == 200 and res.json()["access_sync"] == {"ok": False, "error": "HTTP 403"}
-    monkeypatch.setattr(cf_access, "apply_sync", lambda client=None: {"applied": True, "add": ["a@x.com"], "remove": []})
-    res = client.put("/api/admin/settings", json={"admins": ["boss@example.com", "a@x.com"]}, headers=boss)
+    monkeypatch.setattr(cf_access, "apply_sync", lambda client=None: {"applied": True, "add": ["a@example.com"], "remove": []})
+    res = client.put("/api/admin/settings", json={"admins": ["boss@example.com", "a@example.com"]}, headers=boss)
     assert res.status_code == 200 and res.json()["access_sync"]["ok"] is True
     res = client.patch(f"/api/admin/users/{uid}", json={"human_gate": True}, headers=boss)
     assert res.json()["access_sync"] is None

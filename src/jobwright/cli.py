@@ -184,8 +184,8 @@ def users_add(
         else:
             console.print(f"[yellow]Template not found:[/yellow] {template}")
         # Seed a starter profile when using the nontech template
-        if template in ("nontech-bay-area", "richa") and not (data_dir / "profile.json").exists():
-            profile_src = CONFIG_DIR / "profile.richa.example.json"
+        if template == "nontech-bay-area" and not (data_dir / "profile.json").exists():
+            profile_src = Path(__file__).resolve().parents[2] / "profile.example.json"
             if profile_src.exists():
                 shutil.copy2(profile_src, data_dir / "profile.json")
                 console.print(f"[green]Seeded profile.json from {profile_src.name}[/green]")

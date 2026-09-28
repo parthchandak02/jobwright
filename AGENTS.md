@@ -53,6 +53,7 @@ Version: `pyproject.toml` / `jobwright --version`.
 
 ## Never do
 
+- Commit personal data (names, emails, phones, WhatsApp ids, resumes) — the repo is public; see Public repository below.
 - Auto-apply from cron
 - LinkedIn job apply (blocked in code)
 - `jobwright apply --live` from cron (apply only from the dashboard or an explicit manual command)
@@ -64,6 +65,15 @@ Version: `pyproject.toml` / `jobwright --version`.
 - Commit `.env`, `users/`, `~/.jobwright/`, or secrets
 
 ---
+
+## Public repository: personal data
+
+`github.com/parthchandak02/jobwright` is public. Everything committed is world-readable, including history.
+
+- **Never commit** real people's names, emails, phone numbers, LinkedIn URLs, resumes or letters, schools/employers tied to a person, WhatsApp chat ids (`…@g.us`, `…@lid`, `…@s.whatsapp.net`), Cloudflare account/app ids, or anything from `users/` or `.env`. The registry (`users/users.yaml`) and profiles stay local.
+- **Use placeholders** in docs, tests and fixtures: `user1@example.com`, `Example Person`, `Alex Rivera`, fake chat ids `120363999999999901@g.us`, `14155550100@s.whatsapp.net`, fake jobs at `example.com`. README images come only from `scripts/readme_images.py` fake fixtures.
+- **Guards:** `scripts/check_private_data.py` blocks real-looking emails and WhatsApp ids plus every value in the local registry. It runs as the pre-commit and pre-push hook (install once per clone: `bash scripts/install_git_hooks.sh`; keeps git-secrets), in CI (`.github/workflows/privacy.yml`, once added), and in `tests/test_privacy_guard.py`. Never bypass with `--no-verify`; reword instead.
+- **If something leaks:** stop pushing, rewrite history with `git filter-repo --replace-text` on a fresh mirror (back up with `git bundle` first), force-push all branches, reset local checkouts, and ask GitHub Support to purge pull-request refs and cached views.
 
 ## Commands
 
