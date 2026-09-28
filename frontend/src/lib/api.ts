@@ -722,3 +722,9 @@ export const applyHermesChannels = () =>
   apiFetch<HermesChannelsPlan>('/admin/hermes-channels/apply', { method: 'POST', body: '{}' })
 
 export const previewNotify = () => apiFetch<NotifyResponse & { dry_run?: boolean }>('/notify/preview')
+
+export const patchCutoff = (notify_threshold: number) =>
+  apiFetch<{ criteria: MatchCriteria; derived: boolean }>('/criteria', {
+    method: 'PATCH',
+    body: JSON.stringify({ notify_threshold }),
+  })

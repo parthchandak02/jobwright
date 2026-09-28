@@ -12,8 +12,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import {
   getCriteria,
   getQuality,
-  patchAdminUser,
-  saveCriteria,
+  patchCutoff,
   startEval,
   startRescore,
   type EvalMetrics,
@@ -319,15 +318,13 @@ export function QualityPage() {
   const ev = q?.latest_eval
   const rec = q?.recommended_threshold
   const current = criteria?.criteria.notify_threshold ?? rec?.current ?? 7
-  const adminPatch = isAdmin && !!me?.active_user
-  const canApply = !!criteria && (!criteria.derived || adminPatch)
+  const canApply = !!criteria
 
   async function applyCutoff(n: number) {
     if (!canApply || !criteria) return
     setApplying(true)
     try {
-      if (!criteria.derived) await saveCriteria({ ...criteria.criteria, notify_threshold: n })
-      else await patchAdminUser(me!.active_user!, { notify_threshold: n })
+      await patchCutoff(n)
       toast.success(`Done. Your daily list now sends jobs scored ${n}+.`)
       load()
     } catch (e) {

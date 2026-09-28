@@ -70,6 +70,27 @@ def put_criteria(body: CriteriaBody, request: Request) -> dict:
     return {"criteria": parsed.to_dict(), "derived": False}
 
 
+class CutoffBody(BaseModel):
+    notify_threshold: int
+
+
+@router.patch("/criteria")
+def patch_criteria(body: CutoffBody, request: Request) -> dict:
+    """Change only the daily-list cutoff; derived rules stay derived."""
+    from jobwright.scoring.criteria import load_criteria
+
+    current_user_id(request)
+    if not 1 <= body.notify_threshold <= 10:
+        raise HTTPException(400, "notify_threshold must be between 1 and 10.")
+    profile = _profile()
+    mc = profile.get("match_criteria") if isinstance(profile.get("match_criteria"), dict) else {}
+    mc["notify_threshold"] = body.notify_threshold
+    profile["match_criteria"] = mc
+    write_profile(profile)
+    c = load_criteria(profile)
+    return {"criteria": c.to_dict(), "derived": c.derived}
+
+
 @router.post("/criteria/suggest")
 def suggest(request: Request) -> dict:
     from jobwright.labels import build_eval_set

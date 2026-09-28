@@ -209,3 +209,14 @@ def test_profile_autosave_does_not_resync_unchanged_cron(api_env, monkeypatch):
     assert calls == [current]
     client.put("/api/profile", json={"schedule": "15 8 * * *"}, headers=ed)
     assert calls == [current, "15 8 * * *"]
+
+
+def test_patch_cutoff_keeps_derived_rules(api_env):
+    client, h, _ = api_env
+    fay = h("fay@example.com")
+    client.post("/api/onboarding/profile", json={"name": "Fay"}, headers=fay)
+    client.cookies.set("jobwright_user", "fay")
+    r = client.patch("/api/criteria", json={"notify_threshold": 6}, headers=fay)
+    assert r.status_code == 200 and r.json()["derived"] is True
+    assert r.json()["criteria"]["notify_threshold"] == 6
+    assert client.patch("/api/criteria", json={"notify_threshold": 12}, headers=fay).status_code == 400
