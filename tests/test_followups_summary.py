@@ -165,7 +165,9 @@ def test_run_summary_all_iterates_profiles(monkeypatch):
     with config.user_context("ann"):
         _add(init_db(), "https://x.com/top", "backlog", fit_score=9)
     results = {r["user"]: r for r in summary.run_summary_all()}
-    assert results["ann"]["sent"] is True
+    assert results["ann"]["sent"] is False and results["ann"]["dry_run"] is True
+    with config.user_context("ann"):
+        assert not (config.LOG_DIR / summary.STATE_FILE).exists()
     assert results["bob"]["reason"] == "no database yet"
     assert [r["user"] for r in summary.run_summary_all(["bob"])] == ["bob"]
 

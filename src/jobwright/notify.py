@@ -256,7 +256,9 @@ def run_notify(dry_run: bool = False) -> dict:
         ValueError: The active user has no whatsapp_target configured.
     """
     from jobwright.database import get_connection
+    from jobwright.hermes_cron import hermes_dry_run
 
+    dry_run = dry_run or hermes_dry_run()
     ensure_brief_items()
     conn = get_connection()
     active = get_active_user_id()

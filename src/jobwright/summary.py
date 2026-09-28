@@ -156,6 +156,9 @@ def run_summary(dry_run: bool = False, days: int = 7, force: bool = False) -> di
     uid = config.get_active_user_id()
     user = get_user(uid) if uid else None
     result: dict = {"user": uid, "sent": False}
+    from jobwright.hermes_cron import hermes_dry_run
+
+    dry_run = dry_run or hermes_dry_run()
     if user and not user.weekly_summary and not dry_run:
         return {**result, "skipped": True, "reason": "opted out"}
     now = datetime.now(UTC)
