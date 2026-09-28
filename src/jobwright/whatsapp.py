@@ -91,11 +91,31 @@ def bridge_status() -> str:
         return "unreachable"
 
 
+_NAME_TTL = 600.0
+_name_cache: dict[str, tuple[float, str]] = {}
+
+
+def _remember_name(jid: str, name: str) -> None:
+    import time as _time
+
+    if name and name != jid.split("@")[0]:
+        _name_cache[jid] = (_time.monotonic(), name)
+
+
+def _known_name(jid: str) -> str:
+    import time as _time
+
+    hit = _name_cache.get(jid)
+    return hit[1] if hit and _time.monotonic() - hit[0] < _NAME_TTL else ""
+
+
 def _bridge_chat(jid: str) -> dict | None:
     try:
         resp = httpx.get(f"{BRIDGE_URL}/chat/{jid}", timeout=4)
         if resp.status_code == 200:
-            return resp.json()
+            info = resp.json()
+            _remember_name(jid, str(info.get("name") or ""))
+            return info
     except Exception:  # noqa: BLE001
         return None
     return None
@@ -107,6 +127,9 @@ def chat_name(target: str | None) -> str:
     if not jid:
         return ""
     if jid.endswith("@g.us"):
+        known = _known_name(jid)
+        if known:
+            return known
         info = _bridge_chat(jid) or {}
         name = str(info.get("name") or "")
         if name and name != jid.split("@")[0]:
@@ -141,7 +164,7 @@ def list_chats(*, for_phone: str | None = None, show_all: bool = False) -> dict:
         info = details.get(jid) or {}
         name = str(info.get("name") or "")
         if not name or name == jid.split("@")[0]:
-            name = cached.get(jid) or t.get("name") or jid.split("@")[0]
+            name = _known_name(jid) or cached.get(jid) or t.get("name") or jid.split("@")[0]
         participants = [str(p) for p in info.get("participants") or []]
         is_member = bool(phone) and any(_digits(p.split("@")[0]).endswith(phone[-10:]) for p in participants)
         if not show_all and not is_member:

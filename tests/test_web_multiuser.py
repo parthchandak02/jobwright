@@ -220,3 +220,26 @@ def test_patch_cutoff_keeps_derived_rules(api_env):
     assert r.status_code == 200 and r.json()["derived"] is True
     assert r.json()["criteria"]["notify_threshold"] == 6
     assert client.patch("/api/criteria", json={"notify_threshold": 12}, headers=fay).status_code == 400
+
+
+def test_chat_names_survive_flaky_bridge(monkeypatch):
+    import jobwright.whatsapp as w
+
+    w._name_cache.clear()
+    calls = {"n": 0}
+
+    class Resp:
+        status_code = 200
+
+        def json(self):
+            return {"name": "Team Group", "participants": []}
+
+    def flaky(url, timeout):
+        calls["n"] += 1
+        if calls["n"] > 1:
+            raise RuntimeError("bridge busy")
+        return Resp()
+
+    monkeypatch.setattr(w.httpx, "get", flaky)
+    assert w.chat_name("whatsapp:1@g.us") == "Team Group"
+    assert w.chat_name("whatsapp:1@g.us") == "Team Group"

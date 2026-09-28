@@ -242,6 +242,19 @@ def _read_profile_strict() -> dict:
     return data
 
 
+def _resolve_chat_name(target: str, chat: dict) -> str:
+    jid = target.removeprefix("whatsapp:")
+    name = str(chat.get("name") or "")
+    if name and name != jid.split("@")[0]:
+        return name
+    try:
+        from jobwright.whatsapp import chat_name
+
+        return chat_name(target) or jid.split("@")[0]
+    except Exception:  # noqa: BLE001
+        return jid.split("@")[0]
+
+
 def _profile_fields(user) -> dict[str, Any]:
     """Per-profile data read inside that profile's context (one read-only DB open)."""
     from jobwright.onboarding import onboarding_status
@@ -295,7 +308,7 @@ def _overview_row(user, sources: dict[str, Any], hermes_status: dict[str, str]) 
         "last_brief": {"at": None, "notified": None, "status": None},
         "whatsapp": {
             "target": target or None,
-            "name": (chat.get("name") or jid.split("@")[0]) if target else None,
+            "name": _resolve_chat_name(target, chat) if target else None,
             "type": ("group" if jid.endswith("@g.us") else "dm") if target else None,
         },
         "schedule": user.schedule, "schedule_label": describe_cron_schedule(user.schedule),
