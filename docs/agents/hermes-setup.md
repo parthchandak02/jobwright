@@ -4,7 +4,7 @@
 
 Hermes should **create and manage crons** via `hermes cron` (not ask the human to run `setup_hermes_cron.sh`). Scripts are shell-only (`--no-agent`); zero LLM tokens per tick.
 
-**Since v0.6 the dashboard manages the brief cron itself:** saving a brief time or WhatsApp chat (`PUT /api/profile`, including at the end of onboarding) runs `hermes_cron.ensure_brief_cron`, which writes `~/.hermes/scripts/wrap_jobwright-brief-<user>.sh` and creates or edits `jobwright-brief-<user>` with `--no-agent --deliver local`. Use this playbook for first-time setup, repairs, and the ops crons.
+**Since v0.6 the dashboard manages the brief cron itself:** saving a brief time or WhatsApp chat (`PUT /api/profile`, including at the end of onboarding; admin `PATCH /api/admin/users/{id}`) runs `hermes_cron.ensure_brief_cron` when the schedule or chat changed or the wrapper is missing, which writes `~/.hermes/scripts/wrap_jobwright-brief-<user>.sh` and creates or edits `jobwright-brief-<user>` with `--no-agent --deliver local`. Use this playbook for first-time setup, repairs, and the ops crons. The first time a finished profile (resume + profile, chat set) gets its brief cron, `welcome.py` also sends a one-time welcome to their chat and a heads-up to `ops_target`.
 
 **Sandboxes:** with `JOBWRIGHT_HERMES_DRY_RUN=1` every cron create/edit/delete and every `hermes send` is only logged (`cron list` still runs). Always set it in worktrees and tests.
 
@@ -168,11 +168,11 @@ Repeat for every user in the registry. Pause any `job-apply-*`, `jobwright-send-
 
 ```bash
 cd "${JOBWRIGHT_REPO}"
-.venv/bin/jobwright ops install-crons --backup-dest "$JOBWRIGHT_BACKUP_DIR"   # briefs (deliver local) + watchdog 30 8 + backup 30 2 + weekly summary 0 18 * * 0
+.venv/bin/jobwright ops install-crons --backup-dest "$JOBWRIGHT_BACKUP_DIR"   # briefs (deliver local; skips unfinished profiles) + watchdog 30 8 + backup 30 2 + weekly summary 0 18 * * 0
 .venv/bin/jobwright ops set-target 'whatsapp:<operator jid>'                  # where alerts go
 ```
 
-`scripts/setup_hermes_cron.sh` installs the scripts, retires legacy crons, then runs the same command. Both are idempotent (upsert by name).
+`scripts/setup_hermes_cron.sh` installs the scripts, retires legacy crons, then runs the same command. Both are idempotent (upsert by name). Profiles without a resume and profile yet (`onboarding.is_set_up`) are skipped (`skip jobwright-brief-<id> (setup not finished)`); their cron is created when they finish `/welcome`.
 
 The Admin page has a button for the watchdog cron. Both write their script to `~/.hermes/scripts/` and upsert by name.
 

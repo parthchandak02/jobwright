@@ -9,7 +9,10 @@
 | Profile | One user's data dir `users/<id>/` plus its `users.yaml` entry (`emails`, `whatsapp_target`, `schedule`, `human_gate`, `brief_top_n`, `apply_enabled`) |
 | Admin | Login email in `users.yaml` `admins` (or `JOBWRIGHT_ADMIN_EMAILS`); may open, create and edit every profile |
 | Auth mode | `JOBWRIGHT_AUTH_MODE`: `cloudflare` verifies the Cloudflare Access JWT; `dev` trusts local callers and refuses Cloudflare traffic |
-| Onboarding | `/welcome`: new login uploads a resume, reviews the drafted profile / searches / match criteria, picks a WhatsApp chat and time |
+| Onboarding | `/welcome`: six steps (About you, Resume, Your search, How we judge fit, Daily list, Cover letters). The resume upload drafts profile / searches / match criteria; the chat is admin-managed (shown read-only), so only resume, profile and searches are required |
+| Set up | `onboarding.is_set_up`: resume + profile present. Gates the brief cron (`ops install-crons` skips unfinished profiles) and the welcome |
+| Welcome message | One-time hello in the person's chat plus a heads-up to the ops target when setup creates their brief cron (`welcome.py`, marker `logs/welcome_sent.json`) |
+| Admin-managed chat | Only admins list chats or change a profile's `whatsapp_target`; others see `whatsapp_chat_name` read-only and test-send only to their own chat |
 | Match criteria | `profile.json` `match_criteria`: summary, dealbreakers, good-fit role types, locations, seniority, pay floor, notify threshold. Derived from `job_preferences` until edited |
 | Scoring v2 | Default scorer: one structured call per job with criteria + retrieved examples; gates in code. `JOBWRIGHT_SCORER=v1` restores the legacy scorer |
 | Gate | Code-applied cap on the model's fit: dealbreaker or bad location → 3, salary below floor → 4, unknown location → 6 |
@@ -24,11 +27,11 @@
 | Hermes dry-run | `JOBWRIGHT_HERMES_DRY_RUN=1`: cron changes and WhatsApp sends are logged, not executed |
 | Prepare | Funnel stage for strong matches with materials; agent auto-advances here; notify lists only these |
 | Backlog | Discovered/scored jobs not yet handed to the human. Low-score rows (and off-track rows when `mission_guard` is on) are pruned and tombstoned after scoring. Score 7+ jobs get tailored into Prepare (or listed for review under human gate). Mid-score jobs stay here as maybes. |
-| Auto Search | Dashboard action that starts the full prep pipeline (`discover`→`connect`) via `POST /api/run` with live logs. Daily Hermes cron (`jobwright-brief-<user>`) runs the same pipeline on `schedule` (default 6:00 AM), then `notify`. Dashboard **WhatsApp** dialog edits that schedule and target and creates the cron if missing. |
+| Auto Search | Dashboard action that starts the full prep pipeline (`discover`→`connect`) via `POST /api/run` with live logs. Daily Hermes cron (`jobwright-brief-<user>`) runs the same pipeline on `schedule` (default 6:00 AM), then `notify`. Dashboard **WhatsApp** dialog links to Settings → Daily list, which edits the schedule (chat: admins only) and creates the cron if missing. |
 | Run registry | Durable run list at `users/<id>/logs/web_runs.json` so the UI can attach, stream, or stop after reload; records real exit codes |
 | Run lock | Per-user `flock` on `<user dir>/.pipeline.lock`; a second concurrent run exits instead of overlapping |
 | Notify | `jobwright notify`: one WhatsApp text list of new `prepare` jobs with deep links; stamps `whatsapp_notified_at` |
-| Deep link | `{JOBWRIGHT_PUBLIC_BASE_URL}/jobs/<job_id>` opens the board and that job's drawer. `/profile` opens Profile. |
+| Deep link | `{JOBWRIGHT_PUBLIC_BASE_URL}/jobs/<job_id>` opens the board and that job's drawer. `/profile` opens Settings. |
 | Base resume | `resume/base.pdf` is source of truth; `resume.py` derives cached `resume/base.md` for LLM stages |
 | Auto Tailor | Dashboard per-job run: `jobwright tailor-job` with default instructions (`tailor_instructions.py`) |
 | Custom Tailor | Same run after the user edits resume + cover instructions in `CustomTailorDialog` |

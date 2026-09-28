@@ -26,8 +26,10 @@
 | G7 | No weekly summary | Sunday WhatsApp summary per user: new jobs, applied, in progress, responses, top 3 still open | deployed 2026-09-27 |
 | G8 | No follow-up reminders | Applied jobs with no stage change after N days (default 10) appear in the brief and on the board | deployed 2026-09-27 |
 | G9 | Cost per user not visible to admin | Admin page: 30-day tokens and estimated cost per profile from `llm_usage` | deployed 2026-09-27 |
-| G11 | Admin page is a stack of big cards; people's settings and WhatsApp groups are scattered | Admin console v2 per `docs/agents/admin-console-spec.md`: system strip, compact expandable people rows with inline settings | deployed 2026-09-27; verified on data copies (desktop + 390px, inline save, validation) |
+| G11 | Admin page is a stack of big cards; people's settings and WhatsApp groups are scattered | Admin console v2 per `docs/agents/admin-console-spec.md`: system strip, compact expandable people rows with inline settings | deployed 2026-09-27; verified on data copies (desktop + 390px, inline save, validation); layout later restyled by G12 (WP4) |
 | G10 | First brief on the new setup unverified | Check 2026-09-27 06:00 run: `last_run.json`, `ops_health.json`, WhatsApp delivery | done: 06:00-06:28, 633 scored, 0 failed, 4 sent, health ok |
+| G12 | Pages look inconsistent and are hard to use on a phone | Design v2 "calm & refined" per `docs/agents/design-v2-audit.md`: WP1 tokens + primitives, WP2 Welcome, WP3 Settings, WP4 Admin, WP5 Match quality, WP6 board + drawer | WP1-WP5 deployed 2026-09-27; WP6 pending (catalog "Applying v2 to remaining pages") |
+| G13 | People get no confirmation that setup worked | `welcome.py`: one-time welcome in the person's chat + operator heads-up when setup creates their brief cron (marker `logs/welcome_sent.json`, skipped in dry run) | deployed 2026-09-28 |
 
 ## Rules for this phase
 

@@ -11,8 +11,10 @@ Do not dump every component or every CSS value here. If a pattern is missing, re
 | Tokens | `index.css` (`@theme`, `@theme inline`, `:root`, `.dark`, `@utility`, `@layer components`) | Colour, type scale, spacing, radius, elevation, motion, stage, job-card, sidebar, table, drawer |
 | shadcn / Radix | `components/ui/` | Button, Input, Textarea, Select, Checkbox, Switch, Segmented, Tabs, Dialog, Sheet, Popover, DropdownMenu, Tooltip, Badge, Skeleton, … |
 | Domain | `components/` (not `ui/`) | Product layout |
-| Pages | `App.tsx`, `ProfilePage`, `JobDrawer`, `pages/` (`WelcomePage`, `QualityPage`, `AdminPage`) | Composition only |
+| Pages | `App.tsx` (board), `ProfilePage` ("Settings", `/profile`), `JobDrawer`, `pages/` (`WelcomePage`, `QualityPage`, `AdminPage`) | Composition only; page sections live in `components/welcome/`, `components/profile/`, `components/admin/` |
 | Data / identity | `lib/api.ts` (typed API), `lib/me.tsx` (`MeProvider` / `useMe`: login, admin, profiles), `lib/reasons.ts`, `lib/useRunStream.ts` | Shared hooks; no page-local fetch wrappers |
+
+New UI must use the primitives below; do not add page-local headers, save indicators, chips, confirm dialogs or tab bars.
 
 Reuse order: shadcn defaults → domain primitive → new token/class. Tailwind v4 is CSS-first (no `tailwind.config`). Always merge classes with `cn()` (`lib/utils.ts`): it is a `tailwind-merge` configured for the custom `text-*`, `shadow-e*`, `rounded-popover`, container and spacing tokens.
 
@@ -31,7 +33,7 @@ Reuse order: shadcn defaults → domain primitive → new token/class. Tailwind 
 | Autosave indicator (one per section) | `SaveStatus` (`state` `idle`/`saving`/`saved`/`error`, `savedAt`, `onRetry`, `errorText`) |
 | Sticky bottom primary actions / unsaved changes | `ActionBar` (`open`, `message`, `onSave`, `onDiscard`, `saveLabel`, `discardLabel`, `saving`, `saveDisabled`, or custom `children`). Last child of the scroll container |
 | Empty states | `EmptyState` (`icon`, `title`, `description`, `action`, `size` `inline`/`page`, `children`) |
-| Phone menu (stages, Match quality, Admin, Profile, theme) | `MobileNavProvider` + `MobileNav` (rendered once in `App.tsx`) + `MobileNavTrigger` / `useMobileNav()` |
+| Phone menu (stages, Match quality, Admin for admins, "Profile & settings", theme); on every page | `MobileNavProvider` + `MobileNav` (rendered once in `App.tsx`) + `MobileNavTrigger` / `useMobileNav()` |
 | Removable value chip (28px, 32px phone, 32px hit area on the x) | `ValueChip` (= `Chip size="md"`: `onRemove`, `tone`, `trailing`) |
 | Chip list editor | `ChipInput` (`values`, `onChange`, `placeholder` as an instruction, `addLabel`, `tone` semantic only, `collapseAfter`, `renderActions`, `disabled`, `id`, `aria-describedby`); splits pasted commas/newlines |
 
@@ -91,8 +93,8 @@ Reuse order: shadcn defaults → domain primitive → new token/class. Tailwind 
 | Board Auto Search dialog | `AutoSearchDialog` (wrapper over `RunProgressDialog`) |
 | Edit tailor instructions then run | `CustomTailorDialog` |
 | LinkedIn-tinted contacts | `ConnectionsPanel` |
-| Gated dialogs | `DismissDialog` (close with outcome; "Not for me" asks why), `ManualAddModal`, `DailyBriefDialog` (pending count, next send, Send now; links to Profile → WhatsApp) |
-| WhatsApp chat selection + test send | `WhatsAppChatPicker` (Profile Daily list tab, onboarding, Admin; `hideTest` when the caller owns test-send; `onChange(target, chat?)`; `chatDisplayName` shows "Unnamed group · …4902" for raw ids) |
+| Gated dialogs | `DismissDialog` (close with outcome; "Not for me" asks why), `ManualAddModal`, `DailyBriefDialog` (pending count, next send, Send now; links to Settings → Daily list) |
+| WhatsApp chat selection + test send (admins only; `GET /api/whatsapp/chats` is admin-only) | `WhatsAppChatPicker` (Settings Daily list tab, Welcome and Admin when the caller is an admin; `hideTest` when the caller owns test-send; `onChange(target, chat?)`; `chatDisplayName` shows "Unnamed group · …4902" for raw ids) |
 
 ### Profile / forms
 
@@ -100,9 +102,18 @@ Reuse order: shadcn defaults → domain primitive → new token/class. Tailwind 
 |-----|-----------|
 | Labeled field + help | `FormField` (visible `hint`, `help` popover), `FieldHint`, `SectionHeader` |
 | Auto Search editors | `ChipInput`, `QueryChipInput` (`mode` `auto`/`chips`/`list`: above 12 titles a divided list with a Daily/Weekly `Segmented` per row; chips mode moves via a chip menu), `LocationChipInput` (neutral, Enter only so "City, ST" stays one chip), `BoardToggles` (empty value = `DEFAULT_BOARDS` shown on) |
-| Profile tabs (one save model: autosave + `SaveStatus`; Match rules uses `ActionBar`) | `components/profile/*Tab.tsx`, `useAutosave` (debounced save with state/savedAt/retry, flushes on unmount), `ConfirmAction` |
+| Settings tabs (`TabsList variant="underline"`: Search, Match rules, Documents, Daily list (value `whatsapp`), About you; one save model: autosave + `SaveStatus`; Match rules uses a sticky `ActionBar`) | `components/profile/` `SearchTab`, `RulesTab`, `DocumentsTab`, `DailyListTab`, `AboutTab`; `useAutosave` (debounced 700ms save with `state`/`savedAt`/`schedule`/`flush`/`retry`, flushes on unmount); `ConfirmAction` (confirm before real sends) |
+| Connected chat for non-admins (read-only name from `whatsapp_chat_name`; "Send test" goes to the caller's own chat) | `ConnectedChat` (`target`, `name`, `hideTest` on Welcome so setup never posts) |
 | Read-only pairs in dialogs | `DetailRow` / `DetailGrid` |
 | Match rules (fit, dealbreakers, locations, level, pay) | `CriteriaEditor` (`compact` in onboarding; grouped with h3 subheadings otherwise; dealbreakers and pluses are divided lists with inline fields; Radix `Select` for the cutoff) |
+
+### Welcome (`components/welcome/`)
+
+| Use | Primitive |
+|-----|-----------|
+| Page shell (560px column, progress over 6 steps: About you, Resume, Your search, How we judge fit, Daily list, Cover letters) and one step (title, description, back, actions, submit) | `WelcomeShell` (+ `PROGRESS_LABELS`), `WelcomeStep` |
+| Steps (composed by `pages/WelcomePage.tsx`) | `StepAbout`, `StepResume`, `StepSearch`, `StepFit`, `StepDailyList` (picker for admins, `ConnectedChat hideTest` otherwise), `StepLetters`, `StepFinish` (review + start) |
+| Welcome-local helpers (not yet promoted) | `parts.tsx`: `Disclosure` (optional/advanced fields), `DropZone` (PDF-only drop/upload), `MutedList` |
 
 ### Admin (`components/admin/`)
 
@@ -119,6 +130,7 @@ Reuse order: shadcn defaults → domain primitive → new token/class. Tailwind 
 | Collapsed-by-default page section with aria-expanded header | `CollapsibleSection` (`AdminsAlertsSection`, `AiUsageSection`) |
 | Status / time / usage / chat-name formatting | `adminFormat.ts` (`personStatus`, `STATUS_LABEL`, `fmtLastBrief`, `fmtUsage`, `chatDisplay`, `reportAccessSync`) |
 | Debounced save that flushes on unmount | `lib/useDebouncedCallback.ts` (600ms default) |
+| Table vs card / sheet switch | `useMediaQuery` (`useSyncExternalStore` over `matchMedia`) |
 
 ### Buttons
 
@@ -166,5 +178,18 @@ Prefer extending the closest primitive. Do **not** promote these until they are 
 - `JobsTable` local `FilterChip` (not `Chip`)
 - Job drawer materials use `JobMaterialsPreview` (version dropdown + PDF/md); Profile keeps `ResumePreview`
 - `StatusDot` lives in `components/admin/`; promote it only when Quality or Profile need it
+- Confirm dialogs: `admin/ConfirmDialog` (also used by Quality) and `profile/ConfirmAction` overlap; merge before adding a third
+- `Disclosure` / `DropZone` in `welcome/parts.tsx`, `CollapsibleSection` in `admin/`, the number-with-unit field local to `SearchTab`: promote to `components/` when a second page needs one
 
 `ui/Card` (12px radius, hairline) is fine for grouped metrics. Settings and admin should prefer one `.surface` list with divided rows. `ui/ScrollArea` stays unused; overlays already scroll.
+
+## Applying v2 to remaining pages (WP6, pending)
+
+The board (`App.tsx`, `KanbanColumn`, `JobCardView`, `JobCardLayout`), `JobsTable`, `JobDrawer` and `SidebarNav`/`NavItem` still carry pre-v2 styling. Keep their density; change tokens and primitives only:
+
+- **Buttons:** replace `variant="outline"` (board header, `JobDrawer`, `JobsTable`) with `secondary`; one `primary` per view; AI actions use `ai`.
+- **Surfaces:** job cards still use `.glass` / `.glass-strong` / `.glass-interactive` and `--glass-shadow-hover`; move to `.surface` + hairline border, `shadow-e1` on hover/drag, no scale or rotate beyond the drag affordance.
+- **Type:** remove the last sub-12px text: `ScoreBadge` (`text-[10px]` asterisk), `ScoreEditor` (`text-[10px]` pill, `text-[11px]` rationale), `JobsTable` (`text-[10px]` filter count), `ConnectionsPanel` (`text-[0.6875rem]`). Use `text-micro` / `text-caption`. Lane headers keep uppercase with `text-micro`-sized tokens rather than `text-xs font-bold tracking-wider`.
+- **Colour:** sidebar stage icons are tinted with `--lane` (`NavItem`); v2 wants neutral icons with the stage colour on the label/count or a dot only. The empty-lane drop zone in `KanbanColumn` uses an ad-hoc `color-mix` 6% tint and `duration-200`; use the `tone-tint` recipe and `duration-(--dur-2)`.
+- **Structure:** drawer sections via `DrawerSection` + `SectionHeader as="h3"` instead of `SectionLabel` (legacy; still used by `RunProgressDialog`); empty table via `EmptyState size="inline"`; loading via `Skeleton`; row "⋯" actions via `DropdownMenu`.
+- **Phone:** board header condensed to one row (menu, title, search icon); `JobsTable` local `FilterChip` → `Chip`; the filter `Sheet side="bottom"` drops its own `max-h`/`rounded-t-2xl` overrides.

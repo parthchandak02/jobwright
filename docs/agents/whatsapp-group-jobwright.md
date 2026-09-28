@@ -14,6 +14,8 @@ Use this when Parth asks whether Hermes has **everything needed for jobwright** 
 | Repo | `${JOBWRIGHT_REPO}` (recommended internal-disk checkout, e.g. `/Users/parthchandak/apps/jobwright`) |
 | User data | `${JOBWRIGHT_REPO}/users/richa/` |
 | Test sends | Never to this group. Use a chat the owner picks, or `JOBWRIGHT_HERMES_DRY_RUN=1` |
+| Chat | Admin-managed: only an admin can change this profile's `whatsapp_target` (Admin page); the person sees it read-only in Settings → Daily list |
+| Welcome | One-time setup welcome; sent state in `users/richa/logs/welcome_sent.json`. Never delete it to retest |
 
 ```bash
 bash "${JOBWRIGHT_REPO}/scripts/resolve_user_from_whatsapp.sh" 'whatsapp:120363999999999902@g.us'

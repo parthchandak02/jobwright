@@ -59,7 +59,7 @@ Multi-profile setups use `users/<id>/` under the repo (or `~/.jobwright/` for a 
 
 ### Multiple users
 
-The dashboard sits behind Cloudflare Access. Each person logs in with their own email and sees only their own profile; admin emails can switch to or create any profile. A new login with no profile gets a short onboarding at `/welcome`: upload a resume, review the drafted profile, searches and match rules, pick the WhatsApp chat for the daily list, and choose a time. Rating jobs (thumbs up/down with reasons) and saying why a job is "not for me" teaches the scorer; the Match quality page shows how accurate it has been.
+The dashboard sits behind Cloudflare Access. Each person logs in with their own email and sees only their own profile; admin emails can switch to or create any profile. Usually an admin adds the person on the Admin page and connects their WhatsApp group; people can't pick or change their own chat. They log in with the Cloudflare one-time code and finish a short onboarding at `/welcome`: upload a resume, review the drafted searches and match rules, choose a time for the daily list, and optionally add cover letters. A new login with no profile also lands there. When setup finishes, jobwright posts a one-time welcome in their chat and tells the operator. Rating jobs (thumbs up/down with reasons) and saying why a job is "not for me" teaches the scorer; the Match quality page shows how accurate it has been.
 
 ### Safety defaults
 
@@ -141,7 +141,7 @@ Your per-profile data lives under `~/.jobwright/` (single user) or `users/<id>/`
 
 - **`profile.json`** - contact info, work authorization, compensation, experience, skills, and your `portfolio` projects. Start from [`profile.example.json`](profile.example.json).
 - **`searches.yaml`** - your search queries, target titles, locations, and boards.
-- **`profile.json` → `match_criteria`** - what makes a posting worth your time (dealbreakers, good-fit role types, locations, seniority, pay floor, notify threshold). Derived from your preferences until you edit it (dashboard Profile → Match rules, or `jobwright criteria suggest --save`).
+- **`profile.json` → `match_criteria`** - what makes a posting worth your time (dealbreakers, good-fit role types, locations, seniority, pay floor, notify threshold). Derived from your preferences until you edit it (dashboard Settings → Match rules, or `jobwright criteria suggest --save`).
 
 Board and site definitions ship inside the package at `src/jobwright/config/` (`employers.yaml`, `sites.yaml`, `searches.example.yaml`).
 
@@ -207,7 +207,7 @@ Safety: dry-run is the default, LinkedIn jobs can appear in the brief with mater
 jobwright runs per-profile prep on a Hermes cron and sends one WhatsApp notification per day to each user's group:
 
 - **Morning brief:** one cron per user (`jobwright-brief-<user>`, created or updated when the brief time is saved in the dashboard) runs preflight, the pipeline, `jobwright notify`, then an operator report.
-- **Ops crons:** `jobwright-ops-watchdog` (missed runs), `jobwright-backup` (nightly `jobwright ops backup`) and `jobwright-weekly-summary` (Sunday recap per user, `jobwright summary`). Alerts go to `ops_target` in `users/users.yaml` (`jobwright ops set-target`). `jobwright ops install-crons` creates or updates all of them.
+- **Ops crons:** `jobwright-ops-watchdog` (missed runs), `jobwright-backup` (nightly `jobwright ops backup`) and `jobwright-weekly-summary` (Sunday recap per user, `jobwright summary`). Alerts go to `ops_target` in `users/users.yaml` (`jobwright ops set-target`). `jobwright ops install-crons` creates or updates all of them (briefs only for profiles that finished setup).
 - **Notification:** a single text message listing the newly prepared jobs, each with a dashboard deep link (`jobwright.parthchandak.info/jobs/<job_id>`). If nothing new is ready, nothing is sent.
 - **Review + apply:** happen in the dashboard, not over chat. Open a job's deep link to see its details, materials, and connections; live apply stays gated behind per-user enablement.
 

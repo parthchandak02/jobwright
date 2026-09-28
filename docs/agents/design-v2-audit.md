@@ -1,5 +1,19 @@
 # Design v2 audit: "calm & refined"
 
+## Status
+
+- WP1 (tokens + primitives), WP2 (Welcome), WP3 (Profile, now "Settings"), WP4 (Admin), WP5 (Match quality): shipped 2026-09-27. Current primitives and rules: `.cursor/skills/frontend-tasteful/SKILL.md` and `references/catalog.md`.
+- WP6 (board + job drawer token alignment): pending. Checklist in the catalog section "Applying v2 to remaining pages".
+
+Known gaps reported by engineers (todo):
+
+- [ ] `ActionBar` has no left slot (only a `message` string); custom left content needs a prop.
+- [ ] Promote shared primitives still local to one area: `Disclosure` and `DropZone` (`components/welcome/parts.tsx`), `ConfirmDialog` (`components/admin/`, also used by Quality; overlaps `profile/ConfirmAction`), the number-with-unit input (local to `profile/SearchTab.tsx`).
+- [ ] `ChipInput` has no `separators` prop (always splits on commas and newlines, so `LocationChipInput` reimplements the editor to keep "City, ST" as one chip).
+- [ ] `SectionHeader` has no subheading slot and does not stack `actions` under the title on phone.
+- [ ] Disabled `primary` buttons use `disabled:opacity-45`, which reads washed out on the accent; needs a dedicated disabled token.
+- [ ] `TabsContent` sets `outline-none`, so a focused tab panel has no visible focus.
+
 Date: 2026-09-27. Branch `dev`. Scope: `/welcome`, `/profile` (search, rules, documents, whatsapp, about), `/admin`, `/quality`, with a consistency pass over the board and job drawer.
 
 Method: sandbox copy of one real profile plus an empty profile (`JOBWRIGHT_USERS_ROOT=/tmp/...`, Hermes dry run, dev auth), SPA built from `frontend/`, Playwright screenshots at 1440x900 and 390x844, light and dark, including scrolled `main`, the expanded admin person row, the status popover, collapsible sections, the Add person dialog, and every Welcome step. The Welcome review step and the Quality accuracy state used mocked API responses, so no LLM calls were made. Every write endpoint that sends WhatsApp, runs a search or calls an LLM was blocked at the network layer. No screenshots are committed.

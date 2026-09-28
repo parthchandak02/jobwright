@@ -151,7 +151,11 @@ Dry-run remains the default; `--live` is required to submit, and LinkedIn apply 
 
 ## Onboarding a new user
 
-Preferred (v0.6): the owner adds the person's email to the Cloudflare Access policy, then the person opens the dashboard and completes `/welcome` (resume → drafted profile, searches, match criteria → shows the WhatsApp chat the admin connected (read-only) → brief time, which creates `jobwright-brief-<id>`). The admin creates the profile on the Admin page first (binds their email) and connects their WhatsApp group there; people cannot choose or change their own chat.
+Preferred (v0.6): chats are admin-managed.
+
+1. An admin adds the person on `/admin` (Add person: name, login email, optional chat). The email is bound to the profile and the Cloudflare Access allowlist syncs automatically when `CLOUDFLARE_API_TOKEN` is set. Connect their WhatsApp group in their row; people cannot choose or change their own chat (`GET /api/whatsapp/chats` and chat changes are admin-only).
+2. The person opens the dashboard, logs in with their email and the Cloudflare one-time code, and completes `/welcome`: About you, Resume (LLM drafts profile, searches, match criteria), Your search, How we judge fit, Daily list (shows the connected chat read-only, no test send) + time, Cover letters. Required: resume, profile, searches. An admin can do it for them ("Do setup for them").
+3. Once setup is finished (resume + profile) and a chat is set, saving the time or chat creates `jobwright-brief-<id>` and `welcome.py` sends a one-time welcome to their chat plus a heads-up to `ops_target` (marker `users/<id>/logs/welcome_sent.json`; skipped under `JOBWRIGHT_HERMES_DRY_RUN`).
 
 CLI fallback (then bind the email on the Admin page or in `users.yaml` `emails`):
 
@@ -271,9 +275,9 @@ test -f ~/.hermes/skills/autonomous-ai-agents/pp-job-apply/SKILL.md && cat ~/.he
 
 ## Weekly summary and follow-ups
 
-- **Weekly summary:** cron `jobwright-weekly-summary` (Sunday 18:00, `--deliver local`) runs `jobwright summary` for every profile in `users.yaml`. Each user gets one message in their own `whatsapp_target`: new jobs found, sent, applied, moved to interviews / offer, closed, top 3 open jobs worth a look (dashboard links), and due follow-ups. It skips a user who opted out (`weekly_summary: false`, or Profile → WhatsApp), had nothing happen, or already got one in the last 6 days (`logs/weekly_summary.json`).
+- **Weekly summary:** cron `jobwright-weekly-summary` (Sunday 18:00, `--deliver local`) runs `jobwright summary` for every profile in `users.yaml`. Each user gets one message in their own `whatsapp_target`: new jobs found, sent, applied, moved to interviews / offer, closed, top 3 open jobs worth a look (dashboard links), and due follow-ups. It skips a user who opted out (`weekly_summary: false`, or Settings → Daily list), had nothing happen, or already got one in the last 6 days (`logs/weekly_summary.json`).
 - **Preview:** `JOBWRIGHT_HERMES_DRY_RUN=1 jobwright --user $USER_ID summary --dry-run`. Resend after a failure: `jobwright --user $USER_ID summary --force`.
-- **Install / repair the cron:** `jobwright ops install-crons` (edits in place, never duplicates).
+- **Install / repair the cron:** `jobwright ops install-crons` (edits in place, never duplicates; skips brief crons for profiles that haven't finished setup).
 - **Follow-ups:** a job in Applied with no stage change for `followup_days` (per user, default 10) is "follow-up due". It shows on the board card and job drawer; "Followed up" snoozes it for the same number of days, "No response" closes it (`close_reason: no_response`). Up to 3 due follow-ups are appended to the daily list and the weekly summary. If a user says "I followed up with <company>", open the job in the dashboard and tap **Followed up**.
 - **Costs:** admins see 30-day tokens and estimated cost per profile on `/admin` (`GET /api/admin/costs`). Set `JOBWRIGHT_LLM_PRICES` for dollar estimates.
 
@@ -285,8 +289,9 @@ test -f ~/.hermes/skills/autonomous-ai-agents/pp-job-apply/SKILL.md && cat ~/.he
 4. Registry `apply_enabled` defaults false
 5. Never commit user data or secrets
 6. Never send test WhatsApp messages to a real user's group (e.g. richa's). Test sends go only to a chat the owner picks; sandboxes use `JOBWRIGHT_HERMES_DRY_RUN=1`
-7. Operator alerts go to `ops_target`, never to a user's chat
-8. A user only sees their own profile; do not bind someone's email to another person's profile
+7. The welcome message is real and one-time: never finish setup on a real profile outside dry run just to try the flow
+8. Operator alerts go to `ops_target`, never to a user's chat
+9. A user only sees their own profile; do not bind someone's email to another person's profile
 
 ## Example: Richa (user `richa`)
 

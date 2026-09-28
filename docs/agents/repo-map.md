@@ -14,14 +14,15 @@ Detailed paths for agents. Summary: [../../AGENTS.md](../../AGENTS.md).
 | `src/jobwright/hermes_cron.py` | Create/edit/remove `jobwright-brief-<user>`, `jobwright-ops-watchdog`, `jobwright-backup`, `jobwright-weekly-summary` (`--no-agent --deliver local`); pause legacy send/check crons; `JOBWRIGHT_HERMES_DRY_RUN` |
 | `src/jobwright/ops.py` | Brief report, watchdog, alerts to `ops_target`, backups |
 | `src/jobwright/preflight.py` | Pre-run checks; `--fix` installs Playwright Chromium |
-| `src/jobwright/onboarding.py` | New profile + LLM draft from resume |
-| `src/jobwright/whatsapp.py` | Admin chat picker (Hermes targets + bridge names), `chat_name`, test send |
+| `src/jobwright/onboarding.py` | New profile + LLM draft from resume; `onboarding_status`, `is_set_up` (gates brief crons, `install-crons`, welcome) |
+| `src/jobwright/welcome.py` | One-time welcome to the person's chat + operator heads-up when setup creates their brief cron (`logs/welcome_sent.json`; dry-run aware) |
+| `src/jobwright/whatsapp.py` | Admin chat picker (Hermes targets + bridge names), `chat_name` (10-minute group-name cache), test send |
 | `src/jobwright/labels.py` | Append-only human labels (`score_labels`) and eval set |
 | `src/jobwright/config.py` | `JOBWRIGHT_DIR` paths, environment loading, `set_active_user` (CLI), `user_context` (per-request web), `user_env` |
 | `src/jobwright/users.py` | Multi-profile registry (`users/users.yaml`: users with `emails`, `admins`, `ops_target`) |
 | `src/jobwright/database.py` | SQLite `jobs`, `stage_history`, `job_tombstones`, `score_labels`, `score_history`, `llm_usage` |
 | `src/jobwright/web/` | FastAPI Kanban dashboard (`app.py` + routers); `auth.py` (Cloudflare Access / dev), `session.py` (per-request profile); serves `frontend/dist` |
-| `frontend/` | Vite + React Kanban SPA (dev `:5120`, proxies `/api` → `:8002`). UI catalog: `.cursor/skills/frontend-tasteful/`. Profile: chips + `ProfileMaterials`. WhatsApp: `DailyBriefDialog` (send now) + `WhatsAppChatPicker` (Profile WhatsApp tab). Runs: `useAutoSearch` / `useTailorMaterials` / `useRunStream` + `RunProgressDialog`. Drawer: `MatchExplanation`, `RateJob`, `StagePicker`, `DismissDialog`, `CustomTailorDialog`. Pages: `WelcomePage`, `QualityPage`, `AdminPage`. Identity: `AppGate` + `lib/me.tsx` |
+| `frontend/` | Vite + React Kanban SPA (dev `:5120`, proxies `/api` → `:8002`). UI (design v2): `.cursor/skills/frontend-tasteful/` catalog; primitives in `components/ui/` + `PageHeader`, `SectionHeader`, `FormField`, `SaveStatus`, `ActionBar`, `EmptyState`, `MobileNav`. Welcome steps: `components/welcome/`. Settings (`ProfilePage`) tabs: `components/profile/*Tab.tsx` + `useAutosave`. Admin: `components/admin/`. WhatsApp: `DailyBriefDialog` (send now), `WhatsAppChatPicker` (admins), `ConnectedChat` (read-only for everyone else). Runs: `useAutoSearch` / `useTailorMaterials` / `useRunStream` + `RunProgressDialog`. Drawer: `MatchExplanation`, `RateJob`, `StagePicker`, `DismissDialog`, `CustomTailorDialog`. Pages: `WelcomePage`, `QualityPage`, `AdminPage`. Identity: `AppGate` + `lib/me.tsx` |
 | `src/jobwright/discovery/` | Cross-board dedupe (`dedupe.py`), JobSpy (`-w` / `JOBWRIGHT_DISCOVER_WORKERS`, known-URL skip), Workday (known-URL skip, `exclude_companies`, path fallback when location is blank), smart extract; `DISCOVER_MODE=fast|full` |
 | `src/jobwright/enrichment/` | Full JD fetch (JSON-LD, CSS, LLM) |
 | `src/jobwright/scoring/` | Scoring v2 (`matcher.py`, `pipeline_v2.py`, `criteria.py`, `examples.py`, `evaluate.py`, `criteria_miner.py`), legacy `scorer.py` (`JOBWRIGHT_SCORER=v1`), tailor, `tailor_instructions.py` (dashboard Auto/Custom prompts), cover letter, portfolio, PDF, DOCX, validator |
@@ -62,7 +63,7 @@ WhatsApp resolve: `scripts/resolve_user_from_whatsapp.sh 'whatsapp:…'`.
 | `_jobwright_repo.sh` | Resolve repo root |
 | `install_skills.sh` | Install thin Hermes/Cursor skill pointer |
 | `install_hermes_scripts.sh` | Copy cron scripts to `~/.hermes/scripts/` |
-| `setup_hermes_cron.sh` | Installs scripts, retires legacy crons, runs `jobwright ops install-crons` |
+| `setup_hermes_cron.sh` | Installs scripts, retires legacy crons, runs `jobwright ops install-crons` (skips briefs for unfinished profiles) |
 | `jobwright_brief.sh` | Daily Brief (detached wrapper → `run_daily_brief.sh`) |
 | `run_daily_brief.sh` | `preflight --fix`, default stages, `jobwright notify`, `ops brief-report` |
 | `resolve_user_from_whatsapp.sh` | JID → `user_id` |
@@ -91,11 +92,11 @@ Kanban hosting: [dashboard-hosting.md](dashboard-hosting.md) (`jobwright.parthch
 | `GET` | `/api/me` | Login email, `is_admin`, `auth_mode`, openable profiles, active profile |
 | `POST` | `/api/session` | Switch active profile (allowed ones only) |
 | `GET` | `/api/status` | Last run, ops health, WhatsApp bridge (status banner) |
-| `GET` | `/api/profile` | Active user, `apply_enabled`, `schedule` / `schedule_label` / `timezone`, `whatsapp_target` |
-| `PUT` | `/api/profile` | Save `schedule` + `whatsapp_target`; creates or edits `jobwright-brief-<user>` |
-| `GET` / `POST` | `/api/whatsapp/chats`, `/api/whatsapp/test` | Chat picker, test message |
+| `GET` | `/api/profile` | Active user, `apply_enabled`, `schedule` / `schedule_label` / `timezone`, `whatsapp_target`, `whatsapp_chat_name` |
+| `PUT` | `/api/profile` | Save `schedule`, `weekly_summary`, `followup_days`, `whatsapp_target` (change is admin-only, 403 otherwise); re-syncs `jobwright-brief-<user>` only when schedule/chat change or the wrapper is missing; first sync after setup sends the one-time welcome |
+| `GET` / `POST` | `/api/whatsapp/chats`, `/api/whatsapp/test` | Chat list (admin-only, 403 otherwise); test message (non-admins: own chat only) |
 | `GET` / `POST` | `/api/onboarding/status`, `/profile`, `/draft`, `/confirm` | New-profile onboarding |
-| `GET` / `PUT` / `POST` | `/api/criteria`, `/api/criteria/suggest` | Match criteria |
+| `GET` / `PUT` / `PATCH` / `POST` | `/api/criteria`, `/api/criteria/suggest` | Match criteria; `PATCH {notify_threshold}` changes only the cutoff (derived rules stay derived) |
 | `GET` / `POST` | `/api/quality`, `/api/quality/eval`, `/api/quality/rescore`, `/api/jobs/{url}/labels` | Match quality, label + score history |
 | `GET` / `PATCH` / `DELETE` / `PUT` / `POST` | `/api/admin/users[/{id}]`, `/api/admin/settings`, `/api/admin/watchdog`, `/api/admin/ops-test` | Admin only |
 | `GET` / `PUT` | `/api/settings`, `/profile`, `/searches`, `/resume.pdf` | Searches, base resume PDF |
