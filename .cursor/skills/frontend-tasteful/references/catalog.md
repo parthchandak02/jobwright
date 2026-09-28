@@ -86,22 +86,23 @@ Reuse order: shadcn defaults → domain primitive → new token/class. Tailwind 
 |-----|-----------|
 | Drawer section chrome | `DrawerSection` |
 | Per-job resume/cover + Auto/Custom Tailor | `JobResumeMaterials`, `JobCoverMaterials`, `JobMaterialsPreview` |
-| Profile documents (PDF iframe + markdown) | `ProfileMaterials` + `ResumePreview` |
+| Profile documents (resume row, cover letter list with drop zone, preview on demand) | `ProfileMaterials` + `ResumePreview` (PDF / Text `Segmented`, "Open PDF" link; phones default to Text) |
 | Live pipeline / tailor logs | `RunProgressDialog` + `RunProgressButton`; attach to a started run with `useRunStream` |
 | Board Auto Search dialog | `AutoSearchDialog` (wrapper over `RunProgressDialog`) |
 | Edit tailor instructions then run | `CustomTailorDialog` |
 | LinkedIn-tinted contacts | `ConnectionsPanel` |
 | Gated dialogs | `DismissDialog` (close with outcome; "Not for me" asks why), `ManualAddModal`, `DailyBriefDialog` (pending count, next send, Send now; links to Profile → WhatsApp) |
-| WhatsApp chat selection + test send | `WhatsAppChatPicker` (Profile WhatsApp tab, onboarding, Admin; `hideTest` when the caller owns test-send) |
+| WhatsApp chat selection + test send | `WhatsAppChatPicker` (Profile Daily list tab, onboarding, Admin; `hideTest` when the caller owns test-send; `onChange(target, chat?)`; `chatDisplayName` shows "Unnamed group · …4902" for raw ids) |
 
 ### Profile / forms
 
 | Use | Primitive |
 |-----|-----------|
 | Labeled field + help | `FormField` (visible `hint`, `help` popover), `FieldHint`, `SectionHeader` |
-| Auto Search editors | `ChipInput`, `QueryChipInput`, `LocationChipInput`, `BoardToggles` |
+| Auto Search editors | `ChipInput`, `QueryChipInput` (`mode` `auto`/`chips`/`list`: above 12 titles a divided list with a Daily/Weekly `Segmented` per row; chips mode moves via a chip menu), `LocationChipInput` (neutral, Enter only so "City, ST" stays one chip), `BoardToggles` (empty value = `DEFAULT_BOARDS` shown on) |
+| Profile tabs (one save model: autosave + `SaveStatus`; Match rules uses `ActionBar`) | `components/profile/*Tab.tsx`, `useAutosave` (debounced save with state/savedAt/retry, flushes on unmount), `ConfirmAction` |
 | Read-only pairs in dialogs | `DetailRow` / `DetailGrid` |
-| Match rules (fit, dealbreakers, locations, level, pay) | `CriteriaEditor` (`compact` in onboarding) |
+| Match rules (fit, dealbreakers, locations, level, pay) | `CriteriaEditor` (`compact` in onboarding; grouped with h3 subheadings otherwise; dealbreakers and pluses are divided lists with inline fields; Radix `Select` for the cutoff) |
 
 ### Admin (`components/admin/`)
 

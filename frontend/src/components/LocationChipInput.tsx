@@ -1,5 +1,6 @@
-import { useCallback, useState, type KeyboardEvent } from 'react'
-import { Chip } from '@/components/Chip'
+import { useState, type KeyboardEvent } from 'react'
+import { Plus } from 'lucide-react'
+import { ValueChip } from '@/components/Chip'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 
@@ -9,72 +10,75 @@ type Props = {
   locations: LocationEntry[]
   onChange: (next: LocationEntry[]) => void
   className?: string
-}
-
-function normalizeLocation(raw: string): string {
-  return raw.trim()
+  placeholder?: string
+  id?: string
+  'aria-describedby'?: string
 }
 
 function isRemotePlace(name: string): boolean {
   return name.trim().toLowerCase() === 'remote'
 }
 
-function isDuplicate(locations: LocationEntry[], candidate: string): boolean {
-  const lower = candidate.toLowerCase()
-  return locations.some((l) => l.location.toLowerCase() === lower)
-}
-
-export function LocationChipInput({ locations, onChange, className }: Props) {
+export function LocationChipInput({
+  locations,
+  onChange,
+  className,
+  placeholder = 'Add a city, or type Remote',
+  id,
+  'aria-describedby': describedBy,
+}: Props) {
   const [draft, setDraft] = useState('')
 
-  const addLocation = useCallback(
-    (raw: string) => {
-      const location = normalizeLocation(raw)
-      if (!location || isDuplicate(locations, location)) return
+  function add() {
+    const location = draft.trim()
+    if (!location) return
+    if (!locations.some((l) => l.location.toLowerCase() === location.toLowerCase())) {
       onChange([...locations, { location, remote: isRemotePlace(location) }])
-      setDraft('')
-    },
-    [locations, onChange],
-  )
-
-  const removeAt = useCallback(
-    (index: number) => {
-      onChange(locations.filter((_, i) => i !== index))
-    },
-    [onChange, locations],
-  )
+    }
+    setDraft('')
+  }
 
   const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
       e.preventDefault()
-      addLocation(draft)
+      add()
     }
   }
 
   return (
     <div className={cn('space-y-2', className)}>
       {locations.length > 0 && (
-        <div className="job-card-chips">
+        <div className="flex flex-wrap items-center gap-1.5">
           {locations.map((entry, index) => (
-            <Chip
+            <ValueChip
               key={`${entry.location}-${index}`}
-              tone="--stage-applied"
-              onRemove={() => removeAt(index)}
+              onRemove={() => onChange(locations.filter((_, i) => i !== index))}
               removeLabel={entry.location}
             >
               {entry.location}
-            </Chip>
+            </ValueChip>
           ))}
         </div>
       )}
-      <Input
-        type="text"
-        value={draft}
-        placeholder="San Francisco, CA"
-        aria-label="Add location"
-        onChange={(e) => setDraft(e.target.value)}
-        onKeyDown={handleKeyDown}
-      />
+      <div className="relative">
+        <Plus
+          className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-subtle-foreground"
+          aria-hidden
+        />
+        <Input
+          id={id}
+          type="text"
+          value={draft}
+          placeholder={placeholder}
+          aria-label="Add a place"
+          aria-describedby={describedBy}
+          enterKeyHint="done"
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={handleKeyDown}
+          onBlur={add}
+          className="pl-9"
+        />
+      </div>
     </div>
   )
 }

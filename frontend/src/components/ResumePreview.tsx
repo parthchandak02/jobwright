@@ -1,9 +1,11 @@
 import type { ReactNode } from 'react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
+import { ExternalLink } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkBreaks from 'remark-breaks'
 import remarkGfm from 'remark-gfm'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Button } from '@/components/ui/button'
+import { Segmented } from '@/components/ui/segmented'
 import { cn } from '@/lib/utils'
 
 export type ResumePreviewProps = {
@@ -16,11 +18,16 @@ export type ResumePreviewProps = {
   emptyMarkdown?: string
 }
 
+type View = 'pdf' | 'text'
+
 const PDF_VIEWER_HASH = '#toolbar=0&navpanes=0&scrollbar=1&zoom=page-width'
 
 function pdfViewerSrc(url: string): string {
-  const base = url.split('#')[0]
-  return `${base}${PDF_VIEWER_HASH}`
+  return `${url.split('#')[0]}${PDF_VIEWER_HASH}`
+}
+
+function prefersText(): boolean {
+  return typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches
 }
 
 export function ResumePreview({
@@ -30,52 +37,59 @@ export function ResumePreview({
   actions,
   pdfTitle = 'Resume PDF preview',
   emptyPdf = 'No PDF on file.',
-  emptyMarkdown = 'No markdown yet. It appears after the PDF is converted on the server.',
+  emptyMarkdown = 'The text version appears a moment after the PDF is uploaded.',
 }: ResumePreviewProps) {
-  const defaultTab = useMemo(() => (pdfUrl ? 'pdf' : 'markdown'), [pdfUrl])
-  const [tab, setTab] = useState(defaultTab)
+  const [view, setView] = useState<View>(() => (pdfUrl && !prefersText() ? 'pdf' : 'text'))
 
   useEffect(() => {
-    setTab(defaultTab)
-  }, [defaultTab])
+    if (!pdfUrl) setView('text')
+  }, [pdfUrl])
 
   const hasMarkdown = markdown.trim().length > 0
 
   return (
-    <div className={cn('space-y-2', className)}>
-      <Tabs value={tab} onValueChange={setTab} className="gap-2">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <TabsList className="h-8">
-            <TabsTrigger value="pdf" disabled={!pdfUrl}>
-              PDF
-            </TabsTrigger>
-            <TabsTrigger value="markdown">Markdown</TabsTrigger>
-          </TabsList>
-          {actions ? <div className="shrink-0">{actions}</div> : null}
-        </div>
-
-        <TabsContent value="pdf">
+    <div className={cn('space-y-3', className)}>
+      <div className="flex flex-wrap items-center gap-2">
+        <Segmented
+          size="sm"
+          aria-label="Preview format"
+          value={view}
+          onValueChange={setView}
+          options={[
+            { value: 'pdf', label: 'PDF', disabled: !pdfUrl },
+            { value: 'text', label: 'Text' },
+          ]}
+        />
+        <div className="ml-auto flex items-center gap-1">
           {pdfUrl ? (
-            <iframe
-              title={pdfTitle}
-              className="resume-pdf-frame"
-              src={pdfViewerSrc(pdfUrl)}
-            />
-          ) : (
-            <p className="text-sm text-muted-foreground">{emptyPdf}</p>
-          )}
-        </TabsContent>
+            <Button asChild size="sm" variant="ghost">
+              <a href={pdfUrl.split('#')[0]} target="_blank" rel="noreferrer">
+                <ExternalLink />
+                Open PDF
+              </a>
+            </Button>
+          ) : null}
+          {actions}
+        </div>
+      </div>
 
-        <TabsContent value="markdown">
-          {hasMarkdown ? (
-            <div className="materials-preview resume-md-pane">
-              <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>{markdown}</ReactMarkdown>
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">{emptyMarkdown}</p>
-          )}
-        </TabsContent>
-      </Tabs>
+      {view === 'pdf' ? (
+        pdfUrl ? (
+          <iframe
+            title={pdfTitle}
+            className="block h-[min(80vh,960px)] w-full rounded-lg border bg-surface"
+            src={pdfViewerSrc(pdfUrl)}
+          />
+        ) : (
+          <p className="rounded-lg bg-surface-muted px-4 py-3 text-caption text-muted-foreground">{emptyPdf}</p>
+        )
+      ) : hasMarkdown ? (
+        <div className="materials-preview max-h-[70vh] overflow-y-auto overscroll-contain rounded-lg border bg-surface px-4 py-4 text-body md:px-6 md:py-5">
+          <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>{markdown}</ReactMarkdown>
+        </div>
+      ) : (
+        <p className="rounded-lg bg-surface-muted px-4 py-3 text-caption text-muted-foreground">{emptyMarkdown}</p>
+      )}
     </div>
   )
 }
