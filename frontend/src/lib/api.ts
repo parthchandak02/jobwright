@@ -146,7 +146,8 @@ export type Profile = {
 }
 
 export type QueryEntry = { query: string; tier: number }
-export type LocationEntry = { location: string; remote: boolean }
+export type RemoteScope = 'us' | 'any'
+export type LocationEntry = { location: string; remote: boolean; remote_scope?: RemoteScope }
 
 export type SettingsProfile = {
   personal: Record<string, string>

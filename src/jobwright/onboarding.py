@@ -137,7 +137,7 @@ def draft_from_resume(resume_text: str, hints: dict[str, Any] | None = None, cli
     criteria = suggest_criteria(resume_text=resume_text, profile=profile, decisions=[], client=client)
     locations = [{"location": loc, "remote": False} for loc in (raw.get("locations") or [])][:6]
     if raw.get("open_to_remote", True):
-        locations.append({"location": "Remote", "remote": True})
+        locations.append({"location": "Remote", "remote": True, "remote_scope": "us"})
     searches = {
         "queries": [{"query": q, "tier": 1 if i < 8 else 2} for i, q in enumerate(raw.get("search_queries") or [])],
         "locations": locations,
@@ -157,7 +157,7 @@ def _merge(base: dict, updates: dict) -> dict:
     return out
 
 
-def _accept_patterns(locations: list[dict]) -> list[str]:
+def accept_patterns(locations: list[dict]) -> list[str]:
     patterns: list[str] = []
     for loc in locations:
         name = str(loc.get("location") or "").strip()
@@ -202,7 +202,7 @@ def apply_draft(draft: dict[str, Any]) -> None:
             searches[key] = incoming[key]
     if incoming.get("locations"):
         searches["location"] = {
-            "accept_patterns": _accept_patterns(incoming["locations"]),
+            "accept_patterns": accept_patterns(incoming["locations"]),
             "reject_patterns": (searches.get("location") or {}).get("reject_patterns") or [],
         }
     search_path.write_text(yaml.safe_dump(searches, sort_keys=False, allow_unicode=True), encoding="utf-8")

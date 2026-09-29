@@ -92,7 +92,7 @@ function ContactRow({
       <div className="-mr-1 flex shrink-0 items-center">
         {href ? (
           <Button asChild type="button" size="icon-sm" variant="ghost" className="text-muted-foreground hover:text-foreground">
-            <a href={href} target="_blank" rel="noreferrer" aria-label={`Open ${name} on LinkedIn`}>
+            <a href={href} target="_blank" rel="noreferrer" aria-label={`Open ${name} on ${/linkedin\.com/i.test(href) ? 'LinkedIn' : 'the web'}`}>
               <ExternalLink className="size-3.5" />
             </a>
           </Button>

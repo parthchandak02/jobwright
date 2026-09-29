@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+import yaml
 
 from jobwright.database import close_connection, init_db, insert_manual_job
 
@@ -124,6 +125,29 @@ def test_put_profile_saves_schedule(api_client, monkeypatch: pytest.MonkeyPatch)
 
     res = api_client.put("/api/profile", json={"schedule": "0 */3 * * 1-5"})
     assert res.status_code == 400
+
+
+def test_put_searches_keeps_remote_scope_and_accepts_new_cities(api_client):
+    import jobwright.config as cfg
+
+    cfg.SEARCH_CONFIG_PATH.write_text(
+        "location:\n  accept_patterns: [Chicago]\n  reject_patterns: [India]\n", encoding="utf-8"
+    )
+    res = api_client.put(
+        "/api/settings/searches",
+        json={"locations": [
+            {"location": "Denver, CO", "remote": False, "remote_scope": "any"},
+            {"location": "Remote", "remote": True, "remote_scope": "bogus"},
+        ]},
+    )
+    assert res.status_code == 200
+    saved = yaml.safe_load(cfg.SEARCH_CONFIG_PATH.read_text(encoding="utf-8"))
+    assert saved["locations"] == [
+        {"location": "Denver, CO", "remote": False},
+        {"location": "Remote", "remote": True, "remote_scope": "us"},
+    ]
+    assert saved["location"]["accept_patterns"] == ["Chicago", "Denver", "CO", "Remote"]
+    assert saved["location"]["reject_patterns"] == ["India"]
 
 
 def test_board_lists_job(api_client):

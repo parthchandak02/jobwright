@@ -49,7 +49,9 @@ export function StepFinish({ settings, profile, starting, onEdit, onBack, onBoar
   const queries = settings?.searches.queries ?? []
   const daily = queries.filter((q) => (q.tier || 1) <= 1).length
   const weekly = queries.length - daily
-  const places = (settings?.searches.locations ?? []).map((l) => l.location)
+  const places = (settings?.searches.locations ?? []).map((l) =>
+    l.remote ? `Remote (${l.remote_scope === 'any' ? 'all countries' : 'US only'})` : l.location,
+  )
   const letters = settings?.cover_letter_examples.length ?? 0
   const time = profile?.schedule_label || clock(profile?.schedule)
   const chat = profile?.whatsapp_chat_name || (profile?.whatsapp_target ? 'Connected chat' : null)

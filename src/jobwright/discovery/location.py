@@ -41,11 +41,25 @@ def pattern_matches(loc: str, pattern: str) -> bool:
     return p in loc
 
 
-def location_ok(location: str | None, accept: list[str], reject: list[str]) -> bool:
+def remote_scope(search_cfg: dict | None) -> str | None:
+    """"us" or "any" for the profile's remote search entry; None when remote is off.
+
+    Remote entries without a scope mean US only.
+    """
+    for loc in (search_cfg or {}).get("locations") or []:
+        if isinstance(loc, dict) and loc.get("remote"):
+            return "any" if loc.get("remote_scope") == "any" else "us"
+    return None
+
+
+def location_ok(
+    location: str | None, accept: list[str], reject: list[str], *, remote_any: bool = False,
+) -> bool:
     """Check if a job location passes the user's location filter.
 
     Remote jobs are accepted after reject patterns pass (avoids "Calgary Remote").
-    Known international-remote junk is rejected even when marked remote.
+    Known international-remote junk is rejected even when marked remote, unless
+    the user takes remote jobs from any country (``remote_any``).
     Non-remote jobs must match an accept pattern.
     """
     if not location:
@@ -58,7 +72,7 @@ def location_ok(location: str | None, accept: list[str], reject: list[str]) -> b
             return False
 
     if any(marker in loc for marker in _REMOTE_MARKERS):
-        if any(junk in loc for junk in _INTL_REMOTE_JUNK):
+        if not remote_any and any(junk in loc for junk in _INTL_REMOTE_JUNK):
             return False
         return True
 

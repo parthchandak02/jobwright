@@ -161,6 +161,7 @@ export function WelcomePage() {
     setBusy(true)
     try {
       setStatus(await confirmSetup(draft))
+      await refresh()
       setStep('whatsapp')
     } catch (e) {
       toast.error(errorMessage(e))
@@ -205,6 +206,11 @@ export function WelcomePage() {
     }
   }
 
+  async function toBoard() {
+    await refresh()
+    navigate('/')
+  }
+
   async function doStart() {
     setBusy(true)
     try {
@@ -212,7 +218,7 @@ export function WelcomePage() {
       navigate('/welcome/rate')
     } catch (e) {
       toast.error(errorMessage(e))
-      navigate('/')
+      await toBoard()
     } finally {
       setBusy(false)
     }
@@ -306,7 +312,7 @@ export function WelcomePage() {
         starting={busy}
         onEdit={edit}
         onBack={() => setStep('letters')}
-        onBoard={() => navigate('/')}
+        onBoard={() => void toBoard()}
         onStart={() => void doStart()}
       />
     )

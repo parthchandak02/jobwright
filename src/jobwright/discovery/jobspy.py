@@ -21,6 +21,7 @@ from jobwright.config import load_location_filters
 from jobwright.database import get_connection, init_db
 from jobwright.discovery.known_urls import load_known_urls
 from jobwright.discovery.location import location_ok as _location_ok
+from jobwright.discovery.location import remote_scope
 
 log = logging.getLogger(__name__)
 
@@ -314,7 +315,7 @@ def _run_one_search(
     before = len(df)
     df = df[df.apply(lambda row: _location_ok(
         str(row.get("location", "")) if str(row.get("location", "")) != "nan" else None,
-        accept_locs, reject_locs,
+        accept_locs, reject_locs, remote_any=bool(s.get("remote_any")),
     ), axis=1)]
     filtered = before - len(df)
 
@@ -473,6 +474,9 @@ def _full_crawl(
             })
     if extra_companies:
         log.info("JobSpy: +%d target-company searches", len(extra_companies))
+    remote_any = remote_scope(search_cfg) == "any"
+    for s in searches:
+        s["remote_any"] = remote_any
 
     proxy_config = parse_proxy(proxy) if proxy else None
 

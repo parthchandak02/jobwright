@@ -15,14 +15,35 @@ log = logging.getLogger(__name__)
 _EXA_URL = "https://api.exa.ai/search"
 
 _TITLE_TOKENS = {
-    "acting", "analyst", "associate", "chief", "college", "community",
-    "consultant", "coordinator", "director", "engineer", "foundation",
-    "global", "head", "hiring", "intern", "job", "lead", "legal",
-    "manager", "network", "officer", "principal", "program", "programme",
-    "recruiter", "senior", "specialist", "vice",
+    "account", "acting", "analyst", "associate", "business", "chief", "college",
+    "community", "consultant", "coordinator", "customer", "data", "design",
+    "designer", "developer", "development", "director", "engineer", "executive",
+    "foundation", "founding", "global", "growth", "head", "hiring", "intern",
+    "job", "jobs", "lead", "legal", "manager", "marketing", "network", "officer",
+    "operations", "partner", "principal", "product", "program", "programme",
+    "project", "recruiter", "representative", "sales", "senior", "specialist",
+    "strategist", "strategy", "success", "support", "vice",
 }
 
+# Path segments that mark a job posting / careers page on any site.
+_JOB_PATH_RE = re.compile(r"/(jobs?|careers?|positions?|openings?|vacanc(y|ies))(/|$)")
+
 _JOB_HOST_MARKERS = (
+    "builtin",
+    "wellfound.com",
+    "angel.co",
+    "workable.com",
+    "teamtailor.com",
+    "breezy.hr",
+    "recruitee.com",
+    "bamboohr.com",
+    "jobs.",
+    "careers.",
+    "simplyhired.com",
+    "monster.com",
+    "dice.com",
+    "otta.com",
+    "welcometothejungle.com",
     "myworkdayjobs.com",
     "workdayjobs.com",
     "greenhouse.io",
@@ -59,6 +80,8 @@ def is_job_posting_url(url: str) -> bool:
     blob = f"{host}{path}"
     if "linkedin.com" in host and "/in/" in path:
         return False
+    if _JOB_PATH_RE.search(path):
+        return True
     return any(marker in blob or marker in raw for marker in _JOB_HOST_MARKERS)
 
 

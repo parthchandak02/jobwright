@@ -16,6 +16,7 @@ from jobwright.discovery.filters import (
     title_excluded,
 )
 from jobwright.discovery.location import location_ok as _location_ok
+from jobwright.discovery.location import remote_scope
 
 log = logging.getLogger(__name__)
 
@@ -110,7 +111,7 @@ def job_is_noise(row: sqlite3.Row, search_cfg: dict[str, Any]) -> tuple[bool, st
             return True, f"blocked url: {fragment}"
 
     accept, reject = load_location_filters(search_cfg)
-    if location and not _location_ok(location, accept, reject):
+    if location and not _location_ok(location, accept, reject, remote_any=remote_scope(search_cfg) == "any"):
         return True, f"location: {location[:60]}"
 
     if not passes_discovery_filters(

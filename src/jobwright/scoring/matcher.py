@@ -33,6 +33,7 @@ import httpx
 from jobwright.discovery.filters import apply_fit_score_guards, salary_below_floor
 from jobwright.llm import get_client, get_client_for_model, llm_purpose
 from jobwright.llm_json import LLMJsonError, parse_json_object
+from jobwright.discovery.location import remote_scope
 from jobwright.scoring.criteria import MatchCriteria, render_criteria
 from jobwright.scoring.examples import ExampleIndex, render_examples
 
@@ -147,7 +148,8 @@ class MatchContext:
     def __post_init__(self) -> None:
         self.system_prompt = SYSTEM_TEMPLATE.format(
             resume=(self.resume_text or "")[:RESUME_CHARS],
-            criteria=render_criteria(self.criteria) or "(none given; infer from the resume)",
+            criteria=render_criteria(self.criteria, remote=remote_scope(self.search_cfg))
+            or "(none given; infer from the resume)",
         )
 
     @property

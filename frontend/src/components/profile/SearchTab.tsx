@@ -25,7 +25,8 @@ export function searchesPayload(s: SettingsSearches) {
     locations: s.locations
       .map((l) => {
         const location = l.location.trim()
-        return { location, remote: location.toLowerCase() === 'remote' }
+        const remote = l.remote || location.toLowerCase() === 'remote'
+        return remote ? { location, remote, remote_scope: l.remote_scope ?? 'us' } : { location, remote }
       })
       .filter((l) => l.location),
     boards: (s.boards || []).map((b) => b.trim()).filter(Boolean),
@@ -91,7 +92,7 @@ export function SearchTab({ searches, onChange }: Props) {
         >
           <QueryChipInput queries={searches.queries} onChange={(queries) => patch({ queries })} />
         </FormField>
-        <FormField label="Where" hint="Cities to search. Add Remote to include remote jobs.">
+        <FormField label="Where" hint="Cities to search, and whether remote jobs should be US-only or from any country.">
           <LocationChipInput locations={searches.locations} onChange={(locations) => patch({ locations })} />
         </FormField>
       </div>

@@ -44,7 +44,7 @@ export function CalibrationPage() {
   const navigate = useNavigate()
   const location = useLocation()
   const now = Boolean((location.state as { now?: boolean } | null)?.now)
-  const { me } = useMe()
+  const { me, refresh } = useMe()
   const notAFit = useNotAFitReasons()
   const [phase, setPhase] = useState<Phase>('loading')
   const [data, setData] = useState<Calibration | null>(null)
@@ -138,7 +138,7 @@ export function CalibrationPage() {
     }
   }
 
-  const toBoard = () => navigate('/')
+  const toBoard = () => void refresh().then(() => navigate('/'))
   const target = data?.target ?? 10
   const job = phase === 'rating' ? queue[index] : undefined
   const later = (

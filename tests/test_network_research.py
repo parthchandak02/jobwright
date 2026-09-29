@@ -39,7 +39,8 @@ def test_looks_like_person_name():
 
 
 def test_present_contact_drops_job_postings():
-    from jobwright.network.research import present_contact
+    from jobwright.network.research import is_job_posting_url as research_is_job
+    from jobwright.network.research import looks_like_person_name, present_contact
 
     junk = present_contact({
         "name": "Programme Coordinator",
@@ -49,6 +50,18 @@ def test_present_contact_drops_job_postings():
         "source": "web",
     })
     assert junk is None
+
+    # A Built In posting whose title parsed as a "name" (seen live).
+    assert present_contact({
+        "name": "Business Operations Associate",
+        "role": "BJAK | Built In",
+        "source_url": "https://builtin.com/job/business-operations-associate/10554589",
+        "source": "web",
+    }) is None
+    assert not looks_like_person_name("Business Operations Associate")
+    assert research_is_job("https://acme.com/careers/ops-lead")
+    assert not research_is_job("https://acme.com/team/pat-lee")
+    assert not research_is_job("https://www.linkedin.com/in/pat-lee")
 
     keep = present_contact({
         "name": "Pat Lee",

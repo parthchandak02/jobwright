@@ -1,6 +1,7 @@
 import { ArrowLeft, ArrowRight, ChevronDown } from 'lucide-react'
 import { ChipInput } from '@/components/ChipInput'
 import { FormField } from '@/components/FormField'
+import { LocationChipInput } from '@/components/LocationChipInput'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -57,20 +58,8 @@ export function StepSearch({ draft, onDraft, onBack, onContinue }: Props) {
     return list.filter((v) => !seen.has(v.toLowerCase()))
   }
 
-  const setLocations = (names: string[]) =>
-    onDraft({
-      ...draft,
-      searches: {
-        ...draft.searches,
-        locations: names.map(
-          (location): LocationEntry =>
-            draft.searches.locations.find((l) => l.location === location) ?? {
-              location,
-              remote: location.trim().toLowerCase() === 'remote',
-            },
-        ),
-      },
-    })
+  const setLocations = (locations: LocationEntry[]) =>
+    onDraft({ ...draft, searches: { ...draft.searches, locations } })
 
   const role = draft.profile.experience.target_role || ''
 
@@ -152,12 +141,8 @@ export function StepSearch({ draft, onDraft, onBack, onContinue }: Props) {
           </FormField>
         </Disclosure>
 
-        <FormField label="Where to look" hint="Add “Remote” to include remote jobs.">
-          <ChipInput
-            values={draft.searches.locations.map((l) => l.location)}
-            onChange={setLocations}
-            placeholder="Add a city, region or “Remote”"
-          />
+        <FormField label="Where to look" hint="Cities you can work in, and whether remote jobs should be US-only or from any country.">
+          <LocationChipInput locations={draft.searches.locations} onChange={setLocations} />
         </FormField>
       </div>
     </WelcomeStep>

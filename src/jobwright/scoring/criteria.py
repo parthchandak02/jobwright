@@ -158,8 +158,14 @@ def load_criteria(profile: dict[str, Any] | None) -> MatchCriteria:
     return criteria
 
 
-def render_criteria(criteria: MatchCriteria) -> str:
-    """Prompt block describing the candidate's rules."""
+_REMOTE_RULES = {
+    "us": "Remote: only remote roles open to people based in the United States.",
+    "any": "Remote: remote roles are fine from any country.",
+}
+
+
+def render_criteria(criteria: MatchCriteria, remote: str | None = None) -> str:
+    """Prompt block describing the candidate's rules; ``remote`` is the searches' remote scope."""
     lines: list[str] = []
     if criteria.summary:
         lines.append(f"WHAT THEY WANT:\n{criteria.summary}")
@@ -173,12 +179,14 @@ def render_criteria(criteria: MatchCriteria) -> str:
             "or hard requirements; do not flag one for a passing mention):\n"
             + "\n".join(f"- [{d.id}] {d.description}" for d in criteria.dealbreakers)
         )
-    if criteria.locations_ok or criteria.locations_not_ok:
-        loc = []
-        if criteria.locations_ok:
-            loc.append("Acceptable: " + "; ".join(criteria.locations_ok))
-        if criteria.locations_not_ok:
-            loc.append("Not acceptable: " + "; ".join(criteria.locations_not_ok))
+    loc = []
+    if criteria.locations_ok:
+        loc.append("Acceptable: " + "; ".join(criteria.locations_ok))
+    if criteria.locations_not_ok:
+        loc.append("Not acceptable: " + "; ".join(criteria.locations_not_ok))
+    if remote in _REMOTE_RULES:
+        loc.append(_REMOTE_RULES[remote])
+    if loc:
         lines.append("LOCATION:\n" + "\n".join(loc))
     if criteria.seniority:
         lines.append(f"SENIORITY:\n{criteria.seniority}")

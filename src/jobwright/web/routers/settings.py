@@ -19,6 +19,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from jobwright import config
+from jobwright.onboarding import accept_patterns
 from jobwright.resume import cached_pdf_markdown, load_resume_text
 from jobwright.users import get_user
 from jobwright.web.session import current_user_id
@@ -178,9 +179,20 @@ class SearchSettings(BaseModel):
 def put_searches(body: SearchSettings) -> dict:
     searches = _load_searches()
     incoming = body.model_dump(exclude_unset=True)
+    for loc in incoming.get("locations") or []:
+        if loc.get("remote"):
+            loc["remote_scope"] = "any" if loc.get("remote_scope") == "any" else "us"
+        else:
+            loc.pop("remote_scope", None)
     for key in ("queries", "locations", "boards", "exclude_titles", "min_salary"):
         if key in incoming:
             searches[key] = incoming[key]
+    if incoming.get("locations"):
+        # New cities must pass the discovery location filter too; keep hand-tuned patterns.
+        location_cfg = searches.get("location") or {}
+        accept = list(location_cfg.get("accept_patterns") or [])
+        accept += [p for p in accept_patterns(incoming["locations"]) if p not in accept]
+        searches["location"] = {**location_cfg, "accept_patterns": accept}
     defaults = searches.setdefault("defaults", {})
     for key in ("hours_old", "results_per_site"):
         if incoming.get(key) is not None:

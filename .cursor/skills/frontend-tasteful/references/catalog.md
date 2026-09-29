@@ -101,7 +101,7 @@ Reuse order: shadcn defaults → domain primitive → new token/class. Tailwind 
 | Use | Primitive |
 |-----|-----------|
 | Labeled field + help | `FormField` (visible `hint`, `help` popover), `FieldHint`, `SectionHeader` |
-| Auto Search editors | `ChipInput`, `QueryChipInput` (`mode` `auto`/`chips`/`list`: above 12 titles a divided list with a Daily/Weekly `Segmented` per row; chips mode moves via a chip menu), `LocationChipInput` (neutral, Enter only so "City, ST" stays one chip), `BoardToggles` (empty value = `DEFAULT_BOARDS` shown on) |
+| Auto Search editors | `ChipInput`, `QueryChipInput` (`mode` `auto`/`chips`/`list`: above 12 titles a divided list with a Daily/Weekly `Segmented` per row; chips mode moves via a chip menu), `LocationChipInput` (neutral city chips, Enter only so "City, ST" stays one chip, plus a "Remote jobs" `Segmented` No / US only / All countries that owns the single `remote` entry and its `remote_scope`; used by Settings Search and welcome StepSearch), `BoardToggles` (empty value = `DEFAULT_BOARDS` shown on) |
 | Settings tabs (`TabsList variant="underline"`: Search, Match rules, Documents, Daily list (value `whatsapp`), About you; one save model: autosave + `SaveStatus`; Match rules uses a sticky `ActionBar`) | `components/profile/` `SearchTab`, `RulesTab`, `DocumentsTab`, `DailyListTab`, `AboutTab`; `useAutosave` (debounced 700ms save with `state`/`savedAt`/`schedule`/`flush`/`retry`, flushes on unmount); `ConfirmAction` (confirm before real sends) |
 | Connected chat for non-admins (read-only name from `whatsapp_chat_name`; "Send test" goes to the caller's own chat) | `ConnectedChat` (`target`, `name`, `hideTest` on Welcome so setup never posts) |
 | Read-only pairs in dialogs | `DetailRow` / `DetailGrid` |

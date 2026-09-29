@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from jobwright.discovery import cleanup, jobspy, smartextract, workday
-from jobwright.discovery.location import location_ok, pattern_matches
+from jobwright.discovery.location import location_ok, pattern_matches, remote_scope
 
 ACCEPT = ["San Francisco", "Bay Area", ", CA", "Remote", "United States", "US", "USA"]
 REJECT = ["Calgary", "Toronto", "Canada", "India", "(ON)", "NYC only"]
@@ -54,6 +54,26 @@ def test_intl_remote_junk_rejected():
     assert location_ok("Remote APAC", ACCEPT, REJECT) is False
     assert location_ok("Remote (India only)", ACCEPT, REJECT) is False
     assert location_ok("Remote - US", ACCEPT, REJECT) is True
+
+
+def test_remote_any_country_keeps_intl_remote():
+    assert location_ok("Remote - EMEA", ACCEPT, REJECT, remote_any=True) is True
+    # User reject patterns still win.
+    assert location_ok("Remote (India only)", ACCEPT, REJECT, remote_any=True) is False
+
+
+def test_remote_scope_defaults_to_us():
+    assert remote_scope({"locations": [{"location": "Chicago, IL", "remote": False}]}) is None
+    assert remote_scope({"locations": [{"location": "Remote", "remote": True}]}) == "us"
+    assert remote_scope({"locations": [{"location": "Remote", "remote": True, "remote_scope": "any"}]}) == "any"
+
+
+def test_remote_scope_reaches_scoring_prompt():
+    from jobwright.scoring.criteria import MatchCriteria, render_criteria
+
+    assert "based in the United States" in render_criteria(MatchCriteria(), remote="us")
+    assert "any country" in render_criteria(MatchCriteria(), remote="any")
+    assert "LOCATION" not in render_criteria(MatchCriteria())
 
 
 def test_all_callers_use_shared_helper():
