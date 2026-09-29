@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import pytest
+
 from jobwright.discovery.filters import (
     apply_fit_score_guards,
     fit_score_ceiling,
+    parse_salary_from_text,
     parse_salary_to_annual,
     passes_discovery_filters,
     salary_below_floor,
@@ -147,6 +150,47 @@ def test_salary_below_floor():
     assert salary_below_floor("$90,000", 115000)
     assert not salary_below_floor("$130,000", 115000)
     assert not salary_below_floor(None, 115000)  # unknown kept
+
+
+def test_description_numbers_that_are_not_pay_keep_the_job():
+    jd = (
+        "Join our 2027 rotational program. We have 170 employees across 12 offices, "
+        "raised $50M in our Series B, and offer a 401k match plus a $5,000 signing bonus. "
+        "Ranked top 100 workplaces; work with 2,000 partners. Knowledge of Excel required."
+    )
+    assert parse_salary_from_text(jd) is None
+    assert not salary_below_floor(None, 120000, jd)
+
+
+@pytest.mark.parametrize(
+    ("text", "annual"),
+    [
+        ("The base pay range is $150,000 - $180,000 per year.", 180000),
+        ("Salary: $95K–$110K plus equity", 110000),
+        ("Compensation USD 130,000 annually", 130000),
+        ("Pay: $60.00/hr - $70.00/hr", 70 * 2080),
+        ("Hourly rate of $45 per hour", 45 * 2080),
+        ("Stipend of $2,500/month", 30000),
+        ("$25.00-$35.00 hourly", 35 * 2080),
+        ("Pay is $5,000 monthly", 60000),
+        ("$50,000 sign-on bonus and a $75,000 in equity grant", None),
+        ("$40,000 annual bonus", None),
+        ("$25K referral bonus", None),
+        ("$50K in annual RSUs and $20K+ in equity", None),
+        ("awarded $50,000 grant; raised $25,000 in donations", None),
+        ("You will manage a $50,000 budget", None),
+        ("Salary $130,000 - $150,000 + bonus", 150000),
+        ("Base pay $140,000 plus bonus and equity", 140000),
+    ],
+)
+def test_parse_salary_from_text(text, annual):
+    assert parse_salary_from_text(text) == annual
+
+
+def test_description_salary_below_floor_still_rejects():
+    jd = "Great team. The salary range for this role is $65,000 to $80,000."
+    assert salary_below_floor(None, 120000, jd)
+    assert not salary_below_floor(None, 70000, jd)
 
 
 def test_passes_discovery_filters():

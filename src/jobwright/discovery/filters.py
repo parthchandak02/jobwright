@@ -14,6 +14,18 @@ _RANGE = re.compile(
     re.IGNORECASE,
 )
 
+# Free text (job descriptions): only currency-marked amounts count, so years,
+# headcounts, "401k" and "$50M raised" are never read as pay.
+_NUM = r"\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?"
+_NOT_BIG = r"(?!\s*(?:m\b|mm\b|b\b|bn\b|million|billion))"
+_TEXT_MONEY = re.compile(
+    rf"(?:\$|\bUSD\s?)\s*(?P<a>{_NUM})\s*(?P<ak>k\b)?{_NOT_BIG}"
+    rf"(?:\s*(?:-|–|—|to)\s*(?:\$|USD\s?)?\s*(?P<b>{_NUM})\s*(?P<bk>k\b)?{_NOT_BIG})?"
+    r"(?P<tail>[^\n$]{0,24})",
+    re.IGNORECASE,
+)
+_PLAUSIBLE_ANNUAL = (20_000, 2_000_000)
+
 
 def _to_annual(amount: float, raw: str) -> float:
     """Normalize a parsed amount to approximate annual USD."""
@@ -57,6 +69,55 @@ def parse_salary_to_annual(salary: str | None) -> float | None:
     if not amounts:
         return None
     return max(amounts)
+
+
+_NOT_PAY_WORDS = (
+    r"(?:equity|stock|rsus?|bonus(?:es)?|sign|relocation|credits?|grants?|budget|"
+    r"donations?|revenue|funding|commission|referral|tuition)"
+)
+# "$40,000 annual bonus", "$20K+ in equity"; "+ bonus" / "plus bonus" after a salary stays pay.
+_NOT_PAY_AFTER = re.compile(
+    rf"\+?\s*(?:(?!plus\b|and\b|with\b|or\b)[a-z]+\s+){{0,2}}{_NOT_PAY_WORDS}\b"
+)
+# "raised $25,000", "a bonus of $40,000", "manage a $50,000 budget".
+_NOT_PAY_BEFORE = re.compile(
+    rf"(?:{_NOT_PAY_WORDS}|raised|awarded|manag\w*)\W+(?:[a-z]+\W+){{0,2}}$"
+)
+
+
+def parse_salary_from_text(text: str | None) -> float | None:
+    """Highest plausible annual pay figure in free text, or None.
+
+    Needs a $ / USD marker; the words right after the amount decide hourly or
+    monthly. Amounts under 1000 without a unit or K are ignored as ambiguous.
+    """
+    if not text:
+        return None
+    best = None
+    for m in _TEXT_MONEY.finditer(text):
+        tail = m.group("tail").lower()
+        if tail.startswith("+") and text[m.start("tail") - 1].isspace():
+            tail = "plus" + tail[1:]
+        head = text[max(0, m.start() - 30):m.start()].lower()
+        if _NOT_PAY_AFTER.match(tail) or _NOT_PAY_BEFORE.search(head):
+            continue
+        hourly = re.match(r"\s*(?:/|per\s+|an\s+|a\s+)?\s*(?:hour(?:ly)?|hr|h)\b", tail) is not None
+        monthly = re.match(r"\s*(?:/|per\s+|a\s+)?\s*(?:month(?:ly)?|mo)\b", tail) is not None
+        for num, k in ((m.group("a"), m.group("ak")), (m.group("b"), m.group("bk"))):
+            if not num:
+                continue
+            amount = float(num.replace(",", ""))
+            if k:
+                amount *= 1000
+            if hourly:
+                amount *= 2080
+            elif monthly:
+                amount *= 12
+            elif amount < 1000:
+                continue
+            if _PLAUSIBLE_ANNUAL[0] <= amount <= _PLAUSIBLE_ANNUAL[1]:
+                best = amount if best is None else max(best, amount)
+    return best
 
 
 # Title/company/JD must mention one of these for CoS (and similar) to score as a match.
@@ -168,8 +229,7 @@ def salary_below_floor(
     floor = float(min_salary)
     annual = parse_salary_to_annual(salary)
     if annual is None and description:
-        # Light scan of first 2k chars of JD for salary mentions
-        annual = parse_salary_to_annual(description[:2000])
+        annual = parse_salary_from_text(description)
     if annual is None:
         return False
     return annual < floor
