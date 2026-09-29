@@ -23,7 +23,7 @@ Detailed paths for agents. Summary: [../../AGENTS.md](../../AGENTS.md).
 | `src/jobwright/database.py` | SQLite `jobs`, `stage_history`, `job_tombstones`, `score_labels`, `score_history`, `llm_usage` |
 | `src/jobwright/web/` | FastAPI Kanban dashboard (`app.py` + routers); `auth.py` (Cloudflare Access / dev), `session.py` (per-request profile); serves `frontend/dist` |
 | `frontend/` | Vite + React Kanban SPA (dev `:5120`, proxies `/api` → `:8002`). UI (design v2): `.cursor/skills/frontend-tasteful/` catalog; primitives in `components/ui/` + `PageHeader`, `SectionHeader`, `FormField`, `SaveStatus`, `ActionBar`, `EmptyState`, `MobileNav`. Welcome steps: `components/welcome/`. Settings (`ProfilePage`) tabs: `components/profile/*Tab.tsx` + `useAutosave`. Admin: `components/admin/`. WhatsApp: `DailyBriefDialog` (send now), `WhatsAppChatPicker` (admins), `ConnectedChat` (read-only for everyone else). Runs: `useAutoSearch` / `useTailorMaterials` / `useRunStream` + `RunProgressDialog`. Drawer: `MatchExplanation`, `RateJob`, `StagePicker`, `DismissDialog`, `CustomTailorDialog`. Pages: `WelcomePage`, `QualityPage`, `AdminPage`. Identity: `AppGate` + `lib/me.tsx` |
-| `src/jobwright/discovery/` | Cross-board dedupe (`dedupe.py`), JobSpy (`-w` / `JOBWRIGHT_DISCOVER_WORKERS`, known-URL skip), Workday (known-URL skip, `exclude_companies`, path fallback when location is blank), smart extract; `DISCOVER_MODE=fast|full` |
+| `src/jobwright/discovery/` | Cross-board dedupe (`dedupe.py`), JobSpy (`-w` / `JOBWRIGHT_DISCOVER_WORKERS`, known-URL skip), LinkedIn guest client (`linkedin.py`: one cookie-less client per run with adaptive pacing, filter cards before description fetch, 7-day reject memory in `logs/linkedin_rejects.json`), Workday (known-URL skip, `exclude_companies`, path fallback when location is blank), smart extract; `DISCOVER_MODE=fast|full` |
 | `src/jobwright/enrichment/` | Full JD fetch (JSON-LD, CSS, LLM) |
 | `src/jobwright/scoring/` | Scoring v2 (`matcher.py`, `pipeline_v2.py`, `criteria.py`, `examples.py`, `evaluate.py`, `criteria_miner.py`), legacy `scorer.py` (`JOBWRIGHT_SCORER=v1`), tailor, `tailor_instructions.py` (dashboard Auto/Custom prompts), cover letter, portfolio, PDF, DOCX, validator |
 | `src/jobwright/apply/` | Stage 6: launcher, Chrome workers, ATS helpers, providers |
@@ -130,6 +130,7 @@ PM2 process names: `jobwright-api`, `jobwright-ui`, `jobwright-tunnel`.
 | `DISCOVER_MODE` | `fast` (tier-1, skip smart-extract) or `full` |
 | `JOBWRIGHT_DISCOVER_BOARDS` | Restrict JobSpy boards without editing searches.yaml (e.g. `indeed`) |
 | `JOBWRIGHT_DISCOVER_WORKERS` | JobSpy parallel worker cap (default 4) |
+| `JOBWRIGHT_LINKEDIN` / `JOBWRIGHT_LINKEDIN_INTERVAL` | LinkedIn discovery client: `guest` (default, `discovery/linkedin.py`) or `jobspy` rollback; fastest spacing between LinkedIn requests (default 0.5s, widens on 429) |
 | `JOBWRIGHT_WEB_RUN_ID` | Set by `/api/run` so CLI does not create a second registry row |
 | `JOBWRIGHT_LOG_LEVEL` | `DEBUG` when `jobwright run --verbose` (Auto Search always passes `--verbose`) |
 

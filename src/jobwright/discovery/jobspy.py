@@ -19,6 +19,8 @@ from jobspy import scrape_jobs
 from jobwright import config
 from jobwright.config import load_location_filters
 from jobwright.database import get_connection, init_db
+from jobwright.discovery import linkedin
+from jobwright.discovery.filters import passes_discovery_filters
 from jobwright.discovery.known_urls import load_known_urls
 from jobwright.discovery.location import location_ok as _location_ok
 from jobwright.discovery.location import remote_scope
@@ -216,6 +218,69 @@ def store_jobspy_results(
 
 # -- Single search execution -------------------------------------------------
 
+_LINKEDIN_REJECT_VERSION = 2
+
+
+def _card_salary(card: dict) -> str | None:
+    """Card pay in the same string shape store_jobspy_results builds."""
+    if not card.get("min_amount"):
+        return None
+    salary = f"USD{int(card['min_amount']):,}"
+    if card.get("max_amount"):
+        salary += f"-USD{int(card['max_amount']):,}"
+    return salary + f"/{card.get('interval') or 'yearly'}"
+
+
+def _linkedin_filter_fingerprint(search_cfg: dict) -> str:
+    """Changes whenever a setting that decides discovery rejects changes."""
+    import hashlib
+    import json
+
+    keys = ("exclude_titles", "exclude_companies", "min_salary", "defaults", "location")
+    # Bump _LINKEDIN_REJECT_VERSION when the filter code itself changes.
+    blob = json.dumps(
+        {"v": _LINKEDIN_REJECT_VERSION, **{k: search_cfg.get(k) for k in keys}},
+        sort_keys=True, default=str,
+    )
+    return hashlib.sha256(blob.encode()).hexdigest()[:16]
+
+
+def _linkedin_reject_memory(search_cfg: dict) -> "linkedin.RejectMemory":
+    return linkedin.RejectMemory(
+        config.LOG_DIR / "linkedin_rejects.json", _linkedin_filter_fingerprint(search_cfg),
+    )
+
+
+def _linkedin_keep(
+    accept_locs: list[str],
+    reject_locs: list[str],
+    known_urls: set[str] | None,
+    remote_any: bool,
+    rejects: "linkedin.RejectMemory | None" = None,
+):
+    """Card predicate: only cards that would be stored get a description fetch."""
+    search_cfg = config.load_search_config()
+    excluded = [e.lower() for e in search_cfg.get("exclude_companies") or [] if e]
+    known = known_urls or set()
+
+    def keep(card: dict) -> bool:
+        if card["job_url"] in known:
+            return False
+        if rejects is not None and card["job_id"] in rejects:
+            return False
+        company = (card.get("company") or "").lower()
+        title = card.get("title") or ""
+        if any(e in company or e in title.lower() for e in excluded):
+            return False
+        if not _location_ok(card.get("location"), accept_locs, reject_locs, remote_any=remote_any):
+            return False
+        return passes_discovery_filters(
+            title=title, salary=_card_salary(card), description=None, search_cfg=search_cfg,
+        )
+
+    return keep
+
+
 def _run_one_search(
     search: dict,
     sites: list[str],
@@ -228,6 +293,7 @@ def _run_one_search(
     reject_locs: list[str],
     glassdoor_map: dict,
     known_urls: set[str] | None = None,
+    li_rejects: "linkedin.RejectMemory | None" = None,
 ) -> dict:
     """Run a single search query and store results in DB."""
     s = search
@@ -238,11 +304,45 @@ def _run_one_search(
     # Split sites: Glassdoor needs simplified location, others use original
     gd_location = glassdoor_map.get(s["location"], s["location"].split(",")[0])
     has_glassdoor = "glassdoor" in sites
-    other_sites = [si for si in sites if si != "glassdoor"]
+    has_linkedin_guest = "linkedin" in sites and linkedin.use_guest_client()
+    other_sites = [
+        si for si in sites
+        if si != "glassdoor" and not (si == "linkedin" and has_linkedin_guest)
+    ]
 
     all_dfs = []
 
-    # Run non-Glassdoor sites with original location
+    if has_linkedin_guest:
+        try:
+            rows = linkedin.scrape(
+                s["query"], s["location"],
+                remote=bool(s.get("remote")),
+                remote_any=bool(s.get("remote_any")),
+                hours_old=hours_old,
+                results_wanted=results_per_site,
+                keep=_linkedin_keep(
+                    accept_locs, reject_locs, known_urls, bool(s.get("remote_any")), li_rejects,
+                ),
+                seen_before=lambda c: c["job_url"] in (known_urls or ())
+                or (li_rejects is not None and c["job_id"] in li_rejects),
+                client=linkedin.shared_client(proxy_config["jobspy"] if proxy_config else None),
+            )
+            if li_rejects is not None:
+                # Remembered rejects come back without a description; storing
+                # them would skip the description salary check.
+                rows = [r for r in rows if r["description"] or r["job_id"] not in li_rejects]
+                search_cfg = config.load_search_config()
+                for row in rows:
+                    if row["description"] and not passes_discovery_filters(
+                        title=row["title"], salary=_card_salary(row),
+                        description=row["description"], search_cfg=search_cfg,
+                    ):
+                        li_rejects.add(row["job_id"])
+            all_dfs.append(linkedin.to_dataframe(rows))
+        except Exception as e:
+            log.error("[%s] (linkedin): %s", label, e)
+
+    # Run the remaining JobSpy sites with the original location
     if other_sites:
         kwargs = {
             "site_name": other_sites,
@@ -502,6 +602,10 @@ def _full_crawl(
     init_db()
     known_urls = load_known_urls(get_connection())
     log.info("JobSpy: %d known URLs preloaded for skip", len(known_urls))
+    li_rejects = None
+    if "linkedin" in sites and linkedin.use_guest_client():
+        li_rejects = _linkedin_reject_memory(search_cfg)
+        log.info("LinkedIn: %d recently rejected jobs remembered for skip", len(li_rejects))
 
     total_new = 0
     total_existing = 0
@@ -524,33 +628,31 @@ def _full_crawl(
         total_skipped += result.get("skipped_known", 0)
         total_errors += result["errors"]
 
-    if effective_workers > 1 and len(searches) > 1:
-        with ThreadPoolExecutor(max_workers=min(effective_workers, len(searches))) as pool:
-            futures = {
-                pool.submit(_run_one_search, s, *search_args, known_urls): s
-                for s in searches
-            }
-            for future in as_completed(futures):
-                result = future.result()
-                _accumulate(result)
-                if completed % 5 == 0 or completed == len(searches):
-                    elapsed = time.time() - t0
-                    log.info(
-                        "Progress: %d/%d queries done (%d new, %d dupes, %d skipped known, %d errors) [%.0fs]",
-                        completed, len(searches), total_new, total_existing,
-                        total_skipped, total_errors, elapsed,
-                    )
-    else:
-        for s in searches:
-            result = _run_one_search(s, *search_args, known_urls)
-            _accumulate(result)
-            if completed % 5 == 0 or completed == len(searches):
-                elapsed = time.time() - t0
-                log.info(
-                    "Progress: %d/%d queries done (%d new, %d dupes, %d skipped known, %d errors) [%.0fs]",
-                    completed, len(searches), total_new, total_existing,
-                    total_skipped, total_errors, elapsed,
-                )
+    def _progress() -> None:
+        if completed % 5 == 0 or completed == len(searches):
+            log.info(
+                "Progress: %d/%d queries done (%d new, %d dupes, %d skipped known, %d errors) [%.0fs]",
+                completed, len(searches), total_new, total_existing,
+                total_skipped, total_errors, time.time() - t0,
+            )
+
+    try:
+        if effective_workers > 1 and len(searches) > 1:
+            with ThreadPoolExecutor(max_workers=min(effective_workers, len(searches))) as pool:
+                futures = {
+                    pool.submit(_run_one_search, s, *search_args, known_urls, li_rejects): s
+                    for s in searches
+                }
+                for future in as_completed(futures):
+                    _accumulate(future.result())
+                    _progress()
+        else:
+            for s in searches:
+                _accumulate(_run_one_search(s, *search_args, known_urls, li_rejects))
+                _progress()
+    finally:
+        if li_rejects is not None:
+            li_rejects.save()
 
     # Final stats
     conn = get_connection()
@@ -561,6 +663,12 @@ def _full_crawl(
         "Full crawl complete: %d new | %d dupes (%d skipped known) | %d errors | %d total in DB [%.0fs]",
         total_new, total_existing, total_skipped, total_errors, db_total, elapsed,
     )
+    if li_rejects is not None:
+        li = linkedin.shared_client()
+        log.info(
+            "LinkedIn guest client: %d requests (%d descriptions), %d rate-limited (429)",
+            li.requests, li.descriptions_fetched, li.rate_limited,
+        )
 
     return {
         "new": total_new,

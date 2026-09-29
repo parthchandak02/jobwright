@@ -55,6 +55,12 @@ def _configure_logging() -> None:
     import os
     import sys
 
+    # One line per HTTP request (and httpcore's per-socket DEBUG) would bury
+    # the run log: LinkedIn discovery alone makes thousands of requests.
+    for noisy in ("httpx", "httpcore"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
+    _LOGGING_CONFIGURED = True
+
     raw = os.environ.get("JOBWRIGHT_LOG_LEVEL", "").strip()
     if not raw:
         return
@@ -67,7 +73,6 @@ def _configure_logging() -> None:
         stream=sys.stdout,
         force=True,
     )
-    _LOGGING_CONFIGURED = True
 
 
 def _bootstrap() -> None:
