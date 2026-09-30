@@ -27,6 +27,20 @@ BRIDGE_URL = os.environ.get("JOBWRIGHT_WHATSAPP_BRIDGE", "http://127.0.0.1:3000"
 _HERMES_HOME = Path(os.path.expanduser("~/.hermes"))
 
 
+def bold(text: str) -> str:
+    """WhatsApp *bold*. `hermes send` passes text through unchanged, so this is native WhatsApp syntax.
+
+    WhatsApp only renders it when the stars hug non-space text, so inner stars are dropped.
+    """
+    text = " ".join(str(text).replace("*", "").split())
+    return f"*{text}*" if text else ""
+
+
+def italic(text: str) -> str:
+    text = " ".join(str(text).replace("_", " ").split())
+    return f"_{text}_" if text else ""
+
+
 def _digits(value: str | None) -> str:
     return re.sub(r"\D", "", value or "")
 

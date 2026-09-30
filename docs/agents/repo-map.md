@@ -73,7 +73,7 @@ WhatsApp resolve: `scripts/resolve_user_from_whatsapp.sh 'whatsapp:…'`.
 | `ops_pm2.sh` | Alias → `restart.sh` |
 | `dashboard_deploy.sh` | Alias → `restart.sh --prod-ui` |
 
-Cron names: `jobwright-brief-<id>` (one daily brief per user, ~6:00, `--deliver local`). It runs the pipeline then `jobwright notify`, which sends ONE WhatsApp message listing new jobs with dashboard deep links (`jobwright.parthchandak.info/jobs/<job_id>`), then `ops brief-report`. Plus `jobwright-ops-watchdog` (08:30), `jobwright-backup` (02:30) and `jobwright-weekly-summary` (Sunday 18:00, `jobwright summary`). No send/check crons.
+Cron names: `jobwright-brief-<id>` (one daily brief per user, ~6:00, `--deliver local`). It runs the pipeline then `jobwright notify`, which sends ONE WhatsApp message listing new jobs (numbered: title @ company, location, dashboard deep link `jobwright.parthchandak.info/jobs/<job_id>`, date posted), then `ops brief-report`. Plus `jobwright-ops-watchdog` (hourly at :30), `jobwright-backup` (02:30) and `jobwright-weekly-summary` (Sunday 18:00, `jobwright summary`). No send/check crons.
 
 Kanban hosting: [dashboard-hosting.md](dashboard-hosting.md) (`jobwright.parthchandak.info`; local HMR `http://127.0.0.1:5120`).
 

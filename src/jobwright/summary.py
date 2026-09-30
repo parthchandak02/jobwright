@@ -108,29 +108,34 @@ def has_news(stats: dict) -> bool:
 
 
 def build_summary(stats: dict, base_url: str, name: str = "") -> str:
-    """Plain-text WhatsApp message (no markdown)."""
+    """WhatsApp message (native *bold*, one emoji per line) recapping the week."""
+    from jobwright.whatsapp import bold
+
     base_url = base_url.rstrip("/")
     first = (name or "").split()[0] if (name or "").strip() else ""
     greeting = f"Hi {first}, here" if first else "Here"
-    lines = [f"{greeting} is your job search week ({_date_label(stats['start'])} to {_date_label(stats['end'])}):", ""]
+    period = f"{_date_label(stats['start'])} to {_date_label(stats['end'])}"
+    lines = [f"\U0001f4ca {greeting} is your " + bold("job search week") + f" ({period})", ""]
     rows = [
-        (stats["found"], _plural(stats["found"], "new job") + " found"),
-        (stats["sent"], _plural(stats["sent"], "job") + " sent to you"),
-        (stats["applied"], f"{stats['applied']} applied"),
-        (stats["in_progress"], _plural(stats["in_progress"], "job") + " moved to interviews"),
-        (stats["offer"], _plural(stats["offer"], "offer")),
-        (stats["closed"], f"{stats['closed']} closed"),
+        (stats["found"], "\U0001f50d " + _plural(stats["found"], "new job") + " found"),
+        (stats["sent"], "\U0001f4e8 " + _plural(stats["sent"], "job") + " sent to you"),
+        (stats["applied"], f"\u2705 {stats['applied']} applied"),
+        (stats["in_progress"], "\U0001f5e3\ufe0f " + _plural(stats["in_progress"], "job") + " moved to interviews"),
+        (stats["offer"], "\U0001f389 " + _plural(stats["offer"], "offer")),
+        (stats["closed"], f"\U0001f4c1 {stats['closed']} closed"),
     ]
     shown = [text for n, text in rows if n]
-    lines.extend(f"• {text}" for text in shown or ["A quiet week, nothing new moved."])
+    lines.extend(shown or ["\U0001f33f A quiet week, nothing new moved."])
     if stats.get("top"):
-        lines.extend(["", "Worth a look:"])
+        lines.extend(["", "\U0001f440 " + bold("Worth a look")])
         for job in stats["top"]:
-            lines.append(f"• {job['title']} @ {job['company']} · score {job['score']}")
-            lines.append(f"  {base_url}/jobs/{job['job_id']}")
+            lines.append("")
+            lines.append(bold(job["title"]))
+            lines.append(f"\U0001f3e2 {job['company']}  \u00b7  \u2b50 {job['score']}/10 match")
+            lines.append(f"\U0001f517 {base_url}/jobs/{job['job_id']}")
     if stats.get("followups"):
         lines.extend(["", format_followups(stats["followups"], base_url)])
-    lines.extend(["", f"Your board: {base_url}/"])
+    lines.extend(["", f"\U0001f4cb Your board: {base_url}/"])
     return "\n".join(lines)
 
 

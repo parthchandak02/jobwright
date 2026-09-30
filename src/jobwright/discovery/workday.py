@@ -15,7 +15,7 @@ import sqlite3
 import time
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from html.parser import HTMLParser
 
 import yaml
@@ -344,6 +344,25 @@ def fetch_details(employer: dict, jobs: list[dict]) -> list[dict]:
 
 # -- DB storage --------------------------------------------------------------
 
+def posted_on_date(posted: str | None, today: date | None = None) -> str | None:
+    """Workday's relative postedOn ("Posted Today", "Posted 3 Days Ago") as YYYY-MM-DD.
+
+    "30+ Days Ago" is open-ended, so it yields None rather than a made-up date.
+    """
+    text = (posted or "").lower()
+    today = today or date.today()
+    if "today" in text:
+        days = 0
+    elif "yesterday" in text:
+        days = 1
+    else:
+        m = re.search(r"(\d+)(\+?) days? ago", text)
+        if not m or m.group(2):
+            return None
+        days = int(m.group(1))
+    return (today - timedelta(days=days)).isoformat()
+
+
 def store_results(conn: sqlite3.Connection, jobs: list[dict], employers: dict) -> tuple[int, int]:
     """Store corporate jobs in DB. Returns (new, existing)."""
     from jobwright.config import load_search_config
@@ -407,11 +426,11 @@ def store_results(conn: sqlite3.Connection, jobs: list[dict], employers: dict) -
             conn.execute(
                 "INSERT INTO jobs (url, title, salary, description, location, site, company, strategy, "
                 "discovered_at, full_description, application_url, detail_scraped_at, detail_error, "
-                "sponsorship_status) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "sponsorship_status, date_posted) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (url, job.get("title"), None, short_desc, job.get("location"),
                  site, company, strategy, now, full_description, url, detail_scraped_at, detail_error,
-                 sponsorship_status),
+                 sponsorship_status, posted_on_date(job.get("posted"))),
             )
             new += 1
         except sqlite3.IntegrityError:

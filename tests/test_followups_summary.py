@@ -94,7 +94,7 @@ def test_notify_appends_at_most_three_followups(profile, monkeypatch):
     msg = res["message"]
     assert res["followups"] == 3
     assert msg.index("Fresh Role") < msg.index("Time to follow up")
-    assert "Applied 4 @ Acme · applied 15 days ago" in msg
+    assert "*Applied 4*\n\U0001f3e2 Acme  \u00b7  applied 15 days ago" in msg
     assert "Applied 0" not in msg and "Applied 1" not in msg
     assert f"/jobs/{job_id_for_url('https://x.com/a4')}" in msg
 
@@ -117,11 +117,11 @@ def test_summary_counts_and_message(profile, monkeypatch):
     assert [j["title"] for j in stats["followups"]] == ["Waiting Role"]
 
     msg = summary.build_summary(stats, "https://dash.example/", "Ann Lee")
-    assert msg.startswith("Hi Ann, here is your job search week")
-    assert "• 2 new jobs found" in msg and "• 1 job sent to you" in msg
-    assert "• 1 job moved to interviews" in msg and "offer" not in msg
+    assert msg.startswith("\U0001f4ca Hi Ann, here is your *job search week*")
+    assert "\U0001f50d 2 new jobs found" in msg and "\U0001f4e8 1 job sent to you" in msg
+    assert "1 job moved to interviews" in msg and "offer" not in msg
     assert f"https://dash.example/jobs/{job_id_for_url('https://x.com/top')}" in msg
-    assert "Waiting Role @ Acme · applied 14 days ago" in msg
+    assert "*Waiting Role*\n\U0001f3e2 Acme  \u00b7  applied 14 days ago" in msg
     assert msg.rstrip().endswith("Your board: https://dash.example/")
 
 

@@ -56,13 +56,40 @@ def test_build_notification_includes_deep_link():
             "company": "Acme",
             "location": "Remote",
             "fit_score": 9,
+            "date_posted": "2026-09-28",
         }
     ]
     msg = notify.build_notification(jobs, "https://jobwright.parthchandak.info/")
-    assert "1 new job ready to review:" in msg
-    assert "Ops Lead @ Acme" in msg
-    assert "Remote \u00b7 score 9" in msg
-    assert f"https://jobwright.parthchandak.info/jobs/{job_id_for_url(url)}" in msg
+    assert msg.startswith("\u2728 *1 new job ready to review*")
+    assert "\n*1. Ops Lead*\n\U0001f3e2 Acme  \u00b7  \u2b50 9/10 match\n" in msg
+    assert "\n\U0001f4cd Remote\n" in msg
+    assert "\n\U0001f4c5 Posted Sep 28\n" in msg
+    assert f"\n\U0001f517 https://jobwright.parthchandak.info/jobs/{job_id_for_url(url)}" in msg
+
+
+def test_bold_keeps_whatsapp_markers_valid():
+    from jobwright.whatsapp import bold
+
+    assert bold("  Sr. *Ops*  Lead ") == "*Sr. Ops Lead*"
+    assert bold("   ") == ""
+
+
+def test_posted_line_falls_back_to_found_date():
+    assert notify._posted_line({"discovered_at": "2026-09-30T18:00:00+00:00"}).startswith("\U0001f4c5 Found Sep ")
+    assert notify._posted_line({}) == "\U0001f4c5 Posted date not listed"
+
+
+def test_workday_posted_on_date():
+    from datetime import date
+
+    from jobwright.discovery.workday import posted_on_date
+
+    today = date(2026, 9, 30)
+    assert posted_on_date("Posted Today", today) == "2026-09-30"
+    assert posted_on_date("Posted Yesterday", today) == "2026-09-29"
+    assert posted_on_date("Posted 3 Days Ago", today) == "2026-09-27"
+    assert posted_on_date("Posted 30+ Days Ago", today) is None
+    assert posted_on_date("", today) is None
 
 
 def test_get_unnotified_prepare_jobs_filters_stage_and_null(db: sqlite3.Connection):
@@ -182,7 +209,7 @@ def test_build_review_notification_format():
         }
     ]
     msg = notify.build_review_notification(jobs, "https://jobwright.parthchandak.info/")
-    assert "1 new job for your review:" in msg
+    assert "*1 new job for your review*" in msg
     assert f"https://jobwright.parthchandak.info/jobs/{job_id_for_url(url)}" in msg
     assert "after you approve a job" in msg
 
@@ -211,9 +238,9 @@ def test_run_notify_gate_caps_records_and_marks_only_shown(
     assert result["human_gate"] is True
     assert result["top_n"] == 5
     assert result["capped"] is True
-    assert "for your review:" in result["message"]
-    # Only 5 bullets for the capped top-5.
-    assert result["message"].count("\u2022") == 5
+    assert "for your review*" in result["message"]
+    # Only 5 job cards for the capped top-5.
+    assert result["message"].count("\U0001f517 https://jobwright") == 5
 
     # The 5 highest-score jobs are the shown ones.
     shown_urls = [f"https://example.com/gate-{i}" for i in range(5)]
@@ -254,7 +281,7 @@ def test_run_notify_gate_uncapped_zero_sends_all(
     assert result["sent"] == 3
     assert result["top_n"] == 0
     assert result["capped"] is False
-    assert "ready to review:" in result["message"]  # legacy format (gate off)
+    assert "ready to review*" in result["message"]  # legacy format (gate off)
 
 
 def test_run_notify_records_nothing_on_dry_run(

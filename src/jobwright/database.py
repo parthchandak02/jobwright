@@ -391,6 +391,8 @@ _ALL_COLUMNS: dict[str, str] = {
     "close_reason": "TEXT",
     # job_id of the card this one was closed as a duplicate of (discovery.dedupe)
     "duplicate_of": "TEXT",
+    # Posting date from the board (YYYY-MM-DD) when it gives one; shown in the WhatsApp list
+    "date_posted": "TEXT",
 }
 
 # Canonical Kanban lanes (single shared axis).
@@ -966,6 +968,8 @@ def get_unnotified_prepare_jobs(conn: sqlite3.Connection | None = None) -> list[
                 "salary": d.get("salary"),
                 "fit_score": int(effective) if effective is not None else None,
                 "funnel_stage": d.get("funnel_stage") or "prepare",
+                "date_posted": d.get("date_posted"),
+                "discovered_at": d.get("discovered_at"),
             }
         )
     return out

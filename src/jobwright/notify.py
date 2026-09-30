@@ -19,6 +19,7 @@ from __future__ import annotations
 import os
 import sqlite3
 import subprocess
+from datetime import date, datetime
 
 from jobwright.briefstats import ensure_brief_items, record_brief_items
 from jobwright.config import get_active_user_id
@@ -29,6 +30,7 @@ from jobwright.database import (
 )
 from jobwright.followups import format_followups
 from jobwright.users import get_brief_top_n, get_human_gate, get_user
+from jobwright.whatsapp import bold, italic
 
 
 def _notify_threshold() -> int:
@@ -112,9 +114,11 @@ def get_unnotified_gated_jobs(conn=None, max_age_days: int | None = None, thresh
             "url": d.get("url"),
             "title": d.get("title") or "Untitled role",
             "company": d.get("company") or "Unknown",
-            "location": d.get("location") or "Location n/a",
+            "location": d.get("location"),
             "fit_score": d.get("user_fit_score") or d.get("fit_score"),
             "job_id": d.get("job_id"),
+            "date_posted": d.get("date_posted"),
+            "discovered_at": d.get("discovered_at"),
         })
     if out:
         return out
@@ -160,55 +164,74 @@ def followup_appendix(conn=None, limit: int = MAX_FOLLOWUPS) -> list[dict]:
         return []
 
 
+def _short_date(d: date) -> str:
+    return f"{d:%b} {d.day}"
+
+
+def _posted_line(job: dict) -> str:
+    """Posted date from the board, else the day jobwright found the job (labelled "Found")."""
+    posted = (job.get("date_posted") or "")[:10]
+    try:
+        return f"\U0001f4c5 Posted {_short_date(date.fromisoformat(posted))}"
+    except ValueError:
+        pass
+    found = job.get("discovered_at") or ""
+    try:
+        return f"\U0001f4c5 Found {_short_date(datetime.fromisoformat(found).astimezone().date())}"
+    except ValueError:
+        return "\U0001f4c5 Posted date not listed"
+
+
+def _job_lines(n: int, job: dict, base_url: str) -> list[str]:
+    """One numbered job card: bold title, company + match, location, posted date, dashboard link."""
+    score = job.get("fit_score")
+    company = f"\U0001f3e2 {job.get('company') or 'Unknown company'}"
+    if score is not None:
+        company += f"  \u00b7  \u2b50 {score}/10 match"
+    return [
+        "",
+        bold(f"{n}. {job.get('title') or 'Untitled role'}"),
+        company,
+        f"\U0001f4cd {job.get('location') or 'Location not listed'}",
+        _posted_line(job),
+        f"\U0001f517 {base_url}/jobs/{job_id_for_url(job.get('url') or '')}",
+    ]
+
+
+def _header(count: int, what: str) -> str:
+    return "\u2728 " + bold(f"{count} new job{'s' if count != 1 else ''} {what}")
+
+
 def build_notification(jobs: list[dict], base_url: str) -> str:
-    """Build a plain-text WhatsApp message (no markdown, hyphens only)."""
+    """WhatsApp message (native *bold* / _italic_, one emoji per field) listing prepared jobs."""
     base_url = base_url.rstrip("/")
-    count = len(jobs)
-    header = f"{count} new job{'s' if count != 1 else ''} ready to review:"
-    lines = [header]
-    for job in jobs:
-        url = job.get("url") or ""
-        job_id = job_id_for_url(url)
-        title = job.get("title") or "Untitled role"
-        company = job.get("company") or "Unknown"
-        location = job.get("location") or "Location n/a"
-        score = job.get("fit_score")
-        score_text = str(score) if score is not None else "n/a"
-        lines.append("")
-        lines.append(f"\u2022 {title} @ {company}")
-        lines.append(f"  {location} \u00b7 score {score_text}")
-        lines.append(f"  {base_url}/jobs/{job_id}")
+    lines = [_header(len(jobs), "ready to review")]
+    for n, job in enumerate(jobs, 1):
+        lines += _job_lines(n, job, base_url)
     return "\n".join(lines)
 
 
 def build_review_notification(jobs: list[dict], base_url: str) -> str:
     """Build the human-gate review-first message (top-N by fit score).
 
-    Same WhatsApp formatting (plain text, hyphens only) as the default list,
-    but framed as jobs for the user to review before any materials exist.
+    Same job cards as the default list, but framed as jobs for the user to
+    review before any materials exist.
     """
     base_url = base_url.rstrip("/")
-    count = len(jobs)
-    header = f"{count} new job{'s' if count != 1 else ''} for your review:"
-    lines = [header]
-    for job in jobs:
-        url = job.get("url") or ""
-        job_id = job_id_for_url(url)
-        title = job.get("title") or "Untitled role"
-        company = job.get("company") or "Unknown"
-        location = job.get("location") or "Location n/a"
-        score = job.get("fit_score")
-        score_text = str(score) if score is not None else "n/a"
-        lines.append("")
-        lines.append(f"\u2022 {title} @ {company}")
-        lines.append(f"  {location} \u00b7 score {score_text}")
-        lines.append(f"  {base_url}/jobs/{job_id}")
+    lines = [_header(len(jobs), "for your review")]
+    for n, job in enumerate(jobs, 1):
+        lines += _job_lines(n, job, base_url)
     lines.append("")
-    lines.append(
+    lines.append(italic(
         "Tailored resume + cover letter are generated after you approve a job. "
-        "Open the link to review it and start preparing."
-    )
+        "Open a link to review it and start preparing."
+    ))
     return "\n".join(lines)
+
+
+def worth_a_look_line(worth: int, base_url: str) -> str:
+    return (f"\U0001f440 {bold(f'+{worth} more worth a look')} (just under your bar)\n"
+            f"\U0001f517 {base_url.rstrip('/')}/?view=list&worth=1")
 
 
 HERMES_SEND_TIMEOUT = 90
@@ -286,10 +309,7 @@ def run_notify(dry_run: bool = False) -> dict:
         message = build_notification(shown, base_url)
     worth = count_worth_a_look(conn, threshold=threshold) if human_gate else 0
     if worth:
-        message += (
-            f"\n\n+ {worth} more worth a look (just under your bar): "
-            f"{base_url.rstrip('/')}/?view=list&worth=1"
-        )
+        message += "\n\n" + worth_a_look_line(worth, base_url)
     followups = followup_appendix(conn)
     if followups:
         message += "\n\n" + format_followups(followups, base_url)

@@ -83,8 +83,13 @@ Bot:  42 discovered, 8 scored 7+, 3 tailored, 0 applied today.
 You:  find jobs now
 Bot:  Running discover -> score -> tailor. I'll message when done (~10 min).
 
-Bot:  (later) 3 new jobs ready to review:
-      * Chief of Staff @ Acme - jobwright.parthchandak.info/jobs/ab12cd
+Bot:  (later) ✨ *3 new jobs ready to review*
+
+      *1. Chief of Staff*
+      🏢 Acme  ·  ⭐ 8/10 match
+      📍 San Francisco, CA
+      📅 Posted Sep 28
+      🔗 https://jobwright.parthchandak.info/jobs/ab12cd
       ...
 You:  (tap a link, review and apply in the dashboard)
 ```

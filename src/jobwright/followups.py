@@ -111,11 +111,15 @@ def record_no_response(url: str, conn: sqlite3.Connection | None = None) -> None
 
 
 def format_followups(items: list[dict], base_url: str) -> str:
-    """Plain-text WhatsApp block listing due follow-ups."""
+    """WhatsApp block listing due follow-ups (same card style as the daily list)."""
+    from jobwright.whatsapp import bold
+
     base_url = base_url.rstrip("/")
-    lines = ["Time to follow up (no reply yet):"]
+    lines = ["\u23f0 " + bold("Time to follow up") + " (no reply yet)"]
     for job in items:
         days = job["applied_days_ago"]
-        lines.append(f"• {job['title']} @ {job['company']} · applied {days} day{'s' if days != 1 else ''} ago")
-        lines.append(f"  {base_url}/jobs/{job['job_id']}")
+        lines.append("")
+        lines.append(bold(job["title"]))
+        lines.append(f"\U0001f3e2 {job['company']}  \u00b7  applied {days} day{'s' if days != 1 else ''} ago")
+        lines.append(f"\U0001f517 {base_url}/jobs/{job['job_id']}")
     return "\n".join(lines)

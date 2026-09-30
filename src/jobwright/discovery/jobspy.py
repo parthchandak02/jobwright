@@ -9,6 +9,7 @@ search configuration YAML (searches.yaml) rather than being hardcoded.
 
 import logging
 import os
+import re
 import sqlite3
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -197,14 +198,16 @@ def store_jobspy_results(
 
         # Extract apply URL if JobSpy provided it
         apply_url = str(row.get("job_url_direct", "")) if str(row.get("job_url_direct", "")) != "nan" else None
+        posted = str(row.get("date_posted", ""))[:10]
+        date_posted = posted if re.fullmatch(r"\d{4}-\d{2}-\d{2}", posted) else None
 
         try:
             conn.execute(
                 "INSERT INTO jobs (url, title, salary, description, location, site, company, strategy, discovered_at, "
-                "full_description, application_url, detail_scraped_at, sponsorship_status) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "full_description, application_url, detail_scraped_at, sponsorship_status, date_posted) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (url, title, salary, description, location_str, site_label, company, strategy, now,
-                 full_description, apply_url, detail_scraped_at, sponsorship_status),
+                 full_description, apply_url, detail_scraped_at, sponsorship_status, date_posted),
             )
             new += 1
             seen_batch.add(url)
