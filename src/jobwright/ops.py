@@ -4,8 +4,8 @@ Silence used to look the same as "no jobs today". Now every brief ends with a
 report; anything abnormal (preflight failure, failed stage, zero scored jobs,
 notify failure, provider errors) is sent to the operator's WhatsApp target
 (``ops_target`` in users.yaml, or JOBWRIGHT_OPS_TARGET). A watchdog run
-(Hermes cron, e.g. 08:30) alerts when a user's brief never started or never
-finished today.
+(hourly Hermes cron) alerts once per day when a user's brief never started or
+never finished today.
 """
 
 from __future__ import annotations
@@ -27,6 +27,7 @@ class Report:
     user: str
     level: str  # ok | warn | fail
     lines: list[str] = field(default_factory=list)
+    key: str = ""  # watchdog problem kind, for once-a-day alert dedupe
 
     def text(self) -> str:
         icon = {"ok": "OK", "warn": "WARN", "fail": "FAIL"}[self.level]
@@ -165,23 +166,94 @@ def _cron_clock_today(expr: str) -> datetime | None:
     return now.replace(hour=int(parts[1]), minute=int(parts[0]), second=0, microsecond=0)
 
 
-def watchdog(grace_minutes: int = 120) -> list[Report]:
-    """Alert for every user whose brief should have finished by now but did not."""
+def watchdog(grace_minutes: int = 120, start_grace_minutes: int = 30) -> list[Report]:
+    """Alert for every user whose brief never started, or should have finished by now but did not.
+
+    The launcher writes the status file within seconds, so a missing file is
+    flagged after ``start_grace_minutes``; an unfinished run after ``grace_minutes``.
+    """
     from jobwright.users import list_users
 
     reports: list[Report] = []
     now = datetime.now()
     for user in list_users():
         start = _cron_clock_today(user.schedule)
-        if start is None or now < start + timedelta(minutes=grace_minutes):
+        if start is None or now < start + timedelta(minutes=start_grace_minutes):
             continue
+        if not _is_set_up(user.user_id):
+            continue  # setup unfinished: no brief is expected yet
         status_path = user.resolve_data_dir() / f"BRIEF_STATUS_{now:%Y%m%d}"
         status = _read_status(status_path)
         if not status:
-            reports.append(Report(user.user_id, "fail", [f"no brief started today (scheduled {user.schedule})"]))
-        elif not any(s.startswith("done") for s in status):
-            reports.append(Report(user.user_id, "fail", ["brief started but has not finished", *status[-3:]]))
+            reports.append(Report(user.user_id, "fail", [f"no brief started today (scheduled {user.schedule})"],
+                                  key="not_started"))
+            continue
+        # A late manual rerun counts from when it started; the file is not touched again until it ends.
+        started = max(start, datetime.fromtimestamp(status_path.stat().st_mtime))
+        if now >= started + timedelta(minutes=grace_minutes) and not any(s.startswith("done") for s in status):
+            reports.append(Report(user.user_id, "fail", ["brief started but has not finished", *status[-3:]],
+                                  key="not_finished"))
     return reports
+
+
+def _is_set_up(user_id: str) -> bool:
+    from jobwright.onboarding import is_set_up
+
+    try:
+        return is_set_up(user_id)
+    except Exception:  # noqa: BLE001
+        log.exception("could not read setup status for %s", user_id)
+        return False
+
+
+def install_missing_brief_crons() -> list[str]:
+    """Give every set-up profile with a chat its brief cron (and one-time welcome) if it has none.
+
+    The dashboard creates the cron when the daily-list step is saved; this
+    covers anyone who finished setup some other way or left before that step.
+    """
+    from jobwright.hermes_cron import brief_cron_installed, ensure_brief_cron
+    from jobwright.users import list_users
+    from jobwright.welcome import send_welcome
+
+    installed = []
+    for user in list_users():
+        if not user.whatsapp_target or brief_cron_installed(user.user_id) or not _is_set_up(user.user_id):
+            continue
+        result = ensure_brief_cron(user.user_id, user.schedule)
+        if result.get("ok"):
+            send_welcome(user.user_id)
+            installed.append(user.user_id)
+        else:
+            log.warning("brief cron for %s not installed: %s", user.user_id, result.get("error"))
+    return installed
+
+
+def _watchdog_marker(user_id: str) -> Path:
+    from jobwright.users import get_user
+
+    return get_user(user_id).resolve_data_dir() / "logs" / "watchdog_alerts.json"
+
+
+def watchdog_already_alerted(report: Report) -> bool:
+    """True when this user was already alerted about this problem today (the watchdog runs hourly)."""
+    try:
+        data = json.loads(_watchdog_marker(report.user).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    return data.get("date") == f"{datetime.now():%Y%m%d}" and report.key in (data.get("keys") or [])
+
+
+def mark_watchdog_alerted(report: Report) -> None:
+    path = _watchdog_marker(report.user)
+    today = f"{datetime.now():%Y%m%d}"
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        data = {}
+    keys = (data.get("keys") or []) if data.get("date") == today else []
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"date": today, "keys": [*keys, report.key]}), encoding="utf-8")
 
 
 # ---------------------------------------------------------------------------

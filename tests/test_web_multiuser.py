@@ -201,7 +201,11 @@ def test_profile_autosave_does_not_resync_unchanged_cron(api_env, monkeypatch):
                         lambda uid, sched: calls.append(sched) or {"ok": True, "cron_id": "x", "error": None})
     installed = {"v": False}
     monkeypatch.setattr("jobwright.web.routers.system.brief_cron_installed", lambda uid: installed["v"])
+    monkeypatch.setattr("jobwright.welcome.send_welcome_async", lambda uid: None)
     current = client.get("/api/profile", headers=ed).json()["schedule"]
+    client.put("/api/profile", json={"schedule": current}, headers=ed)
+    assert calls == []  # setup unfinished: no brief yet
+    monkeypatch.setattr("jobwright.onboarding.is_set_up", lambda uid: True)
     client.put("/api/profile", json={"schedule": current}, headers=ed)
     assert calls == [current]
     installed["v"] = True

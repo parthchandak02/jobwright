@@ -1366,18 +1366,32 @@ def ops_brief_report(
 
 @ops_app.command("watchdog")
 def ops_watchdog(grace: int = typer.Option(120, "--grace", help="Minutes after the scheduled time.")) -> None:
-    """Alert for any user whose brief never started or never finished today."""
+    """Install briefs for newly set-up profiles, then alert for any brief that never started or finished today."""
     _configure_logging()
     from jobwright.config import load_env
-    from jobwright.ops import deliver, watchdog
+    from jobwright.ops import (
+        deliver,
+        install_missing_brief_crons,
+        mark_watchdog_alerted,
+        watchdog,
+        watchdog_already_alerted,
+    )
 
     load_env()
+    for user_id in install_missing_brief_crons():
+        console.print(f"Installed missing daily brief for {user_id} (setup finished).")
     reports = watchdog(grace_minutes=grace)
     if not reports:
         console.print("All briefs accounted for.")
     for rep in reports:
         console.print(rep.text())
-        console.print(f"[dim]{deliver(rep)}[/dim]")
+        if watchdog_already_alerted(rep):
+            console.print("[dim]already alerted today[/dim]")
+            continue
+        result = deliver(rep)
+        console.print(f"[dim]{result}[/dim]")
+        if result.startswith("sent"):
+            mark_watchdog_alerted(rep)
 
 
 @ops_app.command("set-target")

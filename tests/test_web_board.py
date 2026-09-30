@@ -112,6 +112,8 @@ def test_put_profile_saves_schedule(api_client, monkeypatch: pytest.MonkeyPatch)
         "jobwright.web.routers.system.ensure_brief_cron",
         lambda uid, sched: {"ok": True, "name": f"jobwright-brief-{uid}", "cron_id": "abc123", "error": None},
     )
+    monkeypatch.setattr("jobwright.onboarding.is_set_up", lambda uid: True)
+    monkeypatch.setattr("jobwright.welcome.send_welcome_async", lambda uid: None)
     res = api_client.put(
         "/api/profile",
         json={"schedule": "30 7 * * *", "whatsapp_target": "15551212"},

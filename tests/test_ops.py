@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from datetime import datetime
 
 import jobwright.config as cfg
@@ -58,12 +59,86 @@ def test_watchdog_detects_missing_and_unfinished_briefs(tmp_path, monkeypatch):
     users_mod.add_user("amy", schedule=sched)
     users_mod.add_user("ben", schedule=sched)
     ben_dir = users_mod.get_user("ben").resolve_data_dir()
-    (ben_dir / f"BRIEF_STATUS_{datetime.now():%Y%m%d}").write_text("started user=ben\n")
+    ben_status = ben_dir / f"BRIEF_STATUS_{datetime.now():%Y%m%d}"
+    ben_status.write_text("started user=ben\n")
+    os.utime(ben_status, (early.timestamp(), early.timestamp()))
     if datetime.now() < early.replace(hour=2):
         return  # too early in the day for the grace window; nothing to assert
+    monkeypatch.setattr(ops, "_is_set_up", lambda uid: True)
     reports = {r.user: r for r in ops.watchdog(grace_minutes=60)}
     assert "no brief started" in reports["amy"].lines[0]
     assert "has not finished" in reports["ben"].lines[0]
+
+
+def test_watchdog_flags_unstarted_brief_before_finish_grace_and_alerts_once(tmp_path, monkeypatch):
+    from datetime import timedelta
+
+    from jobwright import users as users_mod
+
+    now = datetime(2026, 9, 30, 8, 30)
+
+    class _Clock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return now
+
+    monkeypatch.setattr(ops, "datetime", _Clock)
+    users_mod.add_user("cal", schedule="0 7 * * *")
+    users_mod.add_user("dee", schedule="0 7 * * *")
+    users_mod.add_user("eve", schedule="0 7 * * *")  # setup unfinished: never alerted
+    monkeypatch.setattr(ops, "_is_set_up", lambda uid: uid != "eve")
+    dee_dir = users_mod.get_user("dee").resolve_data_dir()
+    (dee_dir / f"BRIEF_STATUS_{now:%Y%m%d}").write_text("started user=dee\n")
+
+    reports = {r.user: r for r in ops.watchdog(grace_minutes=120)}
+    assert list(reports) == ["cal"] and reports["cal"].key == "not_started"
+    assert not ops.watchdog_already_alerted(reports["cal"])
+    ops.mark_watchdog_alerted(reports["cal"])
+    assert ops.watchdog_already_alerted(reports["cal"])
+
+    now = now + timedelta(days=1)
+    assert not ops.watchdog_already_alerted(reports["cal"])
+
+
+def test_watchdog_times_a_late_rerun_from_its_own_start(monkeypatch):
+    from jobwright import users as users_mod
+
+    now = datetime(2026, 9, 30, 12, 30)
+
+    class _Clock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return now
+
+    monkeypatch.setattr(ops, "datetime", _Clock)
+    monkeypatch.setattr(ops, "_is_set_up", lambda uid: True)
+    users_mod.add_user("fin", schedule="0 6 * * *")
+    status = users_mod.get_user("fin").resolve_data_dir() / f"BRIEF_STATUS_{now:%Y%m%d}"
+    status.write_text("started user=fin\n")
+    rerun = datetime(2026, 9, 30, 12, 28).timestamp()
+    os.utime(status, (rerun, rerun))
+    assert ops.watchdog(grace_minutes=120) == []
+    now = datetime(2026, 9, 30, 14, 30)
+    assert [r.key for r in ops.watchdog(grace_minutes=120)] == ["not_finished"]
+
+
+def test_missing_brief_cron_installed_only_for_set_up_profiles_with_a_chat(monkeypatch):
+    from jobwright import hermes_cron as hc
+    from jobwright import users as users_mod
+    from jobwright import welcome
+
+    users_mod.add_user("ann", schedule="0 7 * * *", whatsapp_target="whatsapp:120363999999999901@g.us")
+    users_mod.add_user("bo", schedule="0 7 * * *", whatsapp_target="whatsapp:120363999999999902@g.us")
+    users_mod.add_user("cy", schedule="0 7 * * *")
+    users_mod.add_user("di", schedule="0 8 * * *", whatsapp_target="whatsapp:120363999999999903@g.us")
+    monkeypatch.setattr(ops, "_is_set_up", lambda uid: uid != "bo")
+    monkeypatch.setattr(hc, "brief_cron_installed", lambda uid: uid == "di")
+    crons, welcomed = [], []
+    monkeypatch.setattr(hc, "ensure_brief_cron", lambda uid, sched: crons.append((uid, sched)) or {"ok": True})
+    monkeypatch.setattr(welcome, "send_welcome", lambda uid: welcomed.append(uid))
+
+    assert ops.install_missing_brief_crons() == ["ann"]
+    assert crons == [("ann", "0 7 * * *")] and welcomed == ["ann"]
 
 
 def test_preflight_reports_missing_inputs(tmp_path, monkeypatch):

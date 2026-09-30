@@ -282,8 +282,8 @@ def ensure_backup_cron(schedule: str = "30 2 * * *", dest: str = "") -> dict:
     return _ensure_script_cron(BACKUP_CRON_NAME, "jobwright_backup.sh", body, schedule)
 
 
-def ensure_watchdog_cron(schedule: str = "30 8 * * *") -> dict:
-    """Daily missed-run watchdog; alerts go out via jobwright ops (hermes send)."""
+def ensure_watchdog_cron(schedule: str = "30 * * * *") -> dict:
+    """Hourly missed-run watchdog (so briefs at any hour are checked); alerts go out once per day via hermes send."""
     script_name = "jobwright_ops_watchdog.sh"
     if hermes_dry_run():
         _run_hermes(["cron", "create", schedule, "--name", WATCHDOG_CRON_NAME])

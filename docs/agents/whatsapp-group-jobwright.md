@@ -77,7 +77,7 @@ Generated, do not hand-edit: `jobwright hermes channels --apply` writes this gro
 | Name | Schedule | Script |
 |------|----------|--------|
 | `jobwright-brief-richa` | `0 6 * * *` | `wrap_jobwright-brief-richa.sh` (deliver `local`) |
-| `jobwright-ops-watchdog` | `30 8 * * *` | `jobwright_ops_watchdog.sh` (shared) |
+| `jobwright-ops-watchdog` | `30 * * * *` | `jobwright_ops_watchdog.sh` (shared) |
 | `jobwright-backup` | `30 2 * * *` | `jobwright_backup.sh` (shared) |
 | `jobwright-weekly-summary` | `0 18 * * 0` | `jobwright_weekly_summary.sh` (shared, every profile) |
 

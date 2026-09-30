@@ -56,7 +56,7 @@ Answer: load **pp-job-apply** / **jobwright** (this skill), plus **hermes-cron-j
 | Cron name | Script | Mode | Purpose |
 |-----------|--------|------|---------|
 | `jobwright-brief-<user_id>` | `wrap_jobwright-brief-<user_id>.sh` | `--no-agent --deliver local` | Daily Brief: preflight, pipeline, `jobwright notify` (one WhatsApp list), `ops brief-report` (detached) |
-| `jobwright-ops-watchdog` | `jobwright_ops_watchdog.sh` | `--no-agent --deliver local` | 08:30: `jobwright ops watchdog` alerts `ops_target` when a brief never started or never finished |
+| `jobwright-ops-watchdog` | `jobwright_ops_watchdog.sh` | `--no-agent --deliver local` | Hourly at :30: `jobwright ops watchdog` installs missing brief crons for set-up profiles, then alerts `ops_target` (once per problem per day) when a brief never started or never finished |
 | `jobwright-backup` | `jobwright_backup.sh` | `--no-agent --deliver local` | 02:30: `jobwright ops backup` to `JOBWRIGHT_BACKUP_DIR` (alerts on failure) |
 | `jobwright-weekly-summary` | `jobwright_weekly_summary.sh` | `--no-agent --deliver local` | Sunday 18:00: `jobwright summary` for every profile (per-user opt-out `weekly_summary`) |
 

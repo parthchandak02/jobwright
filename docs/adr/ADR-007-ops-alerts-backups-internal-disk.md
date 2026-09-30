@@ -20,8 +20,10 @@ external SSD that disconnects, with no backups. Production uvicorn ran with
    / `notify_failed <error>`, and always ends with `jobwright ops brief-report`,
    which alerts the operator's WhatsApp (`ops_target`) on any problem and writes
    `logs/ops_health.json` for the dashboard banner.
-2. **Watchdog.** `jobwright-ops-watchdog` (Hermes, 08:30) alerts when a user's
-   brief never started or never finished.
+2. **Watchdog.** `jobwright-ops-watchdog` (Hermes, hourly at :30) alerts when a
+   user's brief never started (30 min after its time) or never finished (120 min),
+   once per problem per day (`logs/watchdog_alerts.json`). It was daily at 08:30
+   until 2026-09-30, which silently skipped every brief scheduled after 06:30.
 3. **Backups.** `jobwright-backup` (Hermes, 02:30) runs `jobwright ops backup`:
    SQLite online-backup copies plus rsync `--link-dest` snapshots of every
    profile, 14-day retention, to `JOBWRIGHT_BACKUP_DIR` (the external SSD).
