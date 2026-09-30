@@ -25,7 +25,7 @@ from playwright.sync_api import Route, sync_playwright
 
 from jobwright.database import job_id_for_url
 from jobwright.followups import format_followups
-from jobwright.notify import build_review_notification
+from jobwright.notify import build_review_notification, worth_a_look_line
 
 REPO = Path(__file__).resolve().parents[1]
 DIST = REPO / "frontend" / "dist"
@@ -399,18 +399,53 @@ MATERIALS = {
     "resume_docx": "Alex_Rivera_Northwind_Labs.docx",
     "cover_md": "Dear Northwind Labs team,\n\nI would love to help shape your analytics workspace...",
     "cover_docx": "Alex_Rivera_Northwind_Labs_cover.docx",
+    "resume_preview": RESUME_MD,
+    "cover_preview": (
+        "Dear Tidewater Studio team,\n\nI have spent six years designing tools people use for hours a day, "
+        "most recently leading the design system at a B2B analytics company. Your staff role on the "
+        "creative tools product is the kind of deep, craft-heavy work I want next."
+    ),
+}
+
+def _metrics(threshold: int, tp: int, fp: int, fn: int) -> dict:
+    p, r = tp / (tp + fp), tp / (tp + fn)
+    return {"threshold": threshold, "predicted_pos": tp + fp, "tp": tp, "fp": fp, "fn": fn,
+            "precision": p, "recall": r, "f05": 1.25 * p * r / (0.25 * p + r)}
+
+
+QUALITY = {
+    "labels_total": 34,
+    "labels_30d": 21,
+    "eval_set": {"size": 34, "relevant": 14},
+    "notified_30d": 58,
+    "notified_advanced_30d": 11,
+    "latest_eval": {
+        "run_id": "demo",
+        "at": "2026-09-27T17:00:00",
+        "prompt_version": "v2",
+        "config": {"n": 34, "positives": 14},
+        "metrics": {"6": _metrics(6, 12, 5, 2), "7": _metrics(7, 10, 2, 4)},
+        "metrics_explicit": {"6": _metrics(6, 12, 5, 2), "7": _metrics(7, 10, 2, 4)},
+        "baseline": {"7": _metrics(7, 8, 5, 6)},
+        "baseline_explicit": {"7": _metrics(7, 8, 5, 6)},
+        "errors": 0,
+    },
+    "recommended_threshold": {"threshold": 6, "meets_bar": True, "min_precision": 0.7,
+                              "precision": 12 / 17, "recall": 12 / 14, "current": 7},
+    "usage_30d": [],
 }
 
 DRAFT = {"profile": PROFILE_JSON, "criteria": CRITERIA, "searches": {k: SEARCHES[k] for k in ("queries", "locations", "boards", "min_salary")}}
 
-NOTIFY_JOBS = [j for j in JOBS if j["funnel_stage"] == "backlog" and j["fit_score"] >= 7]
+NOTIFY_JOBS = [{**j, "date_posted": f"2026-09-{27 - i % 2:02d}"}
+               for i, j in enumerate(j for j in JOBS if j["funnel_stage"] == "backlog" and j["fit_score"] >= 7)]
 FOLLOWUPS = [{"title": JOBS[7]["title"], "company": JOBS[7]["company"], "applied_days_ago": 12, "job_id": JOBS[7]["job_id"]}]
 
 
 def whatsapp_message() -> str:
     """The daily list exactly as notify.py formats it (review-first, the onboarding default)."""
     msg = build_review_notification(NOTIFY_JOBS, LINK_BASE)
-    msg += f"\n\n+ 2 more worth a look (just under your bar): {LINK_BASE}/?view=list&worth=1"
+    msg += "\n\n" + worth_a_look_line(2, LINK_BASE)
     msg += "\n\n" + format_followups(FOLLOWUPS, LINK_BASE)
     return msg
 
@@ -452,6 +487,8 @@ def api_response(method: str, path: str, state: dict):
         return DRAFT
     if path == "/api/runs":
         return {"runs": []}
+    if path == "/api/quality":
+        return QUALITY
     if path == "/api/admin/overview":
         return ADMIN_OVERVIEW
     if path.startswith("/api/admin/costs"):
@@ -597,6 +634,8 @@ def whatsapp_html() -> str:
     import html
 
     text = html.escape(whatsapp_message())
+    text = re.sub(r"(?<![\w*])\*([^*\n]+?)\*(?![\w*])", r"<b>\1</b>", text)  # WhatsApp *bold*
+    text = re.sub(r"(?<![\w_/])_([^_\n]+?)_(?![\w_])", r"<i>\1</i>", text)  # WhatsApp _italic_
     text = re.sub(r"(https://\S+)", r'<a>\1</a>', text)
     return f"""<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>
     * {{ box-sizing: border-box; margin: 0; }}
@@ -686,6 +725,18 @@ def main() -> int:
         shot({"admin": False, "setup_complete": False}, "/welcome", "welcome.png", to_fit)
         shot(member, "/profile?tab=whatsapp", "settings-daily-list.png")
         shot(admin, "/admin", "admin.png")
+        shot(member, "/quality", "match-quality.png")
+
+        def to_materials(page):
+            heading = page.get_by_role("heading", name="Resume", exact=True)
+            section = page.locator("section", has=heading)
+            section.get_by_role("combobox").first.click()
+            page.get_by_role("option", name="Tailored for this job").click()
+            section.get_by_role("tab", name="Markdown").click()
+            heading.evaluate("el => el.scrollIntoView({block: 'start'})")
+
+        prepared = next(j for j in JOBS if j["company"] == "Tidewater Studio")
+        shot(member, f"/jobs/{prepared['job_id']}", "materials.png", to_materials)
 
         for name, html_doc, viewport, frame in (
             ("whatsapp-list.png", whatsapp_html(), PHONE, True),

@@ -40,7 +40,7 @@ flowchart TD
   tailor --> track["Track stages<br/>follow-ups, recap"]
   notify --> report["ops brief-report<br/>alerts operator"]
   subgraph opscron["Ops crons"]
-    watchdog["Watchdog 08:30"]
+    watchdog["Watchdog hourly"]
     backup["Backup 02:30"]
   end
   watchdog -.-> report
@@ -58,8 +58,8 @@ flowchart TD
   <tr>
     <td align="center" width="25%"><img src="docs/images/settings-daily-list.png" alt="Settings, Daily list: connected chat, send time, weekly summary, follow-up reminders" width="200"><br><sub><b>Settings</b><br>Chat, send time, reminders</sub></td>
     <td align="center" width="25%"><img src="docs/images/admin.png" alt="Admin: system status and the people list with each person's chat and send time" width="200"><br><sub><b>Admin</b><br>People, chats and system health</sub></td>
-    <td width="25%"></td>
-    <td width="25%"></td>
+    <td align="center" width="25%"><img src="docs/images/match-quality.png" alt="Match quality: 58 jobs sent, 34 ratings, picks right about 8 in 10 times, and a suggestion to use a 6+ cutoff" width="200"><br><sub><b>Match quality</b><br>How often picks are right</sub></td>
+    <td align="center" width="25%"><img src="docs/images/materials.png" alt="Job drawer, Resume section: tailored resume for this job with Auto Tailor, Custom and Download" width="200"><br><sub><b>Materials</b><br>Tailored resume and cover letter</sub></td>
   </tr>
 </table>
 
@@ -102,7 +102,7 @@ uv run --extra web --with pillow python scripts/readme_images.py --demo
 
 1. A Chromium window opens on the board, signed in as the demo admin "Alex Rivera".
 2. Click **Senior Product Designer** at Northwind Labs to open the job drawer and its match explanation.
-3. Open the menu for **Settings** (Daily list tab) and **Admin**.
+3. Open the menu for **Match quality**, **Settings** (Daily list tab) and **Admin**.
 4. Close the window to stop. Edits are not saved anywhere.
 
 Expected terminal output: `Demo running with fake data. Close the browser window to stop.`
@@ -110,10 +110,12 @@ Expected terminal output: `Demo running with fake data. Close the browser window
 To check the code instead, run the test suite (no keys needed, about a minute):
 
 ```bash
-uv run pytest tests/ -q      # 343 passed
+uv run pytest tests/ -q      # 349 passed
 ```
 
 ## Install
+
+There is no hosted sign-up and no app store listing. jobwright runs on one machine that someone (the admin) owns, and other people join by invitation.
 
 <details>
 <summary><b>Job seekers</b></summary>
@@ -139,7 +141,7 @@ uv run jobwright run -w 4 --min-score 7
 uv run jobwright status
 ```
 
-Without an LLM key, `jobwright doctor` reports "Tier 1 — Discovery": `jobwright run discover` works, scoring and tailoring do not. With `pip` instead of uv: `pip install -e ".[dev,web]"`.
+Without an LLM key, `jobwright doctor` reports Tier 1 (Discovery): `jobwright run discover` works, scoring and tailoring do not. With `pip` instead of uv: `pip install -e ".[dev,web]"`.
 
 </details>
 
@@ -173,7 +175,7 @@ In `dev` auth mode the dashboard trusts the caller (anonymous admin, or `JOBWRIG
 
 A normal day for a job seeker:
 
-1. The daily list arrives at your chosen time (new profiles default to 7:00): "3 new jobs for your review", each with a score and a link.
+1. The daily list arrives at your chosen time (new profiles default to 7:00): "3 new jobs for your review", numbered, each with title and company, match score, location, a dashboard link and the date posted.
 2. Tap a link. The job drawer shows the match explanation. Rate it (**Yes** / **No**) or dismiss it with **Not for me** and a reason.
 3. For jobs you want, tap **Prepare**. The tailored resume and cover letter appear in the drawer in a few minutes, as text and DOCX.
 4. Apply on the employer's site, tap **I applied**, and move the card along as things happen.
@@ -191,7 +193,7 @@ A normal day for a job seeker:
 | `resume/base.pdf` | Source of truth for tailoring; `resume/base.md` is derived from it |
 | `profile.json` | Contact info, work authorization, compensation, experience, skills, portfolio projects; start from [profile.example.json](profile.example.json) |
 | `profile.json` → `match_criteria` | Dealbreakers, good-fit role types, locations, seniority, pay floor, `notify_threshold`; derived from your preferences until edited (Settings → Match rules, or `jobwright criteria suggest --save`) |
-| `searches.yaml` | Queries, locations, boards, title exclusions, min salary |
+| `searches.yaml` | Queries, locations (remote jobs limited to the US or open to all countries), boards, title exclusions, min salary |
 | `cover-letter/examples/` | Style and tone for cover letters |
 | `connections.csv` (optional) | LinkedIn export for per-job connections |
 
@@ -225,6 +227,7 @@ A normal day for a job seeker:
 - **No silent failures.** Problems (failed preflight or stages, zero scored jobs, notify failure, a brief that never ran) alert the operator's chat, not the job seeker's. If some stages fail, the list still goes out with whatever is ready.
 - **Each login sees only its own profile.** Cloudflare Access verifies the login; the API binds the profile per request. Only admins can list or change WhatsApp chats.
 - **Never commit** `.env`, `users/`, `~/.jobwright/`, `ecosystem.config.js`, resumes, `connections.csv` or any API token.
+- **The repo is public, so personal data is blocked.** `scripts/check_private_data.py` rejects real-looking emails, WhatsApp chat ids and every value in your local registry. It runs as a pre-commit and pre-push hook (install once per clone with `bash scripts/install_git_hooks.sh`) and in CI. Use placeholders such as `alex@example.com` in docs and tests.
 
 ## Reference
 
@@ -232,6 +235,7 @@ A normal day for a job seeker:
 <summary><b>Build and test</b></summary>
 
 ```bash
+bash scripts/install_git_hooks.sh       # once per clone: personal-data guard on commit and push
 uv run pytest tests/ -q                 # full suite
 uv run ruff check src tests             # lint
 cd frontend && pnpm run build           # type-check + production build into frontend/dist
@@ -306,7 +310,7 @@ All are created with `--no-agent --deliver local` by `jobwright ops install-cron
 | Cron | When | What |
 |------|------|------|
 | `jobwright-brief-<user>` | The profile's send time (7:00 for new profiles) | `jobwright_brief.sh` → `run_daily_brief.sh`: preflight, default stages, `notify`, `ops brief-report` |
-| `jobwright-ops-watchdog` | 08:30 daily | Alerts on briefs that never ran (120 min grace) |
+| `jobwright-ops-watchdog` | Hourly at :30 | Alerts once a day on briefs that never started (30 min grace) or never finished (120 min) |
 | `jobwright-backup` | 02:30 daily | `jobwright ops backup`: SQLite online backup + rsync snapshots, 14 days kept |
 | `jobwright-weekly-eval` | Sunday 17:00 | `jobwright ops weekly-eval`: accuracy check for profiles with 20+ ratings |
 | `jobwright-weekly-summary` | Sunday 18:00 | `jobwright summary` for every profile (opt out with `weekly_summary: false`) |
