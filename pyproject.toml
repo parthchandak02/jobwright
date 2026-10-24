@@ -56,6 +56,10 @@ packages = ["src/jobwright"]
 [tool.hatch.build]
 artifacts = ["src/jobwright/config/*.yaml", "src/jobwright/config/*.json"]
 
+[tool.uv]
+# python-jobspy 1.1.x caps markdownify <0.14, which has a known advisory; 0.14.1 is API-compatible.
+override-dependencies = ["markdownify>=0.14.1,<0.15"]
+
 [tool.ruff]
 target-version = "py311"
 line-length = 120

@@ -35,7 +35,12 @@
     "@vitejs/plugin-react": "^5.1.1",
     "tailwindcss": "^4.2.0",
     "typescript": "~5.9.3",
-    "vite": "^7.3.1"
+    "vite": "^7.3.7"
   },
-  "packageManager": "pnpm@9.15.0"
+  "packageManager": "pnpm@9.15.0",
+  "pnpm": {
+    "overrides": {
+      "source-map-js": "^1.2.2"
+    }
+  }
 }
