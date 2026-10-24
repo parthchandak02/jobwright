@@ -64,6 +64,13 @@ base_urls:
   "Randstad Canada": "https://www.randstad.ca/jobs/search/"
 
 sites:
+  # NOTE: the curated impact / social-sector boards (GIIN, The Impact Job, Skoll,
+  # Net Impact, Rippleworks, Next Billion, FinDev Gateway, WAVE, On Purpose, the
+  # SIS Global + CSR Jobs trackers) are NOT listed here. They live in
+  # discovery/impactboards.py as deterministic scrapers because this file is only
+  # read by smart-extract, which runs in DISCOVER_MODE=full — the daily brief runs
+  # fast mode. Health check: scripts/check_impact_boards.py.
+  #
   # ── Searchable sites (URL includes query + location params) ──────────
   # Canada-only boards (Eluta, Randstad Canada, CareerJet Canada, Job Bank
   # Canada) intentionally omitted for US Bay Area profiles. Re-add locally

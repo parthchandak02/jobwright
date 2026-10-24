@@ -69,7 +69,7 @@ flowchart TD
 
 | Feature | What it does |
 |---------|--------------|
-| Discovery | JobSpy boards (Indeed, LinkedIn, Glassdoor, ZipRecruiter, Google; default Indeed, LinkedIn, ZipRecruiter), 48 preconfigured Workday portals, and 26 direct career sites via smart extract in `DISCOVER_MODE=full` (the daily brief runs `fast`, which skips smart extract) |
+| Discovery | JobSpy boards (Indeed, LinkedIn, Glassdoor, ZipRecruiter, Google; default Indeed, LinkedIn, ZipRecruiter), 48 preconfigured Workday portals, curated impact / social-sector boards, and 26 direct career sites via smart extract in `DISCOVER_MODE=full` (the daily brief runs `fast`, which skips smart extract) |
 | Dedupe and tombstones | A cross-board `dedupe_key` (company, title, place) merges reposts; pruned or duplicate jobs are tombstoned so they never come back |
 | Scoring v2 | One structured call per job against your match rules plus the 12 most similar rated jobs; code caps a dealbreaker or bad location at 3, pay below your floor at 4, unknown location at 6 |
 | Daily list | One WhatsApp message per day with new jobs above your cutoff, a "worth a look" count just under it, and up to 3 due follow-ups |
@@ -257,7 +257,7 @@ It loads the built UI in headless Chromium, answers every `/api/**` call with th
 
 | Stage | Command | What happens |
 |-------|---------|--------------|
-| 1. Discover | `run discover` | JobSpy boards and Workday portals; smart extract of career sites in `DISCOVER_MODE=full` |
+| 1. Discover | `run discover` | JobSpy boards, Workday portals and impact boards; smart extract of career sites in `DISCOVER_MODE=full` |
 | 2. Enrich | `run enrich` | Full description and apply link (JSON-LD, CSS selectors, or LLM extraction) |
 | 3. Score | `run score` | Scoring v2 against match rules and similar rated jobs; code applies the caps |
 | 3b. Portfolio | `run portfolio` | Picks the most relevant projects from your profile per job |

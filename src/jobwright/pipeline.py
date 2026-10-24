@@ -122,6 +122,22 @@ def _run_discover(workers: int = 1) -> dict:
             console.print(f"  [red]Workday error:[/red] {e}")
             stats["workday"] = f"error: {e}"
 
+    # Impact / social-sector boards — deterministic scrapers, no LLM, so they run
+    # in fast mode too (the mode the daily brief uses). See discovery/impactboards.py.
+    console.print("  [cyan]Impact boards (social sector)...[/cyan]")
+    try:
+        from jobwright.discovery.impactboards import run_impact_boards
+        impact_report = run_impact_boards(workers=max(1, workers))
+        stats["impact_boards"] = impact_report
+        failed = [n for n, r in impact_report.items()
+                  if isinstance(r, dict) and r.get("error")]
+        if failed:
+            console.print(f"  [yellow]Impact boards failed:[/yellow] {', '.join(failed)}")
+    except Exception as e:
+        log.error("Impact boards failed: %s", e)
+        console.print(f"  [red]Impact boards error:[/red] {e}")
+        stats["impact_boards"] = f"error: {e}"
+
     # Smart extract (full mode only — expensive LLM + Playwright)
     if discover_mode == "full":
         console.print("  [cyan]Smart extract (AI-powered scraping)...[/cyan]")
@@ -138,7 +154,7 @@ def _run_discover(workers: int = 1) -> dict:
         stats["smartextract"] = "skipped"
 
     stats["dedupe"] = _dedupe()
-    sources = ("jobspy", "workday", "smartextract")
+    sources = ("jobspy", "workday", "impact_boards", "smartextract")
     ran = [stats[k] for k in sources if stats[k] not in (None, "skipped")]
     if ran and all(str(v).startswith("error") for v in ran):
         stats["status"] = "error: every discovery source failed"

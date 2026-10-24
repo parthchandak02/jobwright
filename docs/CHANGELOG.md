@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Impact job boards** (`discovery/impactboards.py`): deterministic scrapers for curated social-sector boards (GIIN, The Impact Job, Skoll, Net Impact, Rippleworks, Next Billion, FinDev Gateway, WAVE, On Purpose, SIS Global and CSR Jobs trackers). No LLM, so they run in `DISCOVER_MODE=fast` and the daily brief. Disable with `IMPACT_BOARDS=0`, skip browser boards with `IMPACT_BOARDS_BROWSER=0`. Health check: `scripts/check_impact_boards.py`; notes in `docs/agents/impact-job-boards.md`.
+- Dashboard favicon (`frontend/public/favicon.svg`).
+
 ### Security
 - Purged personal data from the public git history (emails, names, WhatsApp ids, a real profile file, school/employer names in fixtures) with `git filter-repo`; all branches force-pushed on 2026-09-28.
 - Personal-data guard: `scripts/check_private_data.py` as pre-commit/pre-push hooks (`scripts/install_git_hooks.sh`), CI workflow `privacy.yml`, and `tests/test_privacy_guard.py`. `jobwright init --template nontech-bay-area` now seeds the generic `profile.example.json`.
