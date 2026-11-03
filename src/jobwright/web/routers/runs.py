@@ -71,30 +71,82 @@ def _jobwright_cmd(args: list[str], user_id: str) -> list[str]:
     return [sys.executable, "-m", "jobwright", "--user", user_id, *args]
 
 
-def _pid_is_jobwright(pid: int) -> bool:
-    """Guard against PID reuse: the PID must still be a jobwright process."""
+_PID_START_SLACK_S = 5.0  # ps start times have 1 s resolution; spawn records started_at just after
+
+
+def _ps_start_and_command(pid: int) -> tuple[datetime | None, str] | None:
+    """(start time, command line) for ``pid`` from ps, or None when ps fails / no such process."""
     try:
-        out = subprocess.run(
-            ["ps", "-p", str(pid), "-o", "command="], capture_output=True, text=True, timeout=3, check=False,
-        ).stdout
+        res = subprocess.run(
+            ["ps", "-ww", "-p", str(pid), "-o", "lstart=", "-o", "command="],
+            capture_output=True, text=True, timeout=3, check=False,
+            env={**os.environ, "LC_ALL": "C", "LANG": "C"},
+        )
     except (OSError, subprocess.TimeoutExpired):
-        return True
-    return "jobwright" in out
+        return None
+    line = (res.stdout or "").strip()
+    if res.returncode != 0 or not line:
+        return None
+    # lstart is a fixed 5-field date: "Tue Nov  3 10:20:30 2026"
+    parts = line.split(None, 5)
+    started: datetime | None = None
+    if len(parts) >= 5:
+        try:
+            started = datetime.strptime(" ".join(parts[:5]), "%a %b %d %H:%M:%S %Y").astimezone()
+        except ValueError:
+            started = None
+    command = parts[5] if started is not None and len(parts) > 5 else (line if started is None else "")
+    return started, command
 
 
-def _pid_running(pid: int | None) -> bool:
-    """Best-effort liveness check for a bare PID (no live Popen handle)."""
+def _parse_iso(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        dt = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    return dt if dt.tzinfo else dt.replace(tzinfo=UTC)
+
+
+def _cmd_matches(command: str, cmd: list[str] | None) -> bool:
+    """The live command line must carry the recorded arguments (argv[0] may differ)."""
+    if cmd and len(cmd) > 1:
+        return " ".join(str(a) for a in cmd[1:]) in command
+    return "jobwright" in command
+
+
+def _pid_is_jobwright(pid: int, started_at: str | None = None, cmd: list[str] | None = None) -> bool:
+    """Guard against PID reuse: the PID must still be the jobwright process we recorded.
+
+    Fails safe: if ps cannot be run or returns nothing, the PID is treated as
+    not ours (so Stop never signals a stranger). The command line must match
+    the recorded ``cmd`` (or mention jobwright when none was recorded), and when
+    ``started_at`` is known, a process that started after it is a reused PID.
+    """
+    info = _ps_start_and_command(pid)
+    if info is None:
+        return False
+    proc_start, command = info
+    if not _cmd_matches(command, cmd):
+        return False
+    recorded = _parse_iso(started_at)
+    if recorded is not None and proc_start is not None:
+        if (proc_start - recorded).total_seconds() > _PID_START_SLACK_S:
+            return False
+    return True
+
+
+def _pid_alive(pid: int | None) -> bool:
+    """Signal-0 liveness for a PID we may signal (zombie children are reaped and count as dead)."""
     if not pid:
         return False
     try:
         os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
+    except (ProcessLookupError, PermissionError):
+        return False  # gone, or another user's process: never one of our runs
     except OSError:
         return False
-    # Signal 0 succeeds on zombies. If we are the parent, reap and treat as dead.
     try:
         waited, _ = os.waitpid(pid, os.WNOHANG)
         if waited == pid:
@@ -103,7 +155,12 @@ def _pid_running(pid: int | None) -> bool:
         pass
     except OSError:
         pass
-    return _pid_is_jobwright(pid)
+    return True
+
+
+def _pid_running(pid: int | None, started_at: str | None = None, cmd: list[str] | None = None) -> bool:
+    """Best-effort check that a bare PID (no live Popen handle) is still our run."""
+    return _pid_alive(pid) and _pid_is_jobwright(pid, started_at, cmd)
 
 
 def _dedicated_pgid(pid: int) -> int | None:
@@ -168,7 +225,7 @@ def _kill_run(pid: int | None, proc: subprocess.Popen | None = None, grace: floa
 
     deadline = time.time() + grace
     while time.time() < deadline:
-        if not _pid_running(pid):
+        if not _pid_alive(pid):
             return None
         time.sleep(0.05)
     _send(signal.SIGKILL)
@@ -190,7 +247,7 @@ def _status_from_entry(run_id: str, entry: dict) -> dict:
         pid = proc.pid
     else:
         code = entry.get("returncode")
-        running = code is None and _pid_running(pid)
+        running = code is None and _pid_running(pid, entry.get("started_at"), entry.get("cmd"))
     return {
         "run_id": run_id,
         "pid": pid,
@@ -371,10 +428,10 @@ def stop_run(run_id: str, request: Request) -> dict:
         raise HTTPException(404, "Unknown run_id")
 
     pid = entry.get("pid")
-    if not _pid_running(pid):
+    if not _pid_running(pid, entry.get("started_at"), entry.get("cmd")):
         return {"run_id": run_id, "stopped": True, "returncode": None}
     _kill_run(pid)
-    return {"run_id": run_id, "stopped": not _pid_running(pid), "returncode": None}
+    return {"run_id": run_id, "stopped": not _pid_alive(pid), "returncode": None}
 
 
 @router.get("/stream/{run_id}")
@@ -408,7 +465,7 @@ async def stream_run(run_id: str, request: Request) -> StreamingResponse:
             else:
                 entry = next((e for e in _load_registry() if e.get("run_id") == run_id), {})
                 code = entry.get("returncode")
-                done = code is not None or not _pid_running(pid)
+                done = code is not None or not _pid_running(pid, info.get("started_at"), info.get("cmd"))
             if done:
                 if partial:
                     yield f"data: {partial}\n\n"

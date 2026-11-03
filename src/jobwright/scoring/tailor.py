@@ -18,7 +18,7 @@ from jobwright import config
 from jobwright.job_identity import material_prefix, resolve_company
 from jobwright.config import load_profile
 from jobwright.database import get_connection, get_jobs_by_stage
-from jobwright.llm import get_client
+from jobwright.llm import get_client, llm_purpose
 from jobwright.llm_json import LLMJsonError, parse_json_object
 from jobwright.scoring.materials_format import resolve_material_path
 from jobwright.scoring.portfolio import get_selected_projects
@@ -208,6 +208,7 @@ def assemble_resume_text(data: dict, profile: dict) -> str:
 
 # ── LLM Judge ────────────────────────────────────────────────────────────
 
+@llm_purpose("tailor_judge")
 def judge_tailored_resume(
     original_text: str, tailored_text: str, job_title: str, profile: dict
 ) -> dict:
@@ -253,6 +254,7 @@ def judge_tailored_resume(
 
 # ── Core Tailoring ───────────────────────────────────────────────────────
 
+@llm_purpose("tailor")
 def tailor_resume(
     resume_text: str, job: dict, profile: dict,
     max_retries: int = 3, validation_mode: str = "normal",

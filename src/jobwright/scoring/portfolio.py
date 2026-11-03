@@ -12,7 +12,7 @@ import re
 
 from jobwright.config import load_profile
 from jobwright.database import get_connection
-from jobwright.llm import get_client
+from jobwright.llm import get_client, llm_purpose
 from jobwright.llm_json import LLMJsonError, chat_json_object
 
 log = logging.getLogger(__name__)
@@ -66,6 +66,7 @@ Rules:
 """
 
 
+@llm_purpose("portfolio")
 def select_projects_for_job(profile: dict, job: dict) -> list[str]:
     """Return selected portfolio project IDs for one job."""
     portfolio = profile.get("portfolio", [])

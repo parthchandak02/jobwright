@@ -134,7 +134,8 @@ class DashboardUserMiddleware:
         headers = _headers_from_scope(scope)
         cookies = _cookies_from_scope(scope)
         try:
-            identity = identify(headers, cookies)
+            client = scope.get("client")
+            identity = identify(headers, cookies, client[0] if client else None)
         except AuthError as exc:
             await _send_json(send, exc.status, {"detail": str(exc), "code": "unauthenticated"})
             return

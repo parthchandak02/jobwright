@@ -11,7 +11,7 @@ import yaml
 
 import jobwright.config as config
 from jobwright.config import load_profile, load_search_config
-from jobwright.llm import get_client
+from jobwright.llm import get_client, llm_purpose
 from jobwright.llm_json import LLMJsonError, chat_json_object, get_list_field
 
 log = logging.getLogger(__name__)
@@ -46,6 +46,7 @@ def _guidance(profile: dict) -> str:
     return "\n".join(lines)
 
 
+@llm_purpose("targets")
 def build_target_list(
     profile: dict,
     resume_text: str = "",

@@ -11,7 +11,7 @@ from typing import Any
 
 import jobwright.config as config
 from jobwright.config import load_profile
-from jobwright.llm import get_client
+from jobwright.llm import get_client, llm_purpose
 from jobwright.llm_json import LLMJsonError, chat_json_object, get_list_field
 
 log = logging.getLogger(__name__)
@@ -101,6 +101,7 @@ def _chunk(items: list[Any], size: int) -> list[list[Any]]:
     return [items[i : i + size] for i in range(0, len(items), size)]
 
 
+@llm_purpose("network_rank")
 def rank_contacts(
     contacts: list[dict[str, str]],
     profile: dict,

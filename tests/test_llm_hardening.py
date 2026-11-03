@@ -22,7 +22,7 @@ def _ok(content="hi", usage=None):
 def _no_sleep(monkeypatch):
     slept = []
     monkeypatch.setattr(llm.time, "sleep", lambda s: slept.append(s))
-    llm.usage_snapshot(reset=True)
+    llm.usage_snapshot(reset=True, user_id=None)
     return slept
 
 

@@ -19,6 +19,8 @@ import logging
 import os
 import re
 
+from jobwright.llm import llm_purpose
+
 log = logging.getLogger(__name__)
 
 SPONSORSHIP_STATUSES = ("required", "not_required", "not_found")
@@ -147,6 +149,7 @@ def _excerpt(text: str, limit: int = 6000) -> str:
     return f"{text[:half]}\n...\n{text[-half:]}"
 
 
+@llm_purpose("sponsorship")
 def _classify_llm(description: str) -> str | None:
     """Ask the LLM for a stance. Returns a status or None on any failure."""
     try:
@@ -160,7 +163,7 @@ def _classify_llm(description: str) -> str | None:
                 {"role": "system", "content": _LLM_SYSTEM},
                 {"role": "user", "content": f"JOB POSTING:\n{_excerpt(description)}"},
             ],
-            # Reasoning models (e.g. gpt-oss-120b) spend part of the completion
+            # Reasoning models (e.g. GLM-5.3) spend part of the completion
             # budget on hidden reasoning tokens. A tiny cap (was 64) is consumed
             # entirely by reasoning, so the model returns empty content
             # (finish_reason=length), forcing retries + provider fallback and a

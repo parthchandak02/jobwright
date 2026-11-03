@@ -28,6 +28,8 @@ export default defineConfig({
       '/api': {
         target: `http://127.0.0.1:${process.env.PORT ?? 8002}`,
         changeOrigin: true,
+        // Forward the browser's address so dev auth can tell local from LAN callers.
+        xfwd: true,
         timeout: 600_000,
       },
     },

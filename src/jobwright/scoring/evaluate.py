@@ -10,6 +10,7 @@ logs/eval_<timestamp>.json.
 from __future__ import annotations
 
 import json
+import logging
 import random
 import sqlite3
 import time
@@ -21,10 +22,12 @@ from typing import Any
 
 import jobwright.config as config
 from jobwright.labels import EvalItem, build_eval_set
-from jobwright.llm import usage_snapshot
+from jobwright.llm import flush_active_usage, flush_usage, usage_snapshot
 from jobwright.scoring.criteria import load_criteria
 from jobwright.scoring.examples import ExampleIndex
 from jobwright.scoring.matcher import Borderline, MatchContext, MatchResult, apply_gates, score_jobs
+
+log = logging.getLogger(__name__)
 
 
 def metrics(pairs: list[tuple[int | None, int]], threshold: int) -> dict[str, Any]:
@@ -145,16 +148,20 @@ def run_eval(
     jobs = [_item_job(i) for i in items]
     prior = prior_from_report(reuse_report, jobs, ctx) if reuse_report else None
     borderline = borderline or Borderline()
-    usage_snapshot(reset=True)
+    flush_active_usage()  # earlier spend goes to llm_usage, not into this eval's tally
     t0 = time.time()
     results, errors = score_jobs(
         ctx, jobs, workers=workers, escalate=escalate, escalate_at=escalate_at,
         cheap_model=cheap_model, strong_model=strong_model, borderline=borderline, prior=prior,
     )
     elapsed = time.time() - t0
-    usage = usage_snapshot(reset=True)
+    usage = usage_snapshot()
     by_url = {r.url: r for r in results}
     run_id = f"eval-{uuid.uuid4().hex[:8]}"
+    try:
+        flush_usage(conn, run_id)
+    except Exception as exc:  # noqa: BLE001 - accounting must not sink an eval
+        log.warning("Usage flush failed: %s", exc)
     rows = []
     for it in items:
         r = by_url.get(it.url)
