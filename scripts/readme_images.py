@@ -465,6 +465,8 @@ def api_response(method: str, path: str, state: dict):
         return PROFILE
     if path == "/api/settings":
         return SETTINGS
+    if path == "/api/settings/materials":
+        return {k: SETTINGS[k] for k in ("resume_markdown", "has_resume_pdf", "resume_pdf_mtime", "cover_letter_examples")}
     if path == "/api/criteria":
         return {"criteria": CRITERIA, "derived": False}
     if path == "/api/status":

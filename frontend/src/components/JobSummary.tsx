@@ -33,7 +33,7 @@ export function JobSummary({ job, onScoreSaved, onLinkClick }: Props) {
     <div className="flex flex-col gap-2">
       <div className="flex items-start gap-3">
         <div className="min-w-0 flex-1">
-          <h3 className="line-clamp-2 text-sm leading-snug font-semibold text-foreground">{job.title || 'Untitled'}</h3>
+          <h3 className="line-clamp-2 text-label leading-snug font-semibold text-foreground">{job.title || 'Untitled'}</h3>
           <p className="mt-0.5 truncate text-caption text-muted-foreground">{job.company || job.site || 'Unknown company'}</p>
         </div>
         <ScoreEditor job={job} onSaved={onScoreSaved} className="-mt-px" />

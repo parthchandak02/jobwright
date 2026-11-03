@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react'
 import { CheckCircle2, Copy, Loader2, Sparkles, Square, XCircle } from 'lucide-react'
 import { toast } from 'sonner'
-import { JobCardChips } from '@/components/JobCardLayout'
 import { DetailGrid, DetailRow } from '@/components/DetailRow'
 import { SectionLabel } from '@/components/SectionLabel'
 import { Badge } from '@/components/ui/badge'
@@ -109,7 +108,7 @@ export function RunProgressDialog({
         </DialogHeader>
 
         <div className="job-card-stack shrink-0 rounded-lg border bg-muted/40 p-[var(--job-card-pad)]">
-          <div className="flex items-center justify-between gap-2 text-sm">
+          <div className="flex items-center justify-between gap-2 text-body">
             <span className="flex items-center gap-2 font-medium">
               {active ? (
                 <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" />
@@ -133,7 +132,7 @@ export function RunProgressDialog({
               style={{ width: `${Math.max(pct, active ? 4 : 0)}%` }}
             />
           </div>
-          <JobCardChips>
+          <div className="job-card-chips">
             {stages.map((s, i) => {
               const doneStage = i < completedCount || state === 'finished'
               const activeStage = active && !doneStage && s === currentStage
@@ -148,7 +147,7 @@ export function RunProgressDialog({
                 </Badge>
               )
             })}
-          </JobCardChips>
+          </div>
 
           <Separator />
 
@@ -156,10 +155,10 @@ export function RunProgressDialog({
             <DetailRow label="Status" value={statusLabel} />
             <DetailRow label="Run ID" value={handle?.run_id} />
             <DetailRow label="PID" value={handle?.pid != null ? String(handle.pid) : null} />
-            <div className="grid grid-cols-[6.5rem_1fr] gap-x-3 text-sm">
+            <div className="grid grid-cols-[6.5rem_1fr] gap-x-3 text-body">
               <dt className="text-muted-foreground">Log</dt>
               <dd className="flex min-w-0 items-center gap-1">
-                <span className="min-w-0 truncate font-mono text-xs" title={handle?.log_path}>
+                <span className="min-w-0 truncate font-mono text-micro" title={handle?.log_path}>
                   {handle?.log_path?.trim() || '-'}
                 </span>
                 {handle?.log_path ? (
@@ -206,7 +205,7 @@ export function RunProgressDialog({
           <pre
             ref={logRef}
             onScroll={onScroll}
-            className="min-h-0 flex-1 overflow-auto rounded-lg border bg-muted/40 p-[var(--job-card-pad)] font-mono text-xs text-foreground"
+            className="min-h-0 flex-1 overflow-auto rounded-lg border bg-muted/40 p-[var(--job-card-pad)] font-mono text-micro text-foreground"
           >
             {log || 'Starting run…'}
           </pre>

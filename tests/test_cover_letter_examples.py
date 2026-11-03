@@ -155,3 +155,26 @@ def test_cover_letter_example_rejects_non_pdf(api_client):
         files={"file": ("note.txt", b"not a pdf", "text/plain")},
     )
     assert put.status_code == 400
+
+
+def test_base_materials_endpoint_returns_only_drawer_fields(api_client, tmp_path: Path):
+    client, _examples = api_client
+    pdf_path = tmp_path / "letter.pdf"
+    _write_pdf(pdf_path, "Cover letter for Example Co")
+    put = client.put(
+        "/api/settings/cover-letters",
+        files={"file": ("Example Co.pdf", pdf_path.read_bytes(), "application/pdf")},
+    )
+    assert put.status_code == 200, put.text
+
+    res = client.get("/api/settings/materials")
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert set(body) == {"resume_markdown", "has_resume_pdf", "resume_pdf_mtime", "cover_letter_examples"}
+    assert body["has_resume_pdf"] is False
+    assert body["resume_pdf_mtime"] is None
+    assert [e["id"] for e in body["cover_letter_examples"]] == ["Example-Co"]
+
+    full = client.get("/api/settings").json()
+    for key, value in body.items():
+        assert full[key] == value

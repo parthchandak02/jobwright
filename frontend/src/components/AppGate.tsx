@@ -33,8 +33,8 @@ export function AppGate({ children }: { children: ReactNode }) {
     return (
       <Centered>
         <div className="max-w-sm space-y-2">
-          <h1 className="text-base font-semibold">{expired ? 'Please sign in again' : 'Could not reach jobwright'}</h1>
-          <p className="text-sm text-muted-foreground">
+          <h1 className="text-heading">{expired ? 'Please sign in again' : 'Could not reach jobwright'}</h1>
+          <p className="text-body text-muted-foreground">
             {expired
               ? 'Your login session ended. Reload to get a new sign-in code by email.'
               : error?.message || 'The server did not respond.'}

@@ -101,6 +101,7 @@ Kanban hosting: [dashboard-hosting.md](dashboard-hosting.md) (`jobwright.parthch
 | `GET` / `PATCH` / `DELETE` / `PUT` / `POST` | `/api/admin/users[/{id}]`, `/api/admin/settings`, `/api/admin/watchdog`, `/api/admin/ops-test` | Admin only |
 | `GET` / `PUT` | `/api/settings`, `/profile`, `/searches`, `/resume.pdf` | Searches, base resume PDF |
 | `PUT` / `GET` / `DELETE` | `/api/settings/cover-letters`, `/cover-letters/{id}/pdf` | Cover letter example PDFs |
+| `GET` | `/api/settings/materials` | Base resume + cover samples only (job drawer; cached per session in `getBaseMaterials`) |
 
 PM2 process names: `jobwright-api`, `jobwright-ui`, `jobwright-tunnel`.
 

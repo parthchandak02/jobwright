@@ -69,7 +69,7 @@ export function JobMaterialsPreview({
   if (!active) {
     return (
       <div className="materials-preview-frame flex min-h-[10rem] items-center px-4 py-3">
-        <p className="text-sm text-muted-foreground">Nothing to preview yet.</p>
+        <p className="text-body text-muted-foreground">Nothing to preview yet.</p>
       </div>
     )
   }
@@ -148,7 +148,7 @@ export function JobMaterialsPreview({
               src={pdfViewerSrc(active.pdfUrl)}
             />
           ) : (
-            <p className="px-4 py-6 text-sm text-muted-foreground">
+            <p className="px-4 py-6 text-body text-muted-foreground">
               {active.emptyPdf ?? 'No PDF for this version.'}
             </p>
           )
@@ -159,7 +159,7 @@ export function JobMaterialsPreview({
             </ReactMarkdown>
           </div>
         ) : (
-          <p className="px-4 py-6 text-sm text-muted-foreground">
+          <p className="px-4 py-6 text-body text-muted-foreground">
             {active.emptyMarkdown ?? 'No markdown for this version.'}
           </p>
         )}

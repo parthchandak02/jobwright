@@ -2,12 +2,13 @@ import { useEffect, useState } from 'react'
 import { Loader2, Sparkles } from 'lucide-react'
 import { toast } from 'sonner'
 import { ScoreBadge } from '@/components/ScoreBadge'
+import { ScoreGrid } from '@/components/ScoreGrid'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Textarea } from '@/components/ui/textarea'
-import { apiFetch, jobPath } from '@/lib/api'
+import { clearRating, rateJob } from '@/lib/api'
 import { SCORE_LABEL, scoreLevel } from '@/lib/scoreColor'
 import { cn, errorMessage } from '@/lib/utils'
 
@@ -30,8 +31,6 @@ type Props = {
   label?: 'none' | 'short' | 'long'
   onSaved?: () => void
 }
-
-const SCORES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as const
 
 function aiReason(job: ScoreFields): string {
   return (job.reasoning || '').replace(/\s*\[[^\]]*\]\s*$/, '').trim()
@@ -61,13 +60,7 @@ export function ScoreEditor({ job, className, badgeClassName, label = 'short', o
     }
     setBusy(true)
     try {
-      await apiFetch(jobPath(job), {
-        method: 'PATCH',
-        body: JSON.stringify({
-          user_fit_score: draftScore,
-          user_score_rationale: rationale,
-        }),
-      })
+      await rateJob(job, draftScore, [], rationale)
       toast.success('Score updated')
       setOpen(false)
       onSaved?.()
@@ -81,10 +74,7 @@ export function ScoreEditor({ job, className, badgeClassName, label = 'short', o
   async function clearOverride() {
     setBusy(true)
     try {
-      await apiFetch(jobPath(job), {
-        method: 'PATCH',
-        body: JSON.stringify({ clear_user_score: true }),
-      })
+      await clearRating(job)
       toast.success('Back to the AI score')
       setOpen(false)
       onSaved?.()
@@ -138,29 +128,7 @@ export function ScoreEditor({ job, className, badgeClassName, label = 'short', o
 
         <div className="space-y-2">
           <Label className="text-label">Score</Label>
-          <div className="grid grid-cols-5 gap-1.5" role="radiogroup" aria-label="Score">
-            {SCORES.map((n) => {
-              const active = draftScore === n
-              return (
-                <button
-                  key={n}
-                  type="button"
-                  role="radio"
-                  aria-checked={active}
-                  disabled={busy}
-                  onClick={() => setDraftScore(n)}
-                  className={cn(
-                    'h-10 rounded-md border text-label tabular-nums transition-colors duration-(--dur-1) md:h-9',
-                    active
-                      ? 'border-primary bg-accent text-accent-foreground'
-                      : 'border-border bg-surface text-foreground hover:bg-surface-muted',
-                  )}
-                >
-                  {n}
-                </button>
-              )
-            })}
-          </div>
+          <ScoreGrid value={draftScore} onChange={setDraftScore} label="Score" disabled={busy} />
           {draftScore != null ? (
             <p className="text-caption text-muted-foreground">{SCORE_LABEL[scoreLevel(draftScore)]}</p>
           ) : null}

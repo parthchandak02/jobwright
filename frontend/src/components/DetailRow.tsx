@@ -10,7 +10,7 @@ type Props = {
 export function DetailRow({ label, value, className }: Props) {
   const display = value?.trim() || '—'
   return (
-    <div className={cn('grid grid-cols-[6.5rem_1fr] gap-x-3 gap-y-1 text-sm', className)}>
+    <div className={cn('grid grid-cols-[6.5rem_1fr] gap-x-3 gap-y-1 text-body', className)}>
       <dt className="text-muted-foreground">{label}</dt>
       <dd className="min-w-0 truncate text-foreground">{display}</dd>
     </div>

@@ -95,14 +95,8 @@ def _write_searches(data: dict) -> None:
     )
 
 
-@router.get("")
-def get_settings(request: Request) -> dict:
-    user_id = current_user_id(request)
-    user = get_user(user_id)
-    profile = _load_profile()
-    searches = _load_searches()
-    defaults = searches.get("defaults") or {}
-
+def _base_materials() -> dict:
+    """Base resume and cover letter samples (what the job drawer shows)."""
     resume_markdown = ""
     try:
         resume_markdown = load_resume_text()
@@ -111,7 +105,21 @@ def get_settings(request: Request) -> dict:
 
     pdf_path = config.RESUME_PDF_PATH
     has_pdf = pdf_path.is_file()
-    pdf_mtime = int(pdf_path.stat().st_mtime) if has_pdf else None
+    return {
+        "resume_markdown": resume_markdown,
+        "has_resume_pdf": has_pdf,
+        "resume_pdf_mtime": int(pdf_path.stat().st_mtime) if has_pdf else None,
+        "cover_letter_examples": _list_cover_letter_examples(),
+    }
+
+
+@router.get("")
+def get_settings(request: Request) -> dict:
+    user_id = current_user_id(request)
+    user = get_user(user_id)
+    profile = _load_profile()
+    searches = _load_searches()
+    defaults = searches.get("defaults") or {}
 
     display_name = (
         (user.name if user else None)
@@ -135,11 +143,14 @@ def get_settings(request: Request) -> dict:
             "hours_old": defaults.get("hours_old"),
             "results_per_site": defaults.get("results_per_site"),
         },
-        "resume_markdown": resume_markdown,
-        "has_resume_pdf": has_pdf,
-        "resume_pdf_mtime": pdf_mtime,
-        "cover_letter_examples": _list_cover_letter_examples(),
+        **_base_materials(),
     }
+
+
+@router.get("/materials")
+def get_base_materials() -> dict:
+    """Only the base materials, without profile or searches (job drawer)."""
+    return _base_materials()
 
 
 class ProfileSettings(BaseModel):

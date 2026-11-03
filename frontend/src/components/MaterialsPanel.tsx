@@ -8,7 +8,7 @@ import {
 } from '@/components/JobMaterialsPreview'
 import { RunProgressButton } from '@/components/RunProgressButton'
 import { RunProgressDialog } from '@/components/RunProgressDialog'
-import type { CoverLetterExample, SettingsData } from '@/lib/api'
+import { API_BASE, jobPath, type BaseMaterials, type CoverLetterExample } from '@/lib/api'
 import { RUN_STAGE_LABELS } from '@/lib/useAutoSearch'
 import { useTailorMaterials } from '@/lib/useTailorMaterials'
 import { cn } from '@/lib/utils'
@@ -26,7 +26,8 @@ export type MaterialsData = {
 
 type Props = {
   materials: MaterialsData | null
-  settings: SettingsData | null
+  /** Base resume + cover samples (`getBaseMaterials`, or the full settings). */
+  settings: BaseMaterials | null
   className?: string
   jobKey?: string
   onTailored?: () => void
@@ -165,7 +166,7 @@ export function JobResumeMaterials({
       : null
   const resumePdfUrl =
     jobKey && materials?.resume_pdf
-      ? `/api/jobs/${encodeURIComponent(jobKey)}/materials/resume.pdf`
+      ? `${API_BASE}${jobPath(jobKey)}/materials/resume.pdf`
       : null
 
   const views = useMemo<MaterialViewOption[]>(() => {
@@ -220,7 +221,7 @@ export function JobResumeMaterials({
           logDescription="Keyword pass on your base resume, then DOCX export. Closing this window does not stop the run."
         />
       ) : (
-        <p className="text-sm text-muted-foreground">Loading base resume…</p>
+        <p className="text-body text-muted-foreground">Loading base resume…</p>
       )}
     </div>
   )
@@ -242,7 +243,7 @@ export function JobCoverMaterials({
   const examples = settings?.cover_letter_examples ?? []
   const coverPdfUrl =
     jobKey && materials?.cover_pdf
-      ? `/api/jobs/${encodeURIComponent(jobKey)}/materials/cover.pdf`
+      ? `${API_BASE}${jobPath(jobKey)}/materials/cover.pdf`
       : null
 
   const views = useMemo<MaterialViewOption[]>(() => {
@@ -306,7 +307,7 @@ export function JobCoverMaterials({
           logDescription="Tweak a cover letter from your profile samples for this job, then DOCX export. Closing this window does not stop the run."
         />
       ) : (
-        <p className="text-sm text-muted-foreground">
+        <p className="text-body text-muted-foreground">
           No cover letter samples yet. Add PDFs on the Profile page.
         </p>
       )}
