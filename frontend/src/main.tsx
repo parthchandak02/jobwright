@@ -53,6 +53,7 @@ function AppRoutes() {
         <Route path="/profile" element={<App />} />
         <Route path="/quality" element={<App />} />
         <Route path="/admin" element={<App />} />
+        <Route path="/review" element={<App />} />
         <Route path="/jobs/:jobId" element={<App />} />
         <Route path="*" element={<App />} />
       </Routes>
