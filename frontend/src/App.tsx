@@ -4,6 +4,7 @@ import { CloudOff, Inbox, RefreshCw, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { BoardResponse, JobCard, STAGE_LABELS } from '@/lib/api'
 import { useBoard } from '@/lib/useBoard'
+import { reviewCount } from '@/lib/reviewQueue'
 import { cn } from '@/lib/utils'
 import { AppSidebar } from '@/components/AppSidebar'
 import { AutoSearchControls } from '@/components/AutoSearchControls'
@@ -27,6 +28,7 @@ import { ViewModeTabs, type ViewMode } from '@/components/ViewModeTabs'
 const ProfilePage = lazy(() => import('@/components/ProfilePage').then((m) => ({ default: m.ProfilePage })))
 const QualityPage = lazy(() => import('@/pages/QualityPage').then((m) => ({ default: m.QualityPage })))
 const AdminPage = lazy(() => import('@/pages/AdminPage').then((m) => ({ default: m.AdminPage })))
+const ReviewPage = lazy(() => import('@/pages/ReviewPage').then((m) => ({ default: m.ReviewPage })))
 
 const VIEW_KEY = 'jobwright-view'
 
@@ -47,12 +49,13 @@ function initialView(): ViewMode {
   return window.matchMedia('(max-width: 767px)').matches ? 'table' : 'board'
 }
 
-type Page = 'board' | 'profile' | 'quality' | 'admin'
+type Page = 'board' | 'profile' | 'quality' | 'admin' | 'review'
 
 function pageFor(pathname: string): Page {
   if (pathname.startsWith('/profile')) return 'profile'
   if (pathname.startsWith('/quality')) return 'quality'
   if (pathname.startsWith('/admin')) return 'admin'
+  if (pathname.startsWith('/review')) return 'review'
   return 'board'
 }
 
@@ -140,7 +143,7 @@ export default function App() {
   }
 
   function closeDrawer() {
-    navigate(`/${location.search}`)
+    navigate(params.get('from') === 'review' ? '/review' : `/${location.search}`)
   }
 
   // One predicate for both views: search plus "worth a look".
@@ -232,6 +235,10 @@ export default function App() {
             <Suspense fallback={<PageSkeleton />}>
               <AdminPage />
             </Suspense>
+          ) : page === 'review' ? (
+            <Suspense fallback={<PageSkeleton />}>
+              <ReviewPage board={board} profile={profile} failed={!loading && !board} onChanged={() => void refresh({ profile: true })} />
+            </Suspense>
           ) : (
             <div className={cn('flex min-w-0 flex-1 flex-col', drawerOpen && 'max-md:hidden')}>
               <StatusBanner />
@@ -246,6 +253,7 @@ export default function App() {
                 onOpenWhatsApp={openWhatsApp}
                 onAddJob={() => setShowAdd(true)}
                 onRunDone={() => void refresh({ profile: true, notify: true })}
+                reviewCount={reviewCount(board)}
               />
 
               <main className="min-h-0 flex-1 overflow-auto p-3 md:p-4">

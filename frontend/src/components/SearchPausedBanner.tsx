@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { PauseCircle } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { updateProfile, type Profile } from '@/lib/api'
@@ -52,6 +53,11 @@ export function SearchPausedBanner({ profile, onResumed, className }: Props) {
           {backlog.toLocaleString()} {backlog === 1 ? 'job' : 'jobs'} in Backlog
         </p>
       </div>
+      {backlog > 0 ? (
+        <Button asChild size="sm" variant="ghost" className="max-sm:hidden">
+          <Link to="/review">Review backlog</Link>
+        </Button>
+      ) : null}
       <Button type="button" size="sm" variant="secondary" disabled={busy} onClick={() => void resume()}>
         Resume
       </Button>

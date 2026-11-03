@@ -510,6 +510,9 @@ def api_response(method: str, path: str, state: dict):
         job, sub = JOB_BY_ID[m.group(1)], m.group(2) or ""
         if sub == "":
             return job
+        if sub == "/move":
+            # Stateless demo: answers on /review (and board moves) succeed without changing the fixtures.
+            return {"from_stage": job["funnel_stage"], "job": job}
         if sub == "/connections":
             return CONNECTIONS
         if sub == "/materials":

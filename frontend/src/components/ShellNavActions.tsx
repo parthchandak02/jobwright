@@ -1,4 +1,4 @@
-import { CircleUser, Gauge, Shield, type LucideIcon } from 'lucide-react'
+import { CircleUser, Gauge, Layers, Shield, type LucideIcon } from 'lucide-react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { SidebarActionButton } from '@/components/SidebarActionButton'
 import { ThemeToggle } from '@/components/ThemeToggle'
@@ -13,6 +13,7 @@ type ShellLink = {
 
 /** The app's page links below the stage list. Single source for the desktop sidebar and the phone menu. */
 export const SHELL_LINKS: ShellLink[] = [
+  { path: '/review', label: 'Quick review', icon: Layers },
   { path: '/quality', label: 'Match quality', icon: Gauge },
   { path: '/admin', label: 'Admin', icon: Shield, adminOnly: true },
   { path: '/profile', label: 'Profile & settings', icon: CircleUser },

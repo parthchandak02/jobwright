@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { Plus, Search } from 'lucide-react'
+import { Layers, Plus, Search } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -52,6 +53,8 @@ type Props = {
   onOpenWhatsApp: () => void
   onAddJob: () => void
   onRunDone: () => void
+  /** Unrated Backlog jobs; shows a "Review N" link to /review when above 0. */
+  reviewCount?: number
 }
 
 /** Sticky board header: title + count, view tabs, search, Auto Search, WhatsApp and Add job. */
@@ -66,6 +69,7 @@ export function BoardHeader({
   onOpenWhatsApp,
   onAddJob,
   onRunDone,
+  reviewCount = 0,
 }: Props) {
   // Phone: search opens over the header. Starts open when a shared link carries a search.
   const [searchOpen, setSearchOpen] = useState(() => Boolean(search))
@@ -116,6 +120,20 @@ export function BoardHeader({
             <Search />
           </Button>
 
+          {reviewCount > 0 ? (
+            <>
+              <Button asChild size="icon-sm" variant="ghost" className="md:hidden">
+                <Link to="/review" aria-label={`Review ${reviewCount} Backlog jobs`}>
+                  <Layers />
+                </Link>
+              </Button>
+              <Button asChild size="sm" variant="secondary" className="max-md:hidden" title="Go through Backlog jobs one at a time">
+                <Link to="/review">
+                  <Layers /> Review <Badge variant="secondary">{reviewCount}</Badge>
+                </Link>
+              </Button>
+            </>
+          ) : null}
           <AutoSearchControls onRunDone={onRunDone} />
 
           <Button

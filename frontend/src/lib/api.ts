@@ -587,6 +587,14 @@ export function clearRating(job: JobRef) {
   return apiFetch<JobCard>(jobPath(job), { method: 'PATCH', body: JSON.stringify({ clear_user_score: true }) })
 }
 
+/** Undo a quick-review answer: drop your rating and any close reason (the label history keeps a "cleared" row). */
+export function clearReview(job: JobRef) {
+  return apiFetch<JobCard>(jobPath(job), {
+    method: 'PATCH',
+    body: JSON.stringify({ clear_user_score: true, close_reason: '' }),
+  })
+}
+
 /** Save your private notes on a job. Notes are not shown on the board. */
 export function saveJobNotes(job: JobRef, notes: string) {
   return apiFetch<JobCard>(jobPath(job), { method: 'PATCH', body: JSON.stringify({ notes }) })
