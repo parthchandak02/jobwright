@@ -47,7 +47,7 @@ Reuse order: shadcn defaults → domain primitive → new token/class. Tailwind 
 | Menus | `DropdownMenu`, `DropdownMenuTrigger`, `DropdownMenuContent`, `DropdownMenuItem` (`variant="destructive"`), checkbox/radio items, label, separator. Use for "⋯" row actions, Remove, and chip move actions |
 | Tabs | `TabsList variant="underline"` for page-level navigation (44px, 2px accent indicator, horizontal scroll with edge fade, active tab scrolled into view). Default `pill` for small toggles (Board/Table, PDF/Markdown) |
 | Overlays | `Dialog` (`DialogContent size` `form` 480px / `picker` 640px / `wide`; bottom sheet under 640px with handle and safe area), `Sheet` (`side="bottom"` has handle + safe area), `Popover`, `Tooltip` (desktop extra only; never the only place for help) |
-| Loading | `Skeleton` |
+| Loading | `Skeleton`; `PageSkeleton` for lazy pages (settings layout), `BoardSkeleton` for the board. Never `fallback={null}` |
 | Counts / run-stage pills | `Badge` (`default`, `secondary`, `outline`, `success`, `warning`, `info`, `destructive`; tinted ones use `tone-tint`) |
 
 ### Shell and nav
@@ -57,11 +57,13 @@ Reuse order: shadcn defaults → domain primitive → new token/class. Tailwind 
 | Desktop rail (hover expand + click pin) | `AppSidebar` |
 | Stage filters | `SidebarNav` + `NavItem` (44px rows on phone) |
 | Profile / theme rows in the rail | `SidebarActionButton` |
-| Switch profile (admins: all) | `ProfileSwitcher` (reloads the app) |
+| Page links (Match quality, Admin for admins, Profile & settings, theme) | `ShellNavActions` + `SHELL_LINKS` (single source for `AppSidebar` and `MobileNav`) |
+| Crash fallback around routes and pages | `ErrorBoundary` (`resetKey`: route path or page) |
+| Switch profile (admins: all) | `ProfileSwitcher` (reloads the app); in the phone menu header and the desktop rail footer (folds away when collapsed) |
 | Identity gate (no profile → `/welcome`) | `AppGate` |
 | Last run / ops / WhatsApp bridge warning | `StatusBanner` |
 | 56px board header chrome | `BrandLogo` (`APP_SHELL_HEADER`); other pages use `PageHeader` |
-| Light / dark | `ThemeToggle` (`sidebar` vs icon) |
+| Light / dark / system | `ThemeToggle` (`sidebar` vs icon; cycles Light → Dark → System). `useTheme()` gives `theme` (resolved) and `preference`; new visitors follow the device |
 | Board vs table | `ViewModeTabs` (default pill `TabsList`) |
 
 ### Jobs
@@ -69,7 +71,7 @@ Reuse order: shadcn defaults → domain primitive → new token/class. Tailwind 
 | Use | Primitive |
 |-----|-----------|
 | Card / drawer job header | `JobSummary` |
-| Kanban card / DnD | `JobCardView` / `SortableJobCard` |
+| Kanban card / DnD | `KanbanBoard` (DndContext, mouse/touch/keyboard sensors, announcements) → `KanbanColumn` → `SortableJobCard` / `JobCardView`. Board data: `lib/useBoard.ts` |
 | Lane column | `KanbanColumn` (sets `--lane`) |
 | Status pills | `Chip` (icon-led, neutral by default; `tone` = CSS var for the `tone-tint` recipe, e.g. `--stage-applied`, `--destructive`, `--success`) |
 | Stage as chip | `StageBadge` |
@@ -193,8 +195,9 @@ Board, table and drawer are on v2. Keep these when editing them:
 - **Chips:** `jobChips(job, dealLabels)` in `JobMetaBadges.tsx` is the single priority list (alerts: posting closed, follow up, dealbreaker, location; then materials; then info). Cards show 2, the table title cell shows 1 alert/info, the Materials column shows materials only. Unknown work model and sponsorship are never shown as chips.
 - **Score:** `ScoreBadge` pill = number + plain meaning (`label` `short` "8 Strong", `long` "8 · Strong match", `none`), tinted `--success` (7+), `--warning` (5–6), neutral (≤4, unscored). Levels and words live in `lib/scoreColor.ts` (`scoreLevel`, `SCORE_LABEL`, `SCORE_SHORT`).
 - **Lanes:** `KanbanColumn` header = 8px `--lane` dot + uppercase `text-micro` label in `.lane-label` (the `tone-tint` 75% text mix) + muted count. Drop highlight uses `tone-tint` with `--tone: var(--lane)`. Empty lanes show a dashed box with the stage icon and per-stage copy (`EMPTY_COPY`); while dragging it says where the job will go.
+- **Order and keyboard:** card order in a lane is saved (`POST /api/board/reorder`, `position` on move). The sortable wrapper is the card's single Tab stop: Enter opens, Space lifts, arrows move (Up/Down in the lane, Left/Right to the next lane), Space drops, Escape cancels. Touch = long-press. On md+ lanes grow to share wide screens (17.5rem to 26rem); phones keep fixed 17.5rem lanes.
 - **Sidebar:** `NavItem` icons are neutral with a 6px `--lane` dot on the icon; lane labels uppercase in `.lane-label`, counts muted. First item is "All jobs".
-- **Header:** desktop = title + count, `ViewModeTabs`, search, then Auto Search / WhatsApp (count `Badge`) / Add job, all `secondary`. Phone = one 56px row (menu, title + count, search icon that expands the field, Auto Search, WhatsApp with count dot, add). Board/Table toggle and sort/filters sit in a sticky toolbar under it (`JobsTable toolbarStart`). Sticky rows inside `main` use `-top-3` because `main` has `p-3`.
+- **Header** (`BoardHeader`; stage filter and search live in the URL, `?stage=` / `?q=`): desktop = title + count, `ViewModeTabs`, search, then Auto Search / WhatsApp (count `Badge`) / Add job, all `secondary`. Phone = one 56px row (menu, title + count, search icon that expands the field, Auto Search, WhatsApp with count dot, add). Board/Table toggle and sort/filters sit in a sticky toolbar under it (`JobsTable toolbarStart`). Sticky rows inside `main` use `-top-3` because `main` has `p-3`.
 - **Table:** `.surface` container, `bg-surface-muted` head, whole row clickable and the title cell is a real `<button>` (Enter / Space, announced with the company), filters via column popovers (desktop) or bottom `Sheet` (phone, `FiltersSheet` with autocomplete); parts live in `components/jobs-table/`, active filters as `ValueChip`s, empty states via `EmptyState`.
 - **Drawer:** top-down: header (title, company · place) → decision summary (`.surface`: `MatchExplanation` score pill, confidence, reasoning, dealbreakers/concerns/level as plain sentences; duplicate/closed line; `RateJob`) → follow-up callout → actions → Stage (`StagePicker`: Title Case pills with a lane dot, current = `tone-tint`) → Details (`DetailGrid`) → Job description (markdown, collapsed with "Show full description") → Resume / Cover letter → Who you know there → Notes (`SaveStatus`) → History. Actions: Prepare (`ai`) when no materials before applying, Open posting (`primary` once materials exist before applying, else `secondary`), I applied (`secondary`), Not for me / Close job (`ghost`). Phone: the same actions as a sticky bottom bar (icon over label, 56px, lead action keeps its variant, others ghost). `DrawerSection` wraps `SectionHeader as="h3"`. From 1440px the sheet widens (88vw) into two scrolling columns: summary, actions, Stage, Details, people, Notes, History on the left; Job description and Resume / Cover letter on the right. Notes autosave does not refetch the board (only board-visible changes call `onChanged`).
 - **Dialogs:** `DismissDialog` (radio cards, reasons via `ReasonChips`), `DailyBriefDialog` (Send now is `secondary` and asks "Send N jobs to <chat> now?" before posting).

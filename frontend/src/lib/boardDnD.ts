@@ -2,6 +2,8 @@ import {
   CollisionDetection,
   closestCorners,
   pointerWithin,
+  type ClientRect,
+  type KeyboardCoordinateGetter,
 } from '@dnd-kit/core'
 import { arrayMove } from '@dnd-kit/sortable'
 import type { BoardResponse, JobCard } from '@/lib/api'
@@ -100,5 +102,48 @@ export function reorderWithinColumn(
       ...board.columns,
       [stage]: arrayMove(items, oldIndex, newIndex),
     },
+  }
+}
+
+/**
+ * Arrow keys for a keyboard drag on the board: Up/Down step through the
+ * current lane, Left/Right jump to the neighbouring visible lane (to the card
+ * at about the same height, or the empty lane). The default sortable getter
+ * picks the geometrically closest droppable, which on this board can be the
+ * next card in the same lane for Left/Right (the lifted card is tilted).
+ */
+export function createBoardKeyboardCoordinates(getBoard: () => BoardResponse | null): KeyboardCoordinateGetter {
+  return (event, { context }) => {
+    const { active, over, collisionRect, droppableRects } = context
+    const code = event.code
+    if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(code)) return undefined
+    event.preventDefault()
+    const board = getBoard()
+    if (!board || !active || !collisionRect) return undefined
+
+    const overId = String(over?.id ?? active.id)
+    const stage = findJobStage(overId, board.stages, board.columns)
+    if (!stage) return undefined
+    const lane = (board.columns[stage] || []).filter((job) => droppableRects.has(job.url))
+    let target: { left: number; top: number } | undefined
+
+    if (code === 'ArrowUp' || code === 'ArrowDown') {
+      const idx = lane.findIndex((job) => job.url === overId)
+      if (idx === -1) return undefined
+      const next = lane[code === 'ArrowDown' ? idx + 1 : idx - 1]
+      target = next ? droppableRects.get(next.url) : undefined
+    } else {
+      const shown = board.stages.filter((s) => droppableRects.has(s))
+      const nextStage = shown[shown.indexOf(stage) + (code === 'ArrowRight' ? 1 : -1)]
+      if (!nextStage) return undefined
+      let best: ClientRect | undefined
+      for (const job of board.columns[nextStage] || []) {
+        if (job.url === active.id) continue
+        const rect = droppableRects.get(job.url)
+        if (rect && (!best || Math.abs(rect.top - collisionRect.top) < Math.abs(best.top - collisionRect.top))) best = rect
+      }
+      target = best || droppableRects.get(nextStage)
+    }
+    return target ? { x: target.left, y: target.top } : undefined
   }
 }

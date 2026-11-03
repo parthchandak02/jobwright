@@ -16,7 +16,7 @@ type Props = {
   isDragging?: boolean
   searching?: boolean
   onOpen: (job: JobCard) => void
-  onScoreSaved?: () => void
+  onScoreSaved?: (job: JobCard) => void
 }
 
 const EMPTY_COPY: Record<string, { title: string; body: string }> = {
@@ -27,6 +27,12 @@ const EMPTY_COPY: Record<string, { title: string; body: string }> = {
   offer: { title: 'No offers yet', body: 'Offers you get will show up here.' },
   closed: { title: 'Nothing closed', body: 'Jobs you pass on or hear back about end up here.' },
 }
+
+/**
+ * Phone and narrow screens: fixed 17.5rem lanes that scroll sideways. md+: lanes share the
+ * spare width on wide screens (never below 17.5rem, capped so cards don't get too wide).
+ */
+export const LANE_WIDTH = 'flex w-[17.5rem] shrink-0 flex-col md:w-auto md:max-w-[26rem] md:min-w-[17.5rem] md:flex-1'
 
 export function KanbanColumn({
   stage,
@@ -51,7 +57,7 @@ export function KanbanColumn({
     <section
       aria-label={`${label}, ${jobs.length} job${jobs.length === 1 ? '' : 's'}`}
       style={{ '--lane': lane, '--tone': lane } as CSSProperties}
-      className="flex w-[17.5rem] shrink-0 flex-col"
+      className={LANE_WIDTH}
     >
       <header className="flex h-8 items-center gap-2 px-1.5">
         <span aria-hidden className="size-2 shrink-0 rounded-full bg-(--lane)" />
@@ -69,7 +75,13 @@ export function KanbanColumn({
       >
         <SortableContext items={jobs.map((j) => j.url)} strategy={verticalListSortingStrategy}>
           {jobs.map((job) => (
-            <SortableJobCard key={job.url} job={job} stage={stage} onOpen={onOpen} onScoreSaved={onScoreSaved} />
+            <SortableJobCard
+              key={job.url}
+              job={job}
+              stage={stage}
+              onOpen={onOpen}
+              onScoreSaved={onScoreSaved ? () => onScoreSaved(job) : undefined}
+            />
           ))}
         </SortableContext>
         {jobs.length === 0 ? (

@@ -128,6 +128,7 @@ def _row_to_card(row, followup_days: int | None = None) -> dict:
         "notes": d.get("notes"),
         "board_updated_by": d.get("board_updated_by"),
         "board_updated_at": d.get("board_updated_at"),
+        "board_position": d.get("board_position"),
         "has_resume": generated_material_exists(
             d.get("tailored_resume_path"), d.get("tailored_resume_docx_path")
         ),
@@ -142,6 +143,53 @@ def _row_to_card(row, followup_days: int | None = None) -> dict:
 
 CLOSED_ON_BOARD = 150
 
+# Default lane order before hand placement: best match first (open lanes),
+# most recently touched first (closed).
+_OPEN_ORDER = "ORDER BY COALESCE(user_fit_score, fit_score) DESC NULLS LAST, discovered_at DESC"
+_CLOSED_ORDER = "ORDER BY COALESCE(board_updated_at, discovered_at) DESC"
+
+
+def _by_position(items: list, position) -> list:
+    """Stable sort: unplaced (NULL position) cards keep the default order on top,
+    hand-placed cards follow in their saved order."""
+    return sorted(items, key=lambda it: (position(it) is not None, position(it) or 0))
+
+
+def _lane_urls(conn, stage: str) -> list[str]:
+    """Every url in a lane, in the order the board shows it."""
+    if stage == "closed":
+        sql = f"SELECT url, board_position FROM jobs WHERE funnel_stage = 'closed' {_CLOSED_ORDER}"
+        rows = conn.execute(sql).fetchall()
+    else:
+        sql = (
+            "SELECT url, board_position FROM jobs WHERE COALESCE(funnel_stage, 'backlog') = ? "
+            f"{_OPEN_ORDER}"
+        )
+        rows = conn.execute(sql, (stage,)).fetchall()
+    return [r["url"] for r in _by_position(rows, lambda r: r["board_position"])]
+
+
+def _save_lane_order(conn, stage: str, first: list[str]) -> list[str]:
+    """Number a lane 0..n-1: ``first`` (urls in this lane) on top in that order,
+    every other card in the lane after it in its current order.
+
+    Only ``board_position`` is written: a hand reorder is not a lane change, so
+    ``board_updated_by`` (the agent's anti-clobber flag) is left alone.
+    """
+    lane = _lane_urls(conn, stage)
+    in_lane = set(lane)
+    head: list[str] = []
+    for url in first:
+        if url in in_lane and url not in head:
+            head.append(url)
+    taken = set(head)
+    order = head + [u for u in lane if u not in taken]
+    conn.executemany(
+        "UPDATE jobs SET board_position = ? WHERE url = ?",
+        [(i, url) for i, url in enumerate(order)],
+    )
+    return order
+
 
 @router.get("/board")
 def get_board() -> dict:
@@ -153,11 +201,10 @@ def get_board() -> dict:
     rows = conn.execute(
         f"SELECT *, {LAST_CHANGE_SQL} AS last_stage_at FROM jobs "
         "WHERE COALESCE(funnel_stage, 'backlog') != 'closed' "
-        "ORDER BY COALESCE(user_fit_score, fit_score) DESC NULLS LAST, discovered_at DESC"
+        f"{_OPEN_ORDER}"
     ).fetchall()
     closed = conn.execute(
-        "SELECT * FROM jobs WHERE funnel_stage = 'closed' "
-        "ORDER BY COALESCE(board_updated_at, discovered_at) DESC LIMIT ?",
+        f"SELECT * FROM jobs WHERE funnel_stage = 'closed' {_CLOSED_ORDER} LIMIT ?",
         (CLOSED_ON_BOARD,),
     ).fetchall()
     closed_total = conn.execute("SELECT COUNT(*) FROM jobs WHERE funnel_stage = 'closed'").fetchone()[0]
@@ -166,12 +213,44 @@ def get_board() -> dict:
         card = _row_to_card(row, days)
         stage = card["funnel_stage"] if card["funnel_stage"] in columns else "backlog"
         columns[stage].append(card)
+    for stage, cards in columns.items():
+        columns[stage] = _by_position(cards, lambda c: c["board_position"])
+    stage_counts = {stage: len(cards) for stage, cards in columns.items()}
+    stage_counts["closed"] = closed_total
     return {
         "stages": list(FUNNEL_STAGES),
         "columns": columns,
         "total": sum(len(v) for v in columns.values()),
         "closed_total": closed_total,
+        "stage_counts": stage_counts,
     }
+
+
+class ReorderBody(BaseModel):
+    stage: str
+    job_ids: list[str]
+
+
+@router.post("/board/reorder")
+def reorder_lane(body: ReorderBody) -> dict:
+    """Save the hand-made card order of one lane (top first).
+
+    ``job_ids`` are job ids (or urls). Keys not in ``stage`` are ignored (the
+    card may have moved meanwhile); cards in the lane that are not listed keep
+    their relative order below the listed ones.
+    """
+    if body.stage not in FUNNEL_STAGES:
+        raise HTTPException(400, f"Invalid stage: {body.stage}")
+    conn = get_connection()
+    urls: list[str] = []
+    for key in body.job_ids:
+        try:
+            urls.append(resolve_job_key(key))
+        except HTTPException:
+            continue
+    order = _save_lane_order(conn, body.stage, urls)
+    conn.commit()
+    return {"stage": body.stage, "job_ids": [job_id_for_url(u) for u in order]}
 
 
 @router.get("/jobs/by-id/{job_id}")
@@ -189,6 +268,9 @@ class MoveBody(BaseModel):
     outcome: str | None = None
     close_reason: str | None = None
     reasons: list[str] | None = None
+    # Index in the target lane (0 = top). Omitted: the card goes to the top of
+    # the unplaced cards (default order).
+    position: int | None = None
 
 
 @router.post("/jobs/{url:path}/move")
@@ -234,6 +316,10 @@ def move_job(url: str, body: MoveBody) -> dict:
             "apply_status = CASE WHEN apply_status = 'applied' THEN NULL ELSE apply_status END WHERE url = ?",
             (url,),
         )
+    if body.position is not None:
+        lane = [u for u in _lane_urls(conn, body.to_stage) if u != url]
+        lane.insert(max(0, min(body.position, len(lane))), url)
+        _save_lane_order(conn, body.to_stage, lane)
     if body.to_stage == "closed":
         reasons = [r.strip() for r in (body.reasons or []) if r and r.strip()]
         reason_text = (body.close_reason or "").strip() or ", ".join(reasons)

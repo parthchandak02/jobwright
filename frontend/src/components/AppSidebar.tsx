@@ -1,11 +1,11 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { CircleUser } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { BrandLogo, APP_SHELL_HEADER_HEIGHT } from '@/components/BrandLogo'
-import { SidebarActionButton } from '@/components/SidebarActionButton'
+import { ProfileSwitcher } from '@/components/ProfileSwitcher'
+import { ShellNavActions } from '@/components/ShellNavActions'
 import { SidebarNav } from '@/components/SidebarNav'
-import { ThemeToggle } from '@/components/ThemeToggle'
 import { BoardResponse, Profile } from '@/lib/api'
+import { useMe } from '@/lib/me'
 import { cn } from '@/lib/utils'
 
 const HOVER_OPEN_MS = 80
@@ -16,12 +16,8 @@ type Props = {
   board: BoardResponse | null
   filterStage: string | 'all'
   onFilterStage: (stage: string | 'all') => void
-  profileActive: boolean
-  onOpenProfile: () => void
   /** Unpin when a job drawer opens (more room for the board). */
   jobOpen?: boolean
-  /** Extra footer rows (e.g. Match quality, Admin). */
-  extraActions?: ReactNode
 }
 
 export function AppSidebar({
@@ -29,17 +25,21 @@ export function AppSidebar({
   board,
   filterStage,
   onFilterStage,
-  profileActive,
-  onOpenProfile,
   jobOpen = false,
-  extraActions,
 }: Props) {
   const [pinned, setPinned] = useState(false)
   const [hovered, setHovered] = useState(false)
+  // Keep the panel open while the profile menu (a portal outside the sidebar) is open.
+  const [switcherOpen, setSwitcherOpen] = useState(false)
+  const { me } = useMe()
+  // With several profiles the switcher shows the name, so the link says what it opens.
+  const manyProfiles = (me?.profiles.length ?? 0) > 1
+  const profileLabel = manyProfiles ? undefined : profile?.name || profile?.user_id || 'Profile'
+
   const rootRef = useRef<HTMLElement>(null)
   const openTimer = useRef(0)
   const closeTimer = useRef(0)
-  const expanded = pinned || hovered
+  const expanded = pinned || hovered || switcherOpen
 
   function clearTimers() {
     window.clearTimeout(openTimer.current)
@@ -138,14 +138,17 @@ export function AppSidebar({
           onFilterStage={onFilterStage}
         />
         <div className="mt-auto flex w-[var(--sidebar-panel)] shrink-0 flex-col gap-0.5 border-t border-sidebar-border p-2">
-          {extraActions}
-          <SidebarActionButton
-            active={profileActive}
-            icon={CircleUser}
-            label={profile?.name || profile?.user_id || 'Profile'}
-            onClick={onOpenProfile}
-          />
-          <ThemeToggle variant="sidebar" />
+          {/* Profile switcher (several profiles only): folds away in the icon rail. */}
+          {manyProfiles ? (
+            <div className="grid grid-rows-[0fr] transition-[grid-template-rows] duration-(--dur-2) ease-out group-data-[expanded=false]:-mb-0.5 group-data-[expanded=true]:grid-rows-[1fr]">
+              <div className="sidebar-label min-h-0">
+                <div className="p-0.5 pb-1.5">
+                  <ProfileSwitcher className="w-full" onOpenChange={setSwitcherOpen} />
+                </div>
+              </div>
+            </div>
+          ) : null}
+          <ShellNavActions profileLabel={profileLabel} />
         </div>
       </aside>
     </>

@@ -6,6 +6,8 @@ type Props = {
   label: string
   onClick: () => void
   active?: boolean
+  /** Tooltip; defaults to the label. */
+  title?: string
 }
 
 export function SidebarActionButton({
@@ -13,12 +15,14 @@ export function SidebarActionButton({
   label,
   onClick,
   active = false,
+  title,
 }: Props) {
   return (
     <button
       type="button"
       onClick={onClick}
       aria-label={label}
+      title={title}
       aria-current={active ? 'page' : undefined}
       className={cn(
         'flex w-full items-center gap-2 rounded-md px-3 py-2 text-body transition-colors duration-(--dur-1) hover:bg-sidebar-accent/60 max-md:min-h-11',

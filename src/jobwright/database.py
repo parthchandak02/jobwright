@@ -377,6 +377,9 @@ _ALL_COLUMNS: dict[str, str] = {
     "first_response_at": "TEXT",
     "board_updated_by": "TEXT",
     "board_updated_at": "TEXT",
+    # Human card order within a lane (0 = top). NULL = not placed by hand: those
+    # cards sit above placed ones in the default order. Cleared on lane change.
+    "board_position": "INTEGER",
     # WhatsApp daily notify
     "whatsapp_notified_at": "TEXT",
     # Identity / dedupe (indexed; see backfill_job_ids and discovery.dedupe)
@@ -540,6 +543,9 @@ def advance_funnel(
         "board_updated_at = ?",
     ]
     params: list = [to_stage, actor, now]
+    if from_stage != to_stage:
+        # A hand-placed position only means something inside its old lane.
+        sets.append("board_position = NULL")
     if applied_manually is not None:
         sets.append("applied_manually = ?")
         params.append(1 if applied_manually else 0)

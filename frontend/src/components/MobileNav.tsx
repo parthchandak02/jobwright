@@ -1,14 +1,11 @@
 import { createContext, useContext, useMemo, useState, type ReactNode } from 'react'
-import { CircleUser, Gauge, Menu, Shield } from 'lucide-react'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { Menu } from 'lucide-react'
 import { ProfileSwitcher } from '@/components/ProfileSwitcher'
-import { SidebarActionButton } from '@/components/SidebarActionButton'
+import { ShellNavActions } from '@/components/ShellNavActions'
 import { SidebarNav } from '@/components/SidebarNav'
-import { ThemeToggle } from '@/components/ThemeToggle'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import type { BoardResponse, Profile } from '@/lib/api'
-import { useMe } from '@/lib/me'
 import { cn } from '@/lib/utils'
 
 type MobileNavState = { open: boolean; setOpen: (open: boolean) => void }
@@ -55,15 +52,8 @@ type Props = {
 /** The phone navigation sheet: stages, Match quality, Admin (admins), Profile, theme. Render once in the app shell. */
 export function MobileNav({ profile, board, filterStage, onFilterStage }: Props) {
   const nav = useMobileNav()
-  const navigate = useNavigate()
-  const { pathname } = useLocation()
-  const { me } = useMe()
   if (!nav) return null
   const close = () => nav.setOpen(false)
-  const go = (path: string) => {
-    navigate(path)
-    close()
-  }
 
   return (
     <Sheet open={nav.open} onOpenChange={nav.setOpen}>
@@ -84,27 +74,7 @@ export function MobileNav({ profile, board, filterStage, onFilterStage }: Props)
           }}
         />
         <div className="mt-auto flex flex-col gap-0.5 border-t border-border p-2 pb-[calc(0.5rem+var(--safe-bottom))]">
-          <SidebarActionButton
-            active={pathname.startsWith('/quality')}
-            icon={Gauge}
-            label="Match quality"
-            onClick={() => go('/quality')}
-          />
-          {me?.is_admin ? (
-            <SidebarActionButton
-              active={pathname.startsWith('/admin')}
-              icon={Shield}
-              label="Admin"
-              onClick={() => go('/admin')}
-            />
-          ) : null}
-          <SidebarActionButton
-            active={pathname.startsWith('/profile')}
-            icon={CircleUser}
-            label="Profile & settings"
-            onClick={() => go('/profile')}
-          />
-          <ThemeToggle variant="sidebar" />
+          <ShellNavActions onNavigate={close} />
         </div>
       </SheetContent>
     </Sheet>
