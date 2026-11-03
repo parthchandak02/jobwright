@@ -14,6 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea'
 import type { Dealbreaker, MatchCriteria } from '@/lib/api'
 import { cn } from '@/lib/utils'
+import { slugify } from '@/lib/slug'
 
 type Props = {
   value: MatchCriteria
@@ -33,10 +34,6 @@ const THRESHOLDS: { value: number; label: string }[] = [
   { value: 8, label: '8 and up · fewer, closer fits' },
   { value: 9, label: '9 and up · only the closest fits' },
 ]
-
-function slugify(text: string): string {
-  return text.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 32) || 'rule'
-}
 
 function Group({ title, description, compact, children }: { title: string; description?: string; compact?: boolean; children: ReactNode }) {
   if (compact) return <div className="space-y-field">{children}</div>

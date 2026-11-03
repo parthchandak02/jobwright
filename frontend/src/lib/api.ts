@@ -31,7 +31,15 @@ async function toApiError(res: Response): Promise<ApiError> {
   return new ApiError(detail, res.status, code)
 }
 
+/** Writes to these change the base resume / cover samples (or whose they are). */
+const BASE_MATERIALS_WRITES = /^\/(settings|session|onboarding)(\/|$|\?)/
+
+function noteWrite(path: string, method: string | undefined) {
+  if (method && method.toUpperCase() !== 'GET' && BASE_MATERIALS_WRITES.test(path)) invalidateBaseMaterials()
+}
+
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  noteWrite(path, init?.method)
   const res = await fetch(`${API_BASE}${path}`, {
     ...init,
     credentials: 'include',
@@ -45,6 +53,7 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
 }
 
 async function sendForm<T>(path: string, body: FormData, method: 'PUT' | 'POST'): Promise<T> {
+  noteWrite(path, method)
   const res = await fetch(`${API_BASE}${path}`, { method, credentials: 'include', body })
   if (!res.ok) throw await toApiError(res)
   return res.json() as Promise<T>
@@ -190,6 +199,36 @@ export type SettingsData = {
   has_resume_pdf: boolean
   resume_pdf_mtime: number | null
   cover_letter_examples: CoverLetterExample[]
+}
+
+/** The part of /settings the job drawer needs (GET /api/settings/materials). */
+export type BaseMaterials = Pick<
+  SettingsData,
+  'resume_markdown' | 'has_resume_pdf' | 'resume_pdf_mtime' | 'cover_letter_examples'
+>
+
+const BASE_MATERIALS_TTL_MS = 5 * 60_000
+let baseMaterialsCache: { at: number; promise: Promise<BaseMaterials> } | null = null
+
+/**
+ * Base resume + cover letter samples, cached for the session so opening job
+ * after job does not refetch them. Any settings, session or onboarding write
+ * clears the cache; it also expires after a few minutes (edits in another tab).
+ */
+export function getBaseMaterials(): Promise<BaseMaterials> {
+  const now = Date.now()
+  if (baseMaterialsCache && now - baseMaterialsCache.at < BASE_MATERIALS_TTL_MS) return baseMaterialsCache.promise
+  const promise = apiFetch<BaseMaterials>('/settings/materials')
+  const entry = { at: now, promise }
+  baseMaterialsCache = entry
+  promise.catch(() => {
+    if (baseMaterialsCache === entry) baseMaterialsCache = null
+  })
+  return promise
+}
+
+export function invalidateBaseMaterials() {
+  baseMaterialsCache = null
 }
 
 export const STAGE_LABELS: Record<string, string> = {
@@ -529,15 +568,24 @@ export type StageHistoryEntry = { from_stage: string | null; to_stage: string; a
 export const getJobHistory = (job: JobCard) =>
   apiFetch<{ history: StageHistoryEntry[] }>(`${jobPath(job)}/history`)
 
-export function rateJob(job: Pick<JobCard, 'job_id' | 'url'>, score: number, reasons: string[], note?: string) {
+type JobRef = Pick<JobCard, 'url'> & { job_id?: string | null }
+
+/** Set your 1-10 rating for a job (appends a label). Needs a reason chip or a note. */
+export function rateJob(job: JobRef, score: number, reasons: string[], note?: string) {
   return apiFetch<JobCard>(jobPath(job), {
     method: 'PATCH',
     body: JSON.stringify({ user_fit_score: score, user_score_reasons: reasons, user_score_rationale: note || '' }),
   })
 }
 
-export function clearRating(job: JobCard) {
+/** Remove your rating; the job goes back to the AI score. */
+export function clearRating(job: JobRef) {
   return apiFetch<JobCard>(jobPath(job), { method: 'PATCH', body: JSON.stringify({ clear_user_score: true }) })
+}
+
+/** Save your private notes on a job. Notes are not shown on the board. */
+export function saveJobNotes(job: JobRef, notes: string) {
+  return apiFetch<JobCard>(jobPath(job), { method: 'PATCH', body: JSON.stringify({ notes }) })
 }
 
 export function moveJob(

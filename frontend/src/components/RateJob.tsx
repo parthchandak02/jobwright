@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Loader2, RotateCcw, ThumbsDown, ThumbsUp } from 'lucide-react'
 import { toast } from 'sonner'
 import { ReasonChips } from '@/components/ReasonChips'
+import { ScoreGrid } from '@/components/ScoreGrid'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { clearRating, rateJob, type JobCard } from '@/lib/api'
@@ -137,25 +138,14 @@ export function RateJob({ job, onRated, className }: Props) {
           />
           <div className="space-y-2">
             <p className="text-caption text-muted-foreground">Exact score (optional)</p>
-            <div className="grid grid-cols-10 gap-1 md:flex md:gap-1.5" role="radiogroup" aria-label="Exact score">
-              {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => (
-                <button
-                  key={n}
-                  type="button"
-                  role="radio"
-                  aria-checked={precise === n}
-                  onClick={() => setPrecise(precise === n ? null : n)}
-                  className={cn(
-                    'h-10 rounded-md border text-caption tabular-nums transition-colors duration-(--dur-1) md:h-8 md:w-8',
-                    precise === n
-                      ? 'border-primary bg-accent font-medium text-accent-foreground'
-                      : 'border-border bg-surface text-muted-foreground hover:text-foreground',
-                  )}
-                >
-                  {n}
-                </button>
-              ))}
-            </div>
+            <ScoreGrid
+              value={precise}
+              onChange={setPrecise}
+              label="Exact score"
+              density="compact"
+              allowDeselect
+              disabled={busy}
+            />
           </div>
           <div className="flex gap-2">
             <Button type="button" size="sm" disabled={busy} onClick={() => void submit(mode === 'up' ? UP_SCORE : DOWN_SCORE)}>

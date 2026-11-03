@@ -13,6 +13,7 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import type { Dealbreaker, MatchCriteria, OnboardingDraft } from '@/lib/api'
+import { slugify } from '@/lib/slug'
 import { Disclosure, MutedList } from './parts'
 import { WelcomeStep } from './WelcomeShell'
 
@@ -22,10 +23,6 @@ type Props = {
   busy: boolean
   onBack: () => void
   onContinue: () => void
-}
-
-function slugify(text: string): string {
-  return text.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 32) || 'rule'
 }
 
 const CUTOFFS: { value: number; label: string }[] = [

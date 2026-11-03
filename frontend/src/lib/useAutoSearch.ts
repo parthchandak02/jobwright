@@ -1,6 +1,7 @@
 import { toast } from 'sonner'
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { listRuns, startRun, stopRun, type RunHandle, type RunRecord } from '@/lib/api'
+import { useCallback, useEffect, useRef } from 'react'
+import { listRuns, startRun, type RunHandle, type RunRecord } from '@/lib/api'
+import { useRunTracker, type AutoSearch } from '@/lib/useRunStream'
 import { errorMessage } from '@/lib/utils'
 
 /** Every stage a run can report, in order (a run uses a subset). */
@@ -27,35 +28,7 @@ export const RUN_STAGE_LABELS: Record<string, string> = {
   connect: 'Connections',
 }
 
-export type AutoSearchState =
-  | 'idle'
-  | 'starting'
-  | 'running'
-  | 'finished'
-  | 'failed'
-  | 'error'
-
-export type AutoSearch = {
-  state: AutoSearchState
-  active: boolean
-  handle: RunHandle | null
-  log: string
-  rc: number | null
-  stages: string[]
-  currentStage: string | null
-  completedCount: number
-  /** 0..1 approximate progress across the stage list. */
-  progress: number
-  elapsedMs: number
-  stopping: boolean
-  start: (arg?: unknown) => void
-  stop: () => Promise<void>
-}
-
-function parseRC(line: string): number | null {
-  const m = line.match(/RC=(-?\d+)/)
-  return m ? Number(m[1]) : null
-}
+export type { AutoSearch, AutoSearchState } from '@/lib/useRunStream'
 
 /** Format ms as m:ss (or h:mm:ss past an hour). */
 export function formatElapsed(ms: number): string {
@@ -87,123 +60,24 @@ function isAutoSearchRun(r: RunRecord): boolean {
 /**
  * Owns a single Auto Search pipeline run. Kept at the App level so the header
  * button and the dialog observe the same live run: progress, elapsed time, and
- * logs survive the dialog being closed and reopened. Progress is derived from
- * the verbose pipeline log (`STAGE: <name>` and `Stage '<name>' completed`).
- * Polls GET /api/runs so a run started from another tab or from the API/CLI
- * still shows as running on this dashboard.
+ * logs survive the dialog being closed and reopened. Streaming and progress
+ * come from `useRunTracker`. Polls GET /api/runs so a run started from another
+ * tab or from the API/CLI still shows as running on this dashboard.
  */
 export function useAutoSearch(onDone: () => void): AutoSearch {
-  const [state, setState] = useState<AutoSearchState>('idle')
-  const [handle, setHandle] = useState<RunHandle | null>(null)
-  const [log, setLog] = useState('')
-  const [rc, setRc] = useState<number | null>(null)
-  const [currentStage, setCurrentStage] = useState<string | null>(null)
-  const [completedCount, setCompletedCount] = useState(0)
-  const [elapsedMs, setElapsedMs] = useState(0)
-  const [stopping, setStopping] = useState(false)
-
-  const startedAtRef = useRef<number | null>(null)
   const onDoneRef = useRef(onDone)
-  const esRef = useRef<EventSource | null>(null)
-  const stoppedRef = useRef(false)
-  const handleRef = useRef<RunHandle | null>(null)
+  const run = useRunTracker({ onDone: () => onDoneRef.current(), fallbackStages: FULL_PIPELINE })
+  const { state, stopping, begin, attach, fail, finish } = run
+  const handleRef = useRef(run.handle)
   const stateRef = useRef(state)
   onDoneRef.current = onDone
-  handleRef.current = handle
+  handleRef.current = run.handle
   stateRef.current = state
 
-  const runId = handle?.run_id ?? null
-  const active = state === 'starting' || state === 'running'
-
-  // Tick the elapsed timer once per second while a run is active.
-  useEffect(() => {
-    if (!active || startedAtRef.current == null) return
-    const id = window.setInterval(() => {
-      if (startedAtRef.current != null) {
-        setElapsedMs(Date.now() - startedAtRef.current)
-      }
-    }, 500)
-    return () => window.clearInterval(id)
-  }, [active])
-
-  // Stream logs and derive stage progress.
-  useEffect(() => {
-    if (!runId) return
-    const es = new EventSource(`/api/stream/${runId}`)
-    esRef.current = es
-
-    const handleLine = (line: string) => {
-      const startM = line.match(/STAGE:\s*([a-z_]+)/)
-      if (startM) setCurrentStage(startM[1])
-      if (/Stage '([a-z_]+)' completed/.test(line)) {
-        setCompletedCount((c) => c + 1)
-      }
-      if (line.includes('done RC=')) {
-        const parsed = parseRC(line)
-        setRc(parsed)
-        setState(stoppedRef.current || (parsed !== null && parsed !== 0) ? 'failed' : 'finished')
-      }
-    }
-
-    let flushTimer: number | null = null
-    let pending = ''
-    const flushLog = () => {
-      flushTimer = null
-      if (!pending) return
-      const chunk = pending
-      pending = ''
-      setLog((prev) => prev + chunk)
-    }
-    es.onmessage = (ev) => {
-      pending += ev.data + '\n'
-      handleLine(ev.data)
-      if (flushTimer == null) {
-        flushTimer = window.setTimeout(flushLog, 200)
-      }
-    }
-    es.addEventListener('done', (ev) => {
-      if (flushTimer != null) window.clearTimeout(flushTimer)
-      flushLog()
-      es.close()
-      if (esRef.current === es) esRef.current = null
-      const parsed = parseRC((ev as MessageEvent).data || '')
-      setState((prev) => {
-        if (prev === 'finished' || prev === 'failed') return prev
-        if (stoppedRef.current) return 'failed'
-        const code = parsed ?? 0
-        setRc(code)
-        return code === 0 ? 'finished' : 'failed'
-      })
-      onDoneRef.current()
-    })
-    es.onerror = () => {
-      es.close()
-      if (esRef.current === es) esRef.current = null
-      setState((prev) => {
-        if (stoppedRef.current) return 'failed'
-        if (prev === 'finished' || prev === 'failed') return prev
-        return 'error'
-      })
-    }
-    return () => {
-      if (flushTimer != null) window.clearTimeout(flushTimer)
-      es.close()
-      if (esRef.current === es) esRef.current = null
-    }
-  }, [runId])
-
-  const adopt = useCallback((r: RunRecord) => {
-    stoppedRef.current = false
-    const started = Date.parse(r.started_at) || Date.now()
-    startedAtRef.current = started
-    setElapsedMs(Math.max(0, Date.now() - started))
-    setRc(null)
-    setLog('')
-    setCurrentStage(null)
-    setCompletedCount(0)
-    setHandle(handleFromRecord(r))
-    setState('running')
-  }, [])
+  const adopt = useCallback(
+    (r: RunRecord) => attach(handleFromRecord(r), Date.parse(r.started_at) || Date.now()),
+    [attach],
+  )
 
   // Pick up runs started from another tab, CLI, or the API (including after refresh).
   useEffect(() => {
@@ -218,13 +92,10 @@ export function useAutoSearch(onDone: () => void): AutoSearch {
         if (!live) {
           // API restart (or process exit) drops SSE before `done`. Stop the
           // header timer instead of sitting on "Starting" forever.
-          if (st === 'running') {
-            setState('finished')
-          }
+          if (st === 'running') finish()
           return
         }
-        const current = handleRef.current?.run_id
-        const attached = current === live.run_id && st === 'running'
+        const attached = handleRef.current?.run_id === live.run_id && st === 'running'
         if (!attached) adopt(live)
       } catch {
         /* polling is best-effort */
@@ -236,18 +107,11 @@ export function useAutoSearch(onDone: () => void): AutoSearch {
       cancelled = true
       window.clearInterval(id)
     }
-  }, [adopt, stopping])
+  }, [adopt, finish, stopping])
 
   const start = useCallback(() => {
     if (state === 'starting' || state === 'running') return
-    stoppedRef.current = false
-    setState('starting')
-    setLog('')
-    setRc(null)
-    setCurrentStage(null)
-    setCompletedCount(0)
-    setElapsedMs(0)
-    startedAtRef.current = Date.now()
+    begin()
     void (async () => {
       try {
         const existing = (await listRuns()).find((r) => r.running && isAutoSearchRun(r))
@@ -255,63 +119,27 @@ export function useAutoSearch(onDone: () => void): AutoSearch {
           adopt(existing)
           return
         }
-        const res = await startRun([], { min_score: 7, workers: 2 })
-        setHandle(res)
-        setState('running')
+        attach(await startRun([], { min_score: 7, workers: 2 }))
       } catch (e) {
         toast.error(errorMessage(e))
-        setState('error')
+        fail()
       }
     })()
-  }, [state, adopt])
-
-  const stop = useCallback(async () => {
-    if (!runId) {
-      toast.error('No run to stop yet')
-      return
-    }
-    stoppedRef.current = true
-    esRef.current?.close()
-    esRef.current = null
-    setStopping(true)
-    try {
-      const res = await stopRun(runId)
-      toast.success(res.stopped ? 'Run stopped' : 'Stop requested (process may still be winding down)')
-      setRc(res.returncode)
-      setState('failed')
-    } catch (e) {
-      toast.error(errorMessage(e))
-      // Keep failed so the UI does not look like the run is still going.
-      setState('failed')
-    } finally {
-      setStopping(false)
-    }
-  }, [runId])
-
-  const runStages = handle?.stages?.length ? handle.stages : [...FULL_PIPELINE]
-  const total = runStages.length
-  const done = Math.min(completedCount, total)
-  // Give partial credit for the stage currently running so the bar advances
-  // between completions instead of sitting still through a long stage.
-  const partial = active && currentStage && done < total ? 0.4 : 0
-  const progress =
-    state === 'finished'
-      ? 1
-      : Math.max(0, Math.min(1, (done + partial) / total))
+  }, [state, adopt, attach, begin, fail])
 
   return {
     state,
-    active,
-    handle,
-    log,
-    rc,
-    stages: runStages,
-    currentStage,
-    completedCount: done,
-    progress,
-    elapsedMs,
+    active: run.active,
+    handle: run.handle,
+    log: run.log,
+    rc: run.rc,
+    stages: run.stages,
+    currentStage: run.currentStage,
+    completedCount: run.completedCount,
+    progress: run.progress,
+    elapsedMs: run.elapsedMs,
     stopping,
     start,
-    stop,
+    stop: run.stop,
   }
 }

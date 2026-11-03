@@ -1,7 +1,7 @@
-import { useEffect, useState, type CSSProperties } from 'react'
-import { AlertTriangle, ChevronDown, X } from 'lucide-react'
+import { useCallback, useEffect, useState, type CSSProperties } from 'react'
+import { AlertTriangle, ChevronDown, RefreshCw, X } from 'lucide-react'
 import { getStatus, type AppStatus } from '@/lib/api'
-import { cn } from '@/lib/utils'
+import { cn, errorMessage } from '@/lib/utils'
 
 const DISMISS_KEY = 'jobwright-status-dismissed'
 
@@ -35,12 +35,56 @@ export function StatusBanner() {
   const [status, setStatus] = useState<AppStatus | null>(null)
   const [open, setOpen] = useState(false)
   const [dismissed, setDismissed] = useState<string | null>(() => sessionStorage.getItem(DISMISS_KEY))
+  const [error, setError] = useState('')
+  const [errorDismissed, setErrorDismissed] = useState(false)
+  const [retrying, setRetrying] = useState(false)
 
-  useEffect(() => {
+  const load = useCallback(() => {
+    setRetrying(true)
     void getStatus()
-      .then(setStatus)
-      .catch(() => undefined)
+      .then((st) => {
+        setStatus(st)
+        setError('')
+      })
+      .catch((e) => setError(errorMessage(e)))
+      .finally(() => setRetrying(false))
   }, [])
+
+  useEffect(load, [load])
+
+  if (error && !status) {
+    if (errorDismissed) return null
+    return (
+      <div
+        role="status"
+        style={{ '--tone': 'var(--warning)' } as CSSProperties}
+        className="tone-tint border-x-0 border-t-0 border-b px-4 py-2 text-caption"
+      >
+        <div className="flex items-center gap-3">
+          <AlertTriangle className="size-4 shrink-0" aria-hidden />
+          <span className="min-w-0 flex-1 text-foreground" title={error}>
+            Couldn't check the last search and WhatsApp status.
+          </span>
+          <button
+            type="button"
+            onClick={load}
+            disabled={retrying}
+            className="touch-target relative flex items-center gap-1 font-medium hover:underline disabled:opacity-50"
+          >
+            <RefreshCw className={cn('size-3.5', retrying && 'animate-spin')} aria-hidden /> Try again
+          </button>
+          <button
+            type="button"
+            aria-label="Dismiss"
+            onClick={() => setErrorDismissed(true)}
+            className="touch-target relative rounded-md p-0.5 hover:bg-current/10"
+          >
+            <X className="size-4" />
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   const s = status ? summarize(status) : null
   const key = status ? `${status.last_run?.finished_at}|${status.health?.at}|${status.whatsapp_bridge}` : ''

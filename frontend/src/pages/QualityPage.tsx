@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
-import { Gauge, Lightbulb, Loader2, RefreshCw, SlidersHorizontal, ThumbsUp } from 'lucide-react'
+import { AlertTriangle, Gauge, Lightbulb, Loader2, RefreshCw, SlidersHorizontal, ThumbsUp } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import { EmptyState } from '@/components/EmptyState'
@@ -282,6 +282,7 @@ export function QualityPage() {
   const [q, setQ] = useState<QualitySummary | null>(null)
   const [loadError, setLoadError] = useState('')
   const [criteria, setCriteria] = useState<CriteriaState>(null)
+  const [criteriaError, setCriteriaError] = useState('')
   const [handle, setHandle] = useState<RunHandle | null>(null)
   const [runTitle, setRunTitle] = useState('')
   const [busy, setBusy] = useState(false)
@@ -293,9 +294,13 @@ export function QualityPage() {
     void getQuality()
       .then(setQ)
       .catch((e) => setLoadError(errorMessage(e)))
+    setCriteriaError('')
     void getCriteria()
       .then(setCriteria)
-      .catch(() => setCriteria(null))
+      .catch((e) => {
+        setCriteria(null)
+        setCriteriaError(errorMessage(e))
+      })
   }, [])
 
   useEffect(load, [load])
@@ -417,6 +422,18 @@ export function QualityPage() {
                     We find {ofTen(m.recall)} of the jobs you'd want.
                   </span>
                 </p>
+                {criteriaError ? (
+                  <p role="alert" className="flex flex-wrap items-center gap-x-3 gap-y-1 text-caption text-muted-foreground">
+                    <AlertTriangle className="size-4 shrink-0 text-warning" aria-hidden />
+                    <span className="min-w-0 flex-1">
+                      Couldn't load your match rules ({criteriaError}), so the cutoff shown may be out of date and can't
+                      be changed here.
+                    </span>
+                    <Button size="sm" variant="ghost" onClick={load}>
+                      <RefreshCw /> Try again
+                    </Button>
+                  </p>
+                ) : null}
                 {rec ? (
                   <Recommendation
                     rec={rec}

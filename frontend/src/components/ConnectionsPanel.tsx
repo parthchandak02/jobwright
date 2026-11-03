@@ -4,7 +4,7 @@ import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { apiFetch } from '@/lib/api'
+import { apiFetch, jobPath } from '@/lib/api'
 import { errorMessage } from '@/lib/utils'
 
 export type ConnectionContact = {
@@ -169,7 +169,7 @@ export function ConnectionsPanel({ jobKey, connections, onChanged }: Props) {
   async function addFromSearch(contact: SearchResult) {
     setBusy(true)
     try {
-      await apiFetch(`/jobs/${encodeURIComponent(jobKey)}/connections`, {
+      await apiFetch(`${jobPath(jobKey)}/connections`, {
         method: 'POST',
         body: JSON.stringify({
           first_name: contact.first_name,
@@ -195,7 +195,7 @@ export function ConnectionsPanel({ jobKey, connections, onChanged }: Props) {
   async function addFromUrl() {
     setBusy(true)
     try {
-      await apiFetch(`/jobs/${encodeURIComponent(jobKey)}/connections`, {
+      await apiFetch(`${jobPath(jobKey)}/connections`, {
         method: 'POST',
         body: JSON.stringify({
           url: profileUrl.trim(),
@@ -217,7 +217,7 @@ export function ConnectionsPanel({ jobKey, connections, onChanged }: Props) {
     setRemovingId(contactId)
     try {
       await apiFetch(
-        `/jobs/${encodeURIComponent(jobKey)}/connections/${encodeURIComponent(contactId)}`,
+        `${jobPath(jobKey)}/connections/${encodeURIComponent(contactId)}`,
         { method: 'DELETE' },
       )
       onChanged()

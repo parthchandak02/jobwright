@@ -12,7 +12,7 @@ Do not dump every component or every CSS value here. If a pattern is missing, re
 | shadcn / Radix | `components/ui/` | Button, Input, Textarea, Select, Checkbox, Switch, Segmented, Tabs, Dialog, Sheet, Popover, DropdownMenu, Tooltip, Badge, Skeleton, … |
 | Domain | `components/` (not `ui/`) | Product layout |
 | Pages | `App.tsx` (board), `ProfilePage` ("Settings", `/profile`), `JobDrawer`, `pages/` (`WelcomePage`, `QualityPage`, `AdminPage`) | Composition only; page sections live in `components/welcome/`, `components/profile/`, `components/admin/` |
-| Data / identity | `lib/api.ts` (typed API), `lib/me.tsx` (`MeProvider` / `useMe`: login, admin, profiles), `lib/reasons.ts`, `lib/useRunStream.ts` | Shared hooks; no page-local fetch wrappers |
+| Data / identity | `lib/api.ts` (typed API), `lib/me.tsx` (`MeProvider` / `useMe`: login, admin, profiles), `lib/reasons.ts`, `lib/useRunStream.ts` (`useRunTracker` is the one SSE run follower; `useRunStream`, `useAutoSearch`, `useTailorMaterials` build on it), `lib/slug.ts` (`slugify` rule ids), `getBaseMaterials()` (session-cached `GET /api/settings/materials`) | Shared hooks; no page-local fetch wrappers |
 
 New UI must use the primitives below; do not add page-local headers, save indicators, chips, confirm dialogs or tab bars.
 
@@ -68,7 +68,7 @@ Reuse order: shadcn defaults → domain primitive → new token/class. Tailwind 
 
 | Use | Primitive |
 |-----|-----------|
-| Card / drawer job header | `JobSummary` (uses `JobCardLayout` slots) |
+| Card / drawer job header | `JobSummary` |
 | Kanban card / DnD | `JobCardView` / `SortableJobCard` |
 | Lane column | `KanbanColumn` (sets `--lane`) |
 | Status pills | `Chip` (icon-led, neutral by default; `tone` = CSS var for the `tone-tint` recipe, e.g. `--stage-applied`, `--destructive`, `--success`) |
@@ -76,6 +76,7 @@ Reuse order: shadcn defaults → domain primitive → new token/class. Tailwind 
 | Work model / key chips | `WorkModelBadge` (+ `workModelLabel`), `JobKeyChips` / `jobChips` (`JobMetaBadges.tsx`) |
 | Meta rows (`Label: NA`) | `MetaField` |
 | Fit score (number + plain meaning) | `ScoreBadge` (`label`) / `ScoreEditor` (`lib/scoreColor.ts`) |
+| 1–10 score picker (radiogroup: arrows, Home/End, roving tabindex) | `ScoreGrid` (`density` `comfortable` 5×2 / `compact` one row; `allowDeselect` for optional scores). Save with `rateJob` / `clearRating` from `lib/api.ts` |
 | Why this score (gates, fit, confidence, reasoning) | `MatchExplanation` |
 | One-tap relevance rating (thumbs + reasons → label) | `RateJob` |
 | Multi-select reason pills | `ReasonChips` (options from `lib/reasons.ts`, merged with the user's dealbreakers) |
@@ -86,7 +87,7 @@ Reuse order: shadcn defaults → domain primitive → new token/class. Tailwind 
 
 | Use | Primitive |
 |-----|-----------|
-| Drawer section chrome | `DrawerSection` |
+| Drawer section chrome | `DrawerSection`; drawer parts live in `components/drawer/` (`MatchCard`, `JobDetails`, `JobNotes` + `useJobNotes`, `JobHistory`, `DrawerActions` / `PhoneActionBar`, `usePrepareMaterials`, `useJobDrawerData`) |
 | Per-job resume/cover + Auto/Custom Tailor | `JobResumeMaterials`, `JobCoverMaterials`, `JobMaterialsPreview` |
 | Profile documents (resume row, cover letter list with drop zone, preview on demand) | `ProfileMaterials` + `ResumePreview` (PDF / Text `Segmented`, "Open PDF" link; phones default to Text) |
 | Live pipeline / tailor logs | `RunProgressDialog` + `RunProgressButton`; attach to a started run with `useRunStream` |
@@ -132,7 +133,7 @@ Reuse order: shadcn defaults → domain primitive → new token/class. Tailwind 
 | Collapsed-by-default page section with aria-expanded header | `CollapsibleSection` (`AdminsAlertsSection`, `AiUsageSection`) |
 | Status / time / usage / chat-name formatting | `adminFormat.ts` (`personStatus`, `STATUS_LABEL`, `fmtLastBrief`, `fmtUsage`, `chatDisplay`, `reportAccessSync`) |
 | Debounced save that flushes on unmount | `lib/useDebouncedCallback.ts` (600ms default) |
-| Table vs card / sheet switch | `useMediaQuery` (`useSyncExternalStore` over `matchMedia`) |
+| Table vs card / sheet switch | `useMediaQuery` in `lib/` (`useSyncExternalStore` over `matchMedia`) |
 
 ### Buttons
 
@@ -145,14 +146,14 @@ Hierarchy: one `primary` per view; `secondary` for ordinary actions; `ghost` for
 | Family | Tokens / classes |
 |--------|------------------|
 | Neutrals | `--background`, `--surface`, `--surface-muted`, `--foreground`, `--muted-foreground`, `--subtle-foreground` (placeholder/disabled only), `--border`, `--border-strong` (= `--input`); `--card` / `--popover` / `--secondary` / `--muted` alias them |
-| Accent + semantic | `--primary` (indigo, hue 262), `--accent` / `--accent-foreground` (selected tint), `--ring`, `--destructive`, `--success`, `--warning`, `--overlay`, `--pill-active` |
+| Accent + semantic | `--primary` (indigo, hue 262), `--accent` / `--accent-foreground` (selected tint), `--ring`, `--destructive` (+ `--destructive-foreground` for text on it), `--success`, `--warning`, `--overlay`, `--pill-active` |
 | Tints | `tone-tint` utility + `--tone` (10% fill, 22% border, 75% text mix, mixed `in oklab` so white surfaces don't shift the hue); used by `Chip tone`, `Badge`, score pills, stage pills; `.lane-label` = the text mix for `--lane` |
 | Stages | `--stage-backlog/prepare/applied/in-progress/offer/closed` (softened chroma); runtime `--lane`; `.lane-card` = 7% tint; `--tone-neutral` (`--query-daily` / `--query-weekly` alias it) |
 | Type | `text-display` 28, `text-title` 22, `text-heading` 17, `text-subheading` 15, `text-body` 15 phone / 14 desktop, `text-label` 14/500, `text-caption` 13, `text-micro` 12 (floor); `--font-sans` = system stack |
 | Spacing / layout | `space-y-field` (20px), `mt-section` (40/32px), `px-page-x` (32/16px), `pt-page-top` (40/20px), `max-w-form` (720px), `max-w-wide` (960px), `max-w-welcome` (560px), `--safe-bottom` |
 | Radius | `--radius` 10px; `rounded-md` 8px (controls), `rounded-lg` / `rounded-xl` 12px (cards, dialogs), `rounded-popover` 10px (menus), `rounded-2xl` sheet tops, `rounded-full` chips |
-| Elevation | `shadow-e1`, `shadow-e2`; `.surface`, `.surface-muted`. `.glass`, `.glass-strong`, `.glass-interactive` are migration aliases (flat surface, no blur, no hover lift) |
-| Motion | `ease-out` (`--ease-glass` alias), `duration-(--dur-1)` 120ms / `--dur-2` 180ms / `--dur-3` 240ms; global `prefers-reduced-motion` rule |
+| Elevation | `shadow-e1`, `shadow-e2`; `.surface`, `.surface-muted` |
+| Motion | `ease-out`, `duration-(--dur-1)` 120ms / `--dur-2` 180ms / `--dur-3` 240ms; global `prefers-reduced-motion` rule |
 | Utilities | `touch-target` (44px hit area on phone or coarse pointers; element needs `relative`), `scrollbar-none`, `.scroll-fade-x` |
 | Job card / table / sidebar | `--job-card-*`, `.job-card-*`, `--jobs-table-*`, `.jobs-table*`, `--sidebar-rail` 3.5rem, `--sidebar-panel` 14rem, `.sidebar-label` |
 | Brand | `--linkedin*`, `.connections-*` (brand icons and small accents only), `--whatsapp` (icon only). `--tailor*` now alias the accent (no separate purple family) |
@@ -194,6 +195,6 @@ Board, table and drawer are on v2. Keep these when editing them:
 - **Lanes:** `KanbanColumn` header = 8px `--lane` dot + uppercase `text-micro` label in `.lane-label` (the `tone-tint` 75% text mix) + muted count. Drop highlight uses `tone-tint` with `--tone: var(--lane)`. Empty lanes show a dashed box with the stage icon and per-stage copy (`EMPTY_COPY`); while dragging it says where the job will go.
 - **Sidebar:** `NavItem` icons are neutral with a 6px `--lane` dot on the icon; lane labels uppercase in `.lane-label`, counts muted. First item is "All jobs".
 - **Header:** desktop = title + count, `ViewModeTabs`, search, then Auto Search / WhatsApp (count `Badge`) / Add job, all `secondary`. Phone = one 56px row (menu, title + count, search icon that expands the field, Auto Search, WhatsApp with count dot, add). Board/Table toggle and sort/filters sit in a sticky toolbar under it (`JobsTable toolbarStart`). Sticky rows inside `main` use `-top-3` because `main` has `p-3`.
-- **Table:** `.surface` container, `bg-surface-muted` head, rows focusable (Enter opens), filters via column popovers (desktop) or bottom `Sheet` (phone, `FiltersPanel` with autocomplete), active filters as `ValueChip`s, empty states via `EmptyState`.
-- **Drawer:** top-down: header (title, company · place) → decision summary (`.surface`: `MatchExplanation` score pill, confidence, reasoning, dealbreakers/concerns/level as plain sentences; duplicate/closed line; `RateJob`) → follow-up callout → actions → Stage (`StagePicker`: Title Case pills with a lane dot, current = `tone-tint`) → Details (`DetailGrid`) → Job description (markdown, collapsed with "Show full description") → Resume / Cover letter → Who you know there → Notes (`SaveStatus`) → History. Actions: Prepare (`ai`) when no materials before applying, Open posting (`primary` once materials exist before applying, else `secondary`), I applied (`secondary`), Not for me / Close job (`ghost`). Phone: the same actions as a sticky bottom bar (icon over label, 56px, lead action keeps its variant, others ghost). `DrawerSection` wraps `SectionHeader as="h3"`.
+- **Table:** `.surface` container, `bg-surface-muted` head, whole row clickable and the title cell is a real `<button>` (Enter / Space, announced with the company), filters via column popovers (desktop) or bottom `Sheet` (phone, `FiltersSheet` with autocomplete); parts live in `components/jobs-table/`, active filters as `ValueChip`s, empty states via `EmptyState`.
+- **Drawer:** top-down: header (title, company · place) → decision summary (`.surface`: `MatchExplanation` score pill, confidence, reasoning, dealbreakers/concerns/level as plain sentences; duplicate/closed line; `RateJob`) → follow-up callout → actions → Stage (`StagePicker`: Title Case pills with a lane dot, current = `tone-tint`) → Details (`DetailGrid`) → Job description (markdown, collapsed with "Show full description") → Resume / Cover letter → Who you know there → Notes (`SaveStatus`) → History. Actions: Prepare (`ai`) when no materials before applying, Open posting (`primary` once materials exist before applying, else `secondary`), I applied (`secondary`), Not for me / Close job (`ghost`). Phone: the same actions as a sticky bottom bar (icon over label, 56px, lead action keeps its variant, others ghost). `DrawerSection` wraps `SectionHeader as="h3"`. From 1440px the sheet widens (88vw) into two scrolling columns: summary, actions, Stage, Details, people, Notes, History on the left; Job description and Resume / Cover letter on the right. Notes autosave does not refetch the board (only board-visible changes call `onChanged`).
 - **Dialogs:** `DismissDialog` (radio cards, reasons via `ReasonChips`), `DailyBriefDialog` (Send now is `secondary` and asks "Send N jobs to <chat> now?" before posting).
