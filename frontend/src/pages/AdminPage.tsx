@@ -50,6 +50,7 @@ const PATCH_FIELDS: Record<keyof AdminUserPatch, UserFields[]> = {
   human_gate: ['human_gate'],
   weekly_summary: ['weekly_summary'],
   followup_days: ['followup_days'],
+  search_enabled: ['search_enabled'],
 }
 
 function applyPatch(u: AdminOverviewUser, p: AdminUserPatch): AdminOverviewUser {
@@ -68,6 +69,7 @@ function applyPatch(u: AdminOverviewUser, p: AdminUserPatch): AdminOverviewUser 
   if (p.human_gate !== undefined) next.human_gate = p.human_gate
   if (p.weekly_summary !== undefined) next.weekly_summary = p.weekly_summary
   if (p.followup_days !== undefined) next.followup_days = p.followup_days
+  if (p.search_enabled !== undefined) next.search_enabled = p.search_enabled
   return next
 }
 

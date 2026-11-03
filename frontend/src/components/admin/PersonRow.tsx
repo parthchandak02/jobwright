@@ -61,16 +61,19 @@ function ChatText({ u }: { u: AdminOverviewUser }) {
   )
 }
 
+const searchPaused = (u: AdminOverviewUser) => u.setup_complete && u.search_enabled === false
+
 function secondLine(u: AdminOverviewUser): { text: string; className: string } {
   const status = personStatus(u)
   if (status !== 'ok' && status !== 'none') return { text: STATUS_LABEL[status], className: STATUS_TEXT[status] }
+  if (searchPaused(u)) return { text: 'Search paused', className: 'text-muted-foreground' }
   return { text: u.emails[0] ?? 'No login email', className: 'text-muted-foreground' }
 }
 
 function rowLabel(u: AdminOverviewUser): string {
   const status = STATUS_LABEL[personStatus(u)]
   const chat = chatDisplay(u.whatsapp?.name, u.whatsapp?.target, u.whatsapp?.type)?.label ?? 'no chat yet'
-  const parts = [u.name, status, `chat ${chat}`]
+  const parts = [u.name, status, ...(searchPaused(u) ? ['search paused'] : []), `chat ${chat}`]
   if (u.setup_complete) {
     parts.push(
       `sends at ${fmtTime(u.hour, u.minute)}`,
@@ -159,7 +162,9 @@ function CardRow({ user: u, onToggle }: Props) {
   const chat = chatDisplay(u.whatsapp?.name, u.whatsapp?.target, u.whatsapp?.type)
   const meta = pending
     ? [chat?.label ?? 'No chat yet']
-    : [chat?.label ?? 'No chat yet', fmtTime(u.hour, u.minute), fmtTopN(u.brief_top_n)]
+    : searchPaused(u)
+      ? ['Search paused', chat?.label ?? 'No chat yet']
+      : [chat?.label ?? 'No chat yet', fmtTime(u.hour, u.minute), fmtTopN(u.brief_top_n)]
 
   return (
     <li className="min-w-0">

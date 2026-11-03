@@ -73,6 +73,7 @@ flowchart TD
 | Dedupe and tombstones | A cross-board `dedupe_key` (company, title, place) merges reposts; pruned or duplicate jobs are tombstoned so they never come back |
 | Scoring v2 | One structured call per job against your match rules plus the 12 most similar rated jobs; code caps a dealbreaker or bad location at 3, pay below your floor at 4, unknown location at 6 |
 | Daily list | One WhatsApp message per day with new jobs above your cutoff, a "worth a look" count just under it, and up to 3 due follow-ups |
+| Pause the search | "Keep looking for new jobs" (Settings, Daily list; per person, on by default). Turn it off to stop the daily search while you work through a big backlog: no new jobs are found or sent, follow-up reminders still arrive, and the board shows a banner with a one-tap Resume |
 | Match explanation and ratings | Score, confidence and reasons per job; thumbs up/down and "Not for me" with reasons become labels for future scoring |
 | Match quality | `/quality` shows how often the scorer agreed with you and offers a one-tap cutoff change; `jobwright eval` reports precision and recall |
 | Tailored materials | Resume and cover letter per job from your base resume and examples, exported as DOCX (optional PDF); a validator blocks resumes that fail checks |
@@ -197,7 +198,7 @@ A normal day for a job seeker:
 | `cover-letter/examples/` | Style and tone for cover letters |
 | `connections.csv` (optional) | LinkedIn export for per-job connections |
 
-**Registry** `users/users.yaml`: each profile's login `emails`, `whatsapp_target`, `schedule`, `human_gate` (review-first, on for new profiles), `brief_top_n` (10 for new profiles), `weekly_summary`, `followup_days`, `apply_enabled`; top-level `admins` and `ops_target`.
+**Registry** `users/users.yaml`: each profile's login `emails`, `whatsapp_target`, `schedule`, `human_gate` (review-first, on for new profiles), `brief_top_n` (10 for new profiles), `weekly_summary`, `followup_days`, `search_enabled` (default true; false pauses the daily search), `apply_enabled`; top-level `admins` and `ops_target`.
 
 **Environment** (one gitignored `.env` at the repo root, shared by all profiles; full commented list in [.env.example](.env.example)):
 

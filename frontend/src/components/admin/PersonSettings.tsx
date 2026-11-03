@@ -192,6 +192,17 @@ export function PersonSettings({ user: u, id, onPatch, onOpen, layout = 'inline'
           </div>
         ) : (
           <>
+            <SwitchRow
+              id={`${id}-search`}
+              label="Keep looking for new jobs"
+              hint={
+                u.search_enabled === false
+                  ? `Paused · ${u.counts?.backlog ?? 0} in Backlog. Follow-up reminders still go out.`
+                  : 'Turn off to pause the daily search while they work through their list.'
+              }
+              checked={u.search_enabled !== false}
+              onChange={(search_enabled) => onPatch({ search_enabled })}
+            />
             <div className="grid grid-cols-2 gap-x-4 gap-y-field sm:grid-cols-3">
               <FormField label="Sends at" htmlFor={`${id}-time`}>
                 <Input

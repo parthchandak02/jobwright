@@ -147,7 +147,8 @@ def test_overview_shape_with_broken_profile(console):
     assert ann["whatsapp"] == {"target": ANN_GROUP, "name": "Ann - Job Applications", "type": "group"}
     assert (ann["hour"], ann["minute"], ann["schedule_label"]) == (6, 0, "Every day at 6:00 AM")
     assert ann["notify_threshold"] == 7 and ann["recommended_threshold"] == 6
-    assert ann["counts"] == {"new_7d": 2, "sent_7d": 1, "applied_total": 1, "open": 2, "followups_due": 1}
+    assert ann["counts"] == {"new_7d": 2, "sent_7d": 1, "applied_total": 1, "open": 2, "backlog": 0,
+                             "followups_due": 1}
     assert ann["cost_30d"] == {"tokens": 150, "cost_usd": 0.5}
     assert ann["brief_cron"] is True and ann["error"] is None
     assert bo["health"]["level"] == "fail" and "profile.json" in bo["health"]["lines"][0]
@@ -257,3 +258,29 @@ def test_run_starts_in_user_context(console, monkeypatch):
         info = runs_mod._runs.pop(handle["run_id"], None)
         if info:
             info["proc"].wait(timeout=10)
+
+
+def test_search_enabled_read_write_and_permissions(console):
+    from jobwright.users import get_user
+
+    client, h, _ = console
+    ann, boss = h("ann@example.com"), h("boss@example.com")
+    assert client.get("/api/profile", headers=ann).json()["search_enabled"] is True
+    res = client.put("/api/profile", json={"search_enabled": False}, headers=ann)
+    assert res.status_code == 200, res.text
+    assert res.json()["search_enabled"] is False and get_user("ann").search_enabled is False
+    assert get_user("bo").search_enabled is True
+    # A non-admin cannot reach someone else's profile, directly or via the admin route.
+    assert client.post("/api/session", json={"user_id": "bo"}, headers=ann).status_code == 403
+    assert client.patch("/api/admin/users/bo", json={"search_enabled": False}, headers=ann).status_code == 403
+    assert get_user("bo").search_enabled is True
+    # Admins toggle anyone and see it in the overview.
+    res = client.patch("/api/admin/users/bo", json={"search_enabled": False}, headers=boss)
+    assert res.status_code == 200, res.text
+    assert res.json()["user"]["search_enabled"] is False and get_user("bo").search_enabled is False
+    rows = {u["user_id"]: u for u in client.get("/api/admin/overview", headers=boss).json()["users"]}
+    assert rows["ann"]["search_enabled"] is False and rows["bo"]["search_enabled"] is False
+    users = {u["user_id"]: u for u in client.get("/api/admin/users", headers=boss).json()["users"]}
+    assert users["bo"]["search_enabled"] is False
+    client.put("/api/profile", json={"search_enabled": True}, headers=ann)
+    assert get_user("ann").search_enabled is True

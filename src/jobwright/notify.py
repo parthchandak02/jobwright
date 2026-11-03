@@ -10,6 +10,9 @@ Two formats:
     with deep links, plus a note that materials are generated after approval.
 
 The notify list is capped to the user's ``brief_top_n`` (default 0 = uncapped).
+When the person paused the search (``search_enabled: false``) the scheduled
+notify sends no job list, only due follow-ups, and only when that set changed
+since the last follow-up-only message (``logs/followup_notice.json``).
 After each send a ``brief_items`` snapshot is recorded in the
 scoreboard so precision (% advanced) can be tracked per brief.
 """
@@ -29,7 +32,7 @@ from jobwright.database import (
     mark_whatsapp_notified,
 )
 from jobwright.followups import format_followups
-from jobwright.users import get_brief_top_n, get_human_gate, get_user
+from jobwright.users import get_brief_top_n, get_human_gate, get_user, is_search_enabled
 from jobwright.whatsapp import bold, italic
 
 
@@ -265,7 +268,78 @@ def send_via_hermes(message: str, target: str) -> None:
         )
 
 
-def run_notify(dry_run: bool = False) -> dict:
+FOLLOWUP_NOTICE_FILE = "followup_notice.json"
+
+
+def _followup_notice_path():
+    from pathlib import Path
+
+    import jobwright.config as config
+
+    return Path(config.LOG_DIR) / FOLLOWUP_NOTICE_FILE
+
+
+def _last_followup_notice() -> set[str]:
+    import json
+
+    try:
+        data = json.loads(_followup_notice_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return set()
+    return {str(j) for j in (data.get("job_ids") or [])}
+
+
+def _write_followup_notice(job_ids: list[str]) -> None:
+    import json
+
+    path = _followup_notice_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {"at": datetime.now().astimezone().isoformat(), "job_ids": job_ids}
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(payload), encoding="utf-8")
+    tmp.replace(path)
+
+
+def build_paused_followups_notification(followups: list[dict], base_url: str) -> str:
+    """Follow-up-only message for a profile whose new-job search is paused."""
+    return (format_followups(followups, base_url) + "\n\n"
+            + italic("New job search is paused. Turn it back on in Settings when you are ready."))
+
+
+def _run_paused_notify(conn, dry_run: bool, active: str | None) -> dict:
+    """Search paused: no job list; send due follow-ups only when something new is due."""
+    followups = followup_appendix(conn)
+    if not followups:
+        return {"sent": 0, "skipped": True, "reason": "search paused; no follow-ups due",
+                "jobs": [], "paused": True}
+    ids = [f["job_id"] for f in followups]
+    previous = _last_followup_notice()
+    if previous and set(ids) <= previous:
+        return {"sent": 0, "skipped": True, "reason": "search paused; follow-ups already sent",
+                "jobs": [], "paused": True}
+    message = build_paused_followups_notification(followups, public_base_url())
+    if dry_run:
+        return {"sent": 0, "skipped": False, "dry_run": True, "message": message, "jobs": [],
+                "followups": len(followups), "paused": True}
+    user = get_user(active) if active else None
+    target = user.whatsapp_target if user else ""
+    if not target:
+        raise ValueError(
+            f"No whatsapp_target configured for active user '{active}'. "
+            f"Set one with: jobwright users set {active or '<id>'} --whatsapp <target>"
+        )
+    # Mark first, then send; restore the previous marker if delivery fails.
+    _write_followup_notice(ids)
+    try:
+        send_via_hermes(message, target)
+    except Exception:
+        _write_followup_notice(sorted(previous))
+        raise
+    return {"sent": 0, "skipped": False, "message": message, "jobs": [],
+            "followups": len(followups), "paused": True}
+
+
+def run_notify(dry_run: bool = False, respect_pause: bool = True) -> dict:
     """Notify the active user of newly prepared jobs via WhatsApp.
 
     Respects the user's ``human_gate`` (review-first format) and
@@ -274,6 +348,9 @@ def run_notify(dry_run: bool = False) -> dict:
     send) when there are no new prepare jobs. When not a dry run, sends the
     message then marks only the jobs that were actually shown so they are not
     re-sent.
+
+    When the search is paused (and ``respect_pause``; the dashboard's explicit
+    Send now passes False) only due follow-ups are sent.
 
     Raises:
         ValueError: The active user has no whatsapp_target configured.
@@ -285,6 +362,8 @@ def run_notify(dry_run: bool = False) -> dict:
     ensure_brief_items()
     conn = get_connection()
     active = get_active_user_id()
+    if respect_pause and not is_search_enabled(active):
+        return _run_paused_notify(conn, dry_run, active)
     human_gate = get_human_gate(active)
     threshold = _notify_threshold()
     jobs = (get_unnotified_gated_jobs(threshold=threshold) if human_gate else get_unnotified_prepare_jobs())

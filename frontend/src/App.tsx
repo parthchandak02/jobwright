@@ -47,6 +47,7 @@ import { MobileNav, MobileNavProvider, MobileNavTrigger } from '@/components/Mob
 import { SidebarActionButton } from '@/components/SidebarActionButton'
 import { StatusBanner } from '@/components/StatusBanner'
 import { CalibrationBanner } from '@/components/CalibrationBanner'
+import { SearchPausedBanner } from '@/components/SearchPausedBanner'
 import { ViewModeTabs, type ViewMode } from '@/components/ViewModeTabs'
 import {
   createKanbanCollisionDetection,
@@ -497,6 +498,7 @@ export default function App() {
             </header>
 
             <main className="min-h-0 flex-1 overflow-auto p-3 md:p-4">
+              <SearchPausedBanner profile={profile} onResumed={() => void refresh()} />
               {board && allJobs.length > 0 ? <CalibrationBanner refreshKey={ratedOnBoard} /> : null}
               {worthOnly ? (
                 <div className="mb-3 flex flex-wrap items-center gap-2">

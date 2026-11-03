@@ -313,6 +313,10 @@ def users_set(
         None, "--brief-top-n",
         help="Per-brief notify cap (top N by fit score; 0 = uncapped).",
     ),
+    search: bool | None = typer.Option(
+        None, "--search/--pause-search",
+        help="Keep looking for new jobs (default on); --pause-search stops the daily search.",
+    ),
 ) -> None:
     """Update fields on an existing user."""
     from jobwright.users import update_user
@@ -330,6 +334,8 @@ def users_set(
         fields["human_gate"] = human_gate
     if brief_top_n is not None:
         fields["brief_top_n"] = brief_top_n
+    if search is not None:
+        fields["search_enabled"] = search
     if not fields:
         console.print("[yellow]No fields to update.[/yellow]")
         raise typer.Exit(code=1)
@@ -939,13 +945,17 @@ def notify(
         _status(f"notify_skipped {result.get('reason', 'no new jobs')}")
         return
     if not result.get("dry_run"):
-        _status(f"notify_sent {result['sent']}")
+        paused_note = f" (search paused; {result.get('followups', 0)} follow-ups)" if result.get("paused") else ""
+        _status(f"notify_sent {result['sent']}{paused_note}")
 
     if result.get("dry_run"):
         console.print(f"[bold]Preview[/bold] ({len(result['jobs'])} job(s)):\n")
         console.print(result["message"])
         return
 
+    if result.get("paused"):
+        console.print(f"[green]Search paused: sent {result.get('followups', 0)} follow-up reminder(s).[/green]")
+        return
     console.print(f"[green]Sent {result['sent']} job(s) to WhatsApp.[/green]")
     for j in result["jobs"]:
         console.print(f"  {j['title']} @ {j.get('company') or '?'}  [dim]{j['job_id']}[/dim]")

@@ -55,6 +55,7 @@ def users(request: Request) -> dict:
                 "user_id": u.user_id, "name": u.name, "emails": u.emails, "whatsapp_target": u.whatsapp_target,
                 "schedule": u.schedule, "schedule_label": describe_cron_schedule(u.schedule),
                 "human_gate": u.human_gate, "brief_top_n": u.brief_top_n,
+                "search_enabled": u.search_enabled,
                 "apply_enabled": u.apply_enabled, "cron": brief_cron_name(u.user_id), **_user_health(u),
             }
             for u in list_users()
@@ -226,6 +227,7 @@ def _counts(conn: sqlite3.Connection, followup_days: int) -> dict[str, int]:
         "sent_7d": one("SELECT COUNT(*) FROM jobs WHERE whatsapp_notified_at >= ?", since),
         "applied_total": one("SELECT COUNT(*) FROM jobs WHERE applied_at IS NOT NULL"),
         "open": one("SELECT COUNT(*) FROM jobs WHERE COALESCE(funnel_stage, 'backlog') != 'closed'"),
+        "backlog": one("SELECT COUNT(*) FROM jobs WHERE COALESCE(funnel_stage, 'backlog') = 'backlog'"),
         "followups_due": len(due_followups(conn, days=followup_days)),
     }
 
@@ -317,7 +319,8 @@ def _overview_row(user, sources: dict[str, Any], hermes_status: dict[str, str]) 
         "notify_threshold": None, "recommended_threshold": None,
         "brief_top_n": user.brief_top_n, "human_gate": user.human_gate,
         "weekly_summary": user.weekly_summary, "followup_days": user.followup_days,
-        "counts": {"new_7d": 0, "sent_7d": 0, "applied_total": 0, "open": 0, "followups_due": 0},
+        "search_enabled": user.search_enabled,
+        "counts": {"new_7d": 0, "sent_7d": 0, "applied_total": 0, "open": 0, "backlog": 0, "followups_due": 0},
         "cost_30d": {"tokens": 0, "cost_usd": None},
         "hermes_status": hermes_status.get(user.user_id),
         "brief_cron": (find_cron_id(listing, brief_cron_name(user.user_id)) is not None)
@@ -384,6 +387,7 @@ class AdminUserPatch(BaseModel):
     human_gate: bool | None = None
     weekly_summary: bool | None = None
     followup_days: int | None = None
+    search_enabled: bool | None = None
 
 
 def _registry_fields(user, body: AdminUserPatch) -> dict[str, Any]:

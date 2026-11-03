@@ -4,7 +4,7 @@ Runs pipeline stages in sequence under a per-user lock and writes a
 machine-readable summary (logs/last_run.json) used by alerts and the dashboard.
 
 Usage (via CLI):
-    jobwright run                        # default brief stages (honors human_gate)
+    jobwright run                        # default brief stages (honors human_gate, search_enabled)
     jobwright run discover enrich        # specific stages
     jobwright run score tailor cover     # LLM-only stages
     jobwright run --dry-run              # preview without executing
@@ -72,6 +72,18 @@ def default_brief_stages() -> list[str]:
     if get_human_gate(get_active_user_id()):
         return list(BRIEF_STAGES_HUMAN_GATED)
     return list(STAGE_ORDER)
+
+
+def search_paused() -> bool:
+    """True when the active profile turned off "Keep looking for new jobs".
+
+    Only the default brief (``jobwright run`` with no stages, i.e. the cron)
+    honors it; explicit stage lists always run.
+    """
+    from jobwright.config import get_active_user_id
+    from jobwright.users import is_search_enabled
+
+    return not is_search_enabled(get_active_user_id())
 
 
 # ---------------------------------------------------------------------------
@@ -501,6 +513,13 @@ def run_pipeline(
 
     # Resolve stages
     if stages is None:
+        if search_paused():
+            console.print(
+                "\n  [yellow]New job search is paused for this profile[/yellow] "
+                "(search_enabled: false). Skipping the default brief stages; "
+                "pass explicit stages to run anyway."
+            )
+            return {"stages": [], "errors": {}, "elapsed": 0.0, "paused": True}
         stages = default_brief_stages()
     ordered = _resolve_stages(stages)
 

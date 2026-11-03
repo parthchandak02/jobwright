@@ -22,7 +22,7 @@ function cronToTime(cron: string | undefined): string {
   return `${parts[1].padStart(2, '0')}:${parts[0].padStart(2, '0')}`
 }
 
-type Settings = { target: string; time: string; weekly: boolean; followupDays: string }
+type Settings = { target: string; time: string; weekly: boolean; followupDays: string; searching: boolean }
 
 function clampDays(raw: string): number {
   return Math.min(90, Math.max(1, Math.round(Number(raw)) || 10))
@@ -42,6 +42,7 @@ export function DailyListTab({ profile, onSaved }: Props) {
     time: cronToTime(profile.schedule),
     weekly: profile.weekly_summary ?? true,
     followupDays: String(profile.followup_days ?? 10),
+    searching: profile.search_enabled ?? true,
   }))
   const [picked, setPicked] = useState<PickedChat | null>(null)
   const [picking, setPicking] = useState(false)
@@ -56,6 +57,7 @@ export function DailyListTab({ profile, onSaved }: Props) {
         ...(isAdmin && v.target ? { whatsapp_target: v.target } : {}),
         weekly_summary: v.weekly,
         followup_days: clampDays(v.followupDays),
+        search_enabled: v.searching,
       })
     },
     {
@@ -89,6 +91,19 @@ export function DailyListTab({ profile, onSaved }: Props) {
         description="Once a day we search, score, and send you one WhatsApp message with your best new matches."
         actions={<SaveStatus state={autosave.state} savedAt={autosave.savedAt} onRetry={autosave.retry} />}
       />
+      <ul className="mb-field divide-y divide-border rounded-lg border bg-surface">
+        <li className="flex items-center gap-4 px-4 py-3.5">
+          <label htmlFor="daily-searching" className="min-w-0 flex-1 cursor-pointer">
+            <span className="block text-label text-foreground">Keep looking for new jobs</span>
+            <span className="mt-0.5 block text-caption text-muted-foreground">
+              {s.searching
+                ? 'Turn off to pause the daily search while you work through your list. Your jobs, ratings and reminders stay.'
+                : 'Paused. We won’t look for new jobs until you turn this back on. Follow-up reminders still arrive.'}
+            </span>
+          </label>
+          <Switch id="daily-searching" checked={s.searching} onCheckedChange={(searching) => patch({ searching })} />
+        </li>
+      </ul>
       <div className="space-y-field">
         <FormField label="Sent to" hint={!isAdmin && profile.whatsapp_target ? 'Your admin connects this chat for you.' : undefined}>
           {isAdmin ? (

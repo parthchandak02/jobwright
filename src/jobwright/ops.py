@@ -5,7 +5,8 @@ report; anything abnormal (preflight failure, failed stage, zero scored jobs,
 notify failure, provider errors) is sent to the operator's WhatsApp target
 (``ops_target`` in users.yaml, or JOBWRIGHT_OPS_TARGET). A watchdog run
 (hourly Hermes cron) alerts once per day when a user's brief never started or
-never finished today.
+never finished today. Profiles with the new-job search paused
+(``search_enabled: false``) are intentionally quiet and never alerted.
 """
 
 from __future__ import annotations
@@ -62,12 +63,18 @@ def _read_status(path: Path) -> list[str]:
 def build_brief_report(status_file: Path | None = None) -> Report:
     from jobwright.database import get_connection
     from jobwright.pipeline import read_run_summary
+    from jobwright.users import is_search_enabled
 
     user = config.get_active_user_id() or "legacy"
     status_file = status_file or Path(config.APP_DIR) / f"BRIEF_STATUS_{datetime.now():%Y%m%d}"
     status = _read_status(status_file)
-    summary = read_run_summary() or {}
+    # Paused search: the brief intentionally ran no stages, so last_run.json is
+    # an older run and must not re-raise its errors or count as missing.
+    paused = not is_search_enabled(config.get_active_user_id())
+    summary = {} if paused else (read_run_summary() or {})
     rep = Report(user=user, level="ok")
+    if paused:
+        rep.lines.append("new job search paused by the person (no discovery today)")
 
     def bump(level: str) -> None:
         order = {"ok": 0, "warn": 1, "fail": 2}
@@ -117,7 +124,7 @@ def build_brief_report(status_file: Path | None = None) -> Report:
     except Exception as exc:  # noqa: BLE001
         bump("warn")
         rep.lines.append(f"could not read DB stats: {exc}")
-    if not summary:
+    if not summary and not paused:
         bump("warn")
         rep.lines.append("no run summary (logs/last_run.json) found")
     return rep
@@ -182,6 +189,8 @@ def watchdog(grace_minutes: int = 120, start_grace_minutes: int = 30) -> list[Re
             continue
         if not _is_set_up(user.user_id):
             continue  # setup unfinished: no brief is expected yet
+        if not user.search_enabled:
+            continue  # the person paused the search on purpose; nothing is missed
         status_path = user.resolve_data_dir() / f"BRIEF_STATUS_{now:%Y%m%d}"
         status = _read_status(status_path)
         if not status:

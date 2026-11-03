@@ -136,6 +136,8 @@ export type Profile = {
   whatsapp_chat_name?: string
   weekly_summary?: boolean
   followup_days?: number
+  /** "Keep looking for new jobs" (default true); false pauses the daily search. */
+  search_enabled?: boolean
   brief_cron_name?: string
   cron_synced?: boolean
   cron_id?: string | null
@@ -341,6 +343,7 @@ export function updateProfile(body: {
   whatsapp_target?: string
   weekly_summary?: boolean
   followup_days?: number
+  search_enabled?: boolean
 }): Promise<Profile> {
   return apiFetch<Profile>('/profile', { method: 'PUT', body: JSON.stringify(body) })
 }
@@ -629,7 +632,8 @@ export type AdminOverviewUser = {
   human_gate: boolean
   weekly_summary: boolean
   followup_days: number
-  counts: { new_7d: number; sent_7d: number; applied_total: number; open: number; followups_due: number }
+  search_enabled: boolean
+  counts: { new_7d: number; sent_7d: number; applied_total: number; open: number; backlog: number; followups_due: number }
   cost_30d: { tokens: number; cost_usd: number | null }
   hermes_status: 'unchanged' | 'add' | 'update' | 'skipped' | null
   brief_cron: boolean | null
@@ -658,6 +662,7 @@ export type AdminUserPatch = Partial<{
   human_gate: boolean
   weekly_summary: boolean
   followup_days: number
+  search_enabled: boolean
 }>
 
 export type AdminCronResult = null | { ok?: boolean; error?: string | null; [k: string]: unknown }

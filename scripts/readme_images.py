@@ -303,6 +303,7 @@ PROFILE = {
     "whatsapp_chat_name": GROUP,
     "weekly_summary": True,
     "followup_days": 10,
+    "search_enabled": True,
     "brief_cron_name": "jobwright-brief-alex",
     "cron_synced": True,
     "stats": {"total": len(JOBS)},
@@ -342,7 +343,8 @@ def _person(uid, name, email, group, hour, **kw) -> dict:
         "human_gate": True,
         "weekly_summary": True,
         "followup_days": 10,
-        "counts": {"new_7d": 48, "sent_7d": 31, "applied_total": 9, "open": 42, "followups_due": 1},
+        "search_enabled": True,
+        "counts": {"new_7d": 48, "sent_7d": 31, "applied_total": 9, "open": 42, "backlog": 23, "followups_due": 1},
         "cost_30d": {"tokens": 2_410_000, "cost_usd": 0.62},
         "hermes_status": "unchanged",
         "brief_cron": True,
@@ -360,16 +362,16 @@ ADMIN_OVERVIEW = {
     "users": [
         _person("alex", PERSON, EMAIL, GROUP, 7),
         _person("sam", "Sam Chen", "sam@example.com", "Sam – Job Search", 6,
-                counts={"new_7d": 35, "sent_7d": 22, "applied_total": 4, "open": 30, "followups_due": 0},
+                counts={"new_7d": 35, "sent_7d": 22, "applied_total": 4, "open": 30, "backlog": 12, "followups_due": 0},
                 cost_30d={"tokens": 1_720_000, "cost_usd": 0.44}),
         _person("jordan", "Jordan Patel", "jordan@example.com", "Jordan – Jobs", 8,
                 last_brief={"at": "2026-09-28T08:01:00", "notified": 0, "status": "skipped"},
                 health={"level": "warn", "lines": ["No new matches scored 7+ today"]},
-                counts={"new_7d": 19, "sent_7d": 8, "applied_total": 2, "open": 15, "followups_due": 2},
+                counts={"new_7d": 19, "sent_7d": 8, "applied_total": 2, "open": 15, "backlog": 12, "followups_due": 2},
                 cost_30d={"tokens": 980_000, "cost_usd": 0.25}),
         _person("morgan", "Morgan Lee", "morgan@example.com", "Morgan – Daily list", 7, minute=30,
                 schedule="30 7 * * *", schedule_label="Daily at 7:30 AM",
-                counts={"new_7d": 27, "sent_7d": 17, "applied_total": 6, "open": 21, "followups_due": 0},
+                counts={"new_7d": 27, "sent_7d": 17, "applied_total": 6, "open": 21, "backlog": 12, "followups_due": 0},
                 cost_30d={"tokens": 1_310_000, "cost_usd": 0.34}),
     ],
 }
@@ -462,7 +464,8 @@ def api_response(method: str, path: str, state: dict):
         cols = {s: [j for j in JOBS if j["funnel_stage"] == s] for s in STAGES}
         return {"stages": STAGES, "columns": cols, "total": len(JOBS), "closed_total": 14}
     if path == "/api/profile":
-        return PROFILE
+        # state["paused"] previews the "Keep looking for new jobs" off state.
+        return {**PROFILE, "search_enabled": not state.get("paused")}
     if path == "/api/settings":
         return SETTINGS
     if path == "/api/criteria":
@@ -490,6 +493,9 @@ def api_response(method: str, path: str, state: dict):
     if path == "/api/quality":
         return QUALITY
     if path == "/api/admin/overview":
+        if state.get("paused"):
+            users = [{**u, "search_enabled": False} if i == 0 else u for i, u in enumerate(ADMIN_OVERVIEW["users"])]
+            return {**ADMIN_OVERVIEW, "users": users}
         return ADMIN_OVERVIEW
     if path.startswith("/api/admin/costs"):
         return ADMIN_COSTS

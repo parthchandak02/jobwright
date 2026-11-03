@@ -114,6 +114,10 @@ class UserRecord:
     weekly_summary: bool = True
     # Applied jobs with no stage change for this many days are "follow-up due".
     followup_days: int = DEFAULT_FOLLOWUP_DAYS
+    # "Keep looking for new jobs": false pauses discovery in the scheduled
+    # brief (no discover/enrich/score/...; notify sends only due follow-ups).
+    # Explicit runs (dashboard, `jobwright run <stages>`) still work.
+    search_enabled: bool = True
 
     def resolve_data_dir(self) -> Path:
         if self.data_dir:
@@ -254,6 +258,7 @@ def _from_dict(raw: dict[str, Any]) -> UserRecord:
         emails=[normalize_email(e) for e in (raw.get("emails") or []) if normalize_email(e)],
         weekly_summary=bool(raw.get("weekly_summary", True)),
         followup_days=_positive_int(raw.get("followup_days"), DEFAULT_FOLLOWUP_DAYS),
+        search_enabled=bool(raw.get("search_enabled", True)),
     )
 
 
@@ -355,6 +360,7 @@ def update_user(user_id: str, **fields: Any) -> UserRecord:
         "name", "whatsapp_target", "apply_enabled", "schedule",
         "digest_schedule", "notes", "data_dir",
         "human_gate", "brief_top_n", "emails", "weekly_summary", "followup_days",
+        "search_enabled",
     }
     for key, value in fields.items():
         if key not in allowed:
@@ -420,6 +426,15 @@ def get_brief_top_n(user_id: str | None = None) -> int:
     if user is None:
         return DEFAULT_BRIEF_TOP_N
     return max(int(user.brief_top_n), 0)
+
+
+def is_search_enabled(user_id: str | None = None) -> bool:
+    """Whether the scheduled brief should look for new jobs (default on).
+
+    Legacy single-user and unknown ids always search.
+    """
+    user = get_user(user_id) if user_id else None
+    return user.search_enabled if user else True
 
 
 def get_followup_days(user_id: str | None = None) -> int:

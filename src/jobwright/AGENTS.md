@@ -8,14 +8,14 @@ Nested agent notes for the Python package. Root context: [../../AGENTS.md](../..
 |--------|------|
 | `cli.py` | Typer entry; `--user` before subcommands. Stages: discover, enrich, score, portfolio, tailor, cover, pdf, docx, connect. Also `tailor-job`, `notify`, `briefstats`, `dedupe` (`--apply`), `summary`, `eval`, `rescore`, `criteria show\|suggest`, `labels list\|export`, `preflight`, `ops brief-report\|watchdog\|set-target\|backup\|install-crons`, `hermes channels`, `access status\|sync`, `users`. `apply` is dry-run unless `--live` |
 | `__main__.py` | `python -m jobwright` (dashboard spawns); records the exit code in the run registry |
-| `pipeline.py` | `STAGE_ORDER`, stage runners, `default_brief_stages()` (honors `human_gate`), per-user `pipeline_lock()` (flock), `logs/last_run.json`; prunes backlog junk after `score` |
+| `pipeline.py` | `STAGE_ORDER`, stage runners, `default_brief_stages()` (honors `human_gate`), `search_paused()` (default run with `search_enabled: false` runs nothing), per-user `pipeline_lock()` (flock), `logs/last_run.json`; prunes backlog junk after `score` |
 | `run_registry.py` | Durable pipeline runs in `users/<id>/logs/web_runs.json`; honors `JOBWRIGHT_WEB_RUN_ID` |
 | `resume.py` | PDF source of truth; pymupdf4llm markdown cache at `resume/base.md` for LLM stages |
 | `notify.py` | One WhatsApp list of new jobs + dashboard deep links; `send_via_hermes` (honors `JOBWRIGHT_HERMES_DRY_RUN`) |
 | `summary.py` | Weekly WhatsApp recap per profile (`jobwright summary`); mark-then-send via `logs/weekly_summary.json`; `run_summary_all` loops `users.yaml`; `_moved` counts a stage move only if the job is still in that stage (or further along) |
 | `followups.py` | Follow-up reminders: Applied with no stage change for `followup_days`; `due_followups`, `record_followed_up` (snooze), `record_no_response` (close) |
 | `config.py` | Per-user paths on a `_PathState`; `set_active_user` (CLI, process default), `user_context(user_id)` (web, per request via ContextVar), `user_env()` (per-user `.env` read without touching `os.environ`) |
-| `users.py` | Registry at `<repo>/users/users.yaml`: users (`emails`, schedule, `human_gate`, `brief_top_n`, `apply_enabled`, `weekly_summary`, `followup_days`), `admins`, `ops_target`; `users_for_email`, `is_admin_email` |
+| `users.py` | Registry at `<repo>/users/users.yaml`: users (`emails`, schedule, `human_gate`, `brief_top_n`, `apply_enabled`, `weekly_summary`, `followup_days`, `search_enabled`; `is_search_enabled`), `admins`, `ops_target`; `users_for_email`, `is_admin_email` |
 | `cf_access.py` | Cloudflare API v4 client: find the Access app (aud, else hostname), read app + reusable policies, `plan_sync` / `apply_sync` of the `jobwright users` allow policy only, `auto_sync` (best effort, web) |
 | `onboarding.py` | New profile bound to a login email; LLM draft of profile / searches / criteria from a resume; `apply_draft`; `onboarding_status` (complete = resume + profile + searches; no chat needed), `is_set_up` (resume + profile: gates brief crons and the welcome) |
 | `calibration.py` | Optional post-setup "rate a few jobs": `select_jobs` mixes borderline (5-7, twice as often), high and low scores, one per company/title, skips labeled/closed/dead jobs; `calibration()` backs `GET /api/onboarding/calibration` (no LLM) |
@@ -91,6 +91,7 @@ Single-user doctor: `jobwright doctor`. Multi-profile: `jobwright --user <id> do
 | `tests/test_hermes_channels.py` | Hermes config round-trip, per-user prompts, orphans, idempotency, dry-run, backup, CLI + admin API |
 | `tests/test_calibration.py` | Calibration selection (band mix, dedupe, exclusions) and `GET /api/onboarding/calibration` with ratings through the label route |
 | `tests/test_welcome.py` | Welcome text, send once + operator heads-up, skip without chat or in dry run, failed send retried next time |
+| `tests/test_search_pause.py` | `search_enabled`: default brief skips stages, explicit stages run, follow-up-only notify (sent once), brief report ok, watchdog silent, `users set --pause-search` |
 | `tests/test_hermes_cron.py` | Parse `hermes cron list`; create/edit brief cron; dry-run |
 
 Add tests for new provider behavior, user-resolution logic, or dashboard APIs.

@@ -62,6 +62,7 @@ def _profile_payload(user_id: str) -> dict:
         "whatsapp_chat_name": _chat_name(user.whatsapp_target if user else ""),
         "weekly_summary": user.weekly_summary if user else True,
         "followup_days": user.followup_days if user else DEFAULT_FOLLOWUP_DAYS,
+        "search_enabled": user.search_enabled if user else True,
         "brief_cron_name": brief_cron_name(user_id),
         "app_dir": str(config.APP_DIR),
         "stats": {
@@ -129,11 +130,12 @@ class ProfileUpdate(BaseModel):
     whatsapp_target: str | None = None
     weekly_summary: bool | None = None
     followup_days: int | None = None
+    search_enabled: bool | None = None
 
 
 @router.put("/profile")
 def update_profile(body: ProfileUpdate, request: Request) -> dict:
-    """Save daily-brief schedule and WhatsApp target, then edit the Hermes cron."""
+    """Save the person's daily-list settings (schedule, chat, summary, follow-ups, search on/off); edit the Hermes cron."""
     user_id = current_user_id(request)
     before = get_user(user_id)
 
@@ -154,6 +156,8 @@ def update_profile(body: ProfileUpdate, request: Request) -> dict:
         fields["weekly_summary"] = body.weekly_summary
     if body.followup_days is not None:
         fields["followup_days"] = body.followup_days
+    if body.search_enabled is not None:
+        fields["search_enabled"] = body.search_enabled
     if not fields:
         raise HTTPException(400, "Nothing to update.")
 
