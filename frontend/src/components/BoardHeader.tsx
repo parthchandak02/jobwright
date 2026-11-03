@@ -6,7 +6,6 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { APP_SHELL_HEADER } from '@/components/BrandLogo'
 import { AutoSearchControls } from '@/components/AutoSearchControls'
-import { MobileNavTrigger } from '@/components/MobileNav'
 import { ViewModeTabs, type ViewMode } from '@/components/ViewModeTabs'
 import { WhatsAppIcon } from '@/components/WhatsAppIcon'
 import { cn } from '@/lib/utils'
@@ -98,8 +97,7 @@ export function BoardHeader({
         </div>
       ) : null}
       <div className={cn('flex min-w-0 flex-1 items-center gap-1 md:gap-4', searchOpen && 'max-md:hidden')}>
-        <MobileNavTrigger />
-        <h1 className="board-head-title min-w-0 truncate text-subheading text-foreground max-md:pl-1 md:text-heading">
+        <h1 className="board-head-title min-w-0 truncate text-heading text-foreground max-md:pl-2">
           {title}
           {count != null ? <span className="ml-2 font-normal text-muted-foreground tabular-nums">{count}</span> : null}
         </h1>

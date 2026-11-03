@@ -20,6 +20,18 @@ export function findJobStage(
   return undefined
 }
 
+const LANE_TAB_PREFIX = 'lane-tab:'
+
+/** Droppable id of a phone stage drop target (drop a card on it to move it to that stage). */
+export function laneTabId(stage: string): string {
+  return LANE_TAB_PREFIX + stage
+}
+
+/** The stage a stage drop target stands for, or null for cards and lanes. */
+export function stageFromLaneTab(id: string): string | null {
+  return id.startsWith(LANE_TAB_PREFIX) ? id.slice(LANE_TAB_PREFIX.length) : null
+}
+
 export function createKanbanCollisionDetection(
   stages: string[],
   columns: Record<string, JobCard[]>,
@@ -27,6 +39,9 @@ export function createKanbanCollisionDetection(
   return (args) => {
     const pointerCollisions = pointerWithin(args)
     if (pointerCollisions.length > 0) {
+      // Phone stage drop targets win over anything under the finger.
+      const tab = pointerCollisions.find((collision) => stageFromLaneTab(String(collision.id)))
+      if (tab) return [tab]
       for (const collision of pointerCollisions) {
         const id = String(collision.id)
         if (!stages.includes(id)) continue
@@ -45,7 +60,11 @@ export function createKanbanCollisionDetection(
       }
       return pointerCollisions
     }
-    return closestCorners(args)
+    // Stage drop targets only count when the finger is on them.
+    return closestCorners({
+      ...args,
+      droppableContainers: args.droppableContainers.filter((container) => !stageFromLaneTab(String(container.id))),
+    })
   }
 }
 

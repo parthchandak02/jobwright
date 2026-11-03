@@ -17,6 +17,8 @@ type Props = {
   searching?: boolean
   onOpen: (job: JobCard) => void
   onScoreSaved?: (job: JobCard) => void
+  /** Phone one-lane board: full width, no lane header (the stage strip above names it). */
+  fill?: boolean
 }
 
 const EMPTY_COPY: Record<string, { title: string; body: string }> = {
@@ -44,6 +46,7 @@ export function KanbanColumn({
   searching,
   onOpen,
   onScoreSaved,
+  fill,
 }: Props) {
   const { setNodeRef, isOver } = useDroppable({ id: stage })
   const lane = laneTone(stage)
@@ -57,9 +60,9 @@ export function KanbanColumn({
     <section
       aria-label={`${label}, ${jobs.length} job${jobs.length === 1 ? '' : 's'}`}
       style={{ '--lane': lane, '--tone': lane } as CSSProperties}
-      className={LANE_WIDTH}
+      className={fill ? 'flex w-full flex-col' : LANE_WIDTH}
     >
-      <header className="flex h-8 items-center gap-2 px-1.5">
+      <header className={cn('flex h-8 items-center gap-2 px-1.5', fill && 'sr-only')}>
         <span aria-hidden className="size-2 shrink-0 rounded-full bg-(--lane)" />
         <h2 className="lane-label min-w-0 truncate text-micro font-semibold tracking-wide uppercase">{label}</h2>
         <span className="text-micro font-medium text-muted-foreground tabular-nums">

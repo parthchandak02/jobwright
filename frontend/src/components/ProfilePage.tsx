@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { Page } from '@/components/PageHeader'
 import { ProfileSwitcher } from '@/components/ProfileSwitcher'
+import { ThemeToggle } from '@/components/ThemeToggle'
 import { AboutTab } from '@/components/profile/AboutTab'
 import { DailyListTab } from '@/components/profile/DailyListTab'
 import { DocumentsTab } from '@/components/profile/DocumentsTab'
@@ -96,7 +97,13 @@ export function ProfilePage({ profile, onProfileChanged }: Props) {
             </label>
           ) : undefined
         }
-        mobileActions={canSwitch ? <ProfileSwitcher className="h-9 w-36" /> : null}
+        mobileActions={
+          <>
+            {canSwitch ? <ProfileSwitcher className="h-9 w-36" /> : null}
+            {/* Phone: the theme lived in the old menu; Settings is its home now. */}
+            <ThemeToggle />
+          </>
+        }
         headerExtra={
           <TabsList variant="underline" aria-label="Settings sections">
             {PROFILE_TABS.map((t) => (
