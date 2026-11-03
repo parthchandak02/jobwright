@@ -103,7 +103,7 @@ uv run --extra web --with pillow python scripts/readme_images.py --demo
 
 1. A Chromium window opens on the board, signed in as the demo admin "Alex Rivera".
 2. Click **Senior Product Designer** at Northwind Labs to open the job drawer and its match explanation.
-3. Open the menu for **Match quality**, **Settings** (Daily list tab) and **Admin**.
+3. Open **Match quality**, **Settings** (Daily list tab) and **Admin** from the sidebar (on a phone, the tab bar at the bottom).
 4. Close the window to stop. Edits are not saved anywhere.
 
 Expected terminal output: `Demo running with fake data. Close the browser window to stop.`

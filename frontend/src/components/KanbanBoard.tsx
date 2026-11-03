@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useMemo, useRef, useState, type ReactNode, type TouchEvent } from 'react'
 import {
   DndContext,
   DragOverlay,
@@ -22,9 +22,12 @@ import {
   findJobStage,
   moveJobAcrossColumns,
   reorderWithinColumn,
+  stageFromLaneTab,
 } from '@/lib/boardDnD'
 import { JobCardView } from '@/components/JobCardView'
 import { KanbanColumn } from '@/components/KanbanColumn'
+import { StageDropGrid } from '@/components/StageDropGrid'
+import { StageTabs } from '@/components/StageTabs'
 import { Skeleton } from '@/components/ui/skeleton'
 
 type Props = {
@@ -41,7 +44,25 @@ type Props = {
   onMove: (job: JobCard, toStage: string, position: number, revert: BoardResponse | null) => void
   /** A lane's order changed by hand; `next` is the board as shown, `revert` the board before the drag. */
   onReorder: (stage: string, next: BoardResponse, revert: BoardResponse | null) => void
+  /**
+   * Phone: one lane at a time under a sticky stage strip (`stages` should be `[lane]`). Swipe
+   * sideways to change lanes; long-press a card and drop it on a stage (`StageDropGrid`) to move it.
+   */
+  phone?: PhoneLane
 }
+
+export type PhoneLane = {
+  lane: string
+  onLaneChange: (stage: string) => void
+  counts: Record<string, number>
+  /** Shown before the strip (the Board / Table toggle). */
+  leading?: ReactNode
+}
+
+/** A horizontal swipe: far enough, mostly sideways and quick (so it never fights vertical scroll). */
+const SWIPE_MIN_PX = 56
+const SWIPE_MAX_MS = 600
+const PHONE_AUTO_SCROLL = { threshold: { x: 0, y: 0.2 } }
 
 const screenReaderInstructions: ScreenReaderInstructions = {
   draggable:
@@ -58,7 +79,18 @@ function sameOrder(a: JobCard[] = [], b: JobCard[] = []) {
 }
 
 /** The drag-and-drop board: lanes, sortable cards, mouse/touch/keyboard sensors and announcements. */
-export function KanbanBoard({ board, setBoard, stages, columns, searching, onOpen, onScoreSaved, onMove, onReorder }: Props) {
+export function KanbanBoard({
+  board,
+  setBoard,
+  stages,
+  columns,
+  searching,
+  onOpen,
+  onScoreSaved,
+  onMove,
+  onReorder,
+  phone,
+}: Props) {
   const [activeCard, setActiveCard] = useState<JobCard | null>(null)
   const [dropTargetStage, setDropTargetStage] = useState<string | null>(null)
   const dragOriginStage = useRef<string | null>(null)
@@ -89,6 +121,8 @@ export function KanbanBoard({ board, setBoard, stages, columns, searching, onOpe
       return job ? `${job.title || 'Job'} at ${job.company || 'unknown company'}` : 'Job'
     }
     const place = (id: UniqueIdentifier) => {
+      const tabStage = stageFromLaneTab(String(id))
+      if (tabStage) return `${laneName(tabStage)}; drop to move it there`
       const stage = findJobStage(String(id), board.stages, board.columns)
       const cards = stage ? board.columns[stage] || [] : []
       const idx = cards.findIndex((j) => j.url === String(id))
@@ -112,7 +146,31 @@ export function KanbanBoard({ board, setBoard, stages, columns, searching, onOpe
     boardSnapshot.current = null
   }
 
+  // Phone swipe between lanes. A drag that started from a long-press never counts as a swipe.
+  const swipeStart = useRef<{ x: number; y: number; t: number } | null>(null)
+  const dragged = useRef(false)
+
+  function onTouchStart(e: TouchEvent) {
+    dragged.current = false
+    const t = e.touches[0]
+    swipeStart.current = e.touches.length === 1 && t ? { x: t.clientX, y: t.clientY, t: Date.now() } : null
+  }
+
+  function onTouchEnd(e: TouchEvent) {
+    const start = swipeStart.current
+    swipeStart.current = null
+    const t = e.changedTouches[0]
+    if (!phone || !start || !t || dragged.current || activeCard) return
+    const dx = t.clientX - start.x
+    const dy = t.clientY - start.y
+    if (Math.abs(dx) < SWIPE_MIN_PX || Math.abs(dx) < Math.abs(dy) * 2 || Date.now() - start.t > SWIPE_MAX_MS) return
+    const i = board.stages.indexOf(phone.lane)
+    const next = board.stages[i + (dx < 0 ? 1 : -1)]
+    if (i >= 0 && next) phone.onLaneChange(next)
+  }
+
   function onDragStart(event: DragStartEvent) {
+    dragged.current = true
     const url = String(event.active.id)
     setActiveCard(allJobs.find((j) => j.url === url) || null)
     boardSnapshot.current = board
@@ -121,7 +179,17 @@ export function KanbanBoard({ board, setBoard, stages, columns, searching, onOpe
 
   function onDragOver(event: DragOverEvent) {
     const { active, over } = event
-    if (!over) return
+    if (!over) {
+      // Phone: leaving a stage target clears its highlight.
+      if (phone) setDropTargetStage(null)
+      return
+    }
+    const tabStage = stageFromLaneTab(String(over.id))
+    if (tabStage) {
+      // Over a phone stage target: highlight it; the card moves on drop.
+      setDropTargetStage(tabStage)
+      return
+    }
     setDropTargetStage(findJobStage(String(over.id), board.stages, board.columns) || null)
     const next = moveJobAcrossColumns(board, String(active.id), String(over.id))
     if (next) setBoard(next)
@@ -133,6 +201,13 @@ export function KanbanBoard({ board, setBoard, stages, columns, searching, onOpe
     const originStage = dragOriginStage.current
     reset()
     const url = String(active.id)
+    const tabStage = over ? stageFromLaneTab(String(over.id)) : null
+    if (tabStage) {
+      // Dropped on a phone stage target: move to the top of that lane.
+      const job = board.columns[originStage || '']?.find((j) => j.url === url)
+      if (job && originStage && tabStage !== originStage) onMove(job, tabStage, 0, snapshot)
+      return
+    }
     let working = board
     if (over) {
       const reordered = reorderWithinColumn(board, url, String(over.id))
@@ -168,15 +243,39 @@ export function KanbanBoard({ board, setBoard, stages, columns, searching, onOpe
       sensors={sensors}
       collisionDetection={collisionDetection}
       accessibility={{ announcements, screenReaderInstructions }}
+      // Phone: one lane, so only scroll it up and down while dragging.
+      autoScroll={phone ? PHONE_AUTO_SCROLL : undefined}
       onDragStart={onDragStart}
       onDragOver={onDragOver}
       onDragEnd={onDragEnd}
       onDragCancel={onDragCancel}
     >
-      <div className="-mx-3 flex h-full min-h-[70vh] gap-3 overflow-x-auto px-3 pb-2 md:mx-0 md:px-0">
+      {phone ? (
+        <div className="sticky -top-3 z-10 -mx-3 -mt-3 mb-1 flex items-center gap-2 bg-background px-3 py-2">
+          {phone.leading}
+          <StageTabs
+            className="flex-1"
+            stages={board.stages}
+            counts={phone.counts}
+            value={phone.lane}
+            onChange={phone.onLaneChange}
+          />
+        </div>
+      ) : null}
+      {phone && activeCard ? <StageDropGrid stages={board.stages} current={phone.lane} over={dropTargetStage} /> : null}
+      <div
+        className={
+          phone
+            ? 'flex min-h-[70vh] flex-col pb-2'
+            : '-mx-3 flex h-full min-h-[70vh] gap-3 overflow-x-auto px-3 pb-2 md:mx-0 md:px-0'
+        }
+        onTouchStart={phone ? onTouchStart : undefined}
+        onTouchEnd={phone ? onTouchEnd : undefined}
+      >
         {stages.map((stage) => (
           <KanbanColumn
             key={stage}
+            fill={!!phone}
             stage={stage}
             label={STAGE_LABELS[stage] || stage}
             jobs={columns[stage] || []}

@@ -1,5 +1,4 @@
 import type { ReactNode } from 'react'
-import { MobileNavTrigger } from '@/components/MobileNav'
 import { cn } from '@/lib/utils'
 
 export type PageWidth = 'form' | 'wide' | 'full'
@@ -42,7 +41,7 @@ type PageHeaderProps = {
 }
 
 /**
- * Page title block. On phone it also renders a sticky 56px bar (menu button, title, actions);
+ * Page title block. On phone it also renders a sticky 56px bar (title, actions; the tab bar navigates);
  * place it as the first child of the page's scroll container.
  */
 export function PageHeader({
@@ -61,8 +60,7 @@ export function PageHeader({
         data-slot="page-bar"
         className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-1 border-b bg-background px-2 md:hidden"
       >
-        <MobileNavTrigger />
-        <h1 className="min-w-0 flex-1 truncate px-1 text-heading text-foreground">{title}</h1>
+        <h1 className="min-w-0 flex-1 truncate px-2 text-heading text-foreground">{title}</h1>
         {phoneActions ? <div className="flex shrink-0 items-center gap-1">{phoneActions}</div> : null}
       </div>
       <header data-slot="page-header" className={cn('pt-page-top', className)}>

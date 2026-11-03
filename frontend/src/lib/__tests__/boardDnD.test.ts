@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest'
 
 import type { BoardResponse } from '@/lib/api'
-import { findJobStage, moveJobAcrossColumns, reorderWithinColumn } from '@/lib/boardDnD'
+import type { ClientRect, CollisionDetection } from '@dnd-kit/core'
+import {
+  createKanbanCollisionDetection,
+  findJobStage,
+  laneTabId,
+  moveJobAcrossColumns,
+  reorderWithinColumn,
+  stageFromLaneTab,
+} from '@/lib/boardDnD'
 
 import { job } from './fixtures'
 
@@ -63,5 +71,58 @@ describe('reorderWithinColumn', () => {
   it('returns null across columns or when dropped on itself', () => {
     expect(reorderWithinColumn(board(), 'a', 'd')).toBeNull()
     expect(reorderWithinColumn(board(), 'a', 'a')).toBeNull()
+  })
+})
+
+describe('phone stage drop targets', () => {
+  it('round-trips a stage through its drop target id', () => {
+    expect(stageFromLaneTab(laneTabId('applied'))).toBe('applied')
+    expect(stageFromLaneTab('applied')).toBeNull()
+    expect(stageFromLaneTab('https://example.com/jobs/1')).toBeNull()
+  })
+
+  const rect = (left: number, top: number, width: number, height: number): ClientRect => ({
+    left,
+    top,
+    width,
+    height,
+    right: left + width,
+    bottom: top + height,
+  })
+
+  function args(pointer: { x: number; y: number }) {
+    const rects = new Map([
+      [laneTabId('applied'), rect(0, 0, 100, 44)],
+      ['backlog', rect(0, 100, 390, 600)],
+      ['a', rect(0, 100, 390, 120)],
+    ])
+    const containers = [...rects.keys()].map((id) => ({
+      id,
+      key: id,
+      data: { current: undefined },
+      disabled: false,
+      node: { current: null },
+      rect: { current: rects.get(id)! },
+    }))
+    return {
+      active: { id: 'b', data: { current: undefined }, rect: { current: { initial: null, translated: null } } },
+      collisionRect: rect(pointer.x - 20, pointer.y - 20, 40, 40),
+      droppableRects: rects,
+      droppableContainers: containers,
+      pointerCoordinates: pointer,
+    } as unknown as Parameters<CollisionDetection>[0]
+  }
+
+  it('picks the drop target under the finger', () => {
+    const b = board()
+    const detect = createKanbanCollisionDetection(b.stages, b.columns)
+    expect(detect(args({ x: 50, y: 20 }))[0]?.id).toBe(laneTabId('applied'))
+  })
+
+  it('never falls back to a drop target the finger is not on', () => {
+    const b = board()
+    const detect = createKanbanCollisionDetection(b.stages, b.columns)
+    const hits = detect(args({ x: 200, y: 80 })).map((c) => String(c.id))
+    expect(hits.some((id) => stageFromLaneTab(id))).toBe(false)
   })
 })

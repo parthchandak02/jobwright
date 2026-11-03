@@ -36,7 +36,7 @@ Two densities:
 - **Save model:** autosave (`useAutosave`) + one `SaveStatus` in the section header; explicit-save forms (Match rules) use a sticky `ActionBar` shown only when dirty.
 - **Help text:** visible `FormField hint` first; `help` (popover "?") only for long explanations. Placeholders are instructions ("Add a job title"), never example values.
 - **Structure:** settings and admin use lists (one surface, divided rows). No bordered box inside a bordered box; nested groups use `bg-surface-muted` without a border.
-- **Phone navigation:** every non-board page shows the menu via `PageHeader` (which renders `MobileNavTrigger`). Never ship a page without a way back to the menu.
+- **Phone navigation:** the bottom tab bar (`PhoneTabBar`, fed by `SHELL_LINKS`) is the navigation on every page under 768px. A new top-level page gets one `SHELL_LINKS` line. Don't add page-local back-to-menu buttons; don't cover the bar (it hides itself while the job drawer is open).
 - **Real chats:** WhatsApp chats are admin-managed. Non-admins see `ConnectedChat` (read-only); only admins get `WhatsAppChatPicker`. Onboarding never offers a test send (`hideTest`).
 
 ## Workflow

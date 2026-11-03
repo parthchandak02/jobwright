@@ -8,6 +8,10 @@ function Tabs({ className, ...props }: React.ComponentProps<typeof TabsPrimitive
 
 type TabsListProps = React.ComponentProps<typeof TabsPrimitive.List> & {
   variant?: 'pill' | 'underline'
+  /** Pill only: scroll sideways with edge fades instead of shrinking (e.g. the phone stage strip). */
+  scrollable?: boolean
+  /** Extra classes for the scroll container (`underline`, or `pill` with `scrollable`). */
+  scrollerClassName?: string
 }
 
 function useScrollFade(ref: React.RefObject<HTMLDivElement | null>, enabled: boolean) {
@@ -48,15 +52,15 @@ function useScrollFade(ref: React.RefObject<HTMLDivElement | null>, enabled: boo
   }, [ref, enabled])
 }
 
-function TabsList({ className, variant = 'pill', children, ...props }: TabsListProps) {
+function TabsList({ className, variant = 'pill', scrollable, scrollerClassName, children, ...props }: TabsListProps) {
   const scrollRef = React.useRef<HTMLDivElement>(null)
-  useScrollFade(scrollRef, variant === 'underline')
+  useScrollFade(scrollRef, variant === 'underline' || !!scrollable)
 
   if (variant === 'underline') {
     return (
       <div
         ref={scrollRef}
-        className="scroll-fade-x scrollbar-none -mx-1 overflow-x-auto overscroll-x-contain px-1"
+        className={cn('scroll-fade-x scrollbar-none -mx-1 overflow-x-auto overscroll-x-contain px-1', scrollerClassName)}
         data-slot="tabs-scroller"
       >
         <TabsPrimitive.List
@@ -74,18 +78,29 @@ function TabsList({ className, variant = 'pill', children, ...props }: TabsListP
     )
   }
 
-  return (
+  const pill = (
     <TabsPrimitive.List
       data-slot="tabs-list"
       data-variant="pill"
       className={cn(
         'group/tabs-list inline-flex h-10 w-fit items-center justify-center rounded-md bg-surface-muted p-[3px] text-muted-foreground md:h-9',
+        scrollable && 'w-max',
         className,
       )}
       {...props}
     >
       {children}
     </TabsPrimitive.List>
+  )
+  if (!scrollable) return pill
+  return (
+    <div
+      ref={scrollRef}
+      className={cn('scroll-fade-x scrollbar-none min-w-0 overflow-x-auto overscroll-x-contain', scrollerClassName)}
+      data-slot="tabs-scroller"
+    >
+      {pill}
+    </div>
   )
 }
 

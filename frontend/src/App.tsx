@@ -4,6 +4,7 @@ import { CloudOff, Inbox, RefreshCw, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { BoardResponse, JobCard, STAGE_LABELS } from '@/lib/api'
 import { useBoard } from '@/lib/useBoard'
+import { useMediaQuery } from '@/lib/useMediaQuery'
 import { cn } from '@/lib/utils'
 import { AppSidebar } from '@/components/AppSidebar'
 import { AutoSearchControls } from '@/components/AutoSearchControls'
@@ -17,8 +18,9 @@ import { JobDrawer } from '@/components/JobDrawer'
 import { JobsTable } from '@/components/JobsTable'
 import { BoardSkeleton, KanbanBoard } from '@/components/KanbanBoard'
 import { ManualAddModal } from '@/components/ManualAddModal'
-import { MobileNav, MobileNavProvider } from '@/components/MobileNav'
 import { PageSkeleton } from '@/components/PageSkeleton'
+import { PhoneTabBar } from '@/components/PhoneTabBar'
+import { StageTabs } from '@/components/StageTabs'
 import { StatusBanner } from '@/components/StatusBanner'
 import { CalibrationBanner } from '@/components/CalibrationBanner'
 import { SearchPausedBanner } from '@/components/SearchPausedBanner'
@@ -29,6 +31,8 @@ const QualityPage = lazy(() => import('@/pages/QualityPage').then((m) => ({ defa
 const AdminPage = lazy(() => import('@/pages/AdminPage').then((m) => ({ default: m.AdminPage })))
 
 const VIEW_KEY = 'jobwright-view'
+/** The lane the phone board shows when no stage is picked (last one chosen). */
+const PHONE_LANE_KEY = 'jobwright-phone-lane'
 
 function jobMatchesQuery(job: JobCard, q: string): boolean {
   if (!q) return true
@@ -39,6 +43,10 @@ function jobMatchesQuery(job: JobCard, q: string): boolean {
 function isWorthALook(job: JobCard): boolean {
   const s = job.fit_score
   return job.funnel_stage === 'backlog' && s != null && s >= 5 && s <= 6 && !(job.dealbreakers || []).length
+}
+
+function allVisibleCount(columns: Record<string, JobCard[]>): number {
+  return Object.values(columns).reduce((n, jobs) => n + jobs.length, 0)
 }
 
 function initialView(): ViewMode {
@@ -65,6 +73,7 @@ export default function App() {
   const [params, setParams] = useSearchParams()
   const { jobId } = useParams<{ jobId?: string }>()
   const page = pageFor(location.pathname)
+  const isPhone = useMediaQuery('(max-width: 767px)')
   const { board, setBoard, profile, pendingNotify, loading, refresh, refreshCard, moveCard, saveLaneOrder } = useBoard()
   const [view, setViewState] = useState<ViewMode>(initialView)
   const [showAdd, setShowAdd] = useState(false)
@@ -75,6 +84,9 @@ export default function App() {
   // Stage filter and search live in the URL (?stage=prepare&q=design) so reload and shared links keep them.
   const stageParam = params.get('stage')
   const filterStage: string | 'all' = stageParam && STAGE_LABELS[stageParam] ? stageParam : 'all'
+  useEffect(() => {
+    if (filterStage !== 'all') localStorage.setItem(PHONE_LANE_KEY, filterStage)
+  }, [filterStage])
 
   const setQueryParam = useCallback(
     (key: string, value: string | null) => {
@@ -167,6 +179,30 @@ export default function App() {
     [filteredColumns, visibleStages],
   )
 
+  // Phone: the board shows one lane at a time. A stage filter (?stage=) picks it; with "All" it
+  // falls back to the last lane chosen, then the first lane with jobs.
+  const phoneBoard = isPhone && view === 'board' && !worthOnly
+  const phoneLane = useMemo(() => {
+    if (!board) return 'backlog'
+    if (filterStage !== 'all') return filterStage
+    const saved = localStorage.getItem(PHONE_LANE_KEY)
+    if (saved && board.stages.includes(saved)) return saved
+    return board.stages.find((s) => (filteredColumns[s] || []).length > 0) || board.stages[0]
+  }, [board, filterStage, filteredColumns])
+
+  // Strip counts match the desktop sidebar (stage totals); while searching they count matches.
+  const stageCounts = useMemo(() => {
+    const counts: Record<string, number> = {}
+    if (!board) return counts
+    const narrowed = !!search || worthOnly
+    for (const s of board.stages) {
+      const shown = (filteredColumns[s] || []).length
+      counts[s] = narrowed ? shown : (board.stage_counts?.[s] ?? profile?.stage_counts?.[s] ?? shown)
+    }
+    return counts
+  }, [board, filteredColumns, profile, search, worthOnly])
+  const allCount = board ? (search || worthOnly ? allVisibleCount(filteredColumns) : board.total) : 0
+
   function onBoardMove(job: JobCard, toStage: string, position: number, revert: BoardResponse | null) {
     if (toStage === 'closed') {
       // Ask why first; the card goes back until the dialog is confirmed.
@@ -203,10 +239,20 @@ export default function App() {
 
   const drawerOpen = Boolean(jobId)
   const pageTitle = filterStage === 'all' ? 'All jobs' : STAGE_LABELS[filterStage] || filterStage
+  // Phone: the stage strip names the stage, so the header just says Jobs (board count = every lane).
+  const headerTitle = isPhone ? 'Jobs' : pageTitle
+  const headerCount = !board ? null : phoneBoard ? allVisibleCount(filteredColumns) : tableJobs.length
+  const showTabBar = !drawerOpen
 
   return (
-    <MobileNavProvider>
-      <div className="relative flex h-full bg-background">
+    <>
+      <div
+        className={cn(
+          'relative flex h-full bg-background max-md:flex-col',
+          // The tab bar owns the bottom safe area; sticky bars above it don't pad for it again.
+          showTabBar && 'max-md:[--safe-bottom:0px]',
+        )}
+      >
         <AppSidebar
           profile={profile}
           board={board}
@@ -233,11 +279,11 @@ export default function App() {
               <AdminPage />
             </Suspense>
           ) : (
-            <div className={cn('flex min-w-0 flex-1 flex-col', drawerOpen && 'max-md:hidden')}>
+            <div className={cn('flex min-w-0 flex-1 flex-col max-md:min-h-0', drawerOpen && 'max-md:hidden')}>
               <StatusBanner />
               <BoardHeader
-                title={pageTitle}
-                count={board ? tableJobs.length : null}
+                title={headerTitle}
+                count={headerCount}
                 view={view}
                 onViewChange={setView}
                 search={searchQuery}
@@ -258,6 +304,17 @@ export default function App() {
                       <X /> Show all
                     </Button>
                   </div>
+                ) : null}
+                {isPhone && board && allJobs.length > 0 && !(view === 'board' && !worthOnly) ? (
+                  // Phone table: the stage filter that lived in the old menu (All + each stage).
+                  <StageTabs
+                    className="mb-3"
+                    stages={board.stages}
+                    counts={stageCounts}
+                    allCount={allCount}
+                    value={filterStage}
+                    onChange={selectStage}
+                  />
                 ) : null}
                 {!board ? (
                   loading ? (
@@ -292,19 +349,26 @@ export default function App() {
                   />
                 ) : view === 'board' && !worthOnly ? (
                   <>
-                    <div className="sticky -top-3 left-0 z-10 -mx-3 -mt-3 mb-1 bg-background px-3 py-2 md:hidden">
-                      <ViewModeTabs value={view} onChange={setView} />
-                    </div>
                     <KanbanBoard
                       board={board}
                       setBoard={setBoard}
-                      stages={visibleStages}
+                      stages={phoneBoard ? [phoneLane] : visibleStages}
                       columns={filteredColumns}
                       searching={!!search}
                       onOpen={openJob}
                       onScoreSaved={onScoreSaved}
                       onMove={onBoardMove}
                       onReorder={(stage, next, revert) => void saveLaneOrder(stage, next, revert)}
+                      phone={
+                        phoneBoard
+                          ? {
+                              lane: phoneLane,
+                              onLaneChange: selectStage,
+                              counts: stageCounts,
+                              leading: <ViewModeTabs value={view} onChange={setView} />,
+                            }
+                          : undefined
+                      }
                     />
                   </>
                 ) : (
@@ -350,8 +414,8 @@ export default function App() {
           onSaved={() => void refresh({ notify: true })}
         />
 
-        <MobileNav profile={profile} board={board} filterStage={filterStage} onFilterStage={selectStage} />
+        {showTabBar ? <PhoneTabBar /> : null}
       </div>
-    </MobileNavProvider>
+    </>
   )
 }
