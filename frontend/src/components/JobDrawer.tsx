@@ -247,7 +247,7 @@ export function JobDrawer({ jobKey, onClose, onChanged }: Props) {
     )
 
     body = twoColumns ? (
-      <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
+      <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         <div className="job-drawer-scroll border-r border-border">
           <div className="min-w-0 px-6 pb-10">
             {summary}
