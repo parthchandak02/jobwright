@@ -30,7 +30,7 @@ from jobwright import config
 from jobwright.config import CONFIG_DIR
 from jobwright.database import init_db, get_stats
 from jobwright.discovery.location import location_ok as _location_ok
-from jobwright.llm import get_client
+from jobwright.llm import get_client, llm_purpose
 
 log = logging.getLogger(__name__)
 
@@ -353,6 +353,7 @@ or
 No explanation, no markdown, no thinking."""
 
 
+@llm_purpose("smartextract")
 def judge_api_responses(api_responses: list[dict]) -> list[dict]:
     """Use the LLM to filter API responses, keeping only job-relevant ones."""
     if not api_responses:
@@ -632,6 +633,7 @@ PAGE HTML:
 
 # -- LLM helpers -------------------------------------------------------------
 
+@llm_purpose("smartextract")
 def ask_llm(prompt: str) -> tuple[str, float, dict]:
     """Send prompt to LLM. Returns (response_text, seconds_taken, metadata)."""
     client = get_client()

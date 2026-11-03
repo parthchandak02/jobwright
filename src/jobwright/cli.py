@@ -130,6 +130,27 @@ def main(
         if env_user and f"/users/{env_user}" in env_dir.replace("\\", "/"):
             user = env_user
     _resolve_user_option(user)
+    _register_usage_flush()
+
+
+_usage_flush_registered = False
+
+
+def _register_usage_flush() -> None:
+    """Flush any LLM usage left in the ledger to the active user's DB at exit.
+
+    Covers commands that call the LLM outside a pipeline stage (tailor-job,
+    criteria suggest, ...). Pipeline stages also flush after each stage.
+    """
+    global _usage_flush_registered
+    if _usage_flush_registered:
+        return
+    import atexit
+
+    from jobwright.llm import flush_active_usage
+
+    atexit.register(flush_active_usage)
+    _usage_flush_registered = True
 
 
 # ---------------------------------------------------------------------------

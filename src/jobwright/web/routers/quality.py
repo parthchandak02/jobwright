@@ -95,6 +95,7 @@ def patch_criteria(body: CutoffBody, request: Request) -> dict:
 def suggest(request: Request) -> dict:
     from jobwright.labels import build_eval_set
     from jobwright.resume import load_resume_text
+    from jobwright.llm import flush_active_usage
     from jobwright.scoring.criteria_miner import suggest_criteria
 
     current_user_id(request)
@@ -107,6 +108,8 @@ def suggest(request: Request) -> dict:
         proposal = suggest_criteria(resume_text=resume, profile=_profile(), decisions=decisions)
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(502, f"Could not draft criteria: {exc}") from exc
+    finally:
+        flush_active_usage()
     return {"criteria": proposal.to_dict(), "based_on_ratings": len(decisions)}
 
 

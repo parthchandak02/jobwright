@@ -4,15 +4,18 @@ Modes (``JOBWRIGHT_AUTH_MODE``):
   cloudflare  Verify ``Cf-Access-Jwt-Assertion`` (or the ``CF_Authorization``
               cookie) against the team's JWKS, audience and issuer. Required
               whenever the API is reachable through the tunnel.
-  dev         Trust the local caller (``JOBWRIGHT_DEV_EMAIL`` or anonymous
-              admin). Refuses any request that arrived through Cloudflare, so a
-              misconfigured prod API fails closed instead of open.
+  dev         Trust the local caller as ``JOBWRIGHT_DEV_EMAIL``; without it,
+              only a loopback client (127.0.0.1 / ::1, no non-loopback
+              forwarding headers) is treated as an anonymous admin. Refuses
+              any request that arrived through Cloudflare, so a misconfigured
+              prod API fails closed instead of open.
 
 Default: ``cloudflare`` when ``JOBWRIGHT_CF_TEAM_DOMAIN`` is set, else ``dev``.
 """
 
 from __future__ import annotations
 
+import ipaddress
 import logging
 import os
 import threading
@@ -25,6 +28,9 @@ log = logging.getLogger(__name__)
 CF_JWT_HEADER = "cf-access-jwt-assertion"
 CF_JWT_COOKIE = "CF_Authorization"
 _CF_EDGE_HEADERS = ("cf-ray", "cf-connecting-ip", CF_JWT_HEADER)
+_FORWARDED_HEADERS = ("x-forwarded-for", "x-real-ip")
+# Hostnames accepted as "this machine" besides loopback IPs (tests add theirs).
+LOOPBACK_HOSTS: set[str] = {"localhost"}
 
 
 class AuthError(Exception):
@@ -95,8 +101,39 @@ def verify_cloudflare_token(token: str) -> str:
     return email
 
 
-def identify(headers: dict[str, str], cookies: dict[str, str]) -> Identity:
-    """Resolve the caller. ``headers`` keys must be lower-case."""
+def _is_loopback(host: str | None) -> bool:
+    host = (host or "").strip().strip("[]")
+    if not host:
+        return False
+    if host.lower() in LOOPBACK_HOSTS:
+        return True
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    mapped = getattr(ip, "ipv4_mapped", None)
+    return (mapped or ip).is_loopback
+
+
+def _local_caller(headers: dict[str, str], client_host: str | None) -> bool:
+    """True when the TCP peer is loopback and no hop says the request came from elsewhere."""
+    if not _is_loopback(client_host):
+        return False
+    if "forwarded" in headers:
+        return False
+    for name in _FORWARDED_HEADERS:
+        value = headers.get(name)
+        if value is not None and not all(_is_loopback(h) for h in value.split(",")):
+            return False
+    return True
+
+
+def identify(headers: dict[str, str], cookies: dict[str, str], client_host: str | None = None) -> Identity:
+    """Resolve the caller. ``headers`` keys must be lower-case.
+
+    ``client_host`` is the TCP peer (ASGI ``scope["client"][0]``); dev mode only
+    grants anonymous admin to a loopback peer.
+    """
     mode = auth_mode()
     if mode == "cloudflare":
         token = headers.get(CF_JWT_HEADER) or cookies.get(CF_JWT_COOKIE) or ""
@@ -114,4 +151,10 @@ def identify(headers: dict[str, str], cookies: dict[str, str]) -> Identity:
     email = normalize_email(os.environ.get("JOBWRIGHT_DEV_EMAIL", ""))
     if email:
         return Identity(email=email, is_admin=is_admin_email(email), mode=mode)
+    if not _local_caller(headers, client_host):
+        raise AuthError(
+            "Dev auth mode only trusts callers on this machine; set JOBWRIGHT_DEV_EMAIL "
+            "or JOBWRIGHT_AUTH_MODE=cloudflare",
+            401,
+        )
     return Identity(email="", is_admin=True, mode=mode)

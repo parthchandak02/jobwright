@@ -218,3 +218,69 @@ def test_stop_kills_spawned_children(api_client, tmp_path, monkeypatch):
                 break
             time.sleep(0.05)
         assert dead, f"pid {pid} still alive after stop"
+
+
+def test_pid_is_jobwright_fails_safe_when_ps_fails(monkeypatch):
+    import subprocess
+
+    from jobwright.web.routers import runs as runs_mod
+
+    def boom(*a, **k):
+        raise OSError("ps missing")
+
+    monkeypatch.setattr(runs_mod.subprocess, "run", boom)
+    assert runs_mod._pid_is_jobwright(12345) is False
+
+    def timeout(*a, **k):
+        raise subprocess.TimeoutExpired("ps", 3)
+
+    monkeypatch.setattr(runs_mod.subprocess, "run", timeout)
+    assert runs_mod._pid_is_jobwright(12345) is False
+
+    empty = subprocess.CompletedProcess(["ps"], 1, stdout="", stderr="")
+    monkeypatch.setattr(runs_mod.subprocess, "run", lambda *a, **k: empty)
+    assert runs_mod._pid_is_jobwright(12345) is False
+
+
+def test_pid_is_jobwright_rejects_reused_pid(monkeypatch):
+    import subprocess
+    from datetime import datetime, timedelta
+
+    from jobwright.web.routers import runs as runs_mod
+
+    started = datetime.now().astimezone().replace(microsecond=0)
+
+    def fake_ps(start: datetime, command: str):
+        line = f"{start.strftime('%a %b %d %H:%M:%S %Y')} {command}\n"
+        return lambda *a, **k: subprocess.CompletedProcess(["ps"], 0, stdout=line, stderr="")
+
+    recorded = started.isoformat()
+    cmd = "/usr/bin/python3 -m jobwright --user user1 run score"
+    monkeypatch.setattr(runs_mod.subprocess, "run", fake_ps(started, cmd))
+    assert runs_mod._pid_is_jobwright(12345, recorded) is True
+    assert runs_mod._pid_is_jobwright(12345) is True
+
+    # Same PID, but the process began well after the run was recorded: reused.
+    monkeypatch.setattr(runs_mod.subprocess, "run", fake_ps(started + timedelta(minutes=5), cmd))
+    assert runs_mod._pid_is_jobwright(12345, recorded) is False
+
+    # A non-jobwright process holding the PID is never ours.
+    monkeypatch.setattr(runs_mod.subprocess, "run", fake_ps(started, "/usr/sbin/sshd -D"))
+    assert runs_mod._pid_is_jobwright(12345, recorded) is False
+
+    # With a recorded command, the live arguments must match it.
+    monkeypatch.setattr(runs_mod.subprocess, "run", fake_ps(started, cmd))
+    recorded_cmd = ["/other/python", "-m", "jobwright", "--user", "user1", "run", "score"]
+    assert runs_mod._pid_is_jobwright(12345, recorded, recorded_cmd) is True
+    other_user = ["/other/python", "-m", "jobwright", "--user", "user2", "run", "score"]
+    assert runs_mod._pid_is_jobwright(12345, recorded, other_user) is False
+
+
+def test_pid_is_jobwright_real_process():
+    import os
+
+    from jobwright.web.routers import runs as runs_mod
+
+    # The test runner itself is not a jobwright process (unless the path says so).
+    info = runs_mod._ps_start_and_command(os.getpid())
+    assert info is not None and info[0] is not None

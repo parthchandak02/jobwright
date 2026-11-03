@@ -28,7 +28,7 @@ import httpx
 from jobwright.config import load_profile
 from jobwright.database import get_connection, get_jobs_by_stage
 from jobwright.discovery.filters import apply_fit_score_guards
-from jobwright.llm import get_client
+from jobwright.llm import get_client, llm_purpose
 from jobwright.llm_json import LLMJsonError, chat_json_object, get_list_field, parse_json_object
 
 log = logging.getLogger(__name__)
@@ -335,6 +335,7 @@ def _try_schema_chat(client, messages: list[dict], *, max_tokens: int, temperatu
     return content
 
 
+@llm_purpose("score:v1")
 def _chat_single(client, messages: list[dict], *, max_tokens: int = SINGLE_MAX_TOKENS, temperature: float = 0.0) -> str:
     """One scoring call: prefer json_schema, then json_object, then prompt+parse.
 
@@ -509,6 +510,7 @@ def _map_batch_scores(
     return scored, missing
 
 
+@llm_purpose("score:v1")
 def score_jobs_batch(
     resume_text: str,
     jobs: list[dict],
@@ -556,6 +558,7 @@ def score_jobs_batch(
         return [], jobs
 
 
+@llm_purpose("score:v1")
 def score_job(
     resume_text: str,
     job: dict,

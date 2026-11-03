@@ -154,8 +154,57 @@ def test_dev_mode_refuses_cloudflare_traffic(tmp_path, monkeypatch):
 
     monkeypatch.setenv("JOBWRIGHT_AUTH_MODE", "dev")
     with pytest.raises(AuthError):
-        identify({"cf-ray": "abc"}, {})
-    assert identify({}, {}).is_admin
+        identify({"cf-ray": "abc"}, {}, "127.0.0.1")
+    assert identify({}, {}, "127.0.0.1").is_admin
+    assert identify({}, {}, "::1").is_admin
+
+
+@pytest.mark.parametrize(
+    "client_host,headers",
+    [
+        (None, {}),
+        ("192.168.1.20", {}),
+        ("10.0.0.5", {}),
+        ("127.0.0.1", {"x-forwarded-for": "203.0.113.9"}),
+        ("127.0.0.1", {"x-forwarded-for": "127.0.0.1, 198.51.100.7"}),
+        ("127.0.0.1", {"x-real-ip": "198.51.100.7"}),
+        ("127.0.0.1", {"forwarded": "for=198.51.100.7"}),
+        ("127.0.0.1", {"cf-connecting-ip": "198.51.100.7"}),
+    ],
+)
+def test_dev_mode_anonymous_admin_only_for_loopback(monkeypatch, client_host, headers):
+    from jobwright.web.auth import AuthError, identify
+
+    monkeypatch.setenv("JOBWRIGHT_AUTH_MODE", "dev")
+    with pytest.raises(AuthError):
+        identify(headers, {}, client_host)
+
+
+def test_dev_mode_loopback_forwarded_by_local_proxy_is_trusted(monkeypatch):
+    from jobwright.web.auth import identify
+
+    monkeypatch.setenv("JOBWRIGHT_AUTH_MODE", "dev")
+    assert identify({"x-forwarded-for": "127.0.0.1"}, {}, "127.0.0.1").is_admin
+    assert identify({}, {}, "::ffff:127.0.0.1").is_admin
+
+
+def test_dev_mode_dev_email_identity_from_any_host(monkeypatch):
+    from jobwright.web.auth import identify
+
+    monkeypatch.setenv("JOBWRIGHT_AUTH_MODE", "dev")
+    monkeypatch.setenv("JOBWRIGHT_DEV_EMAIL", "user1@example.com")
+    ident = identify({}, {}, "192.168.1.20")
+    assert ident.email == "user1@example.com" and not ident.is_admin
+
+
+def test_dev_mode_remote_client_rejected_over_http(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from jobwright.web import app as app_mod
+
+    monkeypatch.setenv("JOBWRIGHT_AUTH_MODE", "dev")
+    remote = TestClient(app_mod.app, client=("192.168.1.20", 5000))
+    assert remote.get("/api/me").status_code == 401
 
 
 def test_spa_fallback_blocks_traversal(tmp_path, monkeypatch):

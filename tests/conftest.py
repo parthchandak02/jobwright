@@ -41,6 +41,11 @@ def _hermetic(tmp_path_factory, monkeypatch):
     sandbox = tmp_path_factory.mktemp("hermetic")
     monkeypatch.setenv("JOBWRIGHT_ENV", str(sandbox / "no-global.env"))
     monkeypatch.setenv("JOBWRIGHT_AUTH_MODE", "dev")
+    # Starlette's TestClient connects as host "testclient"; treat it as this machine
+    # so dev-mode anonymous admin keeps working in tests (real dev needs loopback).
+    from jobwright.web import auth as auth_mod
+
+    monkeypatch.setattr(auth_mod, "LOOPBACK_HOSTS", {*auth_mod.LOOPBACK_HOSTS, "testclient"})
     monkeypatch.setenv("HERMES_CONFIG", str(sandbox / "hermes-config.yaml"))
     monkeypatch.setenv("JOBWRIGHT_HERMES_SCRIPTS_DIR", str(sandbox / "hermes-scripts"))
     shim = sandbox / "bin"
@@ -64,7 +69,9 @@ def _hermetic(tmp_path_factory, monkeypatch):
     import jobwright.llm as llm_mod
 
     llm_mod._instance = None
+    llm_mod._usage.clear()
     yield
     llm_mod._instance = None
+    llm_mod._usage.clear()
     for name, value in snapshot.items():
         setattr(state, name, value)

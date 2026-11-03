@@ -32,13 +32,20 @@ _FIREWORKS_SHORT_MODELS = {
     "glm-5p3-flash": "accounts/fireworks/models/glm-5p3-flash",
     "glm-5.3-flash": "accounts/fireworks/models/glm-5p3-flash",
     "glm-5.3": "accounts/fireworks/models/glm-5p3-flash",
-    "gpt-oss-120b": "accounts/fireworks/models/gpt-oss-120b",
     "minimax-m3": "accounts/fireworks/models/minimax-m3",
 }
 
 # ---------------------------------------------------------------------------
 # Provider detection
 # ---------------------------------------------------------------------------
+
+_BANNED_MODEL_MARKERS = ("gpt-oss",)  # banned by the owner; never route to it
+
+
+def _is_banned_model(model: str | None) -> bool:
+    name = (model or "").lower()
+    return any(marker in name for marker in _BANNED_MODEL_MARKERS)
+
 
 def _resolve_fireworks_model(model_override: str) -> str:
     """Map LLM_MODEL to a Fireworks serverless model id."""
@@ -74,6 +81,9 @@ def _detect_provider(model_override: str | None = None) -> tuple[str, str, str]:
     local_url = os.environ.get("LLM_URL", "")
     if model_override is None:
         model_override = os.environ.get("LLM_MODEL", "")
+    if _is_banned_model(model_override):
+        log.warning("LLM model %s is not allowed (banned model family); using the default", model_override)
+        model_override = ""
 
     if model_override.startswith("gemini-") and gemini_key and not local_url:
         return (
@@ -137,15 +147,30 @@ def _detect_provider(model_override: str | None = None) -> tuple[str, str, str]:
 # Token usage ledger
 #
 # Every successful call adds its token counts to an in-process ledger keyed by
-# (purpose, provider, model). ``llm_purpose("score")`` tags calls made inside a
-# block; pipeline stages flush the ledger to the llm_usage table so spend per
-# run and per purpose is visible. Costs are only computed when a per-model price
-# is configured (JOBWRIGHT_LLM_PRICES='{"model": [in_per_1M, out_per_1M]}').
+# (user, purpose, provider, model). ``llm_purpose("score")`` tags calls made
+# inside a block (it also works as a decorator). The user is the active profile
+# (``config.get_active_user_id()``: the CLI process default, or the per-request
+# ``config.user_context`` in the API), so concurrent API requests for different
+# profiles never flush each other's usage. ``flush_usage`` writes only the
+# current user's rows to that user's llm_usage table; pipeline stages and API
+# handlers that call the LLM in-process flush via ``flush_active_usage``. Costs
+# are only computed when a per-model price is configured
+# (JOBWRIGHT_LLM_PRICES='{"model": [in_per_1M, out_per_1M]}').
 # ---------------------------------------------------------------------------
 
 _purpose: contextvars.ContextVar[str] = contextvars.ContextVar("llm_purpose", default="other")
 _usage_lock = threading.Lock()
-_usage: dict[tuple[str, str, str], list[int]] = defaultdict(lambda: [0, 0, 0, 0])
+_usage: dict[tuple[str, str, str, str], list[int]] = defaultdict(lambda: [0, 0, 0, 0])
+_CURRENT = object()  # sentinel: "the active user"
+
+
+def _ledger_user() -> str:
+    try:
+        from jobwright.config import get_active_user_id
+
+        return get_active_user_id() or ""
+    except Exception:  # noqa: BLE001 - accounting must never break a call
+        return ""
 
 
 @contextmanager
@@ -157,6 +182,10 @@ def llm_purpose(name: str):
         _purpose.reset(token)
 
 
+def current_purpose() -> str:
+    return _purpose.get()
+
+
 def record_usage(provider: str, model: str, usage: dict | None) -> None:
     if not usage:
         return
@@ -164,24 +193,36 @@ def record_usage(provider: str, model: str, usage: dict | None) -> None:
     completion = int(usage.get("completion_tokens") or usage.get("candidatesTokenCount") or 0)
     details = usage.get("prompt_tokens_details") or {}
     cached = int(details.get("cached_tokens") or usage.get("cachedContentTokenCount") or 0)
+    user = _ledger_user()
     with _usage_lock:
-        row = _usage[(_purpose.get(), provider, model)]
+        row = _usage[(user, _purpose.get(), provider, model)]
         row[0] += prompt
         row[1] += completion
         row[2] += cached
         row[3] += 1
 
 
-def usage_snapshot(reset: bool = False) -> list[dict]:
-    """Aggregated usage since the last reset: purpose/provider/model/tokens/calls."""
+def usage_snapshot(reset: bool = False, user_id=_CURRENT) -> list[dict]:
+    """Aggregated usage since the last reset: purpose/provider/model/tokens/calls.
+
+    Only rows for ``user_id`` (default: the active user) are returned and, with
+    ``reset``, cleared; pass ``user_id=None`` for every user (rows then carry
+    a ``user_id`` key).
+    """
+    everyone = user_id is None
+    user = _ledger_user() if user_id is _CURRENT else (user_id or "")
     with _usage_lock:
-        rows = [
-            {"purpose": k[0], "provider": k[1], "model": k[2], "prompt_tokens": v[0],
-             "completion_tokens": v[1], "cached_tokens": v[2], "calls": v[3]}
-            for k, v in _usage.items()
-        ]
-        if reset:
-            _usage.clear()
+        keys = [k for k in _usage if everyone or k[0] == user]
+        rows = []
+        for k in keys:
+            v = _usage[k]
+            row = {"purpose": k[1], "provider": k[2], "model": k[3], "prompt_tokens": v[0],
+                   "completion_tokens": v[1], "cached_tokens": v[2], "calls": v[3]}
+            if everyone:
+                row["user_id"] = k[0] or None
+            rows.append(row)
+            if reset:
+                del _usage[k]
     return rows
 
 
@@ -209,22 +250,63 @@ def estimate_cost(model: str, prompt_tokens: int, completion_tokens: int, cached
     )
 
 
-def flush_usage(conn, run_id: str | None = None) -> int:
-    """Write the aggregated ledger to llm_usage and reset it."""
+def flush_usage(conn, run_id: str | None = None, user_id=_CURRENT) -> int:
+    """Write the active user's (or ``user_id``'s) ledger rows to llm_usage and reset them.
+
+    ``conn`` must be that user's database. Other users' rows stay in the ledger.
+    """
     from datetime import datetime, timezone
 
-    rows = usage_snapshot(reset=True)
+    rows = usage_snapshot(reset=True, user_id=user_id if user_id is not None else "")
+    if not rows:
+        return 0
     now = datetime.now(timezone.utc).isoformat()
-    for r in rows:
-        conn.execute(
-            "INSERT INTO llm_usage (at, run_id, purpose, provider, model, prompt_tokens, "
-            "completion_tokens, cached_tokens, cost_usd) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (now, run_id, r["purpose"], r["provider"], r["model"], r["prompt_tokens"],
-             r["completion_tokens"], r["cached_tokens"],
-             estimate_cost(r["model"], r["prompt_tokens"], r["completion_tokens"], r["cached_tokens"])),
-        )
-    conn.commit()
+    try:
+        for r in rows:
+            conn.execute(
+                "INSERT INTO llm_usage (at, run_id, purpose, provider, model, prompt_tokens, "
+                "completion_tokens, cached_tokens, cost_usd) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (now, run_id, r["purpose"], r["provider"], r["model"], r["prompt_tokens"],
+                 r["completion_tokens"], r["cached_tokens"],
+                 estimate_cost(r["model"], r["prompt_tokens"], r["completion_tokens"], r["cached_tokens"])),
+            )
+        conn.commit()
+    except Exception:
+        _restore(rows, user_id)
+        raise
     return len(rows)
+
+
+def _restore(rows: list[dict], user_id) -> None:
+    """Put rows back after a failed write so a later flush can retry."""
+    user = _ledger_user() if user_id is _CURRENT else (user_id or "")
+    with _usage_lock:
+        for r in rows:
+            row = _usage[(user, r["purpose"], r["provider"], r["model"])]
+            row[0] += r["prompt_tokens"]
+            row[1] += r["completion_tokens"]
+            row[2] += r["cached_tokens"]
+            row[3] += r["calls"]
+
+
+def flush_active_usage(run_id: str | None = None) -> int:
+    """Best-effort flush of the active user's ledger to their own database.
+
+    Used after each pipeline stage, at CLI exit and by API handlers that call
+    the LLM in-process. Never raises: accounting must not sink a run.
+    """
+    if not usage_snapshot():
+        return 0
+    try:
+        from jobwright.database import get_connection, init_db
+
+        try:
+            return flush_usage(get_connection(), run_id)
+        except Exception:  # noqa: BLE001 - e.g. a fresh profile without the table yet
+            return flush_usage(init_db(), run_id)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("LLM usage flush failed: %s", exc)
+        return 0
 
 
 def _provider_name(base_url: str) -> str:

@@ -73,6 +73,7 @@ async def draft(
     """Save the resume (if uploaded) and return an editable draft. Writes nothing else."""
     from starlette.concurrency import run_in_threadpool
 
+    from jobwright.llm import flush_active_usage
     from jobwright.onboarding import draft_from_resume
     from jobwright.resume import load_resume_text
 
@@ -95,6 +96,8 @@ async def draft(
         return await run_in_threadpool(draft_from_resume, resume_text, hints)
     except Exception as exc:  # noqa: BLE001 - surface LLM/provider problems to the user
         raise HTTPException(502, f"Could not draft your setup: {exc}") from exc
+    finally:
+        await run_in_threadpool(flush_active_usage)
 
 
 class ConfirmBody(BaseModel):

@@ -17,6 +17,7 @@ import json
 import logging
 import os
 import time
+import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -28,6 +29,7 @@ from rich.table import Table
 import jobwright.config as config
 from jobwright.config import load_env, ensure_dirs
 from jobwright.database import init_db, get_connection, get_stats
+from jobwright.llm import flush_active_usage, llm_purpose
 
 log = logging.getLogger(__name__)
 console = Console()
@@ -40,9 +42,9 @@ console = Console()
 STAGE_ORDER = ("discover", "enrich", "score", "portfolio", "tailor", "cover", "pdf", "docx", "connect")
 
 STAGE_META: dict[str, dict] = {
-    "discover": {"desc": "Job discovery (JobSpy + Workday + smart extract)"},
+    "discover": {"desc": "Job discovery (job boards incl. LinkedIn, Workday, impact boards; smart extract in full mode)"},
     "enrich":   {"desc": "Detail enrichment (full descriptions + apply URLs)"},
-    "score":    {"desc": "LLM scoring (fit 1-10)"},
+    "score":    {"desc": "Match scoring (criteria + past ratings, 1-10 with hard gates)"},
     "portfolio": {"desc": "Portfolio project selection per job"},
     "tailor":   {"desc": "Resume tailoring (LLM + validation)"},
     "cover":    {"desc": "Cover letter generation"},
@@ -216,7 +218,7 @@ def _run_enrich(workers: int = 1) -> dict:
 
 
 def _run_score() -> dict:
-    """Stage: LLM scoring — assign fit scores 1-10."""
+    """Stage: match scoring (v2 structured judgment + gates; v1 via JOBWRIGHT_SCORER)."""
     try:
         from jobwright.scoring.scorer import run_scoring
 
@@ -444,6 +446,7 @@ def _run_sequential(ordered: list[str], min_score: int, workers: int = 1,
     results: list[dict] = []
     errors: dict[str, str] = {}
     pipeline_start = time.time()
+    usage_run_id = os.environ.get("JOBWRIGHT_WEB_RUN_ID") or f"pipeline-{uuid.uuid4().hex[:8]}"
 
     for name in ordered:
         meta = STAGE_META[name]
@@ -464,7 +467,8 @@ def _run_sequential(ordered: list[str], min_score: int, workers: int = 1,
                 kwargs["validation_mode"] = validation_mode
             if name in ("discover", "enrich"):
                 kwargs["workers"] = workers
-            result = runner(**kwargs)
+            with llm_purpose(name):  # default tag; call sites refine it
+                result = runner(**kwargs)
             elapsed = time.time() - t0
 
             status = "ok"
@@ -478,6 +482,7 @@ def _run_sequential(ordered: list[str], min_score: int, workers: int = 1,
             log.exception("Stage '%s' crashed", name)
             console.print(f"\n  [red]STAGE FAILED:[/red] {e}")
 
+        flush_active_usage(usage_run_id)  # LLM spend per stage -> this user's llm_usage
         results.append({"stage": name, "status": status, "elapsed": elapsed, "detail": detail})
         if status not in ("ok", "partial", "skipped"):
             errors[name] = status

@@ -1,17 +1,18 @@
-"""Scoring v2: criteria-driven, example-grounded, tiered job matching.
+"""Scoring v2: criteria-driven, example-grounded job matching.
 
 One call per job returns structured judgments instead of a bare number:
 dealbreakers that apply, location fit, seniority fit, a 1-10 fit and a
 confidence. Hard rules are applied in code (a dealbreaker caps the score at 3),
 so the final score does not depend on the model remembering them.
 
-Tiers (cost-optimized):
-  1. cheap model (LLM_MODEL, default glm-5p3-flash) scores every job
-  2. jobs that could reach the notify list (tier-1 score >= escalate_at) or
-     that tier 1 was unsure about go to a stronger model, whose verdict wins
-Optional Jev fast-reject runs before tier 1 (see fastpath.py). Optional
-borderline second opinion (JOBWRIGHT_BORDERLINE_BAND, default off) re-asks for
-tier-1 scores inside a band; evals showed no gain, so it stays off.
+By default a single model (LLM_MODEL, default glm-5p3-flash) scores every job
+(tier 1). Escalation to a stronger model is opt-in: set LLM_ESCALATION_MODEL
+(DEFAULT_ESCALATION_MODEL is empty, so it is off) and jobs that could reach the
+notify list (tier-1 score >= escalate_at) or that tier 1 was unsure about are
+re-scored by that model, whose verdict wins. Optional Jev fast-reject runs
+before tier 1 (see fastpath.py). Optional borderline second opinion
+(JOBWRIGHT_BORDERLINE_BAND, default off) re-asks for tier-1 scores inside a
+band; evals showed no gain, so it stays off.
 """
 
 from __future__ import annotations

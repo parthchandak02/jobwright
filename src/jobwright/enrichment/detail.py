@@ -23,7 +23,7 @@ from bs4 import BeautifulSoup
 from playwright.sync_api import sync_playwright
 
 from jobwright.database import init_db
-from jobwright.llm import get_client
+from jobwright.llm import get_client, llm_purpose
 
 log = logging.getLogger(__name__)
 
@@ -442,6 +442,7 @@ def clean_content_html(html: str) -> str:
     return str(soup)
 
 
+@llm_purpose("detail_extract")
 def extract_with_llm(page, url: str) -> dict:
     """Send focused HTML to LLM for extraction. Fallback tier."""
     content = extract_main_content(page)

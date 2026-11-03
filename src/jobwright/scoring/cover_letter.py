@@ -13,7 +13,7 @@ from jobwright.config import load_profile
 import jobwright.config as config
 from jobwright.job_identity import material_prefix, resolve_company
 from jobwright.database import get_connection
-from jobwright.llm import get_client
+from jobwright.llm import get_client, llm_purpose
 from jobwright.scoring.portfolio import get_selected_projects
 from jobwright.scoring.validator import (
     BANNED_WORDS,
@@ -151,6 +151,7 @@ def _strip_preamble(text: str) -> str:
 
 # ── Core Generation ──────────────────────────────────────────────────────
 
+@llm_purpose("cover")
 def generate_cover_letter(
     resume_text: str, job: dict, profile: dict,
     max_retries: int = 3, validation_mode: str = "normal",
@@ -227,7 +228,7 @@ def generate_cover_letter(
             )},
         ]
 
-        # Reasoning models (GLM-5.3, gpt-oss) spend hidden tokens before emitting the
+        # Reasoning models (e.g. GLM-5.3) spend hidden tokens before emitting the
         # letter; a tight budget yields finish_reason=length with empty content.
         letter = client.chat(messages, max_tokens=4096, temperature=0.7)
         letter = sanitize_text(letter)  # auto-fix em dashes, smart quotes

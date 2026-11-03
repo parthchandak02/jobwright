@@ -26,7 +26,7 @@ if [[ -n "${JOBWRIGHT_USER:-}" ]]; then
   USER_FLAG=(--user "${JOBWRIGHT_USER}")
 else
   export JOBWRIGHT_DIR="${JOBWRIGHT_DIR:-$HOME/.jobwright}"
-  USER_FLAG=()
+  USER_FLAG=()  # expanded as ${USER_FLAG[@]+...}: bash 3.2 + set -u rejects an empty array
 fi
 export JOBWRIGHT_REPO="${REPO_ROOT}"
 
@@ -82,19 +82,21 @@ finish_status() {
   echo "done RC=${RC}" >> "${STATUS_FILE}"
   # Operator report: alerts the admin on stage failures, empty briefs, notify
   # failures (never blocks or changes RC).
-  "${PY}" -m jobwright.cli "${USER_FLAG[@]}" ops brief-report --status-file "${STATUS_FILE}" >> "${LOG}" 2>&1 || true
+  "${PY}" -m jobwright.cli ${USER_FLAG[@]+"${USER_FLAG[@]}"} ops brief-report --status-file "${STATUS_FILE}" >> "${LOG}" 2>&1 || true
 }
 trap finish_status EXIT
 
-if ! "${PY}" -m jobwright.cli "${USER_FLAG[@]}" preflight --fix >> "${LOG}" 2>&1; then
+if ! "${PY}" -m jobwright.cli ${USER_FLAG[@]+"${USER_FLAG[@]}"} preflight --fix >> "${LOG}" 2>&1; then
   echo "preflight_failed (see ${LOG})" >> "${STATUS_FILE}"
   RC=2
-  exit 0
+  # Non-zero so callers and schedulers see the failure; the EXIT trap still
+  # writes "done RC=2" and runs ops brief-report (which alerts ops_target).
+  exit "${RC}"
 fi
 
 # No explicit stage list: the pipeline picks the user's default brief stages
 # (human_gate users stop before tailor/cover/docx; others run everything).
-"${PY}" -m jobwright.cli "${USER_FLAG[@]}" run \
+"${PY}" -m jobwright.cli ${USER_FLAG[@]+"${USER_FLAG[@]}"} run \
   -w "${WORKERS}" --min-score "${MIN_SCORE}" --validation lenient >> "${LOG}" 2>&1 || RC=$?
 
 if [ "${RC}" -ne 0 ]; then
@@ -104,4 +106,4 @@ fi
 # One WhatsApp message (deep links to the dashboard). notify writes its own
 # truthful status line: notify_sent N / notify_skipped <reason> / notify_failed.
 # A notify failure must not fail the whole brief.
-"${PY}" -m jobwright.cli "${USER_FLAG[@]}" notify --status-file "${STATUS_FILE}" >> "${LOG}" 2>&1 || true
+"${PY}" -m jobwright.cli ${USER_FLAG[@]+"${USER_FLAG[@]}"} notify --status-file "${STATUS_FILE}" >> "${LOG}" 2>&1 || true
