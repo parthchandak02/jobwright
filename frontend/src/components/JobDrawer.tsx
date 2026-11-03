@@ -13,6 +13,7 @@ import { Callout } from '@/components/drawer/Callout'
 import { DesktopActions, PhoneActionBar, type DrawerAction } from '@/components/drawer/DrawerActions'
 import { JobDescriptionPane } from '@/components/drawer/JobDescriptionPane'
 import { JobDetails } from '@/components/drawer/JobDetails'
+import { JobSidePanel } from '@/components/drawer/JobSidePanel'
 import { JobHistory } from '@/components/drawer/JobHistory'
 import { JobNotes } from '@/components/drawer/JobNotes'
 import { MatchCard } from '@/components/drawer/MatchCard'
@@ -21,7 +22,8 @@ import { useJobNotes } from '@/components/drawer/useJobNotes'
 import { usePrepareMaterials } from '@/components/drawer/usePrepareMaterials'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
-import { followUpJob, moveJob, STAGE_LABELS } from '@/lib/api'
+import { followUpJob, moveJob, STAGE_LABELS, type JobCard } from '@/lib/api'
+import { DOCK_QUERY } from '@/lib/jobPanel'
 import { useMediaQuery } from '@/lib/useMediaQuery'
 import { cn, errorMessage } from '@/lib/utils'
 
@@ -30,13 +32,23 @@ type Props = {
   onClose: () => void
   /** Something on the job's board card changed (stage, score, materials): refetch the board. */
   onChanged: () => void
+  /** Desktop panel: show another job (previous / next) without closing. */
+  onOpenJob?: (jobId: string) => void
+  /** The job's board card, if loaded: the panel header shows it while the job loads. */
+  preview?: JobCard | null
 }
 
-/** Two columns (details | description + materials) from this width up. */
+/** Sheet drawer only (below the docked-panel width): two columns from this width up. */
 const WIDE_QUERY = '(min-width: 1440px)'
 
-export function JobDrawer({ jobKey, onClose, onChanged }: Props) {
+/**
+ * One job: decision summary, actions, stage, details, description, materials, people, notes.
+ * Desktop (DOCK_QUERY) renders it in a panel docked beside the board (`JobSidePanel`);
+ * tablets and phones keep the sheet / full-screen drawer with the phone action bar.
+ */
+export function JobDrawer({ jobKey, onClose, onChanged, onOpenJob, preview }: Props) {
   const open = !!jobKey
+  const docked = useMediaQuery(DOCK_QUERY)
   const wideScreen = useMediaQuery(WIDE_QUERY)
   const { job, setJob, materials, base, connections, reload } = useJobDrawerData(jobKey)
   const notes = useJobNotes(job)
@@ -159,125 +171,165 @@ export function JobDrawer({ jobKey, onClose, onChanged }: Props) {
     }
   }
 
-  const place = job ? [job.company || 'Unknown company', job.location].filter(Boolean).join(' · ') : ''
-  const twoColumns = wideScreen && !!job && (!!description || showMaterials)
+  const placeOf = (j: JobCard) => [j.company || 'Unknown company', j.location].filter(Boolean).join(' · ')
+  const place = job ? placeOf(job) : ''
+  const hasRightColumn = !!job && (!!description || showMaterials)
 
-  let body: ReactNode = null
-  if (!job) {
-    body = (
-      <div className="job-drawer-scroll">
-        <div className="mx-auto min-w-0 max-w-[46rem] px-4 pb-10 md:px-6">
-          <div className="flex items-center gap-2 py-8 text-body text-muted-foreground">
-            <Loader2 className="size-4 animate-spin" /> Loading job…
+  const renderBody = (wide: boolean): ReactNode => {
+    const twoColumns = wide && hasRightColumn
+    let body: ReactNode = null
+    if (!job) {
+      body = (
+        <div className="job-drawer-scroll">
+          <div className="mx-auto min-w-0 max-w-[46rem] px-4 pb-10 md:px-6">
+            <div className="flex items-center gap-2 py-8 text-body text-muted-foreground">
+              <Loader2 className="size-4 animate-spin" /> Loading job…
+            </div>
           </div>
         </div>
-      </div>
-    )
-  } else {
-    const summary = (
-      <DrawerSection first className="flex flex-col gap-4">
-        <MatchCard
-          job={job}
-          onRated={(updated) => {
-            setJob({ ...job, ...updated })
-            onChanged()
-          }}
-        />
-        {job.followup_due ? (
-          <Callout
-            icon={BellRing}
-            tone="--stage-in-progress"
-            actions={
-              <>
-                <Button size="sm" variant="secondary" disabled={busy} onClick={() => void doFollowUp('followed_up')}>
-                  I followed up
-                </Button>
-                <Button size="sm" variant="ghost" disabled={busy} onClick={() => void doFollowUp('no_response')}>
-                  No response
-                </Button>
-              </>
-            }
-          >
-            {followUpLabel(job.applied_days_ago)}. No reply yet, so a short note can help.
-          </Callout>
-        ) : null}
-        <DesktopActions actions={actions} />
-      </DrawerSection>
-    )
-    const stage = (
-      <DrawerSection title="Stage">
-        <StagePicker stage={job.funnel_stage} disabled={busy} onMove={requestMove} />
-      </DrawerSection>
-    )
-    const details = <JobDetails job={job} />
-    const descriptionSection = (first?: boolean) =>
-      description ? (
-        <DrawerSection first={first} title="Job description">
-          <JobDescriptionPane text={description} />
+      )
+    } else {
+      const summary = (
+        <DrawerSection first className="flex flex-col gap-4">
+          <MatchCard
+            job={job}
+            onRated={(updated) => {
+              setJob({ ...job, ...updated })
+              onChanged()
+            }}
+          />
+          {job.followup_due ? (
+            <Callout
+              icon={BellRing}
+              tone="--stage-in-progress"
+              actions={
+                <>
+                  <Button size="sm" variant="secondary" disabled={busy} onClick={() => void doFollowUp('followed_up')}>
+                    I followed up
+                  </Button>
+                  <Button size="sm" variant="ghost" disabled={busy} onClick={() => void doFollowUp('no_response')}>
+                    No response
+                  </Button>
+                </>
+              }
+            >
+              {followUpLabel(job.applied_days_ago)}. No reply yet, so a short note can help.
+            </Callout>
+          ) : null}
+          <DesktopActions actions={actions} />
         </DrawerSection>
-      ) : null
-    const materialsSections = (first?: boolean) =>
-      showMaterials ? (
+      )
+      const stage = (
+        <DrawerSection title="Stage">
+          <StagePicker
+            stage={job.funnel_stage}
+            disabled={busy}
+            onMove={requestMove}
+            className={docked ? 'flex-wrap' : undefined}
+          />
+        </DrawerSection>
+      )
+      const details = <JobDetails job={job} />
+      const descriptionSection = (first?: boolean) =>
+        description ? (
+          <DrawerSection first={first} title="Job description">
+            <JobDescriptionPane text={description} foldable={!docked} />
+          </DrawerSection>
+        ) : null
+      const materialsSections = (first?: boolean) =>
+        showMaterials ? (
+          <>
+            <DrawerSection first={first} title="Resume">
+              <JobResumeMaterials materials={materials} settings={base} jobKey={job.job_id} onTailored={materialsChanged} />
+            </DrawerSection>
+            <DrawerSection title="Cover letter">
+              <JobCoverMaterials materials={materials} settings={base} jobKey={job.job_id} onTailored={materialsChanged} />
+            </DrawerSection>
+          </>
+        ) : null
+      const people = (
+        <DrawerSection
+          title={
+            <span className="inline-flex items-center gap-2">
+              <LinkedInLogo className="size-4 text-linkedin" />
+              Who you know there
+            </span>
+          }
+        >
+          <ConnectionsPanel jobKey={job.job_id} connections={connections} onChanged={reload} />
+        </DrawerSection>
+      )
+      const extras = (
         <>
-          <DrawerSection first={first} title="Resume">
-            <JobResumeMaterials materials={materials} settings={base} jobKey={job.job_id} onTailored={materialsChanged} />
-          </DrawerSection>
-          <DrawerSection title="Cover letter">
-            <JobCoverMaterials materials={materials} settings={base} jobKey={job.job_id} onTailored={materialsChanged} />
-          </DrawerSection>
+          <JobNotes notes={notes} />
+          <JobHistory job={job} />
         </>
-      ) : null
-    const people = (
-      <DrawerSection
-        title={
-          <span className="inline-flex items-center gap-2">
-            <LinkedInLogo className="size-4 text-linkedin" />
-            Who you know there
-          </span>
-        }
-      >
-        <ConnectionsPanel jobKey={job.job_id} connections={connections} onChanged={reload} />
-      </DrawerSection>
-    )
-    const extras = (
-      <>
-        <JobNotes notes={notes} />
-        <JobHistory job={job} />
-      </>
-    )
+      )
 
-    body = twoColumns ? (
-      <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-        <div className="job-drawer-scroll border-r border-border">
-          <div className="min-w-0 px-6 pb-10">
+      body = twoColumns ? (
+        <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+          <div className="job-drawer-scroll border-r border-border">
+            <div className="min-w-0 px-6 pb-10">
+              {summary}
+              {stage}
+              {details}
+              {people}
+              {extras}
+            </div>
+          </div>
+          <div className="job-drawer-scroll">
+            <div className="min-w-0 px-6 pb-10">
+              {descriptionSection(true)}
+              {materialsSections(!description)}
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="job-drawer-scroll">
+          <div className="mx-auto min-w-0 max-w-[46rem] px-4 pb-10 md:px-6">
             {summary}
             {stage}
             {details}
+            {descriptionSection()}
+            {materialsSections()}
             {people}
             {extras}
           </div>
         </div>
-        <div className="job-drawer-scroll">
-          <div className="min-w-0 px-6 pb-10">
-            {descriptionSection(true)}
-            {materialsSections(!description)}
-          </div>
-        </div>
-      </div>
-    ) : (
-      <div className="job-drawer-scroll">
-        <div className="mx-auto min-w-0 max-w-[46rem] px-4 pb-10 md:px-6">
-          {summary}
-          {stage}
-          {details}
-          {descriptionSection()}
-          {materialsSections()}
-          {people}
-          {extras}
-        </div>
-      </div>
+      )
+    }
+    return body
+  }
+
+  const dismissDialog = (
+    <DismissDialog
+      open={dismissOpen}
+      jobTitle={job?.title}
+      fromStage={job?.funnel_stage}
+      onCancel={() => setDismissOpen(false)}
+      onConfirm={onDismiss}
+    />
+  )
+
+  if (docked) {
+    if (!jobKey) return null
+    // While a newly picked job loads, its board card names it so the header never blanks.
+    const shown = job ?? (preview?.job_id === jobKey ? preview : null)
+    return (
+      <JobSidePanel
+        jobKey={jobKey}
+        title={shown?.title || 'Loading…'}
+        subtitle={shown ? placeOf(shown) : undefined}
+        onClose={onClose}
+        onOpenJob={onOpenJob}
+        dialogs={dismissDialog}
+      >
+        {renderBody}
+      </JobSidePanel>
     )
   }
+
+  const twoColumns = wideScreen && hasRightColumn
 
   return (
     <Sheet open={open} onOpenChange={(v) => !v && onClose()}>
@@ -303,17 +355,11 @@ export function JobDrawer({ jobKey, onClose, onChanged }: Props) {
           </div>
         </header>
 
-        {body}
+        {renderBody(wideScreen)}
 
         {job ? <PhoneActionBar actions={actions} /> : null}
       </SheetContent>
-      <DismissDialog
-        open={dismissOpen}
-        jobTitle={job?.title}
-        fromStage={job?.funnel_stage}
-        onCancel={() => setDismissOpen(false)}
-        onConfirm={onDismiss}
-      />
+      {dismissDialog}
     </Sheet>
   )
 }

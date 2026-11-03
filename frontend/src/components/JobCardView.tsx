@@ -4,6 +4,7 @@ import { CSS } from '@dnd-kit/utilities'
 import type { CSSProperties, KeyboardEvent, MouseEvent, PointerEvent } from 'react'
 import { JobSummary } from '@/components/JobSummary'
 import { JobCard, laneTone, STAGE_LABELS } from '@/lib/api'
+import { JOB_KEY_ATTR, useSelectedJob } from '@/lib/jobPanel'
 import { cn } from '@/lib/utils'
 
 type Props = {
@@ -31,6 +32,8 @@ function cardLabel(job: JobCard) {
 export function JobCardView({ job, stage, onOpen, dragging, onScoreSaved, showStage, focusable = true }: Props) {
   const lane = stage ? laneTone(stage) : undefined
   const asButton = Boolean(onOpen) && focusable
+  // The job open in the desktop panel (the overlay copy while dragging never shows it).
+  const selected = useSelectedJob(job.job_id) && !dragging && Boolean(onOpen)
 
   return (
     <div
@@ -38,6 +41,7 @@ export function JobCardView({ job, stage, onOpen, dragging, onScoreSaved, showSt
       className={cn(
         'relative cursor-pointer overflow-hidden rounded-lg border border-border bg-surface py-3 pr-3 pl-3.5 text-foreground transition-[border-color,box-shadow] duration-(--dur-1) ease-out hover:border-border-strong hover:shadow-e1',
         dragging && 'cursor-grabbing rotate-1 border-border-strong shadow-e1',
+        selected && 'job-card-selected',
       )}
       onClick={() => onOpen?.(job)}
       onKeyDown={
@@ -53,6 +57,8 @@ export function JobCardView({ job, stage, onOpen, dragging, onScoreSaved, showSt
       role={asButton ? 'button' : undefined}
       tabIndex={asButton ? 0 : undefined}
       aria-label={asButton ? cardLabel(job) : undefined}
+      aria-current={asButton && selected ? 'true' : undefined}
+      {...(asButton ? { [JOB_KEY_ATTR]: job.job_id } : {})}
     >
       {lane ? <span aria-hidden className="absolute inset-y-0 left-0 w-[3px] bg-(--lane)" /> : null}
       {showStage && stage ? (
@@ -96,6 +102,7 @@ export function SortableJobCard({
     },
     [setNodeRef, setActivatorNodeRef],
   )
+  const selected = useSelectedJob(job.job_id)
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     if (e.key === 'Enter' && e.target === e.currentTarget && !isDragging) {
       e.preventDefault()
@@ -113,6 +120,8 @@ export function SortableJobCard({
       {...listeners}
       onKeyDown={onKeyDown}
       aria-label={cardLabel(job)}
+      aria-current={selected ? 'true' : undefined}
+      {...{ [JOB_KEY_ATTR]: job.job_id }}
       className="touch-manipulation rounded-lg"
     >
       {isDragging ? (

@@ -4,6 +4,8 @@ import { CloudOff, Inbox, RefreshCw, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { BoardResponse, JobCard, STAGE_LABELS } from '@/lib/api'
 import { useBoard } from '@/lib/useBoard'
+import { DOCK_QUERY, setSelectedJob } from '@/lib/jobPanel'
+import { useMediaQuery } from '@/lib/useMediaQuery'
 import { cn } from '@/lib/utils'
 import { AppSidebar } from '@/components/AppSidebar'
 import { AutoSearchControls } from '@/components/AutoSearchControls'
@@ -130,8 +132,18 @@ export default function App() {
   const allJobs = useMemo(() => (board ? board.stages.flatMap((s) => board.columns[s] || []) : []), [board])
   const ratedOnBoard = useMemo(() => allJobs.filter((j) => j.user_fit_score != null).length, [allJobs])
 
+  // Desktop: the job opens in a panel beside the board, so the board stays usable.
+  const docked = useMediaQuery(DOCK_QUERY)
+  // Mark the open job on the board / table only where both are visible side by side.
+  useEffect(() => setSelectedJob(docked ? (jobId ?? null) : null), [docked, jobId])
+
+  /** Opening another job while one is open swaps it in place (Back still returns to the board). */
+  function openJobId(id: string) {
+    navigate(`/jobs/${id}${location.search}`, { replace: Boolean(jobId) })
+  }
+
   function openJob(job: JobCard) {
-    navigate(`/jobs/${job.job_id}${location.search}`)
+    openJobId(job.job_id)
   }
 
   function openJobByUrl(url: string) {
@@ -202,6 +214,8 @@ export default function App() {
   }
 
   const drawerOpen = Boolean(jobId)
+  const showsTable = !(view === 'board' && !worthOnly)
+  const openPreview = useMemo(() => (jobId ? allJobs.find((j) => j.job_id === jobId) ?? null : null), [allJobs, jobId])
   const pageTitle = filterStage === 'all' ? 'All jobs' : STAGE_LABELS[filterStage] || filterStage
 
   return (
@@ -233,7 +247,13 @@ export default function App() {
               <AdminPage />
             </Suspense>
           ) : (
-            <div className={cn('flex min-w-0 flex-1 flex-col', drawerOpen && 'max-md:hidden')}>
+            <div
+              className={cn(
+                'flex min-w-0 flex-1 flex-col',
+                drawerOpen && 'max-md:hidden',
+                docked && drawerOpen && 'board-beside-panel',
+              )}
+            >
               <StatusBanner />
               <BoardHeader
                 title={pageTitle}
@@ -248,7 +268,12 @@ export default function App() {
                 onRunDone={() => void refresh({ profile: true, notify: true })}
               />
 
-              <main className="min-h-0 flex-1 overflow-auto p-3 md:p-4">
+              <main
+                className={cn(
+                  'min-h-0 flex-1 overflow-auto p-3 md:p-4',
+                  docked && drawerOpen && showsTable && 'jobs-table-fit',
+                )}
+              >
                 <SearchPausedBanner profile={profile} onResumed={() => void refresh({ board: false, profile: true })} />
                 {board && allJobs.length > 0 ? <CalibrationBanner refreshKey={ratedOnBoard} /> : null}
                 {worthOnly ? (
@@ -326,7 +351,13 @@ export default function App() {
           )}
         </ErrorBoundary>
 
-        <JobDrawer jobKey={jobId ?? null} onClose={closeDrawer} onChanged={() => void refresh()} />
+        <JobDrawer
+          jobKey={jobId ?? null}
+          onClose={closeDrawer}
+          onChanged={() => void refresh()}
+          onOpenJob={openJobId}
+          preview={openPreview}
+        />
         <DismissDialog
           open={!!closeTarget}
           jobTitle={closeTarget?.job.title}

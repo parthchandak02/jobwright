@@ -73,7 +73,7 @@ export function BoardHeader({
   return (
     <header
       className={cn(
-        'sticky top-0 z-20',
+        'board-head sticky top-0 z-20',
         APP_SHELL_HEADER,
         'max-md:h-14 max-md:flex-nowrap max-md:gap-1 max-md:px-2 max-md:py-0',
       )}
@@ -95,14 +95,14 @@ export function BoardHeader({
       ) : null}
       <div className={cn('flex min-w-0 flex-1 items-center gap-1 md:gap-4', searchOpen && 'max-md:hidden')}>
         <MobileNavTrigger />
-        <h1 className="min-w-0 truncate text-subheading text-foreground max-md:pl-1 md:text-heading">
+        <h1 className="board-head-title min-w-0 truncate text-subheading text-foreground max-md:pl-1 md:text-heading">
           {title}
           {count != null ? <span className="ml-2 font-normal text-muted-foreground tabular-nums">{count}</span> : null}
         </h1>
         <div className="max-md:hidden">
           <ViewModeTabs value={view} onChange={onViewChange} />
         </div>
-        <BoardSearch value={search} onChange={onSearchChange} className="w-64 max-md:hidden" />
+        <BoardSearch value={search} onChange={onSearchChange} className="board-head-search w-64 max-md:hidden" />
 
         <div className="ml-auto flex shrink-0 items-center gap-0.5 md:gap-2">
           <Button
@@ -142,7 +142,7 @@ export function BoardHeader({
             title="Daily WhatsApp list"
           >
             <WhatsAppIcon className="text-whatsapp" />
-            WhatsApp
+            <span className="board-head-label">WhatsApp</span>
             {pendingNotify > 0 ? <Badge variant="secondary">{pendingNotify}</Badge> : null}
           </Button>
 
@@ -157,7 +157,8 @@ export function BoardHeader({
             <Plus />
           </Button>
           <Button size="sm" variant="secondary" className="max-md:hidden" onClick={onAddJob}>
-            <Plus /> Add job
+            <Plus />
+            <span className="board-head-label">Add job</span>
           </Button>
         </div>
       </div>

@@ -5,8 +5,11 @@ import remarkGfm from 'remark-gfm'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
-/** Job description, collapsed to a fixed height with a "Show full description" toggle. */
-export function JobDescriptionPane({ text }: { text: string }) {
+/**
+ * Job description, collapsed to a fixed height with a "Show full description" toggle.
+ * `foldable={false}` (the desktop panel, which scrolls) always shows all of it.
+ */
+export function JobDescriptionPane({ text, foldable = true }: { text: string; foldable?: boolean }) {
   const ref = useRef<HTMLDivElement>(null)
   const [expanded, setExpanded] = useState(false)
   const [overflows, setOverflows] = useState(false)
@@ -17,19 +20,21 @@ export function JobDescriptionPane({ text }: { text: string }) {
 
   useLayoutEffect(() => {
     const el = ref.current
-    if (el && !expanded) setOverflows(el.scrollHeight > el.clientHeight + 8)
-  }, [text, expanded])
+    if (el && foldable && !expanded) setOverflows(el.scrollHeight > el.clientHeight + 8)
+  }, [text, expanded, foldable])
+
+  const collapsed = foldable && !expanded
 
   return (
     <div>
       <div
         ref={ref}
-        data-collapsed={!expanded ? 'true' : 'false'}
+        data-collapsed={collapsed ? 'true' : 'false'}
         className="job-drawer-jd materials-preview text-body text-foreground"
       >
         <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>
       </div>
-      {overflows || expanded ? (
+      {foldable && (overflows || expanded) ? (
         <Button
           type="button"
           size="sm"

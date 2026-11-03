@@ -19,10 +19,17 @@ export function useJobNotes(job: JobCard | null) {
   const jobRef = useRef(job)
   jobRef.current = job
   const jobId = job?.job_id ?? null
+  // Typed but not yet saved, and for which job: saved when another job opens in the panel.
+  const pending = useRef<{ job: JobCard; text: string } | null>(null)
 
   // New job: take its notes. Reloads of the same job keep what is being typed.
   useEffect(() => {
     if (timer.current) clearTimeout(timer.current)
+    const unsaved = pending.current
+    pending.current = null
+    if (unsaved && unsaved.job.job_id !== jobId && unsaved.text !== saved.current) {
+      void saveJobNotes(unsaved.job, unsaved.text).catch((e) => toast.error(errorMessage(e)))
+    }
     const initial = jobRef.current?.notes || ''
     setNotes(initial)
     saved.current = initial
@@ -38,6 +45,7 @@ export function useJobNotes(job: JobCard | null) {
 
   const persist = useCallback(async (next: string) => {
     const current = jobRef.current
+    pending.current = null
     if (!current || next === saved.current) return
     setState('saving')
     try {
@@ -55,6 +63,7 @@ export function useJobNotes(job: JobCard | null) {
     (next: string) => {
       setNotes(next)
       setState('idle')
+      if (jobRef.current) pending.current = { job: jobRef.current, text: next }
       if (timer.current) clearTimeout(timer.current)
       timer.current = setTimeout(() => void persist(next), NOTES_SAVE_MS)
     },

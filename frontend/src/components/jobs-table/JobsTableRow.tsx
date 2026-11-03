@@ -4,6 +4,8 @@ import { ScoreEditor } from '@/components/ScoreEditor'
 import { StageBadge } from '@/components/StageBadge'
 import { WorkModelBadge } from '@/components/WorkModelBadge'
 import type { JobCard } from '@/lib/api'
+import { JOB_KEY_ATTR, useSelectedJob } from '@/lib/jobPanel'
+import { cn } from '@/lib/utils'
 
 type Props = {
   job: JobCard
@@ -17,9 +19,15 @@ type Props = {
  */
 export function JobsTableRow({ job, onOpen, onScoreSaved }: Props) {
   const company = job.company || job.site
+  const selected = useSelectedJob(job.job_id)
   return (
     <tr
-      className="cursor-pointer border-t border-border transition-colors duration-(--dur-1) first:border-t-0 hover:bg-surface-muted"
+      className={cn(
+        'cursor-pointer border-t border-border transition-colors duration-(--dur-1) first:border-t-0 hover:bg-surface-muted',
+        selected && 'jobs-table-row-selected',
+      )}
+      aria-current={selected ? 'true' : undefined}
+      {...{ [JOB_KEY_ATTR]: job.job_id }}
       onClick={() => onOpen(job.url)}
     >
       <td onClick={(e) => e.stopPropagation()}>
