@@ -201,6 +201,12 @@ export function useBoard() {
     [setBoard, updateBoard],
   )
 
+  /** Patch server copies of several cards in (e.g. after a bulk action): no board reload. */
+  const applyCards = useCallback(
+    (cards: JobCard[]) => updateBoard((b) => [...cards].reverse().reduce(replaceCard, b)),
+    [updateBoard],
+  )
+
   /** Persist the order of one lane as shown in `next`; on failure go back to `revert`. */
   const saveLaneOrder = useCallback(
     async (stage: string, next: BoardResponse, revert: BoardResponse | null) => {
@@ -224,6 +230,7 @@ export function useBoard() {
     refresh,
     refreshCard,
     moveCard,
+    applyCards,
     saveLaneOrder,
   }
 }

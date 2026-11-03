@@ -70,7 +70,7 @@ export default function App() {
   const [params, setParams] = useSearchParams()
   const { jobId } = useParams<{ jobId?: string }>()
   const page = pageFor(location.pathname)
-  const { board, setBoard, profile, pendingNotify, loading, refresh, refreshCard, moveCard, saveLaneOrder } = useBoard()
+  const { board, setBoard, profile, pendingNotify, loading, refresh, refreshCard, moveCard, applyCards, saveLaneOrder } = useBoard()
   const [view, setViewState] = useState<ViewMode>(initialView)
   const [showAdd, setShowAdd] = useState(false)
   const [showSchedule, setShowSchedule] = useState(false)
@@ -346,6 +346,7 @@ export default function App() {
                     stages={board.stages}
                     onOpen={openJobByUrl}
                     onScoreSaved={onScoreSaved}
+                    onCardsChanged={applyCards}
                     searching={!!search}
                     toolbarStart={
                       <div className="md:hidden">

@@ -1,3 +1,4 @@
+import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import type { SortKey } from '@/lib/jobListFilters'
 import { ColumnFilterButton, ColumnHead } from './ColumnHead'
@@ -13,6 +14,8 @@ type Props = FilterProps & {
   stages: string[]
   sources: string[]
   workModels: string[]
+  /** Select-all checkbox for the shown (filtered) rows. */
+  selection?: { state: boolean | 'indeterminate'; shown: number; onToggleAll: () => void }
 }
 
 function TextFilter({ field, filters, setFilters }: FilterProps & { field: 'title' | 'company' | 'location' }) {
@@ -27,13 +30,24 @@ function TextFilter({ field, filters, setFilters }: FilterProps & { field: 'titl
 }
 
 /** Desktop table header: sortable columns, each with its own filter popover. */
-export function JobsTableHead({ sort, onSort, stages, sources, workModels, ...fp }: Props) {
+export function JobsTableHead({ sort, onSort, stages, sources, workModels, selection, ...fp }: Props) {
   const { filters } = fp
   const scoreSorted = sort === 'score-desc' || sort === 'score-asc'
   const titleSorted = sort === 'title-asc' || sort === 'title-desc'
   return (
     <thead className="border-b border-border bg-surface-muted text-caption text-muted-foreground">
       <tr>
+        {selection ? (
+          <th scope="col" className="pr-0!">
+            <Checkbox
+              checked={selection.state}
+              onCheckedChange={() => selection.onToggleAll()}
+              aria-label={selection.state === true ? 'Clear selection' : `Select all ${selection.shown} shown jobs`}
+              disabled={selection.shown === 0}
+              className="align-middle"
+            />
+          </th>
+        ) : null}
         <ColumnHead
           label="Score"
           sort={{ active: scoreSorted, direction: sort === 'score-asc' ? 'asc' : 'desc', onClick: () => onSort('score') }}

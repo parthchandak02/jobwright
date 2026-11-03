@@ -35,6 +35,7 @@ def record_label(
     conn: sqlite3.Connection | None = None,
     created_at: str | None = None,
     update_job: bool = True,
+    commit: bool = True,
 ) -> int:
     """Append a label and mirror it onto the job. Returns the label id."""
     if not 1 <= int(score) <= 10:
@@ -65,11 +66,14 @@ def record_label(
             "board_updated_by = 'human', board_updated_at = ? WHERE url = ?",
             (int(score), rationale.strip(), now, now, url),
         )
-    conn.commit()
+    if commit:
+        conn.commit()
     return int(cur.lastrowid)
 
 
-def clear_label(url: str, *, actor: str | None = None, conn: sqlite3.Connection | None = None) -> None:
+def clear_label(
+    url: str, *, actor: str | None = None, conn: sqlite3.Connection | None = None, commit: bool = True
+) -> None:
     """Clear the job's current label; history keeps a 'cleared' marker row."""
     conn = conn or get_connection()
     now = datetime.now(timezone.utc).isoformat()
@@ -83,7 +87,8 @@ def clear_label(url: str, *, actor: str | None = None, conn: sqlite3.Connection 
         "board_updated_by = 'human', board_updated_at = ? WHERE url = ?",
         (now, url),
     )
-    conn.commit()
+    if commit:
+        conn.commit()
 
 
 def import_existing_user_scores(conn: sqlite3.Connection) -> int:

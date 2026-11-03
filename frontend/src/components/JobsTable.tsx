@@ -1,12 +1,16 @@
-import { useMemo, useState, type ReactNode } from 'react'
-import { ArrowUpDown, Filter, SearchX } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { ArrowUpDown, Filter, ListChecks, SearchX } from 'lucide-react'
 import { ValueChip } from '@/components/Chip'
+import { DismissDialog, type DismissResult } from '@/components/DismissDialog'
 import { EmptyState } from '@/components/EmptyState'
-import { JobCardView } from '@/components/JobCardView'
+import { allBeforeApplying, BulkBar } from '@/components/jobs-table/BulkBar'
 import { FiltersSheet } from '@/components/jobs-table/FiltersSheet'
 import { JobsTableHead, type SortColumn } from '@/components/jobs-table/JobsTableHead'
 import { JobsTableRow } from '@/components/jobs-table/JobsTableRow'
+import { SelectableCard } from '@/components/jobs-table/SelectableCard'
+import { useBulkActions } from '@/components/jobs-table/useBulkActions'
 import { useFilterChips } from '@/components/jobs-table/useFilterChips'
+import { useSelection } from '@/components/jobs-table/useSelection'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select'
@@ -29,6 +33,12 @@ type Props = {
   onScoreSaved?: () => void
   toolbarStart?: ReactNode
   searching?: boolean
+  /**
+   * Turns on selection (checkboxes on desktop, "Select" on phones) and bulk
+   * move / "Not for me". Called with the server's fresh cards after each bulk
+   * action (and its undo) so the board can patch them in without a reload.
+   */
+  onCardsChanged?: (cards: JobCard[]) => void
 }
 
 const SORT_LABELS: Record<SortKey, string> = {
@@ -56,7 +66,11 @@ function nextSort(prev: SortKey, column: SortColumn): SortKey {
   return 'stage'
 }
 
-export function JobsTable({ jobs, stages, onOpen, onScoreSaved, toolbarStart, searching }: Props) {
+function isTextField(el: EventTarget | null) {
+  return el instanceof HTMLElement && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))
+}
+
+export function JobsTable({ jobs, stages, onOpen, onScoreSaved, toolbarStart, searching, onCardsChanged }: Props) {
   const [filters, setFilters] = useState<ColumnFilters>(DEFAULT_COLUMN_FILTERS)
   const [sort, setSort] = useState<SortKey>('score-desc')
   const [filtersOpen, setFiltersOpen] = useState(false)
@@ -68,6 +82,44 @@ export function JobsTable({ jobs, stages, onOpen, onScoreSaved, toolbarStart, se
   const activeFilterCount = countActiveFilters(filters)
   const filterChips = useFilterChips(filters, setFilters)
   const multiStage = useMemo(() => new Set(jobs.map((j) => j.funnel_stage)).size > 1, [jobs])
+
+  const selectable = Boolean(onCardsChanged)
+  const selection = useSelection(displayJobs)
+  // Phone only: tapping a card toggles it instead of opening it.
+  const [selecting, setSelecting] = useState(false)
+  const [closeOpen, setCloseOpen] = useState(false)
+  const { clear: clearSelection } = selection
+  const endSelection = useCallback(() => {
+    clearSelection()
+    setSelecting(false)
+  }, [clearSelection])
+  const bulk = useBulkActions(onCardsChanged, endSelection)
+  const picked = selection.selectedJobs
+
+  function onCloseConfirm(result: DismissResult) {
+    setCloseOpen(false)
+    void bulk.close(picked, result)
+  }
+
+  // With focus inside the desktop table: Cmd/Ctrl-A selects every shown row, Escape clears.
+  const tableRef = useRef<HTMLDivElement>(null)
+  const { selectAll, count: selectedCount } = selection
+  useEffect(() => {
+    const el = tableRef.current
+    if (!el || !selectable) return
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (isTextField(e.target)) return
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'a') {
+        e.preventDefault()
+        selectAll()
+      } else if (e.key === 'Escape' && selectedCount > 0) {
+        e.preventDefault()
+        clearSelection()
+      }
+    }
+    el.addEventListener('keydown', onKey)
+    return () => el.removeEventListener('keydown', onKey)
+  }, [selectable, selectAll, clearSelection, selectedCount])
 
   const clearFilters = () => setFilters(DEFAULT_COLUMN_FILTERS)
   const shownText = `Showing ${displayJobs.length} of ${jobs.length} jobs`
@@ -100,42 +152,77 @@ export function JobsTable({ jobs, stages, onOpen, onScoreSaved, toolbarStart, se
           activeFilterCount === 0 && 'md:hidden',
         )}
       >
-        {toolbarStart}
-        {activeFilterCount > 0 ? (
-          <p className="hidden text-caption text-muted-foreground tabular-nums md:block">{shownText}</p>
-        ) : null}
-        <div className="ml-auto flex items-center gap-2">
-          <Select value={sort} onValueChange={(v) => setSort(v as SortKey)}>
-            <SelectTrigger className="w-auto gap-1.5 md:hidden" aria-label="Sort jobs">
-              <ArrowUpDown className="size-4 text-muted-foreground" aria-hidden />
-              <span>{SORT_SHORT[sort]}</span>
-            </SelectTrigger>
-            <SelectContent align="end">
-              {(Object.keys(SORT_LABELS) as SortKey[]).map((key) => (
-                <SelectItem key={key} value={key}>
-                  {SORT_LABELS[key]}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Button
-            type="button"
-            size="sm"
-            variant="secondary"
-            className="md:hidden"
-            onClick={() => setFiltersOpen(true)}
-            aria-label={activeFilterCount ? `Filters, ${activeFilterCount} on` : 'Filters'}
-          >
-            <Filter />
-            <span className="max-[359px]:sr-only">Filters</span>
-            {activeFilterCount > 0 ? <Badge>{activeFilterCount}</Badge> : null}
-          </Button>
-          {activeFilterCount > 0 ? (
-            <Button type="button" size="sm" variant="ghost" className="max-md:hidden" onClick={clearFilters}>
-              Clear filters
+        {selecting ? (
+          <>
+            <Button type="button" size="sm" variant="ghost" className="-ml-2" onClick={endSelection}>
+              Done
             </Button>
-          ) : null}
-        </div>
+            <p className="min-w-0 truncate text-caption text-muted-foreground">Tap jobs to select</p>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className="-mr-2 ml-auto"
+              onClick={selection.allState === true ? selection.clear : selection.selectAll}
+              disabled={displayJobs.length === 0}
+            >
+              {selection.allState === true ? 'Select none' : 'Select all'}
+            </Button>
+          </>
+        ) : (
+          <>
+            {toolbarStart}
+            {activeFilterCount > 0 ? (
+              <p className="hidden text-caption text-muted-foreground tabular-nums md:block">{shownText}</p>
+            ) : null}
+            <div className="ml-auto flex items-center gap-2">
+              <Select value={sort} onValueChange={(v) => setSort(v as SortKey)}>
+                <SelectTrigger className="w-auto gap-1.5 md:hidden" aria-label="Sort jobs">
+                  <ArrowUpDown className="size-4 text-muted-foreground" aria-hidden />
+                  <span>{SORT_SHORT[sort]}</span>
+                </SelectTrigger>
+                <SelectContent align="end">
+                  {(Object.keys(SORT_LABELS) as SortKey[]).map((key) => (
+                    <SelectItem key={key} value={key}>
+                      {SORT_LABELS[key]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                className="md:hidden"
+                onClick={() => setFiltersOpen(true)}
+                aria-label={activeFilterCount ? `Filters, ${activeFilterCount} on` : 'Filters'}
+              >
+                <Filter />
+                {/* Room for the Select button on phones: the funnel alone says Filters. */}
+                <span className={selectable ? 'max-[419px]:sr-only' : 'max-[359px]:sr-only'}>Filters</span>
+                {activeFilterCount > 0 ? <Badge>{activeFilterCount}</Badge> : null}
+              </Button>
+              {activeFilterCount > 0 ? (
+                <Button type="button" size="sm" variant="ghost" className="max-md:hidden" onClick={clearFilters}>
+                  Clear filters
+                </Button>
+              ) : null}
+              {selectable ? (
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="secondary"
+                  className="md:hidden"
+                  onClick={() => setSelecting(true)}
+                  disabled={displayJobs.length === 0}
+                  aria-label="Select jobs"
+                >
+                  <ListChecks />
+                </Button>
+              ) : null}
+            </div>
+          </>
+        )}
       </div>
 
       {filterChips.length > 0 ? (
@@ -154,21 +241,32 @@ export function JobsTable({ jobs, stages, onOpen, onScoreSaved, toolbarStart, se
         {displayJobs.length === 0
           ? noMatches
           : displayJobs.map((job) => (
-              <JobCardView
+              <SelectableCard
                 key={job.url}
                 job={job}
-                stage={job.funnel_stage}
                 showStage={multiStage}
-                onOpen={() => onOpen(job.url)}
+                selecting={selecting}
+                selected={selection.isSelected(job)}
+                onOpen={onOpen}
+                onToggle={(j) => selection.toggle(j)}
+                onLongPress={
+                  selectable
+                    ? (j) => {
+                        setSelecting(true)
+                        if (!selection.isSelected(j)) selection.toggle(j)
+                      }
+                    : undefined
+                }
                 onScoreSaved={onScoreSaved}
               />
             ))}
       </div>
 
-      <div className="surface hidden overflow-hidden rounded-lg md:block">
+      <div ref={tableRef} className="surface hidden overflow-hidden rounded-lg md:block">
         <div className="overflow-x-auto">
           <table className="jobs-table">
             <colgroup>
+              {selectable ? <col className="jobs-table-col-select" /> : null}
               <col className="jobs-table-col-score" />
               <col className="jobs-table-col-title" />
               <col className="jobs-table-col-company" />
@@ -186,14 +284,26 @@ export function JobsTable({ jobs, stages, onOpen, onScoreSaved, toolbarStart, se
               stages={stageOptions}
               sources={sources}
               workModels={workModels}
+              selection={
+                selectable ? { state: selection.allState, shown: displayJobs.length, onToggleAll: selection.toggleAll } : undefined
+              }
             />
             <tbody>
               {displayJobs.length === 0 ? (
                 <tr>
-                  <td colSpan={8}>{noMatches}</td>
+                  <td colSpan={selectable ? 9 : 8}>{noMatches}</td>
                 </tr>
               ) : (
-                displayJobs.map((job) => <JobsTableRow key={job.url} job={job} onOpen={onOpen} onScoreSaved={onScoreSaved} />)
+                displayJobs.map((job) => (
+                  <JobsTableRow
+                    key={job.url}
+                    job={job}
+                    onOpen={onOpen}
+                    onScoreSaved={onScoreSaved}
+                    selected={selection.isSelected(job)}
+                    onToggleSelect={selectable ? (j, range) => selection.toggle(j, range) : undefined}
+                  />
+                ))
               )}
             </tbody>
           </table>
@@ -212,6 +322,29 @@ export function JobsTable({ jobs, stages, onOpen, onScoreSaved, toolbarStart, se
         workModels={workModels}
         jobs={jobs}
       />
+
+      {selectable ? (
+        <>
+          <p className="sr-only" aria-live="polite" aria-atomic="true">
+            {selection.count > 0 ? `${selection.count} of ${displayJobs.length} jobs selected` : ''}
+          </p>
+          <BulkBar
+            jobs={picked}
+            busy={bulk.busy}
+            onClear={endSelection}
+            onMove={(stage) => void bulk.move(picked, stage)}
+            onClose={() => setCloseOpen(true)}
+          />
+          <DismissDialog
+            open={closeOpen}
+            count={picked.length}
+            jobTitle={picked.length === 1 ? picked[0].title : undefined}
+            fromStage={allBeforeApplying(picked) ? 'backlog' : 'applied'}
+            onCancel={() => setCloseOpen(false)}
+            onConfirm={onCloseConfirm}
+          />
+        </>
+      ) : null}
     </div>
   )
 }
