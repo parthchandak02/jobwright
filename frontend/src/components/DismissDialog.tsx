@@ -21,11 +21,14 @@ type Props = {
   jobTitle?: string | null
   /** Stage the job is leaving; "not for me" is the default before applying. */
   fromStage?: string
+  /** Closing several jobs at once (table selection): wording says how many. */
+  count?: number
   onConfirm: (result: DismissResult) => void
   onCancel: () => void
 }
 
-export function DismissDialog({ open, jobTitle, fromStage, onConfirm, onCancel }: Props) {
+export function DismissDialog({ open, jobTitle, fromStage, count, onConfirm, onCancel }: Props) {
+  const many = count != null && count > 1
   const beforeApplying = !fromStage || fromStage === 'backlog' || fromStage === 'prepare'
   const reasonsList = useNotAFitReasons()
   const [outcome, setOutcome] = useState<string>(beforeApplying ? 'not_interested' : 'rejected')
@@ -47,8 +50,16 @@ export function DismissDialog({ open, jobTitle, fromStage, onConfirm, onCancel }
     <Dialog open={open} onOpenChange={(v) => !v && onCancel()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{beforeApplying ? 'Close this job' : 'How did it end?'}</DialogTitle>
-          <DialogDescription>{jobTitle ? `“${jobTitle}” moves to Closed.` : 'The job moves to Closed.'}</DialogDescription>
+          <DialogTitle>
+            {many ? (beforeApplying ? `Close ${count} jobs` : 'How did they end?') : beforeApplying ? 'Close this job' : 'How did it end?'}
+          </DialogTitle>
+          <DialogDescription>
+            {many
+              ? `${count} jobs move to Closed. What you pick here applies to all of them.`
+              : jobTitle
+                ? `“${jobTitle}” moves to Closed.`
+                : 'The job moves to Closed.'}
+          </DialogDescription>
         </DialogHeader>
         <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="What happened">
           {options.map((o) => {
@@ -84,7 +95,7 @@ export function DismissDialog({ open, jobTitle, fromStage, onConfirm, onCancel }
         {needsReason ? (
           <div className="space-y-3">
             <div>
-              <p className="text-label text-foreground">Why isn’t it a fit?</p>
+              <p className="text-label text-foreground">{many ? 'Why aren’t they a fit?' : 'Why isn’t it a fit?'}</p>
               <p className="text-caption text-muted-foreground">Pick any that apply. This teaches the scorer to skip jobs like this.</p>
             </div>
             <ReasonChips options={reasonsList} selected={reasons} onChange={setReasons} />
@@ -102,7 +113,7 @@ export function DismissDialog({ open, jobTitle, fromStage, onConfirm, onCancel }
             Cancel
           </Button>
           <Button type="button" disabled={!canSubmit} onClick={() => onConfirm({ outcome, reasons, note: note.trim() })}>
-            Close job
+            {many ? `Close ${count} jobs` : 'Close job'}
           </Button>
         </DialogFooter>
       </DialogContent>

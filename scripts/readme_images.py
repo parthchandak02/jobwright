@@ -457,7 +457,30 @@ def whatsapp_message() -> str:
 # ---------------------------------------------------------------------------
 
 
-def api_response(method: str, path: str, state: dict):
+def bulk_response(body: dict) -> dict:
+    """Demo of POST /api/jobs/bulk: the same shape as the server, nothing is stored."""
+    close = body.get("action") == "close"
+    to_stage = "closed" if close else body.get("stage")
+    results, jobs = [], []
+    for key in body.get("job_ids") or []:
+        job = JOB_BY_ID.get(key)
+        if job is None:
+            results.append({"job_id": key, "ok": False, "error": "not_found"})
+            continue
+        before_applying = job["funnel_stage"] in ("backlog", "prepare")
+        labeled = close and before_applying and (body.get("outcome") or "not_interested") == "not_interested"
+        results.append({"job_id": key, "ok": True, "from_stage": job["funnel_stage"], "to_stage": to_stage,
+                        "labeled": labeled, "label_cleared": False})
+        card = {**job, "funnel_stage": to_stage, "board_updated_by": "human", "board_position": None}
+        if close:
+            card["outcome"] = body.get("outcome") or "not_interested"
+        jobs.append(card)
+    return {"action": body.get("action"), "to_stage": to_stage, "updated": len(jobs), "results": results, "jobs": jobs}
+
+
+def api_response(method: str, path: str, state: dict, body: dict | None = None):
+    if path == "/api/jobs/bulk" and method == "POST":
+        return bulk_response(body or {})
     if path == "/api/me":
         return me(state["admin"], state.get("setup_complete", True))
     if path == "/api/board":
@@ -530,7 +553,11 @@ def install_routes(page, state: dict, misses: list[str]) -> None:
             route.abort()
             return
         if parsed.path.startswith("/api/"):
-            body = api_response(req.method, parsed.path, state)
+            try:
+                payload = req.post_data_json if req.method == "POST" else None
+            except Exception:  # noqa: BLE001 - form uploads etc.
+                payload = None
+            body = api_response(req.method, parsed.path, state, payload)
             if body is None:
                 misses.append(f"{req.method} {parsed.path}")
                 route.fulfill(status=404, content_type="application/json", body='{"detail":"demo"}')

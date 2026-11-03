@@ -194,6 +194,7 @@
   --jobs-table-cell-x: 0.75rem;
   --jobs-table-head-gap: 0.125rem;
   --jobs-table-min-width: 68rem;
+  --jobs-table-col-select: 2.75rem;
   --jobs-table-col-score: 8rem;
   --jobs-table-col-company: 11rem;
   --jobs-table-col-location: 10rem;
@@ -460,6 +461,9 @@
   .jobs-table thead th {
     font-weight: 500;
     white-space: nowrap;
+  }
+  .jobs-table-col-select {
+    width: var(--jobs-table-col-select);
   }
   .jobs-table-col-score {
     width: var(--jobs-table-col-score);

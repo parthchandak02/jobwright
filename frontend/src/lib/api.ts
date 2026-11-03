@@ -603,6 +603,45 @@ export function moveJob(
   })
 }
 
+export type BulkAction = 'move' | 'close'
+
+export type BulkRequest = {
+  job_ids: string[]
+  action: BulkAction
+  /** Target lane for "move" (never "closed": use "close"). */
+  stage?: string
+  /** "close" only; defaults to "not_interested" ("Not for me") on the server. */
+  outcome?: string
+  reasons?: string[]
+  note?: string
+  /** Undo of a bulk "Not for me": also clear the dismiss label it recorded. */
+  clear_dismiss_labels?: boolean
+}
+
+export type BulkResult = {
+  job_id: string
+  ok: boolean
+  from_stage?: string | null
+  to_stage?: string
+  labeled?: boolean
+  label_cleared?: boolean
+  error?: string
+}
+
+export type BulkResponse = {
+  action: BulkAction
+  to_stage: string
+  updated: number
+  results: BulkResult[]
+  /** Fresh cards for every job that changed: patch them into the board. */
+  jobs: JobCard[]
+}
+
+/** Move or close many jobs at once (one transaction, at most 500). */
+export function bulkJobs(body: BulkRequest) {
+  return apiFetch<BulkResponse>('/jobs/bulk', { method: 'POST', body: JSON.stringify(body) })
+}
+
 /** Save the hand-made card order of one lane (top first). */
 export function reorderLane(stage: string, jobIds: string[]) {
   return apiFetch<{ stage: string; job_ids: string[] }>('/board/reorder', {

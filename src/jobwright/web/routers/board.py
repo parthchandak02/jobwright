@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
+from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
@@ -273,21 +274,24 @@ class MoveBody(BaseModel):
     position: int | None = None
 
 
-@router.post("/jobs/{url:path}/move")
-def move_job(url: str, body: MoveBody) -> dict:
-    url = resolve_job_key(url)
-    if body.to_stage not in FUNNEL_STAGES:
-        raise HTTPException(400, f"Invalid stage: {body.to_stage}")
-    if body.outcome is not None and body.outcome not in CLOSED_OUTCOMES:
-        raise HTTPException(400, f"Invalid outcome: {body.outcome}")
-    if body.to_stage == "closed" and not body.outcome:
+def _validate_move(to_stage: str, outcome: str | None) -> None:
+    if to_stage not in FUNNEL_STAGES:
+        raise HTTPException(400, f"Invalid stage: {to_stage}")
+    if outcome is not None and outcome not in CLOSED_OUTCOMES:
+        raise HTTPException(400, f"Invalid outcome: {outcome}")
+    if to_stage == "closed" and not outcome:
         raise HTTPException(400, "outcome required when closing a job")
 
-    conn = get_connection()
-    exists = conn.execute("SELECT 1 FROM jobs WHERE url = ?", (url,)).fetchone()
-    if not exists:
-        raise HTTPException(404, "Job not found")
 
+def _apply_move(conn, url: str, body: MoveBody) -> tuple[str | None, bool]:
+    """One human lane change, exactly as the board does it; does not commit.
+
+    Shared by the single move and the bulk endpoint so both follow the same
+    rules: ``advance_funnel`` as ``human`` (the anti-clobber flag), apply stamps
+    set or undone, lane position, close reason, and a "Not for me" label when
+    the job was dismissed with reasons before applying and never rated.
+    Returns ``(from_stage, labeled)``.
+    """
     applied_manually = True if body.to_stage == "applied" else None
     try:
         from_stage = advance_funnel(
@@ -320,6 +324,7 @@ def move_job(url: str, body: MoveBody) -> dict:
         lane = [u for u in _lane_urls(conn, body.to_stage) if u != url]
         lane.insert(max(0, min(body.position, len(lane))), url)
         _save_lane_order(conn, body.to_stage, lane)
+    labeled = False
     if body.to_stage == "closed":
         reasons = [r.strip() for r in (body.reasons or []) if r and r.strip()]
         reason_text = (body.close_reason or "").strip() or ", ".join(reasons)
@@ -331,12 +336,139 @@ def move_job(url: str, body: MoveBody) -> dict:
                 and body.outcome == "not_interested":
             from jobwright.labels import record_label
 
-            conn.commit()
-            record_label(url, 2, rationale=reason_text, reasons=reasons, source="dismiss", conn=conn)
+            record_label(url, 2, rationale=reason_text, reasons=reasons, source="dismiss", conn=conn, commit=False)
+            labeled = True
+    return from_stage, labeled
+
+
+@router.post("/jobs/{url:path}/move")
+def move_job(url: str, body: MoveBody) -> dict:
+    url = resolve_job_key(url)
+    _validate_move(body.to_stage, body.outcome)
+
+    conn = get_connection()
+    exists = conn.execute("SELECT 1 FROM jobs WHERE url = ?", (url,)).fetchone()
+    if not exists:
+        raise HTTPException(404, "Job not found")
+
+    try:
+        from_stage, _ = _apply_move(conn, url, body)
+    except Exception:
+        conn.rollback()
+        raise
     conn.commit()
 
     row = conn.execute("SELECT * FROM jobs WHERE url = ?", (url,)).fetchone()
     return {"from_stage": from_stage, "job": _row_to_card(row)}
+
+
+BULK_MAX = 500
+
+
+class BulkBody(BaseModel):
+    job_ids: list[str]
+    # "move" = lane change to ``stage``; "close" = Closed with ``outcome``
+    # (default "not_interested", i.e. "Not for me") and optional reasons.
+    action: Literal["move", "close"]
+    stage: str | None = None
+    outcome: str | None = None
+    reasons: list[str] | None = None
+    note: str | None = None
+    # Undo of a bulk "Not for me": also clear the dismiss label that close
+    # recorded (append-only: a "cleared" marker row), so the scorer is not
+    # trained on a decision the person took back.
+    clear_dismiss_labels: bool = False
+
+
+def _latest_label_source(conn, url: str) -> str | None:
+    row = conn.execute(
+        "SELECT source, verdict FROM score_labels WHERE job_url = ? ORDER BY id DESC LIMIT 1", (url,)
+    ).fetchone()
+    if row is None or row["verdict"] == "cleared":
+        return None
+    return row["source"]
+
+
+@router.post("/jobs/bulk")
+def bulk_jobs(body: BulkBody) -> dict:
+    """Move or close many cards at once (table selection), in one transaction.
+
+    Each job goes through the same ``_apply_move`` as the single move, so stage
+    history, apply stamps, the human anti-clobber flag and "Not for me" labels
+    match one-by-one moves. Unknown ids are reported per id, not fatal.
+    """
+    if not body.job_ids:
+        raise HTTPException(400, "job_ids is empty")
+    if len(body.job_ids) > BULK_MAX:
+        raise HTTPException(400, f"At most {BULK_MAX} jobs at a time")
+    if body.action == "close":
+        to_stage, outcome = "closed", body.outcome or "not_interested"
+    else:
+        if not body.stage:
+            raise HTTPException(400, "stage required for move")
+        if body.stage == "closed":
+            raise HTTPException(400, "Use action 'close' to close jobs")
+        to_stage, outcome = body.stage, None
+    _validate_move(to_stage, outcome)
+    move = MoveBody(
+        to_stage=to_stage,
+        outcome=outcome,
+        reasons=body.reasons if body.action == "close" else None,
+        close_reason=body.note if body.action == "close" else None,
+    )
+
+    conn = get_connection()
+    results: list[dict] = []
+    done: list[str] = []
+    seen: set[str] = set()
+    try:
+        for key in body.job_ids:
+            try:
+                url = resolve_job_key(key)
+            except HTTPException:
+                results.append({"job_id": key, "ok": False, "error": "not_found"})
+                continue
+            if url in seen:
+                continue
+            seen.add(url)
+            if conn.execute("SELECT 1 FROM jobs WHERE url = ?", (url,)).fetchone() is None:
+                results.append({"job_id": key, "ok": False, "error": "not_found"})
+                continue
+            from_stage, labeled = _apply_move(conn, url, move)
+            cleared = False
+            if body.clear_dismiss_labels and body.action == "move" and _latest_label_source(conn, url) == "dismiss":
+                from jobwright.labels import clear_label
+
+                clear_label(url, conn=conn, commit=False)
+                cleared = True
+            results.append({
+                "job_id": job_id_for_url(url),
+                "ok": True,
+                "from_stage": from_stage,
+                "to_stage": to_stage,
+                "labeled": labeled,
+                "label_cleared": cleared,
+            })
+            done.append(url)
+    except Exception:
+        conn.rollback()
+        raise
+    conn.commit()
+
+    from jobwright.followups import LAST_CHANGE_SQL, resolve_days
+
+    days = resolve_days(None)
+    jobs = []
+    for url in done:
+        row = conn.execute(f"SELECT *, {LAST_CHANGE_SQL} AS last_stage_at FROM jobs WHERE url = ?", (url,)).fetchone()
+        jobs.append(_row_to_card(row, days))
+    return {
+        "action": body.action,
+        "to_stage": to_stage,
+        "updated": len(done),
+        "results": results,
+        "jobs": jobs,
+    }
 
 
 class PatchBody(BaseModel):

@@ -16,6 +16,8 @@ type Props = {
   saveDisabled?: boolean
   /** Custom actions (right side); replaces the Discard/Save pair. */
   children?: ReactNode
+  /** Accessible name of the bar's region. */
+  label?: string
   className?: string
 }
 
@@ -33,6 +35,7 @@ export function ActionBar({
   saving = false,
   saveDisabled = false,
   children,
+  label = 'Actions',
   className,
 }: Props) {
   if (!open) return null
@@ -45,7 +48,7 @@ export function ActionBar({
     >
       <div
         role="region"
-        aria-label="Actions"
+        aria-label={label}
         className="flex animate-in items-center gap-3 border-t bg-surface px-4 pt-3 pb-[calc(0.75rem+var(--safe-bottom))] shadow-e1 duration-(--dur-2) fade-in-0 slide-in-from-bottom-2 md:rounded-lg md:border md:py-3 md:pr-3"
       >
         {text ? <p className="min-w-0 flex-1 truncate text-caption text-muted-foreground">{text}</p> : <div className="flex-1" />}
