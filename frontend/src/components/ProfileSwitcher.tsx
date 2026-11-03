@@ -5,12 +5,19 @@ import { useMe } from '@/lib/me'
 import { errorMessage } from '@/lib/utils'
 
 /** Switch between profiles this login may open (admins: all of them). Reloads the app. */
-export function ProfileSwitcher({ className }: { className?: string }) {
+export function ProfileSwitcher({
+  className,
+  onOpenChange,
+}: {
+  className?: string
+  onOpenChange?: (open: boolean) => void
+}) {
   const { me } = useMe()
   if (!me || me.profiles.length <= 1) return null
   return (
     <Select
       value={me.active_user || undefined}
+      onOpenChange={onOpenChange}
       onValueChange={(uid) => {
         void switchProfile(uid)
           .then(() => window.location.assign('/'))

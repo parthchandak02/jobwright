@@ -1,6 +1,7 @@
+import { useCallback } from 'react'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import type { CSSProperties, MouseEvent, PointerEvent } from 'react'
+import type { CSSProperties, KeyboardEvent, MouseEvent, PointerEvent } from 'react'
 import { JobSummary } from '@/components/JobSummary'
 import { JobCard, laneTone, STAGE_LABELS } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -12,14 +13,24 @@ type Props = {
   dragging?: boolean
   onScoreSaved?: () => void
   showStage?: boolean
+  /**
+   * The card is its own button (Tab stop, Enter/Space opens). Off when a wrapper
+   * owns focus, e.g. the sortable board card.
+   */
+  focusable?: boolean
 }
 
 function stopCardOpen(e: MouseEvent | PointerEvent) {
   e.stopPropagation()
 }
 
-export function JobCardView({ job, stage, onOpen, dragging, onScoreSaved, showStage }: Props) {
+function cardLabel(job: JobCard) {
+  return `Open ${job.title || 'job'} at ${job.company || 'unknown company'}`
+}
+
+export function JobCardView({ job, stage, onOpen, dragging, onScoreSaved, showStage, focusable = true }: Props) {
   const lane = stage ? laneTone(stage) : undefined
+  const asButton = Boolean(onOpen) && focusable
 
   return (
     <div
@@ -29,15 +40,19 @@ export function JobCardView({ job, stage, onOpen, dragging, onScoreSaved, showSt
         dragging && 'cursor-grabbing rotate-1 border-border-strong shadow-e1',
       )}
       onClick={() => onOpen?.(job)}
-      onKeyDown={(e) => {
-        if (onOpen && (e.key === 'Enter' || (e.key === ' ' && e.target === e.currentTarget))) {
-          e.preventDefault()
-          onOpen(job)
-        }
-      }}
-      role={onOpen ? 'button' : undefined}
-      tabIndex={onOpen ? 0 : undefined}
-      aria-label={onOpen ? `Open ${job.title || 'job'} at ${job.company || 'unknown company'}` : undefined}
+      onKeyDown={
+        asButton
+          ? (e) => {
+              if (e.key === 'Enter' || (e.key === ' ' && e.target === e.currentTarget)) {
+                e.preventDefault()
+                onOpen?.(job)
+              }
+            }
+          : undefined
+      }
+      role={asButton ? 'button' : undefined}
+      tabIndex={asButton ? 0 : undefined}
+      aria-label={asButton ? cardLabel(job) : undefined}
     >
       {lane ? <span aria-hidden className="absolute inset-y-0 left-0 w-[3px] bg-(--lane)" /> : null}
       {showStage && stage ? (
@@ -59,7 +74,7 @@ export function SortableJobCard({
   onOpen: (j: JobCard) => void
   onScoreSaved?: () => void
 }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({
     id: job.url,
     transition: {
       duration: 180,
@@ -70,19 +85,41 @@ export function SortableJobCard({
     transform: CSS.Transform.toString(transform),
     transition,
   }
-  const { role: _role, tabIndex: _tabIndex, ...dragAttributes } = attributes
-
-  if (isDragging) {
-    return (
-      <div ref={setNodeRef} style={style} className="touch-manipulation" {...dragAttributes} {...listeners}>
-        <div className="min-h-[6.5rem] rounded-lg border border-dashed border-border-strong bg-surface-muted" aria-hidden />
-      </div>
-    )
+  // The wrapper is the one Tab stop for the card: dnd-kit's role/tabIndex/aria
+  // (Space picks up for a keyboard move), and Enter opens the job. It is also the
+  // activator node, so Space on the score button or the listing link inside the
+  // card never starts a drag.
+  const ref = useCallback(
+    (node: HTMLDivElement | null) => {
+      setNodeRef(node)
+      setActivatorNodeRef(node)
+    },
+    [setNodeRef, setActivatorNodeRef],
+  )
+  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === 'Enter' && e.target === e.currentTarget && !isDragging) {
+      e.preventDefault()
+      onOpen(job)
+      return
+    }
+    listeners?.onKeyDown?.(e)
   }
 
   return (
-    <div ref={setNodeRef} style={style} {...dragAttributes} {...listeners} className="touch-manipulation">
-      <JobCardView job={job} stage={stage} onOpen={onOpen} onScoreSaved={onScoreSaved} />
+    <div
+      ref={ref}
+      style={style}
+      {...attributes}
+      {...listeners}
+      onKeyDown={onKeyDown}
+      aria-label={cardLabel(job)}
+      className="touch-manipulation rounded-lg"
+    >
+      {isDragging ? (
+        <div className="min-h-[6.5rem] rounded-lg border border-dashed border-border-strong bg-surface-muted" aria-hidden />
+      ) : (
+        <JobCardView job={job} stage={stage} onOpen={onOpen} onScoreSaved={onScoreSaved} focusable={false} />
+      )}
     </div>
   )
 }

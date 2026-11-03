@@ -8,9 +8,11 @@
     <script>
       (() => {
         try {
+          // light / dark: the person's pick. Anything else (nothing stored, 'system'): follow the device.
           const stored = localStorage.getItem('jobwright-theme')
-          const theme = stored === 'light' || stored === 'dark' ? stored : 'light'
-          const dark = theme === 'dark'
+          const dark =
+            stored === 'dark' ||
+            (stored !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches)
           document.documentElement.classList.toggle('dark', dark)
           document.documentElement.style.colorScheme = dark ? 'dark' : 'light'
         } catch (_) {}

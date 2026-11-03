@@ -96,6 +96,8 @@ export type JobCard = {
   notes: string | null
   board_updated_by: string | null
   board_updated_at: string | null
+  /** Hand-made order inside the lane (0 = top); null = default order. */
+  board_position?: number | null
   has_resume: boolean
   has_cover: boolean
   application_url: string | null
@@ -123,6 +125,8 @@ export type BoardResponse = {
   columns: Record<string, JobCard[]>
   total: number
   closed_total?: number
+  /** Jobs per lane (closed counts every closed job, not just the ones shown). */
+  stage_counts?: Record<string, number>
 }
 
 export type Profile = {
@@ -540,13 +544,24 @@ export function clearRating(job: JobCard) {
 export function moveJob(
   job: JobCard,
   toStage: string,
-  opts?: { outcome?: string; reasons?: string[]; close_reason?: string },
+  opts?: { outcome?: string; reasons?: string[]; close_reason?: string; position?: number },
 ) {
   return apiFetch<{ from_stage: string; job: JobCard }>(`${jobPath(job)}/move`, {
     method: 'POST',
     body: JSON.stringify({ to_stage: toStage, ...(opts || {}) }),
   })
 }
+
+/** Save the hand-made card order of one lane (top first). */
+export function reorderLane(stage: string, jobIds: string[]) {
+  return apiFetch<{ stage: string; job_ids: string[] }>('/board/reorder', {
+    method: 'POST',
+    body: JSON.stringify({ stage, job_ids: jobIds }),
+  })
+}
+
+export const getJob = (job: Pick<JobCard, 'job_id' | 'url'>, init?: RequestInit) =>
+  apiFetch<JobCard>(jobPath(job), init)
 
 export function followUpJob(job: JobCard, action: 'followed_up' | 'no_response') {
   return apiFetch<JobCard>(`${jobPath(job)}/followup`, { method: 'POST', body: JSON.stringify({ action }) })

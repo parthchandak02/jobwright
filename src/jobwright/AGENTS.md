@@ -70,6 +70,7 @@ Single-user doctor: `jobwright doctor`. Multi-profile: `jobwright --user <id> do
 | `tests/conftest.py` | Hermetic fixtures (temp `JOBWRIGHT_USERS_ROOT`) |
 | `tests/test_users_and_filters.py` | Registry, user paths, filters, prune, apply dry-run default, `python -m` registers every command |
 | `tests/test_web_auth.py` | JWT verification, per-email access, admin switching, concurrent mixed-user requests |
+| `tests/test_board_order.py` | Lane order: `board_position` migration, `POST /api/board/reorder`, move `position`, clearing on lane change, anti-clobber flag untouched |
 | `tests/test_web_multiuser.py` | Onboarding, non-admin isolation, admin settings, chat filtering, `job_id` routes + labels |
 | `tests/test_scoring_v2.py` | Criteria, gates, retrieval, labels, eval metrics, incremental persistence |
 | `tests/test_scoring_recall.py` | Borderline second opinion, threshold sweep + recommendation, eval `--reuse`, `/api/quality` recommendation |

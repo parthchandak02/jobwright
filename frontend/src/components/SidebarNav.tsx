@@ -44,7 +44,7 @@ export function SidebarNav({
           active={filterStage === stage}
           label={STAGE_LABELS[stage] || stage}
           stage={stage}
-          count={profile?.stage_counts?.[stage] ?? board?.columns?.[stage]?.length ?? 0}
+          count={board?.stage_counts?.[stage] ?? profile?.stage_counts?.[stage] ?? board?.columns?.[stage]?.length ?? 0}
           icon={NAV_ICONS[stage] || Inbox}
           onClick={() => select(stage)}
         />
