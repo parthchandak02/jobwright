@@ -35,6 +35,37 @@ external SSD that disconnects, with no backups. Production uvicorn ran with
 6. **Sandboxes are safe.** `JOBWRIGHT_HERMES_DRY_RUN=1` (default in
    `restart.sh` dev mode) turns cron changes and WhatsApp sends into log lines.
 
+7. **Reliability follow-up (2026-11-03).** An ops review found briefs that
+   crashed or were locked still reported "ok", broken job boards were
+   invisible, a failed notify was never retried, and backups could fail
+   silently. Now:
+   - The brief report trusts the status file (`pipeline_rc=N` fails,
+     `pipeline_locked` warns with the lock holder, `timeout` fails) and only
+     uses `logs/last_run.json` when it was written by this run (started after
+     `brief_started at=`, not a dashboard run); otherwise "no fresh run
+     summary". It warns on 0 scored jobs and on per-source discovery problems.
+   - Discovery records `{new, errors, rate_limited, status}` per source
+     (JobSpy boards, the LinkedIn guest client's given-up requests, Workday,
+     each impact board, smart extract); the report prints one `sources:` line.
+   - Alerts fall back to channels that do not need Hermes
+     (`JOBWRIGHT_OPS_FALLBACK`: macOS Notification Center, on by default on
+     macOS because it is local and needs no secret; an ntfy topic, off unless
+     set). The hourly watchdog re-runs a failed notify once hermes and the
+     bridge are healthy (at most 3 a day) and reports a brief that is still
+     running or timed out instead of "no brief started".
+   - Notify never double-sends: rows are claimed atomically under a
+     per-profile lock. A `hermes send` timeout is treated as "maybe delivered":
+     the claim is kept, nothing is resent automatically, and the operator
+     releases it with `ops release-uncertain` if nothing arrived. We prefer a
+     missed notice (the jobs are still on the dashboard) to a duplicate.
+   - `run_daily_brief.sh` has a hard deadline (`JOBWRIGHT_BRIEF_TIMEOUT`, 3h)
+     that kills the step's process group; enrich has a 45-minute soft budget.
+   - Backups integrity-check every DB copy, skip stale `*.bak` / `*-wal` /
+     `smoke*.db` files, keep every old snapshot after a night with errors,
+     alert on any crash (an unmounted SSD is an error, never a new folder on
+     the internal disk), and `jobwright ops restore` copies a snapshot to a
+     separate folder (a live profile only with `--force`, moved aside first).
+
 ## Consequences
 
 - An SSD outage no longer takes the product down; it only pauses backups (which

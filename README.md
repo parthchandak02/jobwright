@@ -80,7 +80,7 @@ flowchart TD
 | Connections | Ranks people from your LinkedIn `Connections.csv` export who are worth contacting at each company |
 | Tracking | Kanban lanes Backlog, Prepare, Applied, In Progress, Offer, Closed; follow-up reminders after 10 days (per person); Sunday recap |
 | Multi-user | Each login sees only its own profile behind Cloudflare Access; admins add people, connect their WhatsApp chats and see cost per person |
-| Ops | Every brief ends with an operator report; a watchdog flags missed briefs; nightly backups of every profile |
+| Ops | Every brief ends with an operator report (per-source discovery health included); a watchdog flags missed, stuck or timed-out briefs and retries a failed daily list; alerts fall back to a macOS notification or ntfy when WhatsApp is down; nightly integrity-checked backups with `ops restore` |
 | Apply (optional) | A browser agent fills and submits forms. Dry-run unless `--live`, never from cron, LinkedIn blocked |
 
 ## Try it in 5 minutes
@@ -111,7 +111,7 @@ Expected terminal output: `Demo running with fake data. Close the browser window
 To check the code instead, run the test suite (no keys needed, about a minute):
 
 ```bash
-uv run pytest tests/ -q      # 349 passed
+uv run pytest tests/ -q      # 512 passed
 ```
 
 ## Install
@@ -216,6 +216,9 @@ A normal day for a job seeker:
 | `JOBWRIGHT_AUTH_MODE` | `cloudflare` if `JOBWRIGHT_CF_TEAM_DOMAIN` is set, else `dev` | Dashboard auth |
 | `JOBWRIGHT_PUBLIC_BASE_URL` | `https://jobwright.parthchandak.info` | Base of the links in WhatsApp messages |
 | `JOBWRIGHT_BACKUP_DIR` | `~/jobwright-backups` | Nightly backups |
+| `JOBWRIGHT_OPS_FALLBACK` | `macos` on macOS, else off | Alert channel that does not need Hermes: `macos`, an ntfy topic URL, or `off` |
+| `JOBWRIGHT_BRIEF_TIMEOUT` | `10800` (3h) | Hard deadline for preflight + pipeline; notify and the report still run |
+| `JOBWRIGHT_NOTIFY_RETRIES` | 3 | Watchdog re-sends of a failed daily list per day |
 | `JOBWRIGHT_HERMES_DRY_RUN` | off | `1` turns cron changes and WhatsApp sends into log lines |
 
 ## Safety and security
@@ -225,7 +228,7 @@ A normal day for a job seeker:
 
 - **Find and prepare only by default.** `jobwright apply` is dry-run unless `--live`; live apply needs `apply_enabled` for the profile and runs only from the dashboard button (with a confirm) or an explicit command, never from cron. Auto-apply to LinkedIn is blocked in code.
 - **No invented experience.** Tailoring works only from your base resume; a resume that fails validation is not saved or exported.
-- **No silent failures.** Problems (failed preflight or stages, zero scored jobs, notify failure, a brief that never ran) alert the operator's chat, not the job seeker's. If some stages fail, the list still goes out with whatever is ready.
+- **No silent failures.** Problems (failed preflight or stages, a crashed, locked or timed-out pipeline, a broken or rate-limited job board, zero scored jobs, notify failure, a brief that never ran or is stuck) alert the operator's chat, not the job seeker's, with a macOS notification or ntfy fallback when WhatsApp itself is down. If some stages fail, the list still goes out with whatever is ready, and the same job is never sent twice.
 - **Each login sees only its own profile.** Cloudflare Access verifies the login; the API binds the profile per request. Only admins can list or change WhatsApp chats.
 - **Never commit** `.env`, `users/`, `~/.jobwright/`, `ecosystem.config.js`, resumes, `connections.csv` or any API token.
 - **The repo is public, so personal data is blocked.** `scripts/check_private_data.py` rejects real-looking emails, WhatsApp chat ids and every value in your local registry. It runs as a pre-commit and pre-push hook (install once per clone with `bash scripts/install_git_hooks.sh`) and in CI. Use placeholders such as `alex@example.com` in docs and tests.
@@ -294,7 +297,7 @@ jobwright --user <id> rescore --scope active|labeled|all|since:<days> [--dry-run
 jobwright --user <id> apply [--limit 1]                # dry-run
 jobwright --user <id> apply --live --url "https://..." # needs apply_enabled
 jobwright users list | add | set
-jobwright ops brief-report | watchdog | set-target | backup | install-crons | weekly-eval
+jobwright ops brief-report | watchdog | set-target | backup | restore | release-uncertain | install-crons | weekly-eval
 jobwright access status | sync [--yes]                 # Cloudflare Access allowlist
 jobwright hermes channels [--apply]                    # per-profile WhatsApp group prompts
 ```
@@ -311,8 +314,8 @@ All are created with `--no-agent --deliver local` by `jobwright ops install-cron
 | Cron | When | What |
 |------|------|------|
 | `jobwright-brief-<user>` | The profile's send time (7:00 for new profiles) | `jobwright_brief.sh` → `run_daily_brief.sh`: preflight, default stages, `notify`, `ops brief-report` |
-| `jobwright-ops-watchdog` | Hourly at :30 | Alerts once a day on briefs that never started (30 min grace) or never finished (120 min) |
-| `jobwright-backup` | 02:30 daily | `jobwright ops backup`: SQLite online backup + rsync snapshots, 14 days kept |
+| `jobwright-ops-watchdog` | Hourly at :30 | Alerts once a day on briefs that never started (30 min grace), are still running, timed out or never finished (120 min); re-runs a failed notify once the WhatsApp bridge is healthy (up to 3 times a day) |
+| `jobwright-backup` | 02:30 daily | `jobwright ops backup`: SQLite online backup (integrity-checked) + rsync snapshots, 14 days kept (nothing pruned after a bad night); removes brief status files and logs older than 30 days. Restore with `jobwright ops restore --snapshot latest --user <id>` (to a separate folder unless `--force`) |
 | `jobwright-weekly-eval` | Sunday 17:00 | `jobwright ops weekly-eval`: accuracy check for profiles with 20+ ratings |
 | `jobwright-weekly-summary` | Sunday 18:00 | `jobwright summary` for every profile (opt out with `weekly_summary: false`) |
 

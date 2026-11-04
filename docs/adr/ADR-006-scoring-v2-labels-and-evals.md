@@ -41,6 +41,11 @@ budget on hidden reasoning, producing hundreds of empty responses per run.
    and reports precision/recall at 6/7/8 vs the stored production scores, on all
    labels and on explicit labels only ("closed without applying" is a weak
    negative). Every machine score is appended to `score_history`.
+   Since 2026-11-03 only a human close with outcome `not_interested` counts as
+   that weak negative (withdrawn / cancelled / duplicate / ghosted closes say
+   nothing about fit). Few-shot examples keep one per company + title, show the
+   label's reason chips, and use at most k/4 `bulk_dismiss` labels (a bulk
+   "Not for me" sweep), so one cleanup session cannot dominate the block.
 
 ## Results (richa, 249 labeled jobs, 40 relevant)
 
