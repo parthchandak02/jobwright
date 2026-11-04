@@ -615,3 +615,32 @@ def test_partial_usage_flush_failure_does_not_double_count(tmp_path):
     assert llm.flush_usage(conn, "r1", user_id=None) == 2
     rows = conn.execute("SELECT purpose, SUM(prompt_tokens) FROM llm_usage GROUP BY purpose ORDER BY purpose")
     assert [tuple(r) for r in rows] == [("score", 10), ("tailor", 20)]
+
+
+# --- M3: SIGTERM still runs finally blocks and the atexit usage flush --------
+
+
+def test_sigterm_runs_finally_and_atexit(tmp_path):
+    import os
+    import subprocess
+    import sys
+
+    script = tmp_path / "victim.py"
+    script.write_text(
+        "import atexit, os, signal, sys, time\n"
+        "from jobwright import cli\n"
+        "cli._register_usage_flush()\n"
+        "atexit.register(lambda: open(sys.argv[1], 'w').write('flushed'))\n"
+        "try:\n"
+        "    os.kill(os.getpid(), signal.SIGTERM)\n"
+        "    time.sleep(10)\n"
+        "finally:\n"
+        "    open(sys.argv[2], 'w').write('finally')\n",
+        encoding="utf-8",
+    )
+    env = {**os.environ, "JOBWRIGHT_DIR": str(tmp_path / "app"), "JOBWRIGHT_HERMES_DRY_RUN": "1"}
+    proc = subprocess.run([sys.executable, str(script), str(tmp_path / "atexit"), str(tmp_path / "finally")],
+                          env=env, timeout=60, capture_output=True)
+    assert proc.returncode == 143, proc.stderr.decode()
+    assert (tmp_path / "finally").read_text() == "finally"
+    assert (tmp_path / "atexit").read_text() == "flushed"

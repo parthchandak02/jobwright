@@ -151,6 +151,16 @@ def _register_usage_flush() -> None:
 
     atexit.register(flush_active_usage)
     _usage_flush_registered = True
+    # SIGTERM (dashboard Stop, pm2, kill) -> SystemExit, so finally blocks and
+    # this atexit flush run instead of losing the run's LLM spend.
+    import signal
+    import sys
+
+    try:
+        if signal.getsignal(signal.SIGTERM) is signal.SIG_DFL:
+            signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))
+    except ValueError:  # not the main thread (e.g. called from a test thread)
+        pass
 
 
 # ---------------------------------------------------------------------------
