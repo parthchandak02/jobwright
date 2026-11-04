@@ -11,7 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Segmented } from '@/components/ui/segmented'
 import { cn } from '@/lib/utils'
 
 export type MaterialViewOption = {
@@ -97,20 +97,17 @@ export function JobMaterialsPreview({
             </SelectContent>
           </Select>
 
-          <Tabs
+          <Segmented
             value={format}
-            onValueChange={(v) => setFormat(v as 'pdf' | 'markdown')}
+            onValueChange={setFormat}
+            aria-label="Show as"
             className="shrink-0"
-          >
-            <TabsList>
-              <TabsTrigger value="pdf" disabled={!active.pdfUrl} className="px-2.5 text-caption">
-                PDF
-              </TabsTrigger>
-              <TabsTrigger value="markdown" className="px-2.5 text-caption">
-                Markdown
-              </TabsTrigger>
-            </TabsList>
-          </Tabs>
+            itemClassName="px-2.5 text-caption"
+            options={[
+              { value: 'pdf', label: 'PDF', disabled: !active.pdfUrl },
+              { value: 'markdown', label: 'Markdown' },
+            ]}
+          />
 
           {showDownload ? (
             <Select

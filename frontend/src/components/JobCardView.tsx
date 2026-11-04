@@ -1,8 +1,8 @@
-import { useCallback } from 'react'
+import { memo, useCallback, useMemo } from 'react'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import type { CSSProperties, KeyboardEvent, MouseEvent, PointerEvent } from 'react'
-import { JobSummary } from '@/components/JobSummary'
+import { JobSummary, type TitleButtonProps } from '@/components/JobSummary'
 import { JobCard, laneTone, STAGE_LABELS } from '@/lib/api'
 import { JOB_KEY_ATTR, useSelectedJob } from '@/lib/jobPanel'
 import { cn } from '@/lib/utils'
@@ -12,13 +12,16 @@ type Props = {
   stage?: string
   onOpen?: (job: JobCard) => void
   dragging?: boolean
-  onScoreSaved?: () => void
+  /** Called with this card's job, so one stable callback serves every card. */
+  onScoreSaved?: (job: JobCard) => void
   showStage?: boolean
   /**
-   * The card is its own button (Tab stop, Enter/Space opens). Off when a wrapper
-   * owns focus, e.g. the sortable board card.
+   * The card's title is its open button (a Tab stop; Enter, Space or a click anywhere on the
+   * card opens). Off when the card is only a picture of a job (drag overlay, selection mode).
    */
   focusable?: boolean
+  /** Extra props for the open button: the sortable card's dnd-kit activator. Keep it stable. */
+  openButton?: TitleButtonProps
 }
 
 function stopCardOpen(e: MouseEvent | PointerEvent) {
@@ -29,47 +32,59 @@ function cardLabel(job: JobCard) {
   return `Open ${job.title || 'job'} at ${job.company || 'unknown company'}`
 }
 
-export function JobCardView({ job, stage, onOpen, dragging, onScoreSaved, showStage, focusable = true }: Props) {
+/**
+ * A job on the board or the phone list. The title is a real <button> whose hit area stretches
+ * over the card (`.job-card-open`), so the score button and listing link sit beside it instead
+ * of inside a button. Memoized: with 300+ cards a drag step must not re-render every card.
+ */
+export const JobCardView = memo(function JobCardView({
+  job,
+  stage,
+  onOpen,
+  dragging,
+  onScoreSaved,
+  showStage,
+  focusable = true,
+  openButton,
+}: Props) {
   const lane = stage ? laneTone(stage) : undefined
-  const asButton = Boolean(onOpen) && focusable
+  const opens = Boolean(onOpen) && focusable
   // The job open in the desktop panel (the overlay copy while dragging never shows it).
   const selected = useSelectedJob(job.job_id) && !dragging && Boolean(onOpen)
+  const scoreSaved = useMemo(() => (onScoreSaved ? () => onScoreSaved(job) : undefined), [onScoreSaved, job])
+
+  const titleButton: TitleButtonProps | undefined = opens
+    ? {
+        ...openButton,
+        className: 'job-card-open',
+        onClick: () => onOpen?.(job),
+        'aria-label': cardLabel(job),
+        'aria-current': selected ? 'true' : undefined,
+      }
+    : undefined
 
   return (
     <div
       style={lane ? ({ '--lane': lane } as CSSProperties) : undefined}
       className={cn(
-        'relative cursor-pointer overflow-hidden rounded-lg border border-border bg-surface py-3 pr-3 pl-3.5 text-foreground transition-[border-color,box-shadow] duration-(--dur-1) ease-out hover:border-border-strong hover:shadow-e1',
+        'relative overflow-hidden rounded-lg border border-border bg-surface py-3 pr-3 pl-3.5 text-foreground transition-[border-color,box-shadow] duration-(--dur-1) ease-out hover:border-border-strong hover:shadow-e1',
+        opens && 'cursor-pointer',
         dragging && 'cursor-grabbing rotate-1 border-border-strong shadow-e1',
         selected && 'job-card-selected',
       )}
-      onClick={() => onOpen?.(job)}
-      onKeyDown={
-        asButton
-          ? (e) => {
-              if (e.key === 'Enter' || (e.key === ' ' && e.target === e.currentTarget)) {
-                e.preventDefault()
-                onOpen?.(job)
-              }
-            }
-          : undefined
-      }
-      role={asButton ? 'button' : undefined}
-      tabIndex={asButton ? 0 : undefined}
-      aria-label={asButton ? cardLabel(job) : undefined}
-      aria-current={asButton && selected ? 'true' : undefined}
-      {...(asButton ? { [JOB_KEY_ATTR]: job.job_id } : {})}
+      // A sortable card's wrapper carries the job key; a plain card carries it itself.
+      {...(opens && !openButton ? { [JOB_KEY_ATTR]: job.job_id } : {})}
     >
       {lane ? <span aria-hidden className="absolute inset-y-0 left-0 w-[3px] bg-(--lane)" /> : null}
       {showStage && stage ? (
         <p className="lane-label mb-1.5 text-micro font-semibold tracking-wide uppercase">{STAGE_LABELS[stage] || stage}</p>
       ) : null}
-      <JobSummary job={job} onScoreSaved={onScoreSaved} onLinkClick={stopCardOpen} />
+      <JobSummary job={job} onScoreSaved={scoreSaved} onLinkClick={stopCardOpen} titleButton={titleButton} />
     </div>
   )
-}
+})
 
-export function SortableJobCard({
+export const SortableJobCard = memo(function SortableJobCard({
   job,
   stage,
   onOpen,
@@ -78,7 +93,7 @@ export function SortableJobCard({
   job: JobCard
   stage: string
   onOpen: (j: JobCard) => void
-  onScoreSaved?: () => void
+  onScoreSaved?: (j: JobCard) => void
 }) {
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({
     id: job.url,
@@ -91,44 +106,44 @@ export function SortableJobCard({
     transform: CSS.Transform.toString(transform),
     transition,
   }
-  // The wrapper is the one Tab stop for the card: dnd-kit's role/tabIndex/aria
-  // (Space picks up for a keyboard move), and Enter opens the job. It is also the
-  // activator node, so Space on the score button or the listing link inside the
-  // card never starts a drag.
-  const ref = useCallback(
-    (node: HTMLDivElement | null) => {
-      setNodeRef(node)
-      setActivatorNodeRef(node)
+  // Pointer drags start anywhere on the card (the wrapper). The keyboard side lives on the
+  // title button, the card's one Tab stop: dnd-kit's role, aria and instructions; Space picks
+  // up and drops, arrows move, Escape cancels; Enter is a plain button press that opens the job.
+  // Being the activator node also means Space on the score button or listing link never drags.
+  const dragKeyDown = listeners?.onKeyDown
+  const pointerListeners = useMemo(() => {
+    if (!listeners) return undefined
+    const { onKeyDown: _keys, ...rest } = listeners
+    return rest
+  }, [listeners])
+  const onKeyDown = useCallback(
+    (e: KeyboardEvent<HTMLButtonElement>) => {
+      if (e.key === 'Enter') return
+      dragKeyDown?.(e)
     },
-    [setNodeRef, setActivatorNodeRef],
+    [dragKeyDown],
   )
-  const selected = useSelectedJob(job.job_id)
-  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-    if (e.key === 'Enter' && e.target === e.currentTarget && !isDragging) {
-      e.preventDefault()
-      onOpen(job)
-      return
-    }
-    listeners?.onKeyDown?.(e)
-  }
+  const openButton = useMemo<TitleButtonProps>(
+    () => ({ ...attributes, ref: setActivatorNodeRef, onKeyDown }),
+    [attributes, setActivatorNodeRef, onKeyDown],
+  )
 
   return (
     <div
-      ref={ref}
+      ref={setNodeRef}
       style={style}
-      {...attributes}
-      {...listeners}
-      onKeyDown={onKeyDown}
-      aria-label={cardLabel(job)}
-      aria-current={selected ? 'true' : undefined}
+      {...pointerListeners}
       {...{ [JOB_KEY_ATTR]: job.job_id }}
-      className="touch-manipulation rounded-lg"
+      className={cn('job-card-slot relative touch-manipulation rounded-lg', isDragging && '[&>:first-child]:opacity-0')}
     >
+      {/* While lifted, the card stays mounted (it holds keyboard focus) under a drop placeholder. */}
+      <JobCardView job={job} stage={stage} onOpen={onOpen} onScoreSaved={onScoreSaved} openButton={openButton} />
       {isDragging ? (
-        <div className="min-h-[6.5rem] rounded-lg border border-dashed border-border-strong bg-surface-muted" aria-hidden />
-      ) : (
-        <JobCardView job={job} stage={stage} onOpen={onOpen} onScoreSaved={onScoreSaved} focusable={false} />
-      )}
+        <div
+          className="absolute inset-0 rounded-lg border border-dashed border-border-strong bg-surface-muted"
+          aria-hidden
+        />
+      ) : null}
     </div>
   )
-}
+})

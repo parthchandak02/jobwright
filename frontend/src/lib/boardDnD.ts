@@ -36,23 +36,39 @@ export function createKanbanCollisionDetection(
   stages: string[],
   columns: Record<string, JobCard[]>,
 ): CollisionDetection {
+  const stageSet = new Set(stages)
+  const laneItems = new Map<string, Set<string>>()
+  const itemsOf = (stage: string) => {
+    let set = laneItems.get(stage)
+    if (!set) {
+      set = new Set((columns[stage] || []).map((job) => job.url))
+      laneItems.set(stage, set)
+    }
+    return set
+  }
   return (args) => {
-    const pointerCollisions = pointerWithin(args)
+    // Only lanes and phone stage targets can be "under the pointer" here; testing every card
+    // (300+) on each pointer move was most of the cost of a drag.
+    const pointerCollisions = pointerWithin({
+      ...args,
+      droppableContainers: args.droppableContainers.filter((container) => {
+        const id = String(container.id)
+        return stageSet.has(id) || stageFromLaneTab(id) != null
+      }),
+    })
     if (pointerCollisions.length > 0) {
       // Phone stage drop targets win over anything under the finger.
       const tab = pointerCollisions.find((collision) => stageFromLaneTab(String(collision.id)))
       if (tab) return [tab]
       for (const collision of pointerCollisions) {
         const id = String(collision.id)
-        if (!stages.includes(id)) continue
+        if (!stageSet.has(id)) continue
 
-        const items = columns[id] || []
-        if (items.length > 0) {
+        const items = itemsOf(id)
+        if (items.size > 0) {
           const itemCollisions = closestCorners({
             ...args,
-            droppableContainers: args.droppableContainers.filter((container) =>
-              items.some((job) => job.url === container.id),
-            ),
+            droppableContainers: args.droppableContainers.filter((container) => items.has(String(container.id))),
           })
           if (itemCollisions.length > 0) return itemCollisions
         }

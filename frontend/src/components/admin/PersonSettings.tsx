@@ -182,14 +182,27 @@ export function PersonSettings({ user: u, id, onPatch, onOpen, layout = 'inline'
 
       <Group title="Daily list">
         {pending ? (
-          <div className="space-y-3 rounded-md bg-surface-muted px-4 py-3.5">
-            <p className="text-body text-muted-foreground">
-              Waiting for {first} to add a resume and profile at their first login. You can also do it for them.
-            </p>
-            <Button size="sm" variant="secondary" onClick={() => onOpen('/welcome')}>
-              <UserCog /> Do setup for them
-            </Button>
-          </div>
+          <>
+            <div className="space-y-3 rounded-md bg-surface-muted px-4 py-3.5">
+              <p className="text-body text-muted-foreground">
+                Waiting for {first} to add a resume and profile at their first login. You can also do it for them.
+              </p>
+              <Button size="sm" variant="secondary" onClick={() => onOpen('/welcome')}>
+                <UserCog /> Do setup for them
+              </Button>
+            </div>
+            <SwitchRow
+              id={`${id}-search`}
+              label="Keep looking for new jobs"
+              hint={
+                u.search_enabled === false
+                  ? 'Paused. Their first search still runs when they finish setup; daily searches wait until this is on.'
+                  : 'Daily searches start once setup is done. Turn off to hold them.'
+              }
+              checked={u.search_enabled !== false}
+              onChange={(search_enabled) => onPatch({ search_enabled })}
+            />
+          </>
         ) : (
           <>
             <SwitchRow

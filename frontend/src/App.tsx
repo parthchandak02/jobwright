@@ -1,4 +1,4 @@
-import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, lazy, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { CloudOff, Inbox, RefreshCw, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -47,6 +47,8 @@ function isWorthALook(job: JobCard): boolean {
   const s = job.fit_score
   return job.funnel_stage === 'backlog' && s != null && s >= 5 && s <= 6 && !(job.dealbreakers || []).length
 }
+
+const NO_JOBS: JobCard[] = []
 
 function allVisibleCount(columns: Record<string, JobCard[]>): number {
   return Object.values(columns).reduce((n, jobs) => n + jobs.length, 0)
@@ -141,7 +143,8 @@ export default function App() {
     else navigate(value ? `/?stage=${encodeURIComponent(value)}` : '/')
   }
 
-  const search = searchQuery.trim().toLowerCase()
+  // Filtering 300+ cards follows the typing at low priority, so keys never wait for the board.
+  const search = useDeferredValue(searchQuery.trim().toLowerCase())
 
   const allJobs = useMemo(() => (board ? board.stages.flatMap((s) => board.columns[s] || []) : []), [board])
   const ratedOnBoard = useMemo(() => allJobs.filter((j) => j.user_fit_score != null).length, [allJobs])
@@ -156,14 +159,16 @@ export default function App() {
     navigate(`/jobs/${id}${location.search}`, { replace: Boolean(jobId) })
   }
 
-  function openJob(job: JobCard) {
-    openJobId(job.job_id)
-  }
-
-  function openJobByUrl(url: string) {
-    const job = allJobs.find((j) => j.url === url)
-    if (job) openJob(job)
-  }
+  // Stable handlers for the (memoized) cards and rows: they read the latest route through a ref.
+  const openJobIdRef = useRef(openJobId)
+  openJobIdRef.current = openJobId
+  const allJobsRef = useRef(allJobs)
+  allJobsRef.current = allJobs
+  const openJob = useCallback((job: JobCard) => openJobIdRef.current(job.job_id), [])
+  const openJobByUrl = useCallback((url: string) => {
+    const job = allJobsRef.current.find((j) => j.url === url)
+    if (job) openJobIdRef.current(job.job_id)
+  }, [])
 
   function closeDrawer() {
     navigate(params.get('from') === 'review' ? '/review' : `/${location.search}`)
@@ -175,10 +180,23 @@ export default function App() {
     [search, worthOnly],
   )
 
+  // Per lane, reuse the last filtered list while that lane and the filter are unchanged, so a
+  // drag (which replaces two lanes) only re-renders those two lanes.
+  const laneCache = useRef(new WeakMap<JobCard[], { visible: (j: JobCard) => boolean; jobs: JobCard[] }>())
   const filteredColumns = useMemo(() => {
     if (!board) return {}
     const cols: Record<string, JobCard[]> = {}
-    for (const stage of board.stages) cols[stage] = (board.columns[stage] || []).filter(visible)
+    for (const stage of board.stages) {
+      const source = board.columns[stage] || NO_JOBS
+      const hit = laneCache.current.get(source)
+      if (hit && hit.visible === visible) {
+        cols[stage] = hit.jobs
+        continue
+      }
+      const jobs = source.filter(visible)
+      laneCache.current.set(source, { visible, jobs })
+      cols[stage] = jobs
+    }
     return cols
   }, [board, visible])
 
@@ -246,6 +264,9 @@ export default function App() {
     [refresh, refreshCard],
   )
 
+  /** Settings or Admin changed the signed-in profile: refresh the shell (banner, counts, schedule). */
+  const refreshProfile = useCallback(() => void refresh({ board: false, profile: true, notify: true }), [refresh])
+
   function openWhatsApp() {
     setShowSchedule(true)
     void refresh({ board: false, notify: true })
@@ -269,6 +290,18 @@ export default function App() {
           showTabBar && 'max-md:[--safe-bottom:0px]',
         )}
       >
+        {page === 'board' ? (
+          <a
+            href="#jobs-main"
+            className="skip-link fixed! top-2 left-2"
+            onClick={(e) => {
+              e.preventDefault()
+              document.getElementById('jobs-main')?.focus()
+            }}
+          >
+            Skip to jobs
+          </a>
+        ) : null}
         <AppSidebar
           profile={profile}
           board={board}
@@ -280,11 +313,7 @@ export default function App() {
         <ErrorBoundary resetKey={page}>
           {page === 'profile' ? (
             <Suspense fallback={<PageSkeleton />}>
-              <ProfilePage
-                profile={profile}
-                onBack={() => navigate('/')}
-                onProfileChanged={() => void refresh({ board: false, profile: true, notify: true })}
-              />
+              <ProfilePage profile={profile} onBack={() => navigate('/')} onProfileChanged={refreshProfile} />
             </Suspense>
           ) : page === 'quality' ? (
             <Suspense fallback={<PageSkeleton />}>
@@ -292,7 +321,7 @@ export default function App() {
             </Suspense>
           ) : page === 'admin' ? (
             <Suspense fallback={<PageSkeleton />}>
-              <AdminPage />
+              <AdminPage onActiveProfileChanged={refreshProfile} />
             </Suspense>
           ) : page === 'review' ? (
             <Suspense fallback={<PageSkeleton />}>
@@ -322,8 +351,11 @@ export default function App() {
               />
 
               <main
+                id="jobs-main"
+                // Target of "Skip to jobs" (focused by script only, so no focus ring of its own).
+                tabIndex={-1}
                 className={cn(
-                  'min-h-0 flex-1 overflow-auto p-3 md:p-4',
+                  'min-h-0 flex-1 overflow-auto p-3 outline-none md:p-4',
                   docked && drawerOpen && showsTable && 'jobs-table-fit',
                 )}
               >

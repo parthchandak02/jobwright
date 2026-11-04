@@ -1,6 +1,7 @@
 import * as React from 'react'
 import { Dialog as SheetPrimitive } from 'radix-ui'
 import { XIcon } from 'lucide-react'
+import { useRestoreFocus } from '@/lib/useRestoreFocus'
 import { cn } from '@/lib/utils'
 
 function Sheet({ ...props }: React.ComponentProps<typeof SheetPrimitive.Root>) {
@@ -37,11 +38,14 @@ function SheetContent({
   children,
   side = 'right',
   showClose = true,
+  onOpenAutoFocus,
+  onCloseAutoFocus,
   ...props
 }: React.ComponentProps<typeof SheetPrimitive.Content> & {
   side?: 'top' | 'right' | 'bottom' | 'left'
   showClose?: boolean
 }) {
+  const focus = useRestoreFocus(onOpenAutoFocus, onCloseAutoFocus)
   return (
     <SheetPortal>
       <SheetOverlay />
@@ -61,6 +65,8 @@ function SheetContent({
           className,
         )}
         {...props}
+        onOpenAutoFocus={focus.onOpenAutoFocus}
+        onCloseAutoFocus={focus.onCloseAutoFocus}
       >
         {side === 'bottom' ? (
           <span aria-hidden className="pointer-events-none mx-auto h-1 w-9 shrink-0 rounded-full bg-border-strong" />

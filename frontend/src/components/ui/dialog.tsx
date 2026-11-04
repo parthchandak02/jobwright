@@ -1,6 +1,7 @@
 import * as React from 'react'
 import { Dialog as DialogPrimitive } from 'radix-ui'
 import { XIcon } from 'lucide-react'
+import { useRestoreFocus } from '@/lib/useRestoreFocus'
 import { cn } from '@/lib/utils'
 
 function Dialog({ ...props }: React.ComponentProps<typeof DialogPrimitive.Root>) {
@@ -43,11 +44,14 @@ function DialogContent({
   children,
   showCloseButton = true,
   size = 'form',
+  onOpenAutoFocus,
+  onCloseAutoFocus,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
   showCloseButton?: boolean
   size?: keyof typeof DIALOG_SIZES
 }) {
+  const focus = useRestoreFocus(onOpenAutoFocus, onCloseAutoFocus)
   return (
     <DialogPortal>
       <DialogOverlay />
@@ -62,6 +66,8 @@ function DialogContent({
           className,
         )}
         {...props}
+        onOpenAutoFocus={focus.onOpenAutoFocus}
+        onCloseAutoFocus={focus.onCloseAutoFocus}
       >
         <span
           aria-hidden

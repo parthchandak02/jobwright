@@ -24,6 +24,7 @@ import {
   reorderWithinColumn,
   stageFromLaneTab,
 } from '@/lib/boardDnD'
+import { findJobElement, focusTarget } from '@/lib/jobPanel'
 import { JobCardView } from '@/components/JobCardView'
 import { KanbanColumn } from '@/components/KanbanColumn'
 import { StageDropGrid } from '@/components/StageDropGrid'
@@ -59,6 +60,13 @@ export type PhoneLane = {
   leading?: ReactNode
 }
 
+const NO_JOBS: JobCard[] = []
+const MOUSE_OPTIONS = { activationConstraint: { distance: 8 } }
+// Long-press to drag on touch screens, so a normal swipe still scrolls.
+const TOUCH_OPTIONS = { activationConstraint: { delay: 250, tolerance: 8 } }
+// Space picks up and drops; Enter is left for opening the job.
+const KEYBOARD_CODES = { start: ['Space'], cancel: ['Escape'], end: ['Space', 'Enter'] }
+
 /** A horizontal swipe: far enough, mostly sideways and quick (so it never fights vertical scroll). */
 const SWIPE_MIN_PX = 56
 const SWIPE_MAX_MS = 600
@@ -72,6 +80,20 @@ const screenReaderInstructions: ScreenReaderInstructions = {
 
 function laneName(stage: string | undefined) {
   return stage ? STAGE_LABELS[stage] || stage : 'no stage'
+}
+
+/**
+ * A card that crosses lanes mid-drag is a new element, so a keyboard drag loses focus. Put it
+ * back on the card (wherever it ended up) once the board has settled.
+ */
+function refocusCard(jobId: string) {
+  requestAnimationFrame(() =>
+    requestAnimationFrame(() => {
+      const el = findJobElement(jobId)
+      const target = el && focusTarget(el)
+      if (target && document.activeElement !== target) target.focus({ preventScroll: false })
+    }),
+  )
 }
 
 function sameOrder(a: JobCard[] = [], b: JobCard[] = []) {
@@ -94,21 +116,23 @@ export function KanbanBoard({
   const [activeCard, setActiveCard] = useState<JobCard | null>(null)
   const [dropTargetStage, setDropTargetStage] = useState<string | null>(null)
   const dragOriginStage = useRef<string | null>(null)
+  const keyboardDrag = useRef(false)
   const boardSnapshot = useRef<BoardResponse | null>(null)
   // The keyboard sensor keeps its options for the whole drag; read the live board through a ref.
   const boardRef = useRef(board)
   boardRef.current = board
   const keyboardCoordinates = useMemo(() => createBoardKeyboardCoordinates(() => boardRef.current), [])
 
+  // Sensor options must keep their identity: new ones change every card's drag listeners,
+  // which re-renders all (memoized) cards.
+  const keyboardOptions = useMemo(
+    () => ({ coordinateGetter: keyboardCoordinates, keyboardCodes: KEYBOARD_CODES }),
+    [keyboardCoordinates],
+  )
   const sensors = useSensors(
-    useSensor(MouseSensor, { activationConstraint: { distance: 8 } }),
-    // Long-press to drag on touch screens, so a normal swipe still scrolls.
-    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 8 } }),
-    // Space picks up and drops; Enter is left for opening the job.
-    useSensor(KeyboardSensor, {
-      coordinateGetter: keyboardCoordinates,
-      keyboardCodes: { start: ['Space'], cancel: ['Escape'], end: ['Space', 'Enter'] },
-    }),
+    useSensor(MouseSensor, MOUSE_OPTIONS),
+    useSensor(TouchSensor, TOUCH_OPTIONS),
+    useSensor(KeyboardSensor, keyboardOptions),
   )
 
   const collisionDetection = useMemo(() => createKanbanCollisionDetection(board.stages, board.columns), [board])
@@ -172,6 +196,7 @@ export function KanbanBoard({
   function onDragStart(event: DragStartEvent) {
     dragged.current = true
     const url = String(event.active.id)
+    keyboardDrag.current = event.activatorEvent instanceof KeyboardEvent
     setActiveCard(allJobs.find((j) => j.url === url) || null)
     boardSnapshot.current = board
     dragOriginStage.current = findJobStage(url, board.stages, board.columns) || null
@@ -201,6 +226,10 @@ export function KanbanBoard({
     const originStage = dragOriginStage.current
     reset()
     const url = String(active.id)
+    if (keyboardDrag.current) {
+      const id = allJobs.find((j) => j.url === url)?.job_id
+      if (id) refocusCard(id)
+    }
     const tabStage = over ? stageFromLaneTab(String(over.id)) : null
     if (tabStage) {
       // Dropped on a phone stage target: move to the top of that lane.
@@ -227,9 +256,13 @@ export function KanbanBoard({
     if (job) onMove(job, stage, Math.max(0, cards.indexOf(job)), snapshot)
   }
 
-  function onDragCancel() {
+  function onDragCancel(event: { active: { id: UniqueIdentifier } }) {
     const snapshot = boardSnapshot.current
     reset()
+    if (keyboardDrag.current) {
+      const id = allJobs.find((j) => j.url === String(event.active.id))?.job_id
+      if (id) refocusCard(id)
+    }
     if (snapshot) setBoard(snapshot)
   }
 
@@ -272,13 +305,15 @@ export function KanbanBoard({
         onTouchStart={phone ? onTouchStart : undefined}
         onTouchEnd={phone ? onTouchEnd : undefined}
       >
-        {stages.map((stage) => (
+        {stages.map((stage, i) => (
           <KanbanColumn
             key={stage}
+            nextStage={stages[i + 1]}
+            nextLabel={stages[i + 1] ? STAGE_LABELS[stages[i + 1]] || stages[i + 1] : undefined}
             fill={!!phone}
             stage={stage}
             label={STAGE_LABELS[stage] || stage}
-            jobs={columns[stage] || []}
+            jobs={columns[stage] || NO_JOBS}
             total={stage === 'closed' ? board.closed_total : undefined}
             isDropTarget={dropTargetStage === stage}
             isDragging={!!activeCard}

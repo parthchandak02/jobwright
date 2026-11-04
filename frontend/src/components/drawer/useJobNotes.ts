@@ -36,12 +36,42 @@ export function useJobNotes(job: JobCard | null) {
     setState('idle')
   }, [jobId])
 
-  useEffect(
-    () => () => {
+  // Typed in the last moments before the drawer closes, the tab is hidden, or the page goes
+  // away (reload, close): send it now. keepalive lets the PATCH outlive the page.
+  useEffect(() => {
+    const flushPending = () => {
       if (timer.current) clearTimeout(timer.current)
-    },
-    [],
-  )
+      const p = pending.current
+      pending.current = null
+      if (!p || p.text === saved.current) return
+      const same = () => p.job.job_id === jobRef.current?.job_id
+      const before = saved.current
+      if (same()) saved.current = p.text
+      void saveJobNotes(p.job, p.text, { keepalive: true }).then(
+        () => {
+          if (!same()) return
+          setState('saved')
+          setSavedAt(Date.now())
+        },
+        () => {
+          // Still here (the tab was only hidden): show the error so Retry can save it.
+          if (!same()) return
+          saved.current = before
+          setState('error')
+        },
+      )
+    }
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') flushPending()
+    }
+    window.addEventListener('pagehide', flushPending)
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      window.removeEventListener('pagehide', flushPending)
+      document.removeEventListener('visibilitychange', onVisibility)
+      flushPending()
+    }
+  }, [])
 
   const persist = useCallback(async (next: string) => {
     const current = jobRef.current

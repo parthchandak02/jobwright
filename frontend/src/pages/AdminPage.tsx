@@ -96,8 +96,18 @@ function chatLabel(u: AdminOverviewUser) {
 }
 
 /** Admin: people, their daily list settings, logins, alerts and system health. */
-export function AdminPage() {
+type Props = {
+  /** Called after a saved change to the profile this admin is signed in as (search pause, time, ...). */
+  onActiveProfileChanged?: () => void
+}
+
+export function AdminPage({ onActiveProfileChanged }: Props = {}) {
   const { me, refresh: refreshMe } = useMe()
+  // Read through refs so patchUser stays stable for the memoized rows.
+  const activeUser = useRef(me?.active_user)
+  activeUser.current = me?.active_user
+  const onActiveChanged = useRef(onActiveProfileChanged)
+  onActiveChanged.current = onActiveProfileChanged
   const [overview, setOverview] = useState<AdminOverview | null>(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -180,6 +190,8 @@ export function AdminPage() {
           toast.error(`Saved, but the daily schedule was not updated: ${res.cron.error || 'unknown error'}`)
         }
         if (patch.emails || patch.whatsapp_target !== undefined || patch.name) refreshSystem()
+        // Same refresh the Settings page does, so e.g. the board's "search paused" banner updates now.
+        if (userId === activeUser.current) onActiveChanged.current?.()
       } catch (e) {
         updateUser(userId, (u) => revertPatch(u, before, patch))
         if (seq.current[userId] === n) markSave(userId, 'error')

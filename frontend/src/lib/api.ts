@@ -610,8 +610,13 @@ export function clearReview(job: JobRef) {
 }
 
 /** Save your private notes on a job. Notes are not shown on the board. */
-export function saveJobNotes(job: JobRef, notes: string) {
-  return apiFetch<JobCard>(jobPath(job), { method: 'PATCH', body: JSON.stringify({ notes }) })
+export function saveJobNotes(job: JobRef, notes: string, opts?: { keepalive?: boolean }) {
+  // keepalive lets the request finish while the page is closing or reloading.
+  return apiFetch<JobCard>(jobPath(job), {
+    method: 'PATCH',
+    body: JSON.stringify({ notes }),
+    ...(opts?.keepalive ? { keepalive: true } : {}),
+  })
 }
 
 export function moveJob(

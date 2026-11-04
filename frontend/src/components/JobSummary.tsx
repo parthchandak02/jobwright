@@ -1,15 +1,23 @@
 import { Banknote, ExternalLink, MapPin } from 'lucide-react'
-import type { MouseEvent, PointerEvent } from 'react'
+import type { ButtonHTMLAttributes, MouseEvent, PointerEvent, Ref } from 'react'
 import { JobKeyChips } from '@/components/JobMetaBadges'
 import { ScoreEditor } from '@/components/ScoreEditor'
 import { workModelLabel } from '@/components/WorkModelBadge'
 import { Button } from '@/components/ui/button'
 import type { JobCard } from '@/lib/api'
+import { cn } from '@/lib/utils'
+
+/** Props for the title button that opens the job (board cards); the card styles it. */
+export type TitleButtonProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'children'> & {
+  ref?: Ref<HTMLButtonElement>
+}
 
 type Props = {
   job: JobCard
   onScoreSaved?: () => void
   onLinkClick?: (e: MouseEvent | PointerEvent) => void
+  /** Render the title as this button (the card's one "open" control), else plain text. */
+  titleButton?: TitleButtonProps
 }
 
 export function listingHref(job: JobCard): string | null {
@@ -25,7 +33,7 @@ export function placeLine(job: Pick<JobCard, 'location' | 'work_model'>): string
   return loc || work || 'Location not stated'
 }
 
-export function JobSummary({ job, onScoreSaved, onLinkClick }: Props) {
+export function JobSummary({ job, onScoreSaved, onLinkClick, titleButton }: Props) {
   const href = listingHref(job)
   const salary = job.salary?.trim()
 
@@ -33,7 +41,15 @@ export function JobSummary({ job, onScoreSaved, onLinkClick }: Props) {
     <div className="flex flex-col gap-2">
       <div className="flex items-start gap-3">
         <div className="min-w-0 flex-1">
-          <h3 className="line-clamp-2 text-label leading-snug font-semibold text-foreground">{job.title || 'Untitled'}</h3>
+          {titleButton ? (
+            <h3 className="text-label leading-snug font-semibold text-foreground">
+              <button type="button" {...titleButton} className={cn('block w-full text-left', titleButton.className)}>
+                <span className="line-clamp-2">{job.title || 'Untitled'}</span>
+              </button>
+            </h3>
+          ) : (
+            <h3 className="line-clamp-2 text-label leading-snug font-semibold text-foreground">{job.title || 'Untitled'}</h3>
+          )}
           <p className="mt-0.5 truncate text-caption text-muted-foreground">{job.company || job.site || 'Unknown company'}</p>
         </div>
         <ScoreEditor job={job} onSaved={onScoreSaved} className="-mt-px" />

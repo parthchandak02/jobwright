@@ -277,6 +277,12 @@
   #root {
     height: 100%;
   }
+  /* viewport-fit=cover: keep content clear of a landscape notch (top and bottom bars pad
+     themselves with --safe-bottom). */
+  #root {
+    padding-left: env(safe-area-inset-left, 0px);
+    padding-right: env(safe-area-inset-right, 0px);
+  }
   html {
     -webkit-text-size-adjust: 100%;
     text-size-adjust: 100%;
@@ -647,6 +653,50 @@
 
 /* Desktop job panel: the job it shows is marked on the board and in the table.
    Unlayered so hover and focus utilities never hide it. */
+/* Keyboard skip links ("Skip to jobs", "Skip to Prepare"): hidden until focused. */
+.skip-link:not(:focus) {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.skip-link:focus {
+  z-index: 60;
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.25rem;
+  padding-inline: 0.75rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--foreground);
+  font-size: var(--text-label);
+  box-shadow: var(--elev-1);
+}
+/* Board lanes hold hundreds of cards: skip style, layout and paint for the ones off screen
+   (they keep their last size, so drag measuring and scrolling stay right). */
+.job-card-slot {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 7.5rem;
+}
+/* Board card: the title is the open button; its ::after stretches over the card so a click
+   anywhere opens it, and its focus ring outlines the whole card. Later siblings (score button,
+   listing link) are positioned, so they stay above the stretched area. */
+.job-card-open::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-lg);
+}
+.job-card-open:focus-visible {
+  outline: none;
+}
+.job-card-open:focus-visible::after {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
 .job-card-selected {
   border-color: var(--primary);
   box-shadow: 0 0 0 1px var(--primary);
@@ -693,8 +743,9 @@
   }
 }
 
-/* Board header beside the docked job panel: labels fold into icons (kept for screen readers)
-   and search shrinks before the title does. Only while the panel is open. */
+/* Board header beside the docked job panel: labels fold into icons (kept for screen readers),
+   search shrinks to 7rem first, then the title truncates. Only while the panel is open.
+   Fits PANEL_BOARD_RESERVE (40rem) with 4-digit job and Review counts. */
 @media (min-width: 768px) {
   .board-beside-panel .board-head {
     container: board-head / inline-size;
@@ -709,7 +760,7 @@
       white-space: nowrap;
     }
     .board-head-title {
-      flex-shrink: 0;
+      min-width: 5rem;
     }
     .board-head .run-progress-idle {
       min-width: 0;
@@ -719,9 +770,9 @@
     }
     .board-head-search {
       width: auto;
-      min-width: 10rem;
+      min-width: 7rem;
       max-width: 16rem;
-      flex: 1 1 10rem;
+      flex: 1 1 7rem;
     }
   }
 }
