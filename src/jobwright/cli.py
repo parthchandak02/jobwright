@@ -453,6 +453,10 @@ def run(
         validation_mode=validation,
     )
 
+    if result.get("locked"):
+        # 75 (EX_TEMPFAIL): another run holds the lock; run_daily_brief.sh
+        # records "pipeline_locked" so the brief report can say so.
+        raise typer.Exit(code=75)
     if result.get("errors"):
         raise typer.Exit(code=1)
 
@@ -1401,14 +1405,19 @@ def ops_brief_report(
 
 
 @ops_app.command("watchdog")
-def ops_watchdog(grace: int = typer.Option(120, "--grace", help="Minutes after the scheduled time.")) -> None:
-    """Install briefs for newly set-up profiles, then alert for any brief that never started or finished today."""
+def ops_watchdog(
+    grace: int = typer.Option(120, "--grace", help="Minutes after the scheduled time."),
+    retry_notify: bool = typer.Option(True, "--retry-notify/--no-retry-notify",
+                                      help="Re-run a failed notify once the WhatsApp bridge is healthy."),
+) -> None:
+    """Install briefs for newly set-up profiles, alert for any brief that never started/finished today, retry failed notifies."""
     _configure_logging()
     from jobwright.config import load_env
     from jobwright.ops import (
         deliver,
         install_missing_brief_crons,
         mark_watchdog_alerted,
+        retry_failed_notifies,
         watchdog,
         watchdog_already_alerted,
     )
@@ -1426,8 +1435,12 @@ def ops_watchdog(grace: int = typer.Option(120, "--grace", help="Minutes after t
             continue
         result = deliver(rep)
         console.print(f"[dim]{result}[/dim]")
-        if result.startswith("sent"):
+        if getattr(result, "delivered", str(result).startswith("sent")):
             mark_watchdog_alerted(rep)
+    if retry_notify:
+        for rep in retry_failed_notifies():
+            console.print(rep.text())
+            console.print(f"[dim]{deliver(rep, force=True)}[/dim]")
 
 
 @ops_app.command("set-target")
@@ -1456,22 +1469,60 @@ def ops_release_uncertain() -> None:
 @ops_app.command("backup")
 def ops_backup(
     dest: Optional[str] = typer.Option(None, "--dest", help="Backup root (default JOBWRIGHT_BACKUP_DIR or ~/jobwright-backups)."),
-    keep: int = typer.Option(14, "--keep", help="Days of snapshots to keep."),
+    keep: int = typer.Option(14, "--keep", help="Days of snapshots to keep (pruned only after a clean snapshot)."),
+    cleanup_days: int = typer.Option(30, "--cleanup-days", help="Also delete brief status/PID files and brief logs older than this (0 = keep)."),
 ) -> None:
-    """Snapshot every profile (consistent DB copies + hard-linked files); alert on errors."""
+    """Snapshot every profile (consistent, integrity-checked DB copies + hard-linked files); alert on any error."""
     _configure_logging()
     from pathlib import Path as _Path
 
     from jobwright.config import load_env
-    from jobwright.ops import Report, backup_users, deliver
+    from jobwright.ops import Report, cleanup_old_brief_files, deliver, safe_backup
 
     load_env()
-    rep = backup_users(_Path(dest) if dest else None, keep_days=keep)
-    console.print(f"Snapshot: {rep['snapshot']}  users: {rep['users']}")
+    rep = safe_backup(_Path(dest) if dest else None, keep_days=keep)
+    console.print(f"Snapshot: {rep['snapshot']}  users: {rep['users']}  pruned: {len(rep.get('pruned') or [])}")
+    if cleanup_days > 0:
+        try:
+            removed = cleanup_old_brief_files(cleanup_days)
+            console.print(f"Removed {len(removed)} brief status/log file(s) older than {cleanup_days} days.")
+        except Exception as exc:  # noqa: BLE001 - housekeeping must not hide the backup result
+            console.print(f"[yellow]Brief file cleanup failed:[/yellow] {exc}")
     if rep["errors"]:
         for e in rep["errors"]:
             console.print(f"[red]{e}[/red]")
         console.print(deliver(Report("backup", "fail", rep["errors"][:5])))
+        raise typer.Exit(code=1)
+
+
+@ops_app.command("restore")
+def ops_restore(
+    snapshot: str = typer.Option(..., "--snapshot", help="Snapshot name (e.g. 2026-11-02_0230) or 'latest'."),
+    user_id: str = typer.Option(..., "--user", help="Profile to restore from the snapshot."),
+    to: Optional[str] = typer.Option(None, "--to", help="Directory to restore into (default ~/jobwright-restore/<user>-<snapshot>)."),
+    force: bool = typer.Option(False, "--force", help="Allow a live profile dir / non-empty dir (moved aside first, never deleted)."),
+    dest: Optional[str] = typer.Option(None, "--dest", help="Backup root (default JOBWRIGHT_BACKUP_DIR or ~/jobwright-backups)."),
+) -> None:
+    """Restore one profile from a backup snapshot into a separate directory and integrity-check its DB."""
+    _configure_logging()
+    from pathlib import Path as _Path
+
+    from jobwright.config import load_env
+    from jobwright.ops import restore_snapshot
+
+    load_env()
+    try:
+        out = restore_snapshot(snapshot, user_id, _Path(to) if to else None, force=force,
+                               backup_root=_Path(dest) if dest else None)
+    except (FileNotFoundError, FileExistsError) as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1)
+    console.print(f"Restored {out['user']} from {out['snapshot']} to {out['restored_to']}")
+    if out["moved_aside"]:
+        console.print(f"Previous contents moved to {out['moved_aside']}")
+    for name, check in out["integrity"].items():
+        console.print(f"  {name}: integrity_check {check}")
+    if not out["ok"]:
         raise typer.Exit(code=1)
 
 

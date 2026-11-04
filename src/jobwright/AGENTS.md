@@ -11,7 +11,7 @@ Nested agent notes for the Python package. Root context: [../../AGENTS.md](../..
 | `pipeline.py` | `STAGE_ORDER`, stage runners, `default_brief_stages()` (honors `human_gate`), `search_paused()` (default run with `search_enabled: false` runs nothing), per-user `pipeline_lock()` (flock), `logs/last_run.json`; prunes backlog junk after `score` |
 | `run_registry.py` | Durable pipeline runs in `users/<id>/logs/web_runs.json`; honors `JOBWRIGHT_WEB_RUN_ID` |
 | `resume.py` | PDF source of truth; pymupdf4llm markdown cache at `resume/base.md` for LLM stages |
-| `notify.py` | One WhatsApp list of new jobs + dashboard deep links; `send_via_hermes` (honors `JOBWRIGHT_HERMES_DRY_RUN`) |
+| `notify.py` | One WhatsApp list of new jobs + dashboard deep links; `send_via_hermes` (honors `JOBWRIGHT_HERMES_DRY_RUN`; timeout raises `SendUncertain`); `claim_for_notify` (atomic, RETURNING) under `notify_lock` (`.notify.lock`, non-blocking); uncertain sends kept in `logs/notify_uncertain.json` |
 | `summary.py` | Weekly WhatsApp recap per profile (`jobwright summary`); mark-then-send via `logs/weekly_summary.json`; `run_summary_all` loops `users.yaml`; `_moved` counts a stage move only if the job is still in that stage (or further along) |
 | `followups.py` | Follow-up reminders: Applied with no stage change for `followup_days`; `due_followups`, `record_followed_up` (snooze), `record_no_response` (close) |
 | `config.py` | Per-user paths on a `_PathState`; `set_active_user` (CLI, process default), `user_context(user_id)` (web, per request via ContextVar), `user_env()` (per-user `.env` read without touching `os.environ`) |
@@ -23,9 +23,10 @@ Nested agent notes for the Python package. Root context: [../../AGENTS.md](../..
 | `whatsapp.py` | Chat list for the admin picker (`hermes send --list whatsapp --json` + bridge names; `GET /api/whatsapp/chats` is admin-only), `chat_name` (display name for a target; resolved group names cached 10 minutes in `_name_cache` so the admin overview doesn't flip to raw ids), test send |
 | `hermes_cron.py` | Create/edit/remove `jobwright-brief-<user>` (`--no-agent --deliver local`, generated wrapper), `jobwright-ops-watchdog`, `jobwright-backup`, `jobwright-weekly-summary`; `brief_cron_installed` (wrapper exists); `hermes_dry_run()` |
 | `hermes_channels.py` | Per-profile WhatsApp group entries in `~/.hermes/config.yaml` (override prompt, channel prompt, skill binding, allow list) via ruamel round-trip; `plan` / `apply` (backup, atomic, dry-run aware), orphan detection |
-| `ops.py` | Brief report, missed-run watchdog, alert delivery to `ops_target`, `logs/ops_health.json`, `backup_users` |
+| `ops.py` | Brief report (status file + this run's own `last_run.json`, per-source discovery health), missed/stuck/timed-out watchdog (cron day-of-week aware), `retry_failed_notifies`, alert delivery to `ops_target` with `JOBWRIGHT_OPS_FALLBACK` (macOS notification / ntfy), `logs/ops_health.json`, `backup_users` / `safe_backup` (integrity check, no prune after errors), `restore_snapshot`, `cleanup_old_brief_files` |
+| `stage_budget.py` | Soft per-stage time budgets (`JOBWRIGHT_STAGE_BUDGET_<STAGE>`, enrich 45 min default); loops call `exceeded()` |
 | `preflight.py` | Pre-run checks (profile/resume, LLM key, disk, Playwright with `--fix`, Hermes CLI, WhatsApp bridge) |
-| `labels.py` | Append-only `score_labels`, `record_label`, eval set (explicit labels + board signals) |
+| `labels.py` | Append-only `score_labels`, `record_label` (`source`: dashboard / dismiss / bulk_dismiss / ...), eval set (explicit labels + board signals; only `not_interested` closes are implicit negatives) |
 | `job_identity.py` | `resolve_company` (never a board name), `material_prefix` (`<company>_<title>_<job_id>`) |
 | `llm.py` | Fireworks (default `accounts/fireworks/models/glm-5p3-flash`) / Gemini failover / OpenAI-compatible; `reasoning_effort`, structured output; usage ledger keyed by active user + `llm_purpose` (decorator or block), `flush_active_usage` writes it to that user's `llm_usage`; `gpt-oss*` names are rejected |
 | `database.py` | SQLite schema: `jobs`, `stage_history`, `job_tombstones` (+ triggers), `score_labels`, `score_history`, `llm_usage`, `schema_meta`; `job_id` (blake2b of URL), `advance_funnel`, stats |
@@ -81,6 +82,8 @@ Single-user doctor: `jobwright doctor`. Multi-profile: `jobwright --user <id> do
 | `tests/test_pipeline_integrity.py` | Tombstones, dedupe, run lock, run summary / stage failures |
 | `tests/test_dedupe_backlog.py` | Duplicate open cards: grouping, keeper choice, close + tombstone, CLI, drawer link |
 | `tests/test_ops.py` | Brief report, watchdog, preflight, backups |
+| `tests/test_ops_reliability.py` | Fresh-summary / pipeline_rc / locked / timeout reports, per-source discovery health, alert fallback, notify retry, watchdog still-running / timed-out / day-of-week, stage budgets, backup integrity + clutter + restore, old brief file cleanup |
+| `tests/test_brief_script.py` | `run_daily_brief.sh`: preflight failure, `pipeline_rc`, `pipeline_locked`, deadline kill + still notify/report |
 | `tests/test_notify.py` | Notify formatting and status lines |
 | `tests/test_resume.py` | PDF → markdown, cache |
 | `tests/test_run_registry.py` | `web_runs.json`, `JOBWRIGHT_WEB_RUN_ID` |

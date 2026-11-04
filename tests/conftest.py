@@ -30,6 +30,10 @@ _SECRET_ENV = (
     "JOBWRIGHT_CF_AUD",
     "JOBWRIGHT_DEV_EMAIL",
     "APPLY_DRY_RUN",
+    "JOBWRIGHT_OPS_FALLBACK",
+    "JOBWRIGHT_OPS_NTFY_TOKEN",
+    "JOBWRIGHT_OPS_TARGET",
+    "JOBWRIGHT_BACKUP_DIR",
 )
 
 
@@ -52,9 +56,18 @@ def _hermetic(tmp_path_factory, monkeypatch):
     shim.mkdir()
     (shim / "hermes").write_text("#!/bin/sh\necho 'hermes is disabled in tests' >&2\nexit 97\n")
     (shim / "hermes").chmod(0o755)
+    # Never show a real macOS notification from tests: osascript only logs its argv.
+    monkeypatch.setenv("JOBWRIGHT_TEST_OSASCRIPT_LOG", str(sandbox / "osascript.log"))
+    (shim / "osascript").write_text('#!/bin/sh\nprintf "%s\\n" "$*" >> "$JOBWRIGHT_TEST_OSASCRIPT_LOG"\nexit 0\n')
+    (shim / "osascript").chmod(0o755)
     monkeypatch.setenv("PATH", f"{shim}{os.pathsep}{os.environ.get('PATH', '')}")
     monkeypatch.setattr("jobwright.hermes_cron._run_hermes", lambda args: {"stdout": "", "error": None})
     monkeypatch.setattr("jobwright.welcome.send_welcome_async", lambda user_id: None)
+
+    def _no_network(*_a, **_k):
+        raise AssertionError("tests must not POST to ntfy; stub jobwright.ops._notify_ntfy")
+
+    monkeypatch.setattr("jobwright.ops._notify_ntfy", _no_network)
 
     users_root = sandbox / "users"
     monkeypatch.setenv("JOBWRIGHT_USERS_ROOT", str(users_root))
