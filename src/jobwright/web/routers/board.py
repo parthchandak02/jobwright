@@ -298,7 +298,7 @@ def _validate_move(to_stage: str, outcome: str | None) -> None:
         raise HTTPException(400, "outcome required when closing a job")
 
 
-def _apply_move(conn, url: str, body: MoveBody) -> tuple[str | None, int | None]:
+def _apply_move(conn, url: str, body: MoveBody, label_source: str = "dismiss") -> tuple[str | None, int | None]:
     """One human lane change, exactly as the board does it; does not commit.
 
     Shared by the single move and the bulk endpoint so both follow the same
@@ -374,7 +374,7 @@ def _apply_move(conn, url: str, body: MoveBody) -> tuple[str | None, int | None]
             from jobwright.labels import record_label
 
             label_id = record_label(
-                url, 2, rationale=reason_text, reasons=reasons, source="dismiss", conn=conn, commit=False
+                url, 2, rationale=reason_text, reasons=reasons, source=label_source, conn=conn, commit=False
             )
     return from_stage, label_id
 
@@ -436,7 +436,7 @@ def _clear_own_dismiss_label(conn, url: str, label_id: int) -> bool:
     row = conn.execute(
         "SELECT id, source, verdict FROM score_labels WHERE job_url = ? ORDER BY id DESC LIMIT 1", (url,)
     ).fetchone()
-    if row is None or row["id"] != label_id or row["source"] != "dismiss" or row["verdict"] == "cleared":
+    if row is None or row["id"] != label_id or row["source"] not in ("dismiss", "bulk_dismiss") or row["verdict"] == "cleared":
         return False
     from jobwright.labels import clear_label
 
@@ -489,7 +489,7 @@ def bulk_jobs(body: BulkBody) -> dict:
             if conn.execute("SELECT 1 FROM jobs WHERE url = ?", (url,)).fetchone() is None:
                 results.append({"job_id": key, "ok": False, "error": "not_found"})
                 continue
-            from_stage, label_id = _apply_move(conn, url, move)
+            from_stage, label_id = _apply_move(conn, url, move, label_source="bulk_dismiss")
             job_id = job_id_for_url(url)
             item = (body.restore or {}).get(key) or (body.restore or {}).get(job_id)
             cleared = False

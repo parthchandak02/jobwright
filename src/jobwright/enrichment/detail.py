@@ -22,6 +22,7 @@ from urllib.parse import urljoin
 from bs4 import BeautifulSoup
 from playwright.sync_api import sync_playwright
 
+from jobwright import stage_budget
 from jobwright.database import init_db
 from jobwright.llm import get_client, llm_purpose
 
@@ -672,6 +673,10 @@ def scrape_site_batch(
 
     if not jobs:
         return stats
+    if stage_budget.exceeded():  # do not even start a browser
+        stats["budget_skipped"] = len(jobs)
+        log.warning("%s: enrich time budget used up; leaving %d job(s) for the next run", site, len(jobs))
+        return stats
 
     own_conn = conn is None
     if own_conn:
@@ -689,6 +694,12 @@ def scrape_site_batch(
             page = context.new_page()
 
             for i, (url, title) in enumerate(jobs):
+                if stage_budget.exceeded():
+                    skipped = len(jobs) - i
+                    stats["budget_skipped"] = stats.get("budget_skipped", 0) + skipped
+                    log.warning("%s: enrich time budget used up; leaving %d job(s) for the next run",
+                                site, skipped)
+                    break
                 log.info("[%d/%d] %s", i + 1, len(jobs), title[:50] if title else url[:50])
 
                 result = scrape_detail_page(page, url)
@@ -802,6 +813,8 @@ def _run_detail_scraper(
     def _merge_stats(stats: dict) -> None:
         for k in ("processed", "ok", "partial", "error"):
             total_stats[k] += stats[k]
+        if stats.get("budget_skipped"):
+            total_stats["budget_skipped"] = total_stats.get("budget_skipped", 0) + stats["budget_skipped"]
         for t, count in stats["tiers"].items():
             total_stats["tiers"][t] = total_stats["tiers"].get(t, 0) + count
 

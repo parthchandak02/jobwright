@@ -606,6 +606,7 @@ def scrape_employers(
         "new": total_new,
         "existing": total_existing,
         "skipped_known": total_skipped,
+        "errors": errors,
     }
 
 
@@ -704,6 +705,7 @@ def run_workday_discovery(employers: dict | None = None, workers: int = 1) -> di
     grand_existing = 0
     grand_found = 0
     grand_skipped = 0
+    grand_errors = 0
 
     for i, query in enumerate(queries, 1):
         log.info("Query %d/%d: \"%s\"", i, len(queries), query)
@@ -720,6 +722,7 @@ def run_workday_discovery(employers: dict | None = None, workers: int = 1) -> di
         grand_existing += result["existing"]
         grand_found += result["found"]
         grand_skipped += result.get("skipped_known", 0)
+        grand_errors += result.get("errors", 0)
 
     log.info(
         "Workday crawl done: %d found, %d new, %d existing (%d skipped known) "
@@ -733,5 +736,6 @@ def run_workday_discovery(employers: dict | None = None, workers: int = 1) -> di
         "new": grand_new,
         "existing": grand_existing,
         "skipped_known": grand_skipped,
+        "errors": grand_errors,
         "queries": len(queries),
     }

@@ -333,3 +333,105 @@ def test_notify_skips_reposts_of_already_sent_jobs(db: sqlite3.Connection):
             {"url": "u10", "title": "Program Officer", "company": "Acme Foundation"},
             {"url": "u11", "title": "Director", "company": "Other"}]
     assert [r["url"] for r in notify._dedupe_for_notify(db, rows)] == ["u9", "u11"]
+
+
+def _target(monkeypatch):
+    monkeypatch.setattr(notify, "get_active_user_id", lambda: "user1")
+    monkeypatch.setattr(notify, "get_user", lambda _uid: _fake_user("whatsapp:120363999999999901@g.us"))
+
+
+def test_claim_is_atomic_and_only_claimed_rows_are_released(db: sqlite3.Connection):
+    _insert_job(db, "https://example.com/a")
+    _insert_job(db, "https://example.com/b")
+    db.execute("UPDATE jobs SET whatsapp_notified_at = 'earlier' WHERE url = 'https://example.com/b'")
+    db.commit()
+    urls = ["https://example.com/a", "https://example.com/b"]
+    assert notify.claim_for_notify(db, urls, "s1") == ["https://example.com/a"]
+    assert notify.claim_for_notify(db, urls, "s2") == []  # second caller gets nothing
+    notify.release_claim(db, urls, "s1")
+    stamps = dict(db.execute("SELECT url, whatsapp_notified_at FROM jobs").fetchall())
+    assert stamps == {"https://example.com/a": None, "https://example.com/b": "earlier"}
+
+
+def test_claim_fallback_without_returning(db: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(notify, "_HAS_RETURNING", False)
+    db.isolation_level = None
+    try:
+        _insert_job(db, "https://example.com/a")
+        assert notify.claim_for_notify(db, ["https://example.com/a"], "s1") == ["https://example.com/a"]
+        assert notify.claim_for_notify(db, ["https://example.com/a"], "s2") == []
+    finally:
+        db.isolation_level = ""
+
+
+def test_notify_sends_only_rows_it_claimed(db: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch):
+    _insert_job(db, "https://example.com/a", title="Ops Lead", company="One")
+    _insert_job(db, "https://example.com/b", title="Grants Lead", company="Two")
+    _target(monkeypatch)
+    real_claim = notify.claim_for_notify
+
+    def racing_claim(conn, urls, stamp):
+        # Another notify claims job b between selection and claim.
+        real_claim(conn, ["https://example.com/b"], "other-run")
+        return real_claim(conn, urls, stamp)
+
+    monkeypatch.setattr(notify, "claim_for_notify", racing_claim)
+    sent: list[str] = []
+    monkeypatch.setattr(notify, "send_via_hermes", lambda msg, target: sent.append(msg))
+    result = notify.run_notify()
+    assert result["sent"] == 1 and len(sent) == 1
+    assert "Ops Lead" in sent[0] and "Grants Lead" not in sent[0]
+
+
+def test_second_concurrent_notify_exits_already_sending(db: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch):
+    _insert_job(db, "https://example.com/a")
+    _target(monkeypatch)
+    sent: list[str] = []
+    monkeypatch.setattr(notify, "send_via_hermes", lambda msg, target: sent.append(msg))
+    with notify.notify_lock():
+        result = notify.run_notify()
+    assert result["skipped"] and "already sending" in result["reason"] and not sent
+    assert db.execute("SELECT whatsapp_notified_at FROM jobs").fetchone()[0] is None
+
+
+def test_timeout_keeps_claim_logs_uncertain_and_never_resends(
+    db: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    from typer.testing import CliRunner
+
+    from jobwright.cli import app
+
+    _insert_job(db, "https://example.com/a")
+    _target(monkeypatch)
+    calls: list[str] = []
+
+    def _timeout(msg, target):
+        calls.append(msg)
+        raise notify.SendUncertain("hermes send timed out after 90s (may have been delivered)")
+
+    monkeypatch.setattr(notify, "send_via_hermes", _timeout)
+    monkeypatch.setattr("jobwright.cli._bootstrap", lambda: None)
+    status = tmp_path / "BRIEF_STATUS_t"
+    res = CliRunner().invoke(app, ["notify", "--status-file", str(status)])
+    assert res.exit_code == 1 and status.read_text().startswith("notify_uncertain")
+    assert db.execute("SELECT whatsapp_notified_at FROM jobs").fetchone()[0] is not None
+    assert notify.read_uncertain()[0]["urls"] == ["https://example.com/a"]
+    again = notify.run_notify()  # e.g. a watchdog retry: nothing left to send
+    assert again["skipped"] and len(calls) == 1
+    assert notify.release_uncertain(db) == 1
+    assert db.execute("SELECT whatsapp_notified_at FROM jobs").fetchone()[0] is None
+    assert notify.read_uncertain() == []
+
+
+def test_ops_release_uncertain_cli(db: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch):
+    from typer.testing import CliRunner
+
+    from jobwright.cli import app
+
+    _insert_job(db, "https://example.com/a")
+    notify.claim_for_notify(db, ["https://example.com/a"], "s1")
+    notify.record_uncertain(["https://example.com/a"], "s1", "timed out")
+    monkeypatch.setattr("jobwright.cli._bootstrap", lambda: None)
+    res = CliRunner().invoke(app, ["ops", "release-uncertain"])
+    assert res.exit_code == 0 and "Released 1 job" in res.output
+    assert db.execute("SELECT whatsapp_notified_at FROM jobs").fetchone()[0] is None

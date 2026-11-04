@@ -51,7 +51,7 @@ if [ -f "${JOBWRIGHT_DIR}/BRIEF_PID" ]; then
   fi
 fi
 
-echo "started user=${JOBWRIGHT_USER:-legacy} repo=${REPO_ROOT}" > "${STATUS_FILE}"
+echo "started user=${JOBWRIGHT_USER:-legacy} repo=${REPO_ROOT} at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "${STATUS_FILE}"
 
 PID="$(python3 -c "
 import os, subprocess, sys

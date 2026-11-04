@@ -3,8 +3,8 @@
 The same posting shows up under different URLs (LinkedIn + Indeed + a repost
 with a fresh id). URL keys cannot catch that, so every job gets a normalized
 ``dedupe_key`` (company | title | place). A newly discovered job whose key
-matches an existing job, or a job removed in the last ``window_days``, is
-tombstoned as a duplicate before it costs an enrich/score call.
+matches an open job, or a job closed or removed in the last ``window_days``,
+is tombstoned as a duplicate before it costs an enrich/score call.
 """
 
 from __future__ import annotations
@@ -22,13 +22,20 @@ _COMPANY_SUFFIXES = {
     "inc", "incorporated", "llc", "ltd", "limited", "corp", "corporation", "co",
     "company", "plc", "lp", "llp", "pbc", "the", "group", "holdings",
 }
-# Work-arrangement words only; role-distinguishing text (e.g. "(Education)")
-# is kept so two different openings at one company never collapse.
-_TITLE_NOISE = re.compile(
-    r"\b(?:remote|hybrid|on[- ]?site|onsite|full[- ]?time|part[- ]?time|"
-    r"contract|temporary|temp|usa|united states)\b",
-    re.IGNORECASE,
+# Work-arrangement words, stripped only where they annotate a title: inside
+# brackets ("Manager (Contract)"), after a trailing separator ("Manager -
+# Temporary", "Analyst, Remote") or before a leading one ("Remote - Analyst").
+# A word that is part of the role itself ("Contract Manager", "Remote Sensing
+# Analyst") is kept, as is role-distinguishing text such as "(Education)", so
+# two different openings at one company never collapse.
+_NOISE_WORD = (
+    r"(?:remote|hybrid|on[- ]?site|onsite|full[- ]?time|part[- ]?time|"
+    r"contract|contractor|temporary|temp|usa|us|united states)"
 )
+_NOISE_RUN = rf"{_NOISE_WORD}(?:\s*(?:[/,&+]|and|or)?\s*{_NOISE_WORD})*"
+_BRACKETED_NOISE = re.compile(rf"[(\[{{]\s*{_NOISE_RUN}\s*[)\]}}]", re.IGNORECASE)
+_TRAILING_NOISE = re.compile(rf"\s*(?:[-\u2013\u2014|,:/]\s*{_NOISE_RUN}\s*)+$", re.IGNORECASE)
+_LEADING_NOISE = re.compile(rf"^\s*{_NOISE_RUN}\s*[-\u2013\u2014|:/]\s*", re.IGNORECASE)
 _NON_ALNUM = re.compile(r"[^a-z0-9]+")
 
 
@@ -42,7 +49,12 @@ def normalize_company(company: str | None) -> str:
 
 
 def normalize_title(title: str | None) -> str:
-    cleaned = _TITLE_NOISE.sub(" ", title or "")
+    cleaned = _BRACKETED_NOISE.sub(" ", title or "")
+    prev = None
+    while prev != cleaned:  # "Manager - Remote (Contract)" needs two passes
+        prev = cleaned
+        cleaned = _TRAILING_NOISE.sub("", _BRACKETED_NOISE.sub(" ", cleaned)).strip()
+        cleaned = _LEADING_NOISE.sub("", cleaned)
     return " ".join(_squash(cleaned).split())
 
 
@@ -82,9 +94,13 @@ def dedupe_new_jobs(conn: sqlite3.Connection, *, window_days: int = 45) -> dict[
             continue
         protected = (row["source"] or "") == "manual" or (row["board_updated_by"] or "") == "human"
         if not protected:
+            # A closed card only blocks a repost inside the window (like a
+            # tombstone), so a role that reopens months later comes back.
             original = conn.execute(
-                "SELECT url FROM jobs WHERE dedupe_key = ? AND url != ? LIMIT 1",
-                (key, row["url"]),
+                "SELECT url FROM jobs WHERE dedupe_key = ? AND url != ? "
+                "AND (COALESCE(funnel_stage, 'backlog') != 'closed' "
+                "OR COALESCE(board_updated_at, discovered_at, '') >= ?) LIMIT 1",
+                (key, row["url"], cutoff),
             ).fetchone()
             if original is not None:
                 duplicates.append((row["url"], f"duplicate:{original[0]}"))

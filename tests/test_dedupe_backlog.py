@@ -232,3 +232,44 @@ def test_notify_collapses_multi_location_posting(db):
          "location": "San Francisco, CA", "full_description": JD},
     ]
     assert [j["url"] for j in _dedupe_for_notify(db, jobs)] == ["https://x/ny"]
+
+
+@pytest.mark.parametrize(("a", "b", "same"), [
+    ("Contract Manager", "Manager", False),
+    ("Temporary Housing Coordinator", "Housing Coordinator", False),
+    ("Remote Sensing Analyst", "Sensing Analyst", False),
+    ("Program Manager (Contract)", "Program Manager", True),
+    ("Program Manager - Temporary", "Program Manager", True),
+    ("Program Manager, Remote", "Program Manager", True),
+    ("Remote - Program Manager", "Program Manager", True),
+    ("Program Manager - Remote (Full-time)", "Program Manager", True),
+    ("Program Manager [Hybrid / Contract]", "Program Manager", True),
+    ("Teacher (Education)", "Teacher", False),
+])
+def test_title_noise_only_strips_bracketed_and_trailing_forms(a, b, same):
+    from jobwright.discovery.dedupe import normalize_title
+
+    assert (normalize_title(a) == normalize_title(b)) is same
+
+
+def test_closed_job_blocks_repost_only_inside_window(db):
+    from datetime import datetime, timedelta, timezone
+
+    from jobwright.discovery.dedupe import dedupe_new_jobs
+
+    old = (datetime.now(timezone.utc) - timedelta(days=90)).isoformat()
+    recent = (datetime.now(timezone.utc) - timedelta(days=5)).isoformat()
+    _add(db, "https://x/old-closed", title="Grants Manager", stage="closed", discovered=old)
+    _add(db, "https://x/recent-closed", title="Program Lead", stage="closed", discovered=recent)
+    _add(db, "https://x/open", title="Data Lead", stage="backlog", discovered=old)
+    db.execute("UPDATE jobs SET board_updated_at = ? WHERE url = 'https://x/old-closed'", (old,))
+    db.execute("UPDATE jobs SET board_updated_at = ? WHERE url = 'https://x/recent-closed'", (recent,))
+    db.commit()
+    _add(db, "https://x/repost-old", title="Grants Manager", key=False, discovered=recent)
+    _add(db, "https://x/repost-recent", title="Program Lead", key=False, discovered=recent)
+    _add(db, "https://x/repost-open", title="Data Lead", key=False, discovered=recent)
+    out = dedupe_new_jobs(db)
+    left = {r[0] for r in db.execute("SELECT url FROM jobs")}
+    assert "https://x/repost-old" in left  # reopened months later: comes back
+    assert "https://x/repost-recent" not in left and "https://x/repost-open" not in left
+    assert out["duplicates"] == 2

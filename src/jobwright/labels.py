@@ -6,21 +6,31 @@ so labels survive pruning and every future rescore is kept, not overwritten.
 
 The eval set combines explicit labels with implicit board signals:
   positive  applied / in_progress / offer (or ever reached applied), or label >= 7
-  negative  label <= 4, or closed by the human without ever applying
+  negative  label <= 4, or closed by the human as "not interested" without
+            ever applying (withdrawn / cancelled / duplicate / ghosted closes say
+            nothing about fit and are ignored)
   ignored   labels 5-6 (ambiguous "good role, but..."), everything unlabeled
+
+Label ``source`` says where a rating came from: ``dashboard`` (thumbs),
+``dismiss`` (one "Not for me"), ``bulk_dismiss`` (many cards closed at once,
+a weaker signal that few-shot retrieval caps), ``import_pre_v06``.
 """
 
 from __future__ import annotations
 
 import json
 import sqlite3
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 from jobwright.database import get_connection, job_id_for_url
 
 POSITIVE_MIN = 7
 NEGATIVE_MAX = 4
+# Closed-without-applying outcomes that mean "this role is not for me". Other
+# outcomes (withdrawn, cancelled, duplicate, ghosted, ...) are not a fit signal.
+IMPLICIT_NEGATIVE_OUTCOMES = ("not_interested",)
+DISMISS_SOURCES = ("dismiss", "bulk_dismiss")
 _SNAPSHOT_CHARS = 6000
 
 
@@ -143,6 +153,16 @@ class EvalItem:
     rationale: str
     dedupe_key: str | None
     model_score: int | None
+    reasons: list[str] = field(default_factory=list)
+    label_source: str = ""  # score_labels.source (dashboard / dismiss / bulk_dismiss / ...)
+
+
+def _reasons(raw) -> list[str]:
+    try:
+        value = json.loads(raw or "[]")
+    except (TypeError, ValueError):
+        return []
+    return [str(r) for r in value if str(r).strip()] if isinstance(value, list) else []
 
 
 def _latest_labels(conn: sqlite3.Connection) -> dict[str, sqlite3.Row]:
@@ -193,6 +213,8 @@ def build_eval_set(conn: sqlite3.Connection | None = None) -> list[EvalItem]:
             rationale=lab["rationale"] or "",
             dedupe_key=job["dedupe_key"] if job is not None else None,
             model_score=lab["model_score"],
+            reasons=_reasons(lab["reasons"]),
+            label_source=lab["source"] or "",
         )
 
     for url, job in jobs.items():
@@ -202,7 +224,8 @@ def build_eval_set(conn: sqlite3.Connection | None = None) -> list[EvalItem]:
         applied = url in ever_applied or job["applied_at"] is not None or stage in ("applied", "in_progress", "offer")
         if applied:
             label, source = 1, "applied"
-        elif stage == "closed" and (job["board_updated_by"] or "") == "human":
+        elif (stage == "closed" and (job["board_updated_by"] or "") == "human"
+              and (job["outcome"] or "") in IMPLICIT_NEGATIVE_OUTCOMES):
             label, source = 0, "closed_unapplied"
         else:
             continue

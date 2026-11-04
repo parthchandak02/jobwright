@@ -73,7 +73,7 @@ def test_bulk_close_records_not_for_me_labels(api_client):
         row = _row(jid)
         assert row["funnel_stage"] == "closed" and row["outcome"] == "not_interested"
         assert row["close_reason"] == "Too senior" and row["user_fit_score"] == 2
-        assert [tuple(r)[:3] for r in _labels(jid)] == [("dismiss", "not_relevant", 2)]
+        assert [tuple(r)[:3] for r in _labels(jid)] == [("bulk_dismiss", "not_relevant", 2)]
     assert _labels(applied) == []
 
 
@@ -121,11 +121,11 @@ def test_bulk_is_one_transaction(api_client, monkeypatch):
     real = board_mod._apply_move
     calls = {"n": 0}
 
-    def flaky(conn, url, body):
+    def flaky(conn, url, body, **kw):
         calls["n"] += 1
         if calls["n"] == 2:
             raise RuntimeError("boom")
-        return real(conn, url, body)
+        return real(conn, url, body, **kw)
 
     monkeypatch.setattr(board_mod, "_apply_move", flaky)
     with pytest.raises(RuntimeError):

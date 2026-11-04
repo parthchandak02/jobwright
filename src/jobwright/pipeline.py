@@ -27,6 +27,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 import jobwright.config as config
+from jobwright import stage_budget
 from jobwright.config import load_env, ensure_dirs
 from jobwright.database import init_db, get_connection, get_stats
 from jobwright.llm import flush_active_usage, llm_purpose
@@ -92,12 +93,27 @@ def search_paused() -> bool:
 # Individual stage runners
 # ---------------------------------------------------------------------------
 
+def _source_health(new, errors=0, rate_limited=0, status: str | None = None, **extra) -> dict:
+    """One discovery source's result: {new, errors, rate_limited, status}.
+
+    ``degraded`` means it ran but some queries failed or were rate-limited, so
+    "0 new" may be a broken source rather than a quiet day.
+    """
+    new, errors, rate_limited = int(new or 0), int(errors or 0), int(rate_limited or 0)
+    if status is None:
+        status = "degraded" if errors or rate_limited else "ok"
+    return {"new": new, "errors": errors, "rate_limited": rate_limited, "status": status, **extra}
+
+
 def _run_discover(workers: int = 1) -> dict:
     """Stage: Job discovery — JobSpy, Workday, and (full mode) smart-extract.
 
     DISCOVER_MODE env:
       fast (default) — JobSpy + Workday tier-1 only; skip smart-extract
       full — all configured queries + smart-extract
+
+    ``sources`` records every source's {new, errors, rate_limited, status}
+    (see ``_source_health``) so the brief report can name a broken board.
     """
     discover_mode = os.environ.get("DISCOVER_MODE", "fast").strip().lower()
     if discover_mode not in ("fast", "full"):
@@ -105,20 +121,34 @@ def _run_discover(workers: int = 1) -> dict:
         discover_mode = "fast"
 
     stats: dict = {"jobspy": None, "workday": None, "smartextract": None, "mode": discover_mode}
+    sources: dict[str, dict] = {}
     console.print(f"  [dim]DISCOVER_MODE={discover_mode}[/dim]")
     if os.environ.get("BRIEF_SMOKE", "").strip() == "1":
         console.print("  [dim]BRIEF_SMOKE=1 (narrow discover, top 3 digest)[/dim]")
 
-    # JobSpy
+    # JobSpy (Indeed, ZipRecruiter, Glassdoor, ... plus the LinkedIn guest client)
     console.print("  [cyan]JobSpy full crawl...[/cyan]")
     try:
         from jobwright.discovery.jobspy import run_discovery
-        run_discovery(workers=workers)
+        res = run_discovery(workers=workers) or {}
+        site_errors = res.get("site_errors") or {}
+        li = res.get("linkedin") or None
+        sources["jobspy"] = _source_health(
+            res.get("new"), int(res.get("errors") or 0) + sum(site_errors.values()),
+            queries=res.get("queries"), site_errors=site_errors,
+        )
+        if li is not None:
+            sources["linkedin"] = _source_health(
+                None, site_errors.get("linkedin", 0), li.get("rate_limited"),
+                throttled=li.get("throttled"), requests=li.get("requests"),
+            )
+            sources["linkedin"].pop("new")  # counted inside jobspy's total
         stats["jobspy"] = "ok"
     except Exception as e:
         log.error("JobSpy crawl failed: %s", e)
         console.print(f"  [red]JobSpy error:[/red] {e}")
         stats["jobspy"] = f"error: {e}"
+        sources["jobspy"] = _source_health(0, 1, status=f"error: {e}"[:200])
 
     skip_workday = os.environ.get("DISCOVER_WORKDAY", "1").strip().lower() in ("0", "false", "no")
     if skip_workday:
@@ -129,12 +159,14 @@ def _run_discover(workers: int = 1) -> dict:
         console.print("  [cyan]Workday corporate scraper...[/cyan]")
         try:
             from jobwright.discovery.workday import run_workday_discovery
-            run_workday_discovery(workers=workers)
+            res = run_workday_discovery(workers=workers) or {}
+            sources["workday"] = _source_health(res.get("new"), res.get("errors"), queries=res.get("queries"))
             stats["workday"] = "ok"
         except Exception as e:
             log.error("Workday scraper failed: %s", e)
             console.print(f"  [red]Workday error:[/red] {e}")
             stats["workday"] = f"error: {e}"
+            sources["workday"] = _source_health(0, 1, status=f"error: {e}"[:200])
 
     # Impact / social-sector boards — deterministic scrapers, no LLM, so they run
     # in fast mode too (the mode the daily brief uses). See discovery/impactboards.py.
@@ -145,34 +177,49 @@ def _run_discover(workers: int = 1) -> dict:
         stats["impact_boards"] = impact_report
         failed = [n for n, r in impact_report.items()
                   if isinstance(r, dict) and r.get("error")]
+        for name, r in impact_report.items():
+            if isinstance(r, dict):
+                err = r.get("error")
+                sources[f"impact:{name}"] = _source_health(
+                    r.get("new"), 1 if err else 0, status=f"error: {err}"[:200] if err else None,
+                )
         if failed:
             console.print(f"  [yellow]Impact boards failed:[/yellow] {', '.join(failed)}")
+            stats["impact_boards_failed"] = failed
     except Exception as e:
         log.error("Impact boards failed: %s", e)
         console.print(f"  [red]Impact boards error:[/red] {e}")
         stats["impact_boards"] = f"error: {e}"
+        sources["impact_boards"] = _source_health(0, 1, status=f"error: {e}"[:200])
 
     # Smart extract (full mode only — expensive LLM + Playwright)
     if discover_mode == "full":
         console.print("  [cyan]Smart extract (AI-powered scraping)...[/cyan]")
         try:
             from jobwright.discovery.smartextract import run_smart_extract
-            run_smart_extract(workers=workers)
+            res = run_smart_extract(workers=workers) or {}
+            failed_sites = max(0, int(res.get("total") or 0) - int(res.get("passed") or 0))
+            sources["smartextract"] = _source_health(res.get("total_new"), failed_sites)
             stats["smartextract"] = "ok"
         except Exception as e:
             log.error("Smart extract failed: %s", e)
             console.print(f"  [red]Smart extract error:[/red] {e}")
             stats["smartextract"] = f"error: {e}"
+            sources["smartextract"] = _source_health(0, 1, status=f"error: {e}"[:200])
     else:
         console.print("  [dim]Smart extract skipped (DISCOVER_MODE=fast)[/dim]")
         stats["smartextract"] = "skipped"
 
+    stats["sources"] = sources
+    stats["new"] = sum(int(v.get("new") or 0) for v in sources.values())
     stats["dedupe"] = _dedupe()
-    sources = ("jobspy", "workday", "impact_boards", "smartextract")
-    ran = [stats[k] for k in sources if stats[k] not in (None, "skipped")]
+    top = ("jobspy", "workday", "impact_boards", "smartextract")
+    ran = [stats[k] for k in top if stats.get(k) not in (None, "skipped")]
     if ran and all(str(v).startswith("error") for v in ran):
         stats["status"] = "error: every discovery source failed"
-    elif any(str(stats[k]).startswith("error") for k in sources):
+    elif any(str(stats.get(k)).startswith("error") for k in top) or any(
+        v.get("status") != "ok" for v in sources.values()
+    ):
         stats["status"] = "partial"
     else:
         stats["status"] = "ok"
@@ -397,6 +444,31 @@ def pipeline_lock():
         fh.close()
 
 
+def lock_holder() -> str | None:
+    """Who holds this profile's pipeline lock right now ("pid=N started=..."), or None if free."""
+    lock_path = Path(config.APP_DIR) / ".pipeline.lock"
+    try:
+        text = lock_path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    pid = None
+    for part in text.split():
+        if part.startswith("pid="):
+            try:
+                pid = int(part[4:])
+            except ValueError:
+                pid = None
+    if pid is None:
+        return None
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return None
+    except PermissionError:
+        pass
+    return text
+
+
 def _json_safe(value):
     if isinstance(value, dict):
         return {str(k): _json_safe(v) for k, v in value.items()}
@@ -459,6 +531,9 @@ def _run_sequential(ordered: list[str], min_score: int, workers: int = 1,
         runner = _STAGE_RUNNERS[name]
         detail: dict = {}
 
+        budget = stage_budget.start(name)
+        if budget:
+            console.print(f"  Soft budget: {budget / 60:.0f} min (JOBWRIGHT_STAGE_BUDGET_{name.upper()})")
         try:
             kwargs: dict = {}
             if name in ("tailor", "cover", "portfolio", "docx", "connect"):
@@ -482,6 +557,11 @@ def _run_sequential(ordered: list[str], min_score: int, workers: int = 1,
             log.exception("Stage '%s' crashed", name)
             console.print(f"\n  [red]STAGE FAILED:[/red] {e}")
 
+        over_budget = stage_budget.exceeded()
+        stage_budget.clear()
+        if over_budget:
+            log.warning("Stage '%s' ran past its soft budget (%.0fs); moved on", name, elapsed)
+            detail = {**detail, "over_budget": True}
         flush_active_usage(usage_run_id)  # LLM spend per stage -> this user's llm_usage
         results.append({"stage": name, "status": status, "elapsed": elapsed, "detail": detail})
         if status not in ("ok", "partial", "skipped"):

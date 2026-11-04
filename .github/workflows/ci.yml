@@ -14,18 +14,22 @@ jobs:
   backend:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.13"]
     env:
       JOBWRIGHT_HERMES_DRY_RUN: "1"
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: astral-sh/setup-uv@e92bafb6253dcd438e0484186d7669ea7a8ca1cc # v6.4.3
         with:
-          python-version: "3.11"
+          python-version: ${{ matrix.python-version }}
           enable-cache: true
       - name: Install
         run: uv sync --extra web --extra dev
       - name: Ruff
-        run: uv run ruff check src/
+        run: uv run ruff check src/ tests/
       - name: Pytest
         run: uv run --extra dev --extra web pytest tests/ -q
 

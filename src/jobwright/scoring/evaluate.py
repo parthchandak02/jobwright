@@ -167,6 +167,7 @@ def run_eval(
         r = by_url.get(it.url)
         rows.append({
             "url": it.url, "title": it.title, "company": it.company, "label": it.label, "source": it.source,
+            "label_source": it.label_source,
             "label_score": it.label_score, "rationale": it.rationale, "baseline": it.model_score,
             "score": r.score if r else None, "fit": r.fit if r else None, "confidence": r.confidence if r else None,
             "dealbreakers": r.dealbreakers if r else None, "caps": r.caps if r else None,
