@@ -24,6 +24,7 @@ import {
   type SortKey,
   uniqueValues,
 } from '@/lib/jobListFilters'
+import { useMediaQuery } from '@/lib/useMediaQuery'
 import { cn } from '@/lib/utils'
 
 type Props = {
@@ -74,6 +75,8 @@ export function JobsTable({ jobs, stages, onOpen, onScoreSaved, toolbarStart, se
   const [filters, setFilters] = useState<ColumnFilters>(DEFAULT_COLUMN_FILTERS)
   const [sort, setSort] = useState<SortKey>('score-desc')
   const [filtersOpen, setFiltersOpen] = useState(false)
+  // Phones get the card list, md+ the table: render only one (both at once doubled the DOM).
+  const desktop = useMediaQuery('(min-width: 768px)')
 
   const sources = useMemo(() => uniqueValues(jobs, 'source'), [jobs])
   const workModels = useMemo(() => uniqueValues(jobs, 'work_model'), [jobs])
@@ -119,7 +122,7 @@ export function JobsTable({ jobs, stages, onOpen, onScoreSaved, toolbarStart, se
     }
     el.addEventListener('keydown', onKey)
     return () => el.removeEventListener('keydown', onKey)
-  }, [selectable, selectAll, clearSelection, selectedCount])
+  }, [desktop, selectable, selectAll, clearSelection, selectedCount])
 
   const clearFilters = () => setFilters(DEFAULT_COLUMN_FILTERS)
   const shownText = `Showing ${displayJobs.length} of ${jobs.length} jobs`
@@ -237,78 +240,80 @@ export function JobsTable({ jobs, stages, onOpen, onScoreSaved, toolbarStart, se
 
       {activeFilterCount > 0 ? <p className="text-caption text-muted-foreground tabular-nums md:hidden">{shownText}</p> : null}
 
-      <div className="flex flex-col gap-2 md:hidden">
-        {displayJobs.length === 0
-          ? noMatches
-          : displayJobs.map((job) => (
-              <SelectableCard
-                key={job.url}
-                job={job}
-                showStage={multiStage}
-                selecting={selecting}
-                selected={selection.isSelected(job)}
-                onOpen={onOpen}
-                onToggle={(j) => selection.toggle(j)}
-                onLongPress={
-                  selectable
-                    ? (j) => {
-                        setSelecting(true)
-                        if (!selection.isSelected(j)) selection.toggle(j)
-                      }
-                    : undefined
-                }
-                onScoreSaved={onScoreSaved}
-              />
-            ))}
-      </div>
-
-      <div ref={tableRef} className="surface hidden overflow-hidden rounded-lg md:block">
-        <div className="overflow-x-auto">
-          <table className="jobs-table">
-            <colgroup>
-              {selectable ? <col className="jobs-table-col-select" /> : null}
-              <col className="jobs-table-col-score" />
-              <col className="jobs-table-col-title" />
-              <col className="jobs-table-col-company" />
-              <col className="jobs-table-col-location" />
-              <col className="jobs-table-col-stage" />
-              <col className="jobs-table-col-work" />
-              <col className="jobs-table-col-source" />
-              <col className="jobs-table-col-materials" />
-            </colgroup>
-            <JobsTableHead
-              filters={filters}
-              setFilters={setFilters}
-              sort={sort}
-              onSort={(column) => setSort((prev) => nextSort(prev, column))}
-              stages={stageOptions}
-              sources={sources}
-              workModels={workModels}
-              selection={
-                selectable ? { state: selection.allState, shown: displayJobs.length, onToggleAll: selection.toggleAll } : undefined
-              }
-            />
-            <tbody>
-              {displayJobs.length === 0 ? (
-                <tr>
-                  <td colSpan={selectable ? 9 : 8}>{noMatches}</td>
-                </tr>
-              ) : (
-                displayJobs.map((job) => (
-                  <JobsTableRow
-                    key={job.url}
-                    job={job}
-                    onOpen={onOpen}
-                    onScoreSaved={onScoreSaved}
-                    selected={selection.isSelected(job)}
-                    onToggleSelect={selectable ? (j, range) => selection.toggle(j, range) : undefined}
-                  />
-                ))
-              )}
-            </tbody>
-          </table>
+      {!desktop ? (
+        <div className="flex flex-col gap-2">
+          {displayJobs.length === 0
+            ? noMatches
+            : displayJobs.map((job) => (
+                <SelectableCard
+                  key={job.url}
+                  job={job}
+                  showStage={multiStage}
+                  selecting={selecting}
+                  selected={selection.isSelected(job)}
+                  onOpen={onOpen}
+                  onToggle={(j) => selection.toggle(j)}
+                  onLongPress={
+                    selectable
+                      ? (j) => {
+                          setSelecting(true)
+                          if (!selection.isSelected(j)) selection.toggle(j)
+                        }
+                      : undefined
+                  }
+                  onScoreSaved={onScoreSaved}
+                />
+              ))}
         </div>
-      </div>
+      ) : (
+        <div ref={tableRef} className="surface overflow-hidden rounded-lg">
+          <div className="overflow-x-auto">
+            <table className="jobs-table">
+              <colgroup>
+                {selectable ? <col className="jobs-table-col-select" /> : null}
+                <col className="jobs-table-col-score" />
+                <col className="jobs-table-col-title" />
+                <col className="jobs-table-col-company" />
+                <col className="jobs-table-col-location" />
+                <col className="jobs-table-col-stage" />
+                <col className="jobs-table-col-work" />
+                <col className="jobs-table-col-source" />
+                <col className="jobs-table-col-materials" />
+              </colgroup>
+              <JobsTableHead
+                filters={filters}
+                setFilters={setFilters}
+                sort={sort}
+                onSort={(column) => setSort((prev) => nextSort(prev, column))}
+                stages={stageOptions}
+                sources={sources}
+                workModels={workModels}
+                selection={
+                  selectable ? { state: selection.allState, shown: displayJobs.length, onToggleAll: selection.toggleAll } : undefined
+                }
+              />
+              <tbody>
+                {displayJobs.length === 0 ? (
+                  <tr>
+                    <td colSpan={selectable ? 9 : 8}>{noMatches}</td>
+                  </tr>
+      ) : (
+                  displayJobs.map((job) => (
+                    <JobsTableRow
+                      key={job.url}
+                      job={job}
+                      onOpen={onOpen}
+                      onScoreSaved={onScoreSaved}
+                      selected={selection.isSelected(job)}
+                      onToggleSelect={selectable ? (j, range) => selection.toggle(j, range) : undefined}
+                    />
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       <FiltersSheet
         open={filtersOpen}
