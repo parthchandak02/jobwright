@@ -74,3 +74,8 @@ dashboard.html
 reference/
 # Multi-profile user data (canonical: users/ under repo root)
 users/
+
+# pytest-cov
+.coverage
+.coverage.*
+htmlcov/
