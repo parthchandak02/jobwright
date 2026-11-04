@@ -5,9 +5,9 @@ Records one ``brief_items`` row per candidate prepare-stage job at each
 to applied / in_progress over items shown). Read-only over existing funnel
 data (``jobs.funnel_stage``) — this module never mutates the jobs table.
 
-The table DDL lives here (not in ``database.py``) because this module owns the
-scoreboard feature. Importing this module does not touch the schema by itself;
-call :func:`ensure_brief_items` to create the table (idempotent).
+The ``brief_items`` DDL lives in ``database.py`` (migration 2, created by
+``init_db``). :func:`ensure_brief_items` still creates it on demand
+(idempotent) for callers holding a connection that never ran ``init_db``.
 """
 
 from __future__ import annotations
@@ -16,31 +16,14 @@ import sqlite3
 from datetime import datetime, timedelta
 from typing import Any
 
-from jobwright.database import get_connection, job_id_for_url
-
-# ---------------------------------------------------------------------------
-# brief_items schema (DDL owned here)
-# ---------------------------------------------------------------------------
-
-_BRIEF_ITEMS_DDL = """
-CREATE TABLE IF NOT EXISTS brief_items (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    brief_date TEXT NOT NULL,          -- YYYY-MM-DD of the notify run
-    job_url    TEXT NOT NULL,
-    job_id     TEXT,                   -- dashboard deep-link id (blake2 hash)
-    fit_score  INTEGER,                -- effective score shown/sorted by
-    jev_score  REAL,                   -- nullable: Jev fast-path score (D3)
-    cap_rank   INTEGER,                -- 1..N within a given brief's cap; NULL if not shown
-    shown      INTEGER NOT NULL DEFAULT 0  -- 1 if this item was in the notify list
-);
-"""
+from jobwright.database import BRIEF_ITEMS_DDL, get_connection, job_id_for_url
 
 
 def ensure_brief_items(conn: sqlite3.Connection | None = None) -> None:
     """Create the brief_items table if it does not exist (idempotent)."""
     if conn is None:
         conn = get_connection()
-    conn.execute(_BRIEF_ITEMS_DDL)
+    conn.execute(BRIEF_ITEMS_DDL)
     conn.commit()
 
 
