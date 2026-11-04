@@ -943,7 +943,7 @@ def notify(
 ) -> None:
     """Send a WhatsApp digest of newly prepared jobs (deduped one-shot per job)."""
     _bootstrap()
-    from jobwright.notify import run_notify
+    from jobwright.notify import SendUncertain, run_notify
 
     def _status(line: str) -> None:
         if status_file:
@@ -952,6 +952,11 @@ def notify(
 
     try:
         result = run_notify(dry_run=dry_run)
+    except SendUncertain as e:
+        # May have been delivered: jobs stay marked (never resent automatically).
+        console.print(f"[yellow]Delivery uncertain:[/yellow] {e}")
+        _status(f"notify_uncertain {e}")
+        raise typer.Exit(code=1)
     except ValueError as e:
         console.print(f"[red]{e}[/red]")
         _status(f"notify_failed {e}")
@@ -1431,6 +1436,21 @@ def ops_set_target(target: str = typer.Argument(..., help="whatsapp:<jid> for op
     from jobwright.ops import set_ops_target
 
     console.print(f"ops_target = {set_ops_target(target) or '(cleared)'}")
+
+
+@ops_app.command("release-uncertain")
+def ops_release_uncertain() -> None:
+    """After a timed-out WhatsApp send that never arrived: unmark those jobs so the next notify sends them."""
+    _bootstrap()
+    from jobwright.notify import read_uncertain, release_uncertain
+
+    entries = read_uncertain()
+    if not entries:
+        console.print("No uncertain sends recorded.")
+        return
+    for e in entries:
+        console.print(f"{e.get('at')}: {len(e.get('urls') or [])} job(s) — {e.get('error')}")
+    console.print(f"Released {release_uncertain()} job(s); the next notify will include them.")
 
 
 @ops_app.command("backup")

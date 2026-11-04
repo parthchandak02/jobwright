@@ -15,21 +15,34 @@ notify sends no job list, only due follow-ups, and only when that set changed
 since the last follow-up-only message (``logs/followup_notice.json``).
 After each send a ``brief_items`` snapshot is recorded in the
 scoreboard so precision (% advanced) can be tracked per brief.
+
+Never twice: a per-profile notify lock (``.notify.lock``, non-blocking; a
+second caller returns "already sending") plus an atomic claim of the rows
+(``UPDATE ... WHERE whatsapp_notified_at IS NULL RETURNING url``) mean only
+jobs this call claimed are sent, and only those are released if the send
+fails. A ``hermes send`` timeout is different: the message may well have gone
+out, so the claim is kept (no automatic resend, same day or later), the jobs
+are logged in ``logs/notify_uncertain.json`` and the status line reads
+``notify_uncertain``; the operator checks the chat and, if nothing arrived,
+runs ``jobwright --user <id> ops release-uncertain`` before the next notify.
 """
 
 from __future__ import annotations
 
+import fcntl
+import json
 import os
 import sqlite3
 import subprocess
-from datetime import date, datetime
+from contextlib import contextmanager
+from datetime import date, datetime, timezone
+from pathlib import Path
 
 from jobwright.briefstats import ensure_brief_items, record_brief_items
 from jobwright.config import get_active_user_id
 from jobwright.database import (
     get_unnotified_prepare_jobs,
     job_id_for_url,
-    mark_whatsapp_notified,
 )
 from jobwright.followups import format_followups
 from jobwright.users import get_brief_top_n, get_human_gate, get_user, is_search_enabled
@@ -240,6 +253,128 @@ def worth_a_look_line(worth: int, base_url: str) -> str:
 HERMES_SEND_TIMEOUT = 90
 
 
+class SendUncertain(RuntimeError):
+    """The send may or may not have been delivered (hermes timed out)."""
+
+
+class NotifyBusy(RuntimeError):
+    """Another notify for this profile holds the lock."""
+
+
+@contextmanager
+def notify_lock():
+    """Per-profile, non-blocking: a concurrent notify raises NotifyBusy instead of waiting."""
+    import jobwright.config as config
+
+    path = Path(config.APP_DIR) / ".notify.lock"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fh = path.open("a+")
+    try:
+        try:
+            fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            raise NotifyBusy("already sending (another notify holds the lock)") from exc
+        fh.seek(0)
+        fh.truncate()
+        fh.write(f"pid={os.getpid()} at={datetime.now(timezone.utc).isoformat()}")
+        fh.flush()
+        yield
+    finally:
+        try:
+            fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+        except OSError:
+            pass
+        fh.close()
+
+
+_HAS_RETURNING = sqlite3.sqlite_version_info >= (3, 35, 0)
+
+
+def claim_for_notify(conn: sqlite3.Connection, urls: list[str], stamp: str) -> list[str]:
+    """Atomically stamp the still-unnotified rows among ``urls``; returns the urls this call claimed."""
+    if not urls:
+        return []
+    placeholders = ", ".join("?" for _ in urls)
+    sql = (f"UPDATE jobs SET whatsapp_notified_at = ? "
+           f"WHERE url IN ({placeholders}) AND whatsapp_notified_at IS NULL")
+    if conn.in_transaction:
+        conn.commit()
+    if _HAS_RETURNING:
+        claimed = [r[0] for r in conn.execute(sql + " RETURNING url", [stamp, *urls]).fetchall()]
+        conn.commit()
+    else:  # SQLite < 3.35: claim inside a write transaction
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            claimed = [r[0] for r in conn.execute(
+                f"SELECT url FROM jobs WHERE url IN ({placeholders}) AND whatsapp_notified_at IS NULL", urls)]
+            if claimed:
+                conn.execute(sql, [stamp, *claimed])
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+    order = {u: i for i, u in enumerate(urls)}
+    return sorted(claimed, key=order.__getitem__)
+
+
+def release_claim(conn: sqlite3.Connection, urls: list[str], stamp: str) -> None:
+    """Undo only this call's claim (rows still carrying its exact stamp)."""
+    if not urls:
+        return
+    placeholders = ", ".join("?" for _ in urls)
+    conn.execute(
+        f"UPDATE jobs SET whatsapp_notified_at = NULL WHERE url IN ({placeholders}) AND whatsapp_notified_at = ?",
+        [*urls, stamp],
+    )
+    conn.commit()
+
+
+UNCERTAIN_FILE = "notify_uncertain.json"
+
+
+def _uncertain_path() -> Path:
+    import jobwright.config as config
+
+    return Path(config.LOG_DIR) / UNCERTAIN_FILE
+
+
+def read_uncertain() -> list[dict]:
+    try:
+        data = json.loads(_uncertain_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    return data if isinstance(data, list) else []
+
+
+def record_uncertain(urls: list[str], stamp: str, error: str) -> None:
+    path = _uncertain_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    entries = [*read_uncertain(), {"at": stamp, "urls": urls, "error": error[:300]}][-20:]
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(entries, indent=2), encoding="utf-8")
+    tmp.replace(path)
+
+
+def release_uncertain(conn: sqlite3.Connection | None = None) -> int:
+    """Operator confirmed an uncertain send never arrived: unmark those jobs for the next notify."""
+    from jobwright.database import get_connection
+
+    conn = conn or get_connection()
+    n = 0
+    for entry in read_uncertain():
+        urls = [str(u) for u in entry.get("urls") or []]
+        if not urls:
+            continue
+        placeholders = ", ".join("?" for _ in urls)
+        n += max(conn.execute(
+            f"UPDATE jobs SET whatsapp_notified_at = NULL WHERE url IN ({placeholders}) "
+            f"AND whatsapp_notified_at = ?", [*urls, entry.get("at")],
+        ).rowcount, 0)
+    conn.commit()
+    _uncertain_path().unlink(missing_ok=True)
+    return n
+
+
 def send_via_hermes(message: str, target: str) -> None:
     """Deliver a message to a WhatsApp target via the hermes CLI (bounded)."""
     from jobwright.hermes_cron import hermes_dry_run
@@ -258,7 +393,7 @@ def send_via_hermes(message: str, target: str) -> None:
             timeout=HERMES_SEND_TIMEOUT,
         )
     except subprocess.TimeoutExpired as exc:
-        raise RuntimeError(f"hermes send timed out after {HERMES_SEND_TIMEOUT}s") from exc
+        raise SendUncertain(f"hermes send timed out after {HERMES_SEND_TIMEOUT}s (may have been delivered)") from exc
     except FileNotFoundError as exc:
         raise RuntimeError("hermes CLI not found on PATH") from exc
     if result.returncode != 0:
@@ -332,6 +467,8 @@ def _run_paused_notify(conn, dry_run: bool, active: str | None) -> dict:
     _write_followup_notice(ids)
     try:
         send_via_hermes(message, target)
+    except SendUncertain:
+        raise  # may have arrived: keep the marker so it is not sent again
     except Exception:
         _write_followup_notice(sorted(previous))
         raise
@@ -340,6 +477,19 @@ def _run_paused_notify(conn, dry_run: bool, active: str | None) -> dict:
 
 
 def run_notify(dry_run: bool = False, respect_pause: bool = True) -> dict:
+    """Notify under the per-profile notify lock (see ``_run_notify``)."""
+    from jobwright.hermes_cron import hermes_dry_run
+
+    if dry_run or hermes_dry_run():
+        return _run_notify(dry_run=True, respect_pause=respect_pause)
+    try:
+        with notify_lock():
+            return _run_notify(dry_run=False, respect_pause=respect_pause)
+    except NotifyBusy as exc:
+        return {"sent": 0, "skipped": True, "reason": str(exc), "jobs": [], "busy": True}
+
+
+def _run_notify(dry_run: bool = False, respect_pause: bool = True) -> dict:
     """Notify the active user of newly prepared jobs via WhatsApp.
 
     Respects the user's ``human_gate`` (review-first format) and
@@ -354,11 +504,10 @@ def run_notify(dry_run: bool = False, respect_pause: bool = True) -> dict:
 
     Raises:
         ValueError: The active user has no whatsapp_target configured.
+        SendUncertain: hermes timed out; the claim is kept (see module doc).
     """
     from jobwright.database import get_connection
-    from jobwright.hermes_cron import hermes_dry_run
 
-    dry_run = dry_run or hermes_dry_run()
     ensure_brief_items()
     conn = get_connection()
     active = get_active_user_id()
@@ -423,21 +572,35 @@ def run_notify(dry_run: bool = False, respect_pause: bool = True) -> dict:
             f"Set one with: jobwright users set {active or '<id>'} --whatsapp <target>"
         )
 
-    # Mark first, then send; roll the mark back if delivery fails. A crash
-    # between the two can only lose a notice, never re-send one.
-    marked = mark_whatsapp_notified(shown_urls, conn=conn)
-    conn.commit()
+    # Claim first, then send. Only rows this call claimed are sent (a racing
+    # notify or dashboard Send now cannot double-send), and only those are
+    # released if delivery fails. A crash in between loses a notice, never
+    # repeats one.
+    stamp = datetime.now(timezone.utc).isoformat()
+    claimed = claim_for_notify(conn, shown_urls, stamp)
+    if not claimed:
+        return {"sent": 0, "skipped": True, "reason": "already sent by another notify", "jobs": []}
+    if len(claimed) != len(shown_urls):
+        keep = set(claimed)
+        shown = [job for job in shown if job["url"] in keep]
+        shown_urls = claimed
+        message = (build_review_notification if human_gate else build_notification)(shown, base_url)
+        if worth:
+            message += "\n\n" + worth_a_look_line(worth, base_url)
+        if followups:
+            message += "\n\n" + format_followups(followups, base_url)
+        job_summaries = [s for s in job_summaries if s["job_id"] in {job_id_for_url(u) for u in claimed}]
     try:
         send_via_hermes(message, target)
+    except SendUncertain as exc:
+        record_uncertain(claimed, stamp, str(exc))
+        raise
     except Exception:
-        placeholders = ", ".join("?" for _ in shown_urls)
-        conn.execute(f"UPDATE jobs SET whatsapp_notified_at = NULL WHERE url IN ({placeholders})", shown_urls)
-        conn.commit()
+        release_claim(conn, claimed, stamp)
         raise
     # Snapshot after a successful send so items never delivered are not counted
     # as precision data.
     record_brief_items(jobs, shown_urls)
-    del marked
 
     return {
         "sent": len(shown),
