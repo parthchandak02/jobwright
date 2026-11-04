@@ -29,6 +29,26 @@ _generation_lock = threading.Lock()
 _path_generation: dict[str, int] = {}
 
 
+def _enable_wal(conn: sqlite3.Connection, attempts: int = 20) -> None:
+    """Switch the DB to WAL, retrying while another connection holds the lock.
+
+    Converting a brand-new file to WAL needs an exclusive lock and SQLite does
+    not always call the busy handler for it, so two processes opening a new
+    profile at the same moment could get "database is locked". Existing DBs
+    are already WAL, so this returns on the first try for them.
+    """
+    import time
+
+    for attempt in range(attempts):
+        try:
+            conn.execute("PRAGMA journal_mode=WAL")
+            return
+        except sqlite3.OperationalError as e:
+            if "locked" not in str(e).lower() or attempt == attempts - 1:
+                raise
+            time.sleep(0.05 * (attempt + 1))
+
+
 def get_connection(db_path: Path | str | None = None) -> sqlite3.Connection:
     """Get a thread-local cached SQLite connection with WAL mode enabled.
 
@@ -65,8 +85,8 @@ def get_connection(db_path: Path | str | None = None) -> sqlite3.Connection:
         _local.connections.pop(path, None)
 
     conn = sqlite3.connect(path, timeout=30)
-    conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA busy_timeout=10000")
+    _enable_wal(conn)
     conn.row_factory = sqlite3.Row
     _local.connections[path] = (conn, generation)
     return conn
