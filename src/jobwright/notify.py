@@ -526,6 +526,17 @@ def _run_notify(dry_run: bool = False, respect_pause: bool = True) -> dict:
 
     base_url = public_base_url()
 
+    # Everything here already cleared the cutoff; put the jobs most like the
+    # person's past applications first so they make the top-N cut.
+    from jobwright.scoring.applied_similarity import rank_like_applied
+
+    try:
+        jobs = rank_like_applied(conn, jobs)
+    except Exception as e:  # ranking is a nicety; never block the daily list
+        import logging
+
+        logging.getLogger(__name__).warning("rank_like_applied failed, keeping score order: %s", e)
+
     top_n = get_brief_top_n(active)
     shown = jobs if top_n == 0 else jobs[:top_n]
     capped = top_n > 0 and len(jobs) > top_n
