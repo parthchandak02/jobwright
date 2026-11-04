@@ -24,8 +24,9 @@ from jobwright.web.session import (
     current_user_id,
     get_identity,
 )
+from jobwright.web.txguard import TxGuardRoute
 
-router = APIRouter(prefix="/api", tags=["system"])
+router = APIRouter(prefix="/api", tags=["system"], route_class=TxGuardRoute)
 
 
 def _chat_name(target: str) -> str:

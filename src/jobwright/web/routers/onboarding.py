@@ -10,8 +10,9 @@ from pydantic import BaseModel, Field
 from jobwright import config
 from jobwright.users import get_user, users_for_email
 from jobwright.web.session import COOKIE_NAME, _ensure_user_storage, current_user_id, get_identity
+from jobwright.web.txguard import TxGuardRoute
 
-router = APIRouter(prefix="/api/onboarding", tags=["onboarding"])
+router = APIRouter(prefix="/api/onboarding", tags=["onboarding"], route_class=TxGuardRoute)
 
 
 class CreateProfileBody(BaseModel):
@@ -108,15 +109,16 @@ class ConfirmBody(BaseModel):
 
 @router.post("/confirm")
 def confirm(body: ConfirmBody, request: Request) -> dict:
-    from jobwright.onboarding import apply_draft, onboarding_status
+    from jobwright.onboarding import allowed_profile_fields, apply_draft, onboarding_status
     from jobwright.scoring.criteria import parse_criteria
 
     current_user_id(request)
     draft = body.model_dump()
     if draft.get("criteria"):
         draft["criteria"] = parse_criteria(draft["criteria"]).to_dict()
-    for section in ("password", "eeo_voluntary"):
-        draft["profile"].pop(section, None)
+    # Only the fields Settings can edit: never paths (cover_letter_examples_dir,
+    # cover_letter_template) or secrets, which could point at another profile.
+    draft["profile"] = allowed_profile_fields(draft["profile"])
     apply_draft(draft)
     return onboarding_status()
 

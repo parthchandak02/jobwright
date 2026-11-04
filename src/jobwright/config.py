@@ -158,22 +158,37 @@ def user_context(user_id: str) -> Iterator[Path]:
 
 
 def user_relative_path(relative: str) -> Path:
-    """Resolve a path relative to the active user's APP_DIR."""
-    p = Path(relative)
-    if p.is_absolute():
-        return p
-    return (_state().APP_DIR / p).resolve()
+    """Resolve a profile path inside the active user's APP_DIR.
+
+    Profile paths come from user-editable ``profile.json``, so they are
+    confined to that user's folder: anything that resolves outside it
+    (``..``, symlinks, another user's absolute path) raises ValueError.
+    An absolute path is only accepted when it already points inside APP_DIR.
+    """
+    root = Path(_state().APP_DIR).resolve()
+    p = Path(str(relative)).expanduser()
+    candidate = (p if p.is_absolute() else root / p).resolve()
+    if not candidate.is_relative_to(root):
+        raise ValueError(f"Path is outside this profile's folder: {relative}")
+    return candidate
+
+
+def _profile_path_option(profile: dict | None, key: str) -> Path | None:
+    rel = (profile or {}).get(key)
+    if not rel:
+        return None
+    try:
+        return user_relative_path(str(rel))
+    except (ValueError, OSError):
+        return None
 
 
 def cover_letter_template_path(profile: dict | None = None) -> Path:
     """Cover letter skeleton (input), not generated output."""
     s = _state()
-    if profile:
-        rel = profile.get("cover_letter_template")
-        if rel:
-            candidate = user_relative_path(str(rel))
-            if candidate.exists():
-                return candidate
+    candidate = _profile_path_option(profile, "cover_letter_template")
+    if candidate is not None and candidate.exists():
+        return candidate
     if s.COVER_LETTER_TEMPLATE_PATH.exists():
         return s.COVER_LETTER_TEMPLATE_PATH
     legacy = s.REFERENCES_DIR / "cover_letter_template.txt"
@@ -183,12 +198,9 @@ def cover_letter_template_path(profile: dict | None = None) -> Path:
 def cover_letter_examples_dir(profile: dict | None = None) -> Path:
     """Directory of real sent cover letters (input examples)."""
     s = _state()
-    if profile:
-        rel = profile.get("cover_letter_examples_dir")
-        if rel:
-            candidate = user_relative_path(str(rel))
-            if candidate.is_dir():
-                return candidate
+    candidate = _profile_path_option(profile, "cover_letter_examples_dir")
+    if candidate is not None and candidate.is_dir():
+        return candidate
     if s.COVER_LETTER_EXAMPLES_DIR.is_dir():
         return s.COVER_LETTER_EXAMPLES_DIR
     legacy = s.REFERENCES_DIR / "cover_letter_examples"

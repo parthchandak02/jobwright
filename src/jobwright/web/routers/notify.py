@@ -5,8 +5,9 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 
 from jobwright import notify
+from jobwright.web.txguard import TxGuardRoute
 
-router = APIRouter(prefix="/api/notify", tags=["notify"])
+router = APIRouter(prefix="/api/notify", tags=["notify"], route_class=TxGuardRoute)
 
 
 @router.post("")

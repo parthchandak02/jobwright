@@ -20,8 +20,9 @@ from jobwright.database import (
 )
 from jobwright.enrichment.sponsorship import derive_sponsorship_status
 from jobwright.scoring.materials_format import generated_material_exists
+from jobwright.web.txguard import TxGuardRoute
 
-router = APIRouter(prefix="/api", tags=["board"])
+router = APIRouter(prefix="/api", tags=["board"], route_class=TxGuardRoute)
 
 
 def _derive_work_model(location: str | None, description: str | None = None) -> str | None:

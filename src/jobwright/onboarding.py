@@ -84,6 +84,20 @@ Return ONLY the JSON object."""
 _DEFAULT_BOARDS = ["linkedin", "indeed"]
 
 
+def _id_taken(user_id: str) -> bool:
+    """In the registry, or a removed profile whose folder is still on disk.
+
+    Reusing a removed id would hand the new login the old profile's data
+    (when it was removed without --delete-data) or its stale caches.
+    """
+    from jobwright import users as users_mod
+
+    if get_user(user_id) is not None:
+        return True
+    leftover = users_mod.USERS_ROOT / user_id
+    return leftover.exists() and any(leftover.iterdir())
+
+
 def slug_user_id(name: str, email: str = "") -> str:
     base = (name or email.split("@")[0] or "user").lower()
     base = re.sub(r"[^a-z0-9]+", "", base.split()[0] if " " in base else base) or "user"
@@ -91,7 +105,7 @@ def slug_user_id(name: str, email: str = "") -> str:
         base = "u" + base
     candidate = base[:24]
     n = 2
-    while get_user(candidate) is not None:
+    while _id_taken(candidate):
         candidate = f"{base[:22]}{n}"
         n += 1
     return candidate
@@ -100,6 +114,8 @@ def slug_user_id(name: str, email: str = "") -> str:
 def create_profile(*, name: str, email: str, user_id: str | None = None, schedule: str = "0 7 * * *") -> str:
     uid = (user_id or slug_user_id(name, email)).strip().lower()
     validate_user_id(uid)
+    if user_id and get_user(uid) is None and _id_taken(uid):
+        raise ValueError(f"Profile id '{uid}' was used before; pick another.")
     add_user(
         uid, name=name.strip() or uid, emails=[email] if email else [], schedule=schedule,
         digest_schedule=schedule, human_gate=True, brief_top_n=10,
@@ -147,6 +163,30 @@ def draft_from_resume(resume_text: str, hints: dict[str, Any] | None = None, cli
     return {"profile": profile, "criteria": criteria.to_dict(), "searches": searches}
 
 
+# The only profile.json fields the dashboard may write (settings + onboarding).
+# Everything else (paths like cover_letter_examples_dir, password, eeo data,
+# match_criteria) is set by the owner on disk or through its own validated route.
+PROFILE_SECTIONS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("personal", ("full_name", "preferred_name", "email", "phone", "city", "province_state", "country",
+                  "linkedin_url")),
+    ("compensation", ("salary_expectation", "salary_range_min", "salary_range_max", "salary_currency")),
+    ("experience", ("years_of_experience_total", "education_level", "current_job_title", "current_company",
+                    "target_role")),
+    ("job_preferences", ("ideal_roles", "seek", "avoid_roles", "company_types")),
+)
+
+
+def allowed_profile_fields(incoming: dict[str, Any] | None) -> dict[str, dict[str, Any]]:
+    """Keep only whitelisted sections/keys from a client-supplied profile update."""
+    out: dict[str, dict[str, Any]] = {}
+    for section, keys in PROFILE_SECTIONS:
+        data = (incoming or {}).get(section)
+        if not isinstance(data, dict):
+            continue
+        out[section] = {k: data[k] for k in keys if k in data}
+    return out
+
+
 def _merge(base: dict, updates: dict) -> dict:
     out = dict(base)
     for key, value in updates.items():
@@ -181,7 +221,7 @@ def apply_draft(draft: dict[str, Any]) -> None:
     """Write the confirmed draft into the active user's profile.json + searches.yaml."""
     profile_path = Path(config.PROFILE_PATH)
     current = json.loads(profile_path.read_text(encoding="utf-8")) if profile_path.exists() else {}
-    profile = _merge(current, draft.get("profile") or {})
+    profile = _merge(current, allowed_profile_fields(draft.get("profile")))
     if draft.get("criteria"):
         profile["match_criteria"] = draft["criteria"]
     profile.setdefault("tailor_mode", "subtle")

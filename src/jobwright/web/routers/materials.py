@@ -24,8 +24,9 @@ from jobwright.scoring.tailor_instructions import (
 )
 from jobwright.web.routers.runs import spawn_logged_run
 from jobwright.web.session import current_user_id
+from jobwright.web.txguard import TxGuardRoute
 
-router = APIRouter(prefix="/api", tags=["materials"])
+router = APIRouter(prefix="/api", tags=["materials"], route_class=TxGuardRoute)
 
 # Cap preview text so the drawer stays scannable (~6–8 KB).
 _PREVIEW_MAX_CHARS = 8000

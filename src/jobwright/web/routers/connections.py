@@ -17,8 +17,9 @@ from jobwright.network.manual_connections import (
     search_connections_csv,
 )
 from jobwright.network.research import present_contact
+from jobwright.web.txguard import TxGuardRoute
 
-router = APIRouter(prefix="/api", tags=["connections"])
+router = APIRouter(prefix="/api", tags=["connections"], route_class=TxGuardRoute)
 
 
 def _load_contacts() -> dict:

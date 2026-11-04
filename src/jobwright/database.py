@@ -6,6 +6,7 @@ without migration ordering issues.
 """
 
 import hashlib
+import logging
 import sqlite3
 import threading
 from datetime import datetime, timezone
@@ -13,16 +14,26 @@ from pathlib import Path
 
 import jobwright.config as config
 
+log = logging.getLogger(__name__)
+
 # Thread-local connection storage — each thread gets its own connection
 # (required for SQLite thread safety with parallel workers)
 _local = threading.local()
+
+# Bumped by invalidate_connections() when a DB file is deleted or replaced
+# (e.g. an admin deletes a profile). Every thread compares its cached
+# connection's generation on the next get_connection() and reopens, so no
+# thread keeps reading a deleted (still-open) file.
+_generation_lock = threading.Lock()
+_path_generation: dict[str, int] = {}
 
 
 def get_connection(db_path: Path | str | None = None) -> sqlite3.Connection:
     """Get a thread-local cached SQLite connection with WAL mode enabled.
 
     Each thread gets its own connection (required for SQLite thread safety).
-    Connections are cached and reused within the same thread.
+    Connections are cached and reused within the same thread until the path
+    is invalidated (see invalidate_connections).
 
     Args:
         db_path: Override the default DB_PATH. Useful for testing.
@@ -35,29 +46,72 @@ def get_connection(db_path: Path | str | None = None) -> sqlite3.Connection:
     if not hasattr(_local, 'connections'):
         _local.connections = {}
 
-    conn = _local.connections.get(path)
-    if conn is not None:
-        try:
-            conn.execute("SELECT 1")
-            return conn
-        except sqlite3.ProgrammingError:
-            pass
+    generation = _path_generation.get(path, 0)
+    entry = _local.connections.get(path)
+    if entry is not None:
+        conn, conn_generation = entry
+        if conn_generation == generation:
+            try:
+                conn.execute("SELECT 1")
+                return conn
+            except sqlite3.ProgrammingError:
+                pass
+        else:
+            try:
+                conn.close()
+            except sqlite3.Error:
+                pass
+        _local.connections.pop(path, None)
 
     conn = sqlite3.connect(path, timeout=30)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA busy_timeout=10000")
     conn.row_factory = sqlite3.Row
-    _local.connections[path] = conn
+    _local.connections[path] = (conn, generation)
     return conn
+
+
+def invalidate_connections(db_path: Path | str) -> None:
+    """Make every thread drop its cached connection to ``db_path``.
+
+    This thread's connection closes now; other threads close theirs on their
+    next get_connection() for the path (sqlite3 objects can't be closed from
+    another thread).
+    """
+    path = str(db_path)
+    with _generation_lock:
+        _path_generation[path] = _path_generation.get(path, 0) + 1
+    close_connection(path)
+
+
+def rollback_open_transactions() -> int:
+    """Roll back any transaction left open on this thread's cached connections.
+
+    Called at the end of every dashboard request (in the thread that ran the
+    handler), so an error path that did DML and then raised can never leave a
+    reused connection holding the write lock. Returns how many were rolled back.
+    """
+    conns = getattr(_local, "connections", None) or {}
+    rolled = 0
+    for path, entry in list(conns.items()):
+        conn = entry[0]
+        try:
+            if conn.in_transaction:
+                conn.rollback()
+                rolled += 1
+                log.warning("rolled back a transaction left open on %s", path)
+        except sqlite3.ProgrammingError:
+            conns.pop(path, None)
+    return rolled
 
 
 def close_connection(db_path: Path | str | None = None) -> None:
     """Close the cached connection for the current thread."""
     path = str(db_path or config.DB_PATH)
     if hasattr(_local, 'connections'):
-        conn = _local.connections.pop(path, None)
-        if conn is not None:
-            conn.close()
+        entry = _local.connections.pop(path, None)
+        if entry is not None:
+            entry[0].close()
 
 
 def init_db(db_path: Path | str | None = None) -> sqlite3.Connection:
@@ -666,14 +720,21 @@ def insert_manual_job(
                 job_id_for_url(url),
             ),
         )
+        conn.execute(
+            "INSERT INTO stage_history (job_url, from_stage, to_stage, actor, at, note) "
+            "VALUES (?, NULL, ?, 'human', ?, ?)",
+            (url, funnel_stage, now, "manual add"),
+        )
     except sqlite3.IntegrityError as exc:
+        # untombstone() already opened a write transaction: release it, or this
+        # thread's cached connection keeps the DB write lock.
+        if owns_conn:
+            conn.rollback()
         raise ValueError(f"Job already exists: {url}") from exc
-
-    conn.execute(
-        "INSERT INTO stage_history (job_url, from_stage, to_stage, actor, at, note) "
-        "VALUES (?, NULL, ?, 'human', ?, ?)",
-        (url, funnel_stage, now, "manual add"),
-    )
+    except BaseException:
+        if owns_conn:
+            conn.rollback()
+        raise
     if owns_conn:
         conn.commit()
 

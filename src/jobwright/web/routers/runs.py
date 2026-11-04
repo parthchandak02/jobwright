@@ -25,8 +25,9 @@ from jobwright.run_registry import load_registry as _load_registry
 from jobwright.run_registry import upsert_registry as _upsert_registry
 from jobwright.users import is_apply_enabled
 from jobwright.web.session import current_user_id
+from jobwright.web.txguard import TxGuardRoute
 
-router = APIRouter(prefix="/api", tags=["runs"])
+router = APIRouter(prefix="/api", tags=["runs"], route_class=TxGuardRoute)
 
 ALLOWED_STAGES = (
     "discover",

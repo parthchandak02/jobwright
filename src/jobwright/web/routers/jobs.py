@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from urllib.parse import urlsplit
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -9,8 +10,9 @@ from pydantic import BaseModel
 from jobwright.web.jobkeys import resolve_job_key
 from jobwright.database import FUNNEL_STAGES, get_connection, insert_manual_job
 from jobwright.web.routers.board import _derive_work_model, _row_to_card
+from jobwright.web.txguard import TxGuardRoute
 
-router = APIRouter(prefix="/api", tags=["jobs"])
+router = APIRouter(prefix="/api", tags=["jobs"], route_class=TxGuardRoute)
 
 
 @router.get("/jobs/{url:path}")
@@ -45,18 +47,36 @@ class ManualJobBody(BaseModel):
     notes: str | None = None
 
 
+def _http_url(value: str | None, field: str) -> str | None:
+    """Only http(s) links with a host: the card renders them as clickable links."""
+    if value is None or not value.strip():
+        return None
+    value = value.strip()
+    try:
+        parts = urlsplit(value)
+    except ValueError:
+        parts = None
+    if parts is None or parts.scheme.lower() not in ("http", "https") or not parts.netloc:
+        raise HTTPException(400, f"{field} must be an http(s) link")
+    return value
+
+
 @router.post("/jobs")
 def create_manual_job(body: ManualJobBody) -> dict:
     if body.funnel_stage not in FUNNEL_STAGES:
         raise HTTPException(400, f"Invalid stage: {body.funnel_stage}")
+    url = _http_url(body.url, "url")
+    if url is None:
+        raise HTTPException(400, "url is required")
+    application_url = _http_url(body.application_url, "application_url")
     try:
         job = insert_manual_job(
-            body.url,
+            url,
             title=body.title,
             company=body.company,
             location=body.location,
             description=body.description,
-            application_url=body.application_url,
+            application_url=application_url,
             funnel_stage=body.funnel_stage,
             notes=body.notes,
         )

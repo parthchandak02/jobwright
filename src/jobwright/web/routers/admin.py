@@ -28,8 +28,9 @@ from jobwright.users import (
     validate_brief_schedule,
 )
 from jobwright.web.session import require_admin
+from jobwright.web.txguard import TxGuardRoute
 
-router = APIRouter(prefix="/api/admin", tags=["admin"])
+router = APIRouter(prefix="/api/admin", tags=["admin"], route_class=TxGuardRoute)
 
 
 def _user_health(user) -> dict[str, Any]:
@@ -513,8 +514,17 @@ def delete_user(user_id: str, request: Request, delete_data: bool = False) -> di
 
     if get_user(user_id) is None:
         raise HTTPException(404, "Unknown profile")
+    from jobwright.database import invalidate_connections
+    from jobwright.web.session import forget_initialized
+
+    with config.user_context(user_id):
+        db_path = str(config.DB_PATH)
     cron = remove_brief_cron(user_id)
     remove_user(user_id, delete_data=delete_data)
+    # Cached per-process state must not outlive the profile: the "schema ready"
+    # mark and every thread's open connection to the (possibly deleted) DB.
+    forget_initialized(db_path)
+    invalidate_connections(db_path)
     return {"ok": True, "cron": cron, "data_deleted": delete_data}
 
 

@@ -19,40 +19,16 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from jobwright import config
-from jobwright.onboarding import accept_patterns
+from jobwright.onboarding import PROFILE_SECTIONS, accept_patterns, allowed_profile_fields
 from jobwright.resume import cached_pdf_markdown, load_resume_text
 from jobwright.users import get_user
 from jobwright.web.session import current_user_id
+from jobwright.web.txguard import TxGuardRoute
 
-router = APIRouter(prefix="/api/settings", tags=["settings"])
+router = APIRouter(prefix="/api/settings", tags=["settings"], route_class=TxGuardRoute)
 
 # Whitelisted profile fields (avoids surfacing secrets like password / eeo data).
-_PERSONAL = [
-    "full_name",
-    "preferred_name",
-    "email",
-    "phone",
-    "city",
-    "province_state",
-    "country",
-    "linkedin_url",
-]
-_COMPENSATION = ["salary_expectation", "salary_range_min", "salary_range_max", "salary_currency"]
-_EXPERIENCE = [
-    "years_of_experience_total",
-    "education_level",
-    "current_job_title",
-    "current_company",
-    "target_role",
-]
-_PREFERENCES = ["ideal_roles", "seek", "avoid_roles", "company_types"]
-
-_PROFILE_SECTIONS = (
-    ("personal", _PERSONAL),
-    ("compensation", _COMPENSATION),
-    ("experience", _EXPERIENCE),
-    ("job_preferences", _PREFERENCES),
-)
+_PROFILE_SECTIONS = PROFILE_SECTIONS
 
 
 def _load_profile() -> dict:
@@ -163,15 +139,9 @@ class ProfileSettings(BaseModel):
 @router.put("/profile")
 def put_profile(body: ProfileSettings) -> dict:
     profile = _load_profile()
-    incoming = body.model_dump(exclude_none=True)
-    for section, allowed in _PROFILE_SECTIONS:
-        data = incoming.get(section)
-        if not data:
-            continue
-        current = profile.setdefault(section, {})
-        for key in allowed:
-            if key in data:
-                current[key] = data[key]
+    for section, data in allowed_profile_fields(body.model_dump(exclude_none=True)).items():
+        if data:
+            profile.setdefault(section, {}).update(data)
     _write_json(profile)
     return {"ok": True}
 

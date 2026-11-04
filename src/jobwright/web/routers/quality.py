@@ -13,8 +13,9 @@ from jobwright import config
 from jobwright.database import get_connection
 from jobwright.web.jobkeys import resolve_job_key
 from jobwright.web.session import current_user_id
+from jobwright.web.txguard import TxGuardRoute
 
-router = APIRouter(prefix="/api", tags=["quality"])
+router = APIRouter(prefix="/api", tags=["quality"], route_class=TxGuardRoute)
 
 
 def _profile() -> dict:

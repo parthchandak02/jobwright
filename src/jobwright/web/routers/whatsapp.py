@@ -9,8 +9,9 @@ from pydantic import BaseModel
 
 from jobwright import config
 from jobwright.web.session import current_user_id, get_identity
+from jobwright.web.txguard import TxGuardRoute
 
-router = APIRouter(prefix="/api/whatsapp", tags=["whatsapp"])
+router = APIRouter(prefix="/api/whatsapp", tags=["whatsapp"], route_class=TxGuardRoute)
 
 
 def _profile_phone() -> str:
