@@ -59,7 +59,18 @@ async function sendForm<T>(path: string, body: FormData, method: 'PUT' | 'POST')
   return res.json() as Promise<T>
 }
 
+/** Same cap as the server (resume and cover-letter PDFs). */
+export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+
+/** Reject a too-big file before uploading it, with the server's wording. */
+export function checkUploadSize(file: File) {
+  if (file.size > MAX_UPLOAD_BYTES) {
+    throw new ApiError(`That file is too big. The limit is ${MAX_UPLOAD_BYTES / (1024 * 1024)} MB.`, 413)
+  }
+}
+
 export async function apiUpload<T>(path: string, file: File): Promise<T> {
+  checkUploadSize(file)
   const body = new FormData()
   body.append('file', file)
   return sendForm<T>(path, body, 'PUT')
@@ -470,6 +481,7 @@ export type OnboardingDraft = {
 export type DraftHints = { target_roles?: string; locations?: string; min_salary?: string; avoid?: string }
 
 export function draftSetup(file: File | null, hints: DraftHints): Promise<OnboardingDraft> {
+  if (file) checkUploadSize(file)
   const body = new FormData()
   if (file) body.append('file', file)
   for (const [k, v] of Object.entries(hints)) body.append(k, v ?? '')

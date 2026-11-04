@@ -76,18 +76,18 @@ async def draft(
 
     from jobwright.llm import flush_active_usage
     from jobwright.onboarding import draft_from_resume
-    from jobwright.resume import load_resume_text
+    from jobwright.resume import MAX_PDF_BYTES, PdfUploadError, load_resume_text, save_pdf_with_markdown
 
     current_user_id(request)
     if file is not None and file.filename:
-        data = await file.read()
+        data = await file.read(MAX_PDF_BYTES + 1)
         if not data.startswith(b"%PDF"):
             raise HTTPException(400, "Upload your resume as a PDF.")
-        pdf = config.RESUME_PDF_PATH
-        pdf.parent.mkdir(parents=True, exist_ok=True)
-        pdf.write_bytes(data)
-        if config.RESUME_MD_PATH.exists():
-            config.RESUME_MD_PATH.unlink()
+        try:
+            # Validated and converted before it replaces any earlier resume.
+            await run_in_threadpool(save_pdf_with_markdown, data, config.RESUME_PDF_PATH, config.RESUME_MD_PATH)
+        except PdfUploadError as exc:
+            raise HTTPException(exc.status, str(exc)) from exc
     try:
         resume_text = await run_in_threadpool(load_resume_text)
     except FileNotFoundError as exc:

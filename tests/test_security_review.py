@@ -343,3 +343,70 @@ def test_bulk_reopen_clears_close_reason_and_undo_restores_it(api_client):
     row = _job_row(jid)
     assert row["close_reason"] == "Too far" and row["outcome"] == "rejected"
     assert _verdicts(jid) == before
+
+
+# --- M4 / M5: uploads validate before replacing, off the event loop ----------
+
+
+def _pdf_bytes(text: str) -> bytes:
+    import pymupdf
+
+    doc = pymupdf.open()
+    doc.new_page().insert_text((72, 72), text)
+    data = doc.tobytes()
+    doc.close()
+    return data
+
+
+def test_upload_handlers_do_not_block_the_event_loop():
+    import inspect
+
+    from jobwright.web.routers import settings as settings_mod
+
+    assert not inspect.iscoroutinefunction(settings_mod.put_resume_pdf)
+    assert not inspect.iscoroutinefunction(settings_mod.put_cover_letter_example)
+
+
+def test_corrupt_or_huge_resume_keeps_the_good_one(api_client, tmp_path):
+    from jobwright.resume import MAX_PDF_BYTES
+
+    resume_dir = tmp_path / "users" / "testdash" / "resume"
+    good = _pdf_bytes("Example Person resume")
+    res = api_client.put("/api/settings/resume.pdf", files={"file": ("base.pdf", good, "application/pdf")})
+    assert res.status_code == 200, res.text
+    md_before = (resume_dir / "base.md").read_text()
+    assert "Example Person" in md_before
+
+    res = api_client.put("/api/settings/resume.pdf",
+                         files={"file": ("base.pdf", b"%PDF-1.4 garbage" * 10, "application/pdf")})
+    assert res.status_code == 400 and "PDF" in res.json()["detail"]
+    big = b"%PDF-1.4" + b"0" * MAX_PDF_BYTES
+    res = api_client.put("/api/settings/resume.pdf", files={"file": ("base.pdf", big, "application/pdf")})
+    assert res.status_code == 413 and "too big" in res.json()["detail"]
+
+    assert (resume_dir / "base.pdf").read_bytes() == good
+    assert (resume_dir / "base.md").read_text() == md_before
+    assert sorted(p.name for p in resume_dir.iterdir()) == ["base.md", "base.pdf"]
+
+
+def test_onboarding_draft_with_corrupt_resume_keeps_the_good_one(api_client, tmp_path):
+    resume_dir = tmp_path / "users" / "testdash" / "resume"
+    good = _pdf_bytes("Example Person resume")
+    assert api_client.put("/api/settings/resume.pdf",
+                          files={"file": ("base.pdf", good, "application/pdf")}).status_code == 200
+    res = api_client.post("/api/onboarding/draft", files={"file": ("r.pdf", b"%PDF-1.4 nope", "application/pdf")})
+    assert res.status_code == 400
+    assert (resume_dir / "base.pdf").read_bytes() == good
+    assert (resume_dir / "base.md").exists()
+
+
+def test_corrupt_cover_letter_upload_leaves_nothing_behind(api_client, tmp_path):
+    examples = tmp_path / "users" / "testdash" / "cover-letter" / "examples"
+    res = api_client.put("/api/settings/cover-letters",
+                         files={"file": ("Acme.pdf", b"%PDF-1.4 broken", "application/pdf")})
+    assert res.status_code == 400
+    assert not examples.exists() or list(examples.iterdir()) == []
+    res = api_client.put("/api/settings/cover-letters",
+                         files={"file": ("Acme.pdf", _pdf_bytes("Dear Acme team"), "application/pdf")})
+    assert res.status_code == 200, res.text
+    assert sorted(p.name for p in examples.iterdir()) == ["Acme.md", "Acme.pdf"]

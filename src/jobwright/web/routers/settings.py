@@ -20,7 +20,13 @@ from pydantic import BaseModel
 
 from jobwright import config
 from jobwright.onboarding import PROFILE_SECTIONS, accept_patterns, allowed_profile_fields
-from jobwright.resume import cached_pdf_markdown, load_resume_text
+from jobwright.resume import (
+    PdfUploadError,
+    cached_pdf_markdown,
+    load_resume_text,
+    read_upload,
+    save_pdf_with_markdown,
+)
 from jobwright.users import get_user
 from jobwright.web.session import current_user_id
 from jobwright.web.txguard import TxGuardRoute
@@ -195,20 +201,21 @@ def get_resume_pdf() -> FileResponse:
     )
 
 
-@router.put("/resume.pdf")
-async def put_resume_pdf(file: Annotated[UploadFile, File()]) -> dict:
+def _save_upload(file: UploadFile, pdf_path: Path, md_path: Path) -> tuple[bytes, str]:
+    """Size-capped read, then validate + convert before replacing the old files."""
     if not (file.filename or "").lower().endswith(".pdf"):
         raise HTTPException(400, "Upload a PDF file")
-    data = await file.read()
-    if not data.startswith(b"%PDF"):
-        raise HTTPException(400, "File is not a PDF")
-    path = config.RESUME_PDF_PATH
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(data)
-    md_path = config.RESUME_MD_PATH
-    if md_path.exists():
-        md_path.unlink()
-    markdown = load_resume_text()
+    try:
+        data = read_upload(file.file)
+        return data, save_pdf_with_markdown(data, pdf_path, md_path)
+    except PdfUploadError as exc:
+        raise HTTPException(exc.status, str(exc)) from exc
+
+
+# Sync handlers: the PDF conversion (pymupdf) blocks, so it runs in the threadpool.
+@router.put("/resume.pdf")
+def put_resume_pdf(file: Annotated[UploadFile, File()]) -> dict:
+    data, markdown = _save_upload(file, config.RESUME_PDF_PATH, config.RESUME_MD_PATH)
     return {"ok": True, "bytes": len(data), "markdown_chars": len(markdown)}
 
 
@@ -281,18 +288,12 @@ def get_cover_letter_example_pdf(example_id: str) -> FileResponse:
 
 
 @router.put("/cover-letters")
-async def put_cover_letter_example(file: Annotated[UploadFile, File()]) -> dict:
-    if not (file.filename or "").lower().endswith(".pdf"):
-        raise HTTPException(400, "Upload a PDF file")
-    data = await file.read()
-    if not data.startswith(b"%PDF"):
-        raise HTTPException(400, "File is not a PDF")
+def put_cover_letter_example(file: Annotated[UploadFile, File()]) -> dict:
     examples_dir = config.COVER_LETTER_EXAMPLES_DIR
     examples_dir.mkdir(parents=True, exist_ok=True)
     stem = _unique_example_stem(_sanitize_example_stem(file.filename or "example"))
     path = examples_dir / f"{stem}.pdf"
-    path.write_bytes(data)
-    markdown = cached_pdf_markdown(path, path.with_suffix(".md"))
+    data, markdown = _save_upload(file, path, path.with_suffix(".md"))
     return {
         "ok": True,
         "id": stem,

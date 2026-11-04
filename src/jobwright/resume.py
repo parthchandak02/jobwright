@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+import os
+import tempfile
 from pathlib import Path
 
 from jobwright import config
@@ -34,6 +36,63 @@ def cached_pdf_markdown(pdf_path: Path, md_path: Path) -> str:
     cache.parent.mkdir(parents=True, exist_ok=True)
     cache.write_text(text, encoding="utf-8")
     log.info("Wrote derived markdown: %s", cache)
+    return text
+
+
+MAX_PDF_BYTES = 10 * 1024 * 1024  # resume / cover-letter uploads
+
+
+class PdfUploadError(ValueError):
+    """An uploaded PDF was rejected; ``status`` is the HTTP status to answer with."""
+
+    def __init__(self, message: str, status: int = 400) -> None:
+        super().__init__(message)
+        self.status = status
+
+
+def read_upload(fileobj, limit: int = MAX_PDF_BYTES) -> bytes:
+    """Read at most ``limit`` bytes of an upload; reject anything bigger."""
+    data = fileobj.read(limit + 1)
+    if len(data) > limit:
+        raise PdfUploadError(f"That file is too big. The limit is {limit // (1024 * 1024)} MB.", status=413)
+    return data
+
+
+def save_pdf_with_markdown(data: bytes, pdf_path: Path, md_path: Path) -> str:
+    """Validate an uploaded PDF, then replace ``pdf_path`` and its markdown cache.
+
+    The new file is written and converted under temporary names first, so a
+    corrupt or oversized upload leaves the previous PDF and markdown untouched.
+    Returns the markdown.
+    """
+    if len(data) > MAX_PDF_BYTES:
+        raise PdfUploadError(f"That file is too big. The limit is {MAX_PDF_BYTES // (1024 * 1024)} MB.", status=413)
+    if not data.startswith(b"%PDF"):
+        raise PdfUploadError("File is not a PDF")
+    pdf_path = Path(pdf_path)
+    md_path = Path(md_path)
+    pdf_path.parent.mkdir(parents=True, exist_ok=True)
+    md_path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_pdf_name = tempfile.mkstemp(prefix=".upload-", suffix=".pdf", dir=str(pdf_path.parent))
+    tmp_pdf = Path(tmp_pdf_name)
+    tmp_md = md_path.with_name(f".{tmp_pdf.stem}.md")
+    try:
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(data)
+        try:
+            text = pdf_to_markdown(tmp_pdf)
+        except Exception as exc:  # noqa: BLE001 - pymupdf raises many types for bad files
+            raise PdfUploadError("Could not read that PDF. Try exporting it again.") from exc
+        # Written after the PDF, so the cache is never older than the PDF it describes.
+        tmp_md.write_text(text, encoding="utf-8")
+        os.replace(tmp_pdf, pdf_path)
+        os.replace(tmp_md, md_path)
+    finally:
+        for leftover in (tmp_pdf, tmp_md):
+            try:
+                leftover.unlink()
+            except FileNotFoundError:
+                pass
     return text
 
 

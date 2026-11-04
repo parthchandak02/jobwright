@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { ApiError, apiFetch } from '@/lib/api'
+import { ApiError, apiFetch, checkUploadSize, MAX_UPLOAD_BYTES } from '@/lib/api'
 
 function stubFetch(response: Response) {
   const fetchMock = vi.fn(async () => response)
@@ -65,5 +65,13 @@ describe('apiFetch error parsing', () => {
     const fetchMock = stubFetch(Response.json({ ok: true }))
     await expect(apiFetch('/me')).resolves.toEqual({ ok: true })
     expect(fetchMock).toHaveBeenCalledWith('/api/me', expect.objectContaining({ credentials: 'include' }))
+  })
+})
+
+describe('checkUploadSize', () => {
+  it('rejects files over the server limit before uploading', () => {
+    const big = { size: MAX_UPLOAD_BYTES + 1 } as File
+    expect(() => checkUploadSize(big)).toThrow(/too big/)
+    expect(() => checkUploadSize({ size: 1024 } as File)).not.toThrow()
   })
 })
