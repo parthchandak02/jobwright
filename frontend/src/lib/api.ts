@@ -221,7 +221,7 @@ export type SettingsData = {
 /** The part of /settings the job drawer needs (GET /api/settings/materials). */
 export type BaseMaterials = Pick<
   SettingsData,
-  'resume_markdown' | 'has_resume_pdf' | 'resume_pdf_mtime' | 'cover_letter_examples'
+  'resume_markdown' | 'has_resume_pdf' | 'resume_unreadable' | 'resume_pdf_mtime' | 'cover_letter_examples'
 >
 
 const BASE_MATERIALS_TTL_MS = 5 * 60_000

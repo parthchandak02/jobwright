@@ -170,7 +170,8 @@ def test_base_materials_endpoint_returns_only_drawer_fields(api_client, tmp_path
     res = client.get("/api/settings/materials")
     assert res.status_code == 200, res.text
     body = res.json()
-    assert set(body) == {"resume_markdown", "has_resume_pdf", "resume_pdf_mtime", "cover_letter_examples"}
+    assert set(body) == {"resume_markdown", "has_resume_pdf", "resume_unreadable", "resume_pdf_mtime",
+                         "cover_letter_examples"}
     assert body["has_resume_pdf"] is False
     assert body["resume_pdf_mtime"] is None
     assert [e["id"] for e in body["cover_letter_examples"]] == ["Example-Co"]
