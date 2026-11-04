@@ -1,4 +1,9 @@
-"""JobSpy-based job discovery: searches Indeed, LinkedIn, Glassdoor, ZipRecruiter.
+"""JobSpy-based job discovery: searches Indeed, LinkedIn, Glassdoor, ZipRecruiter, Google.
+
+Default boards are Indeed and LinkedIn; the others run only when listed in the
+user's searches.yaml ``boards``. A board that keeps refusing requests (HTTP
+403 / rate limits) trips a per-run circuit breaker and, when blocked all run,
+sits out a short cooldown (see site_breaker.py).
 
 Uses python-jobspy to scrape multiple job boards, deduplicates results,
 parses salary ranges, and stores everything in the jobwright database.
@@ -25,12 +30,61 @@ from jobwright.discovery.filters import passes_discovery_filters
 from jobwright.discovery.known_urls import load_known_urls
 from jobwright.discovery.location import location_ok as _location_ok
 from jobwright.discovery.location import remote_scope
+from jobwright.discovery.site_breaker import (
+    BLOCKED_RE,
+    DEFAULT_COOLDOWN_DAYS,
+    DEFAULT_THRESHOLD,
+    SiteBreaker,
+    watch_jobspy_logs,
+)
 
 log = logging.getLogger(__name__)
 
 # Cap JobSpy parallelism to avoid LinkedIn/Indeed soft-bans. Override via
 # JOBWRIGHT_DISCOVER_WORKERS (still clamped to this default ceiling unless set).
 _DEFAULT_DISCOVER_WORKER_CAP = 4
+
+# Boards searched when searches.yaml lists none. ZipRecruiter is left out: it
+# answered HTTP 403 to every query for days; list it in ``boards`` to use it.
+DEFAULT_SITES = ("indeed", "linkedin")
+SITE_STATE_FILE = "site_cooldown.json"
+
+
+def _env_number(name: str, default: float, cast=int):
+    raw = os.environ.get(name)
+    if not raw:
+        return default
+    try:
+        return cast(raw)
+    except ValueError:
+        log.warning("Ignoring non-numeric %s=%r", name, raw)
+        return default
+
+
+def site_breaker() -> SiteBreaker:
+    """This user's breaker: JOBWRIGHT_SITE_BLOCK_THRESHOLD (3) blocked responses in a
+    row skip a board for the run; a board blocked all run sits out
+    JOBWRIGHT_SITE_COOLDOWN_DAYS (3) days, then gets one probe."""
+    return SiteBreaker(
+        config.LOG_DIR / SITE_STATE_FILE,
+        threshold=_env_number("JOBWRIGHT_SITE_BLOCK_THRESHOLD", DEFAULT_THRESHOLD),
+        cooldown_days=_env_number("JOBWRIGHT_SITE_COOLDOWN_DAYS", DEFAULT_COOLDOWN_DAYS, float),
+    )
+
+
+def _note_results(breaker: "SiteBreaker | None", df, asked: list[str]) -> None:
+    """A board that returned rows is working: reset its blocked streak."""
+    if breaker is None or df is None or "site" not in getattr(df, "columns", ()):
+        return
+    counts = df["site"].astype(str).value_counts()
+    for site in asked:
+        if int(counts.get(site, 0)) > 0:
+            breaker.record_ok(site)
+
+
+def _note_exception(breaker: "SiteBreaker | None", exc: Exception, asked: list[str]) -> None:
+    if breaker is not None and len(asked) == 1 and BLOCKED_RE.search(str(exc)):
+        breaker.record_blocked(asked[0], "rate_limited" if "429" in str(exc) else "blocked")
 
 
 # -- Proxy parsing -----------------------------------------------------------
@@ -297,8 +351,13 @@ def _run_one_search(
     glassdoor_map: dict,
     known_urls: set[str] | None = None,
     li_rejects: "linkedin.RejectMemory | None" = None,
+    breaker: "SiteBreaker | None" = None,
 ) -> dict:
-    """Run a single search query and store results in DB."""
+    """Run a single search query and store results in DB.
+
+    Boards whose ``breaker`` is open (blocked earlier this run, or cooling
+    down) are skipped for this query.
+    """
     s = search
     label = f"\"{s['query']}\" in {s['location']} {'(remote)' if s.get('remote') else ''}"
     if "tier" in s:
@@ -306,6 +365,11 @@ def _run_one_search(
 
     # Split sites: Glassdoor needs simplified location, others use original
     gd_location = glassdoor_map.get(s["location"], s["location"].split(",")[0])
+    if breaker is not None:
+        skipped = [si for si in sites if breaker.is_open(si)]
+        for si in skipped:
+            breaker.skip(si)
+        sites = [si for si in sites if si not in skipped]
     has_glassdoor = "glassdoor" in sites
     has_linkedin_guest = "linkedin" in sites and linkedin.use_guest_client()
     other_sites = [
@@ -330,6 +394,7 @@ def _run_one_search(
                 seen_before=lambda c: c["job_url"] in (known_urls or ())
                 or (li_rejects is not None and c["job_id"] in li_rejects),
                 client=linkedin.shared_client(proxy_config["jobspy"] if proxy_config else None),
+                breaker=breaker,
             )
             if li_rejects is not None:
                 # Remembered rejects come back without a description; storing
@@ -371,9 +436,11 @@ def _run_one_search(
             kwargs["google_search_term"] = f"{s['query']} jobs near {s['location']} since yesterday"
         try:
             df = _scrape_with_retry(kwargs, max_retries=max_retries)
+            _note_results(breaker, df, other_sites)
             all_dfs.append(df)
         except Exception as e:
             log.error("[%s] (non-gd): %s", label, e)
+            _note_exception(breaker, e, other_sites)
             site_errors["+".join(other_sites)] = 1
 
     # Run Glassdoor separately with simplified location
@@ -393,11 +460,19 @@ def _run_one_search(
             gd_kwargs["proxies"] = [proxy_config["jobspy"]]
         try:
             gd_df = _scrape_with_retry(gd_kwargs, max_retries=max_retries)
+            _note_results(breaker, gd_df, ["glassdoor"])
             all_dfs.append(gd_df)
         except Exception as e:
             log.error("[%s] (glassdoor): %s", label, e)
+            _note_exception(breaker, e, ["glassdoor"])
             site_errors["glassdoor"] = 1
 
+    if not all_dfs and not sites:
+        log.info("[%s]: every board skipped (blocked)", label)
+        return {
+            "new": 0, "existing": 0, "skipped_known": 0, "errors": 0,
+            "filtered": 0, "total": 0, "label": label, "site_errors": site_errors,
+        }
     if not all_dfs:
         log.error("[%s]: all sites failed", label)
         return {
@@ -464,7 +539,7 @@ def search_jobs(
 ) -> dict:
     """Run a single job search via JobSpy and store results in DB."""
     if sites is None:
-        sites = ["indeed", "linkedin", "zip_recruiter"]
+        sites = list(DEFAULT_SITES)
 
     proxy_config = parse_proxy(proxy) if proxy else None
 
@@ -530,10 +605,16 @@ def _full_crawl(
     proxy: str | None = None,
     max_retries: int = 2,
     workers: int = 1,
+    breaker: SiteBreaker | None = None,
 ) -> dict:
-    """Run all search queries from search config across all locations."""
+    """Run all search queries from search config across all locations.
+
+    ``site_health`` in the result lists boards the circuit breaker skipped
+    (``SiteBreaker.summary``); the breaker defaults to this user's
+    ``site_breaker()`` and its cooldowns are saved at the end.
+    """
     if sites is None:
-        sites = ["indeed", "linkedin", "zip_recruiter"]
+        sites = list(DEFAULT_SITES)
 
     # Build search combinations from config
     queries = search_cfg.get("queries", [])
@@ -599,6 +680,11 @@ def _full_crawl(
             log.warning("Ignoring non-integer JOBWRIGHT_DISCOVER_WORKERS=%r", cap_env)
     effective_workers = max(1, min(workers, worker_cap))
 
+    breaker = breaker if breaker is not None else site_breaker()
+    for si in sites:
+        if breaker.in_cooldown(si):
+            log.warning("JobSpy: %s is cooling down after a blocked run; skipping it", si)
+
     log.info("Full crawl: %d search combinations", len(searches))
     log.info(
         "Sites: %s | Results/site: %d | Hours old: %d | Workers: %d",
@@ -632,6 +718,7 @@ def _full_crawl(
         proxy_config, defaults, max_retries,
         accept_locs, reject_locs, glassdoor_map,
     )
+    search_kw = {"breaker": breaker}
 
     def _accumulate(result: dict) -> None:
         nonlocal total_new, total_existing, total_skipped, total_errors, completed
@@ -652,22 +739,24 @@ def _full_crawl(
             )
 
     try:
-        if effective_workers > 1 and len(searches) > 1:
-            with ThreadPoolExecutor(max_workers=min(effective_workers, len(searches))) as pool:
-                futures = {
-                    pool.submit(_run_one_search, s, *search_args, known_urls, li_rejects): s
-                    for s in searches
-                }
-                for future in as_completed(futures):
-                    _accumulate(future.result())
+        with watch_jobspy_logs(breaker):
+            if effective_workers > 1 and len(searches) > 1:
+                with ThreadPoolExecutor(max_workers=min(effective_workers, len(searches))) as pool:
+                    futures = {
+                        pool.submit(_run_one_search, s, *search_args, known_urls, li_rejects, **search_kw): s
+                        for s in searches
+                    }
+                    for future in as_completed(futures):
+                        _accumulate(future.result())
+                        _progress()
+            else:
+                for s in searches:
+                    _accumulate(_run_one_search(s, *search_args, known_urls, li_rejects, **search_kw))
                     _progress()
-        else:
-            for s in searches:
-                _accumulate(_run_one_search(s, *search_args, known_urls, li_rejects))
-                _progress()
     finally:
         if li_rejects is not None:
             li_rejects.save()
+        breaker.save()
 
     # Final stats
     conn = get_connection()
@@ -696,6 +785,7 @@ def _full_crawl(
         "errors": total_errors,
         "site_errors": site_errors,
         "linkedin": li_stats,
+        "site_health": breaker.summary(),
         "db_total": db_total,
         "queries": len(searches),
         "workers": effective_workers,
@@ -729,7 +819,7 @@ def run_discovery(cfg: dict | None = None, workers: int = 1) -> dict:
     proxy = cfg.get("proxy")
     sites = cfg.get("boards") or cfg.get("sites")
     if not sites:
-        sites = ["indeed", "linkedin", "zip_recruiter"]
+        sites = list(DEFAULT_SITES)
     results_per_site = cfg.get("defaults", {}).get("results_per_site", 100)
     hours_old = cfg.get("defaults", {}).get("hours_old", 72)
     tiers = cfg.get("tiers")

@@ -128,6 +128,9 @@ def _source_line(sources: dict) -> str:
     for name, src in sources.items():
         if name.startswith("impact:"):
             continue
+        if src.get("status") in ("blocked", "cooldown"):
+            parts.append(f"{name}: blocked, skipped" + (f" until {src['until'][:10]}" if src.get("until") else ""))
+            continue
         bits = [name]
         if "new" in src:
             bits.append(f"+{int(src.get('new') or 0)}")
@@ -138,6 +141,8 @@ def _source_line(sources: dict) -> str:
             extra.append(f"{src['errors']} errors")
         if src.get("rate_limited"):
             extra.append(f"rate-limited {src['rate_limited']}")
+        if src.get("skipped"):
+            extra.append(f"skipped {src['skipped']} queries")
         parts.append(" ".join(bits) + (f" ({', '.join(extra)})" if extra else ""))
     if impact:
         failed = [n for n, v in impact.items() if v.get("errors")]

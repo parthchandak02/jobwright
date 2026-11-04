@@ -362,6 +362,7 @@ def scrape(
     keep: Callable[[dict], bool] = lambda card: True,
     seen_before: Callable[[dict], bool] = lambda card: False,
     client: GuestClient | None = None,
+    breaker=None,
 ) -> list[dict]:
     """Search LinkedIn and return one row per unique card.
 
@@ -369,6 +370,10 @@ def scrape(
     rest are returned without one so callers can still count them as known /
     filtered. Results are newest first, so the search stops once two pages in
     a row hold only jobs ``seen_before`` (known or remembered rejects).
+
+    ``breaker`` (a discovery.site_breaker.SiteBreaker) hears about each search
+    page LinkedIn still rate-limited after every backoff, and each page that
+    worked, so the crawl can stop asking LinkedIn for the rest of a bad run.
     """
     client = client or shared_client()
     params = {
@@ -391,9 +396,13 @@ def scrape(
         except RateLimited:
             log.warning("LinkedIn kept rate-limiting %r at start=%d; keeping %d cards",
                         query, start, len(rows))
+            if breaker is not None:
+                breaker.record_blocked("linkedin", "rate_limited")
             break
         if resp is None:
             break
+        if breaker is not None:
+            breaker.record_ok("linkedin")
         cards, raw_count = _parse_page(resp.text)
         if not raw_count:
             break

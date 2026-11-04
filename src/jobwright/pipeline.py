@@ -105,6 +105,38 @@ def _source_health(new, errors=0, rate_limited=0, status: str | None = None, **e
     return {"new": new, "errors": errors, "rate_limited": rate_limited, "status": status, **extra}
 
 
+# Boards the circuit breaker took out (HTTP 403 all run, or cooling down after
+# one): reported once as "blocked, skipped", not as a partial discover.
+_SKIPPED_STATUSES = ("blocked", "cooldown")
+
+
+def _add_site_health(sources: dict, site_health: dict) -> None:
+    """Fold JobSpy's circuit-breaker summary into per-source health.
+
+    ``blocked`` / ``cooldown`` boards get their own entry (no errors: the
+    skip is deliberate); a rate-limited one (e.g. LinkedIn) keeps its counts
+    and gains ``skipped``.
+    """
+    for site, health in site_health.items():
+        status = health.get("status")
+        skipped = int(health.get("skipped") or 0)
+        if status in _SKIPPED_STATUSES:
+            sources[site] = {
+                "errors": 0, "rate_limited": 0, "status": status, "skipped": skipped,
+                "blocked_responses": int(health.get("blocked_responses") or 0),
+                **({"until": health["until"]} if health.get("until") else {}),
+            }
+        elif site in sources:
+            sources[site]["skipped"] = skipped
+            if sources[site].get("status") == "ok":
+                sources[site]["status"] = "degraded"
+        else:
+            sources[site] = _source_health(
+                None, 0, health.get("blocked_responses"), status="degraded", skipped=skipped,
+            )
+            sources[site].pop("new")
+
+
 def _run_discover(workers: int = 1) -> dict:
     """Stage: Job discovery — JobSpy, Workday, and (full mode) smart-extract.
 
@@ -143,6 +175,7 @@ def _run_discover(workers: int = 1) -> dict:
                 throttled=li.get("throttled"), requests=li.get("requests"),
             )
             sources["linkedin"].pop("new")  # counted inside jobspy's total
+        _add_site_health(sources, res.get("site_health") or {})
         stats["jobspy"] = "ok"
     except Exception as e:
         log.error("JobSpy crawl failed: %s", e)
@@ -218,7 +251,7 @@ def _run_discover(workers: int = 1) -> dict:
     if ran and all(str(v).startswith("error") for v in ran):
         stats["status"] = "error: every discovery source failed"
     elif any(str(stats.get(k)).startswith("error") for k in top) or any(
-        v.get("status") != "ok" for v in sources.values()
+        v.get("status") not in ("ok", *_SKIPPED_STATUSES) for v in sources.values()
     ):
         stats["status"] = "partial"
     else:
