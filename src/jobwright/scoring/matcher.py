@@ -253,10 +253,92 @@ class BillingDead(RuntimeError):
 
 
 _BILLING_STATUS = frozenset({401, 402, 403})
+_RETRY_STATUS = frozenset({429, 500, 502, 503, 504})
+DEFAULT_WORKERS = 16
+# Concurrent 429s within this many seconds of a concurrency cut count as one burst.
+LIMITER_WINDOW = 2.0
 
 
 def _is_billing(exc: Exception) -> bool:
     return isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code in _BILLING_STATUS
+
+
+def _is_retry_exhausted(exc: Exception) -> bool:
+    """429/5xx that already went through the client's own backoff retries."""
+    return isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code in _RETRY_STATUS
+
+
+def score_workers(default: int = DEFAULT_WORKERS) -> int:
+    """Concurrent scoring calls: JOBWRIGHT_SCORE_WORKERS (default 16)."""
+    try:
+        return max(1, int(os.environ.get("JOBWRIGHT_SCORE_WORKERS", default)))
+    except ValueError:
+        return default
+
+
+class AdaptiveLimiter:
+    """Shared cap on in-flight scoring calls that backs off on rate limits.
+
+    Starts at ``limit``. A 429 halves it (down to ``floor``); concurrent 429s
+    from one burst (within ``window`` seconds of the last cut) halve it once.
+    Every ``recover_after`` successes raise it by one, back up to ``limit``.
+    A call that is sleeping in a retry keeps its slot, so a cut takes effect as
+    soon as in-flight calls drop below the new cap.
+    """
+
+    def __init__(self, limit: int, *, floor: int = 1, recover_after: int = 8, window: float = 2.0,
+                 clock=time.monotonic) -> None:
+        self.max_limit = max(1, int(limit))
+        self.limit = self.max_limit
+        self.floor = max(1, min(int(floor), self.max_limit))
+        self.recover_after = max(1, int(recover_after))
+        self.window = window
+        self.min_limit = self.limit
+        self.cuts = 0
+        self.active = 0
+        self.peak_active = 0
+        self._clock = clock
+        self._ok = 0
+        self._last_cut = float("-inf")
+        self._cond = threading.Condition()
+
+    def acquire(self, stop: threading.Event | None = None) -> bool:
+        """Wait for a slot. False when ``stop`` was set while waiting."""
+        with self._cond:
+            while self.active >= self.limit:
+                if stop is not None and stop.is_set():
+                    return False
+                self._cond.wait(timeout=0.25)
+            self.active += 1
+            self.peak_active = max(self.peak_active, self.active)
+            return True
+
+    def release(self) -> None:
+        with self._cond:
+            self.active = max(0, self.active - 1)
+            self._cond.notify_all()
+
+    def throttled(self) -> None:
+        with self._cond:
+            now = self._clock()
+            self._ok = 0
+            if now - self._last_cut < self.window:
+                return
+            self._last_cut = now
+            new = max(self.floor, self.limit // 2)
+            if new < self.limit:
+                self.limit = new
+                self.cuts += 1
+                self.min_limit = min(self.min_limit, new)
+                log.warning("Scoring rate-limited: concurrency cut to %d", new)
+
+    def succeeded(self) -> None:
+        with self._cond:
+            self._ok += 1
+            if self._ok >= self.recover_after and self.limit < self.max_limit:
+                self.limit += 1
+                self._ok = 0
+                self._cond.notify_all()
 
 
 def _parse(raw_text: str) -> dict[str, Any]:
@@ -280,25 +362,61 @@ def _parse(raw_text: str) -> dict[str, Any]:
 
 def judge_job(
     ctx: MatchContext, job: dict, client, *, tier: str, stop: threading.Event | None = None,
-    min_positive: int | None = None,
+    min_positive: int | None = None, limiter: AdaptiveLimiter | None = None, on_retry=None,
 ) -> MatchResult | None:
-    """One structured call with retries. None when the job could not be scored."""
+    """One structured call with retries. None when the job could not be scored.
+
+    Rate limits (429) and 5xx are retried with backoff inside the LLM client
+    (``on_retry`` hears about each one); here only bad JSON / empty replies get
+    another attempt. ``limiter`` bounds how many calls run at once.
+    """
     messages = [
         {"role": "system", "content": ctx.system_prompt},
         {"role": "user", "content": _user_message(ctx, job, min_positive=min_positive)},
     ]
     rng = random.Random()
+    held = [False]
+
+    def retry_hook(status: int, wait: float) -> bool:
+        # Give the slot back while backing off, then queue for one again, so a
+        # concurrency cut also throttles retries already in flight.
+        if on_retry is not None:
+            on_retry(status, wait)
+        if limiter is None:
+            return False
+        if held[0]:
+            limiter.release()
+            held[0] = False
+        time.sleep(wait)
+        held[0] = limiter.acquire(stop)
+        if not held[0]:
+            raise RuntimeError("scoring stopped")
+        return True
+
     for attempt in range(1, ATTEMPTS + 1):
         if stop is not None and stop.is_set():
             return None
         try:
-            with llm_purpose(f"score:{tier}"):
-                text = client.chat_structured(
-                    messages, SCHEMA, max_tokens=MAX_TOKENS, temperature=0.0,
-                    reasoning_effort=os.environ.get(
-                        f"JOBWRIGHT_REASONING_{tier.upper()}", TIER_REASONING.get(tier, TIER_REASONING["t1"])
-                    ),
-                )
+            if limiter is not None:
+                held[0] = limiter.acquire(stop)
+                if not held[0]:
+                    return None
+            try:
+                with llm_purpose(f"score:{tier}"):
+                    extra = {"on_retry": retry_hook} if (on_retry is not None or limiter is not None) else {}
+                    text = client.chat_structured(
+                        messages, SCHEMA, max_tokens=MAX_TOKENS, temperature=0.0,
+                        reasoning_effort=os.environ.get(
+                            f"JOBWRIGHT_REASONING_{tier.upper()}", TIER_REASONING.get(tier, TIER_REASONING["t1"])
+                        ),
+                        **extra,
+                    )
+            finally:
+                if held[0]:
+                    limiter.release()
+                    held[0] = False
+            if limiter is not None:
+                limiter.succeeded()
             raw = _parse(text)
             score, deals, caps = apply_gates(raw, job, ctx)
             return MatchResult(
@@ -312,7 +430,7 @@ def judge_job(
                 if stop is not None:
                     stop.set()
                 raise BillingDead(str(exc)[:200]) from exc
-            if attempt >= ATTEMPTS:
+            if _is_retry_exhausted(exc) or attempt >= ATTEMPTS:
                 log.warning("Scoring failed for '%s' (%s): %s", job.get("title", "?"), tier, exc)
                 return None
             time.sleep(min(8.0, 1.0 * 2 ** (attempt - 1) + rng.uniform(0, 0.5)))
@@ -395,7 +513,7 @@ def score_jobs(
     ctx: MatchContext,
     jobs: list[dict],
     *,
-    workers: int = 16,
+    workers: int | None = None,
     escalate_at: int = 6,
     min_confidence: float = 0.55,
     escalate: bool = True,
@@ -404,12 +522,20 @@ def score_jobs(
     strong_model: str | None = None,
     borderline: Borderline | None = None,
     prior: dict[str, MatchResult] | None = None,
+    stats: dict | None = None,
 ) -> tuple[list[MatchResult], int]:
     """Tiered concurrent scoring. ``on_result`` is called per final result (for incremental saves).
 
     ``prior`` maps url -> an existing first-pass result (evals reuse a stored run
-    so only second opinions cost tokens).
+    so only second opinions cost tokens). ``workers`` defaults to
+    JOBWRIGHT_SCORE_WORKERS; an AdaptiveLimiter halves the number of calls in
+    flight on a 429 and slowly recovers. When given, ``stats`` is filled with
+    ``retries`` (all LLM retries), ``rate_limited`` (429s retried),
+    ``workers`` and ``workers_min`` (lowest concurrency cap reached).
     """
+    workers = score_workers() if workers is None else max(1, int(workers))
+    limiter = AdaptiveLimiter(workers, window=LIMITER_WINDOW)
+    counts = {"retries": 0, "rate_limited": 0}
     cheap = get_client_for_model(cheap_model) if cheap_model else get_client()
     borderline = borderline if borderline is not None else borderline_from_env()
     second_client = None
@@ -429,17 +555,27 @@ def score_jobs(
     errors = 0
     t2 = {"tried": 0, "failed": 0}
 
+    def on_retry(status: int, wait: float) -> None:
+        with lock:
+            counts["retries"] += 1
+            if status == 429:
+                counts["rate_limited"] += 1
+        if status == 429:
+            limiter.throttled()
+
+    call = {"stop": stop, "limiter": limiter, "on_retry": on_retry}
+
     def run(job: dict) -> MatchResult | None:
-        first = (prior or {}).get(job["url"]) or judge_job(ctx, job, cheap, tier="t1", stop=stop)
+        first = (prior or {}).get(job["url"]) or judge_job(ctx, job, cheap, tier="t1", **call)
         if first is not None and second_client is not None and borderline.applies(first):
-            other = judge_job(ctx, job, second_client, tier="b2", stop=stop, min_positive=balanced)
+            other = judge_job(ctx, job, second_client, tier="b2", min_positive=balanced, **call)
             if other is not None:
                 first = combine_opinions(first, other, borderline.combine)
         if first is None or strong is None or not should_escalate(first, escalate_at, min_confidence):
             return first
         with lock:
             t2["tried"] += 1
-        second = judge_job(ctx, job, strong, tier="t2", stop=stop)
+        second = judge_job(ctx, job, strong, tier="t2", **call)
         if second is None:
             with lock:
                 t2["failed"] += 1
@@ -470,6 +606,13 @@ def score_jobs(
             "Check LLM_ESCALATION_MODEL (is it deployed for this key?).",
             strong_model, t2["failed"], t2["tried"],
         )
+    if counts["retries"]:
+        log.info(
+            "Scoring retries: %d (%d rate-limited); concurrency %d -> min %d",
+            counts["retries"], counts["rate_limited"], workers, limiter.min_limit,
+        )
+    if stats is not None:
+        stats.update(counts, workers=workers, workers_min=limiter.min_limit)
     if billing is not None and not results:
         raise billing
     return results, errors

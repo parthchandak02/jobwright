@@ -20,7 +20,7 @@ from jobwright.labels import build_eval_set
 from jobwright.llm import flush_usage
 from jobwright.scoring.criteria import load_criteria
 from jobwright.scoring.examples import ExampleIndex
-from jobwright.scoring.matcher import BillingDead, MatchContext, MatchResult, score_jobs
+from jobwright.scoring.matcher import BillingDead, MatchContext, MatchResult, score_jobs, score_workers
 
 log = logging.getLogger(__name__)
 
@@ -30,10 +30,7 @@ MIN_POSITIVE_EXAMPLES = 4
 
 
 def _workers() -> int:
-    try:
-        return max(1, int(os.environ.get("JOBWRIGHT_SCORE_WORKERS", "16")))
-    except ValueError:
-        return 16
+    return score_workers()
 
 
 def build_context(conn, profile: dict | None, search_cfg: dict | None, resume_text: str) -> MatchContext:
@@ -154,8 +151,9 @@ def score_job_list(
     log.info("Scoring %d jobs (v2 %s, workers=%d)", len(todo), ctx.version, _workers())
     billing_error = None
     errors = 0
+    call_stats: dict = {}
     try:
-        _results, errors = score_jobs(ctx, todo, workers=_workers(), on_result=saver.add)
+        _results, errors = score_jobs(ctx, todo, workers=_workers(), on_result=saver.add, stats=call_stats)
     except BillingDead as exc:
         billing_error = str(exc)
     finally:
@@ -181,6 +179,11 @@ def score_job_list(
         "prompt_version": ctx.version,
         "criteria_derived": ctx.criteria.derived,
         "run_id": run_id,
+        # LLM retries this run: rate_limited = 429s that were retried (brief-report shows them).
+        "retries": int(call_stats.get("retries") or 0),
+        "rate_limited": int(call_stats.get("rate_limited") or 0),
+        "workers": call_stats.get("workers", _workers()),
+        "workers_min": call_stats.get("workers_min", _workers()),
     }
 
 

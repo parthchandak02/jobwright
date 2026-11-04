@@ -244,7 +244,9 @@ def build_brief_report(status_file: Path | None = None) -> Report:
     score = (stages.get("score") or {}).get("detail") or {}
     if "score" in stages:
         scored, errors = int(score.get("scored") or 0), int(score.get("errors") or 0)
-        rep.lines.append(f"scored {scored} jobs ({errors} failed)")
+        limited = int(score.get("rate_limited") or 0)
+        rep.lines.append(f"scored {scored} jobs ({errors} failed"
+                         + (f", {limited} rate-limit retries)" if limited else ")"))
         if errors and errors > max(3, scored * 0.1):
             bump("warn")
         if scored == 0:

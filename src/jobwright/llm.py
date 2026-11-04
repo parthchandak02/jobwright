@@ -11,12 +11,15 @@ LLM_MODEL env var overrides the model name for the active provider.
 """
 
 import contextvars
+import email.utils
 import logging
 import os
+import random
 import threading
 import time
 from collections import defaultdict
 from contextlib import contextmanager
+from typing import Callable
 
 import httpx
 
@@ -354,6 +357,60 @@ _TIMEOUT = 120  # seconds
 # Gemini free tier is 15 RPM = 4s minimum between requests; 10s gives headroom.
 _RATE_LIMIT_BASE_WAIT = 10
 
+# Structured calls (scoring) run many in parallel, so they retry 429/5xx with a
+# shorter jittered backoff: 2, 4, 8, 16, 32s (each drawn from [w/2, w]), or the
+# provider's Retry-After plus a little jitter, never more than 60s. Six attempts
+# ride out a rate-limit burst of about a minute. JOBWRIGHT_LLM_STRUCTURED_ATTEMPTS
+# overrides the attempt count.
+_STRUCTURED_ATTEMPTS = 6
+_STRUCTURED_BASE_WAIT = 2.0
+
+# on_retry(status, wait): called before each retry. status is the HTTP status
+# (429, 5xx) or 0 for a timeout / transport error. Returning True means the hook
+# already waited (e.g. it gave up a concurrency slot, slept and re-queued), so
+# the client does not sleep again.
+RetryHook = Callable[[int, float], "bool | None"]
+
+
+def _structured_attempts() -> int:
+    try:
+        return max(1, int(os.environ.get("JOBWRIGHT_LLM_STRUCTURED_ATTEMPTS", _STRUCTURED_ATTEMPTS)))
+    except ValueError:
+        return _STRUCTURED_ATTEMPTS
+
+
+def retry_after_seconds(resp: httpx.Response | None) -> float | None:
+    """Seconds from a Retry-After header (delta-seconds or HTTP date), else None."""
+    if resp is None:
+        return None
+    raw = (resp.headers.get("Retry-After") or "").strip()
+    if not raw:
+        return None
+    try:
+        return max(0.0, float(raw))
+    except ValueError:
+        pass
+    try:
+        when = email.utils.parsedate_to_datetime(raw)
+    except (TypeError, ValueError):
+        return None
+    if when is None:
+        return None
+    return max(0.0, when.timestamp() - time.time())
+
+
+def backoff_wait(resp: httpx.Response | None, attempt: int, base: float = _STRUCTURED_BASE_WAIT,
+                 rng: random.Random | None = None) -> float:
+    """Jittered wait before retry ``attempt`` (0-based), honoring Retry-After, capped at 60s."""
+    rng = rng or random
+    hinted = retry_after_seconds(resp)
+    if hinted is not None:
+        wait = max(hinted, 0.5) + rng.uniform(0.0, 1.0)
+    else:
+        expo = base * (2 ** attempt)
+        wait = rng.uniform(expo / 2, expo)
+    return min(float(_MAX_RETRY_AFTER), wait)
+
 
 _GEMINI_COMPAT_BASE = "https://generativelanguage.googleapis.com/v1beta/openai"
 _GEMINI_NATIVE_BASE = "https://generativelanguage.googleapis.com/v1beta"
@@ -534,6 +591,7 @@ class LLMClient:
         temperature: float | None = 0.0,
         max_tokens: int = 4096,
         json_mode: bool = False,
+        on_retry: RetryHook | None = None,
     ) -> str:
         """Send a chat completion request and return the assistant message text.
 
@@ -622,7 +680,8 @@ class LLMClient:
                         "LLM HTTP %s from %s. Waiting %ds before retry %d/%d.",
                         resp.status_code, self.model, wait, attempt + 1, _MAX_RETRIES,
                     )
-                    time.sleep(wait)
+                    if on_retry is None or not on_retry(resp.status_code, wait):
+                        time.sleep(wait)
                     continue
                 raise
 
@@ -633,7 +692,8 @@ class LLMClient:
                         "LLM transport error (%s), retrying in %ds (attempt %d/%d)",
                         type(exc).__name__, wait, attempt + 1, _MAX_RETRIES,
                     )
-                    time.sleep(wait)
+                    if on_retry is None or not on_retry(0, wait):
+                        time.sleep(wait)
                     continue
                 raise
 
@@ -681,6 +741,7 @@ class LLMClient:
         max_tokens: int = 1200,
         temperature: float = 0.0,
         reasoning_effort: str | None = None,
+        on_retry: RetryHook | None = None,
     ) -> str:
         """Structured output: json_schema when the provider supports it, else json_object.
 
@@ -689,8 +750,13 @@ class LLMClient:
         return empty content. Dropped automatically if the provider rejects it.
 
         ``schema`` is an OpenAI-style ``{"name", "strict", "schema"}`` object.
-        One attempt per call; callers own retries. 429/5xx propagate as
-        httpx.HTTPStatusError, empty content raises _EmptyLLMResponse.
+        429/5xx and transport errors are retried up to
+        ``JOBWRIGHT_LLM_STRUCTURED_ATTEMPTS`` (6) times with jittered exponential
+        backoff that honors Retry-After (capped at 60s); ``on_retry(status, wait)``
+        is told about each retry so a caller can slow its own concurrency. Only a
+        2xx is recorded in the usage ledger (rate-limited attempts are not billed).
+        Other 4xx (401/402/403 billing) raise httpx.HTTPStatusError at once; empty
+        content raises _EmptyLLMResponse (callers retry).
         """
         if not self._is_gemini and not self._schema_unsupported:
             headers = {"Content-Type": "application/json"}
@@ -705,18 +771,44 @@ class LLMClient:
             }
             if reasoning_effort and not self._reasoning_unsupported:
                 payload["reasoning_effort"] = reasoning_effort
+            attempts = _structured_attempts()
+            for attempt in range(attempts):
+                status, retry_resp = 0, None
+                try:
+                    resp = self._post_structured(payload, headers)
+                    if resp is None:
+                        break  # json_schema unsupported: json_object below
+                    return self._handle_compat_response(resp)
+                except httpx.HTTPStatusError as exc:
+                    status, retry_resp = exc.response.status_code, exc.response
+                    if status not in _RETRY_STATUS or attempt >= attempts - 1:
+                        raise
+                except (httpx.TimeoutException, httpx.TransportError):
+                    if attempt >= attempts - 1:
+                        raise
+                wait = backoff_wait(retry_resp, attempt)
+                log.warning(
+                    "LLM HTTP %s from %s (structured). Waiting %.1fs before retry %d/%d.",
+                    status or "transport error", self.model, wait, attempt + 1, attempts - 1,
+                )
+                if on_retry is None or not on_retry(status, wait):
+                    time.sleep(wait)
+        return self.chat(messages, temperature=temperature, max_tokens=max_tokens, json_mode=True,
+                         on_retry=on_retry)
+
+    def _post_structured(self, payload: dict, headers: dict) -> httpx.Response | None:
+        """One json_schema POST. None when the provider rejects json_schema (now sticky)."""
+        resp = self._client.post(f"{self.base_url}/chat/completions", json=payload, headers=headers)
+        if resp.status_code == 400 and "reasoning" in resp.text.lower() and "reasoning_effort" in payload:
+            log.info("Provider rejected reasoning_effort for %s; retrying without it", self.model)
+            self._reasoning_unsupported = True
+            payload.pop("reasoning_effort")
             resp = self._client.post(f"{self.base_url}/chat/completions", json=payload, headers=headers)
-            if resp.status_code == 400 and "reasoning" in resp.text.lower() and "reasoning_effort" in payload:
-                log.info("Provider rejected reasoning_effort for %s; retrying without it", self.model)
-                self._reasoning_unsupported = True
-                payload.pop("reasoning_effort")
-                resp = self._client.post(f"{self.base_url}/chat/completions", json=payload, headers=headers)
-            if resp.status_code in (400, 422):
-                log.info("Provider rejected json_schema (HTTP %s); using json_object", resp.status_code)
-                self._schema_unsupported = True
-            else:
-                return self._handle_compat_response(resp)
-        return self.chat(messages, temperature=temperature, max_tokens=max_tokens, json_mode=True)
+        if resp.status_code in (400, 422):
+            log.info("Provider rejected json_schema (HTTP %s); using json_object", resp.status_code)
+            self._schema_unsupported = True
+            return None
+        return resp
 
     def ask(self, prompt: str, **kwargs) -> str:
         """Convenience: single user prompt -> assistant response."""
