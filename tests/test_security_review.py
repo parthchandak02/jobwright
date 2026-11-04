@@ -570,3 +570,48 @@ def test_concurrent_welcome_sends_once(tmp_path, monkeypatch):
         t.join(5)
     assert sent == [user.whatsapp_target]
     assert (tmp_path / "logs" / "welcome_sent.json").exists()
+
+
+# --- L5: a failed usage flush is all-or-nothing ------------------------------
+
+
+def test_partial_usage_flush_failure_does_not_double_count(tmp_path):
+    from jobwright import llm
+    from jobwright.database import close_connection, init_db
+
+    db = tmp_path / "usage.db"
+    close_connection(db)
+    conn = init_db(db)
+    llm.usage_snapshot(reset=True, user_id=None)
+    with llm.llm_purpose("score"):
+        llm.record_usage("fireworks", "m", {"prompt_tokens": 10, "completion_tokens": 1})
+    with llm.llm_purpose("tailor"):
+        llm.record_usage("fireworks", "m", {"prompt_tokens": 20, "completion_tokens": 2})
+
+    class FailSecondInsert:
+        def __init__(self, inner):
+            self.inner, self.inserts = inner, 0
+
+        def execute(self, sql, *args):
+            if sql.lstrip().upper().startswith("INSERT"):
+                self.inserts += 1
+                if self.inserts == 2:
+                    raise RuntimeError("disk full")
+            return self.inner.execute(sql, *args)
+
+        def commit(self):
+            return self.inner.commit()
+
+        def rollback(self):
+            return self.inner.rollback()
+
+        @property
+        def in_transaction(self):
+            return self.inner.in_transaction
+
+    with pytest.raises(RuntimeError):
+        llm.flush_usage(FailSecondInsert(conn), "r1", user_id=None)
+    assert not conn.in_transaction
+    assert llm.flush_usage(conn, "r1", user_id=None) == 2
+    rows = conn.execute("SELECT purpose, SUM(prompt_tokens) FROM llm_usage GROUP BY purpose ORDER BY purpose")
+    assert [tuple(r) for r in rows] == [("score", 10), ("tailor", 20)]

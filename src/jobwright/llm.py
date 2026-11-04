@@ -261,7 +261,12 @@ def flush_usage(conn, run_id: str | None = None, user_id=_CURRENT) -> int:
     if not rows:
         return 0
     now = datetime.now(timezone.utc).isoformat()
+    # All rows or none: a savepoint undoes the rows already inserted when a
+    # later one (or the commit) fails, so the restored ledger is not written
+    # twice on the next flush. Only our own inserts are undone, never the
+    # caller's pending work.
     try:
+        conn.execute("SAVEPOINT llm_usage_flush")
         for r in rows:
             conn.execute(
                 "INSERT INTO llm_usage (at, run_id, purpose, provider, model, prompt_tokens, "
@@ -270,11 +275,27 @@ def flush_usage(conn, run_id: str | None = None, user_id=_CURRENT) -> int:
                  r["completion_tokens"], r["cached_tokens"],
                  estimate_cost(r["model"], r["prompt_tokens"], r["completion_tokens"], r["cached_tokens"])),
             )
+        conn.execute("RELEASE llm_usage_flush")
         conn.commit()
     except Exception:
+        _undo_flush(conn)
         _restore(rows, user_id)
         raise
     return len(rows)
+
+
+def _undo_flush(conn) -> None:
+    """Drop this flush's inserts after a failure (best effort)."""
+    if not getattr(conn, "in_transaction", False):
+        return
+    try:
+        conn.execute("ROLLBACK TO llm_usage_flush")
+        conn.execute("RELEASE llm_usage_flush")
+    except Exception:  # noqa: BLE001 - savepoint already gone (e.g. the commit failed)
+        try:
+            conn.rollback()
+        except Exception:  # noqa: BLE001
+            pass
 
 
 def _restore(rows: list[dict], user_id) -> None:
