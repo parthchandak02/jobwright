@@ -91,10 +91,10 @@ export function ProfilePage({ profile, onProfileChanged }: Props) {
         description="What we search for, how we judge fit, and your daily list."
         actions={
           canSwitch ? (
-            <label className="flex items-center gap-2 text-caption text-muted-foreground">
-              Viewing
+            <div className="flex items-center gap-2 text-caption text-muted-foreground">
+              <span aria-hidden>Viewing</span>
               <ProfileSwitcher className="w-48" />
-            </label>
+            </div>
           ) : undefined
         }
         mobileActions={

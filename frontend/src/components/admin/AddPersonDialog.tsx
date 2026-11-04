@@ -96,6 +96,9 @@ export function AddPersonDialog({ open, onOpenChange, onCreated }: Props) {
               onChange={(e) => setName(e.target.value)}
               placeholder="First and last name"
               autoComplete="off"
+              // The dialog opens from "Add person"; starting in its first field is the dialog pattern
+              // (focus moves into the dialog), not focus stolen on page load.
+              // eslint-disable-next-line jsx-a11y/no-autofocus
               autoFocus
             />
           </FormField>
