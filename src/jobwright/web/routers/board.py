@@ -283,7 +283,7 @@ def _validate_move(to_stage: str, outcome: str | None) -> None:
         raise HTTPException(400, "outcome required when closing a job")
 
 
-def _apply_move(conn, url: str, body: MoveBody) -> tuple[str | None, bool]:
+def _apply_move(conn, url: str, body: MoveBody, label_source: str = "dismiss") -> tuple[str | None, bool]:
     """One human lane change, exactly as the board does it; does not commit.
 
     Shared by the single move and the bulk endpoint so both follow the same
@@ -336,7 +336,7 @@ def _apply_move(conn, url: str, body: MoveBody) -> tuple[str | None, bool]:
                 and body.outcome == "not_interested":
             from jobwright.labels import record_label
 
-            record_label(url, 2, rationale=reason_text, reasons=reasons, source="dismiss", conn=conn, commit=False)
+            record_label(url, 2, rationale=reason_text, reasons=reasons, source=label_source, conn=conn, commit=False)
             labeled = True
     return from_stage, labeled
 
@@ -434,9 +434,9 @@ def bulk_jobs(body: BulkBody) -> dict:
             if conn.execute("SELECT 1 FROM jobs WHERE url = ?", (url,)).fetchone() is None:
                 results.append({"job_id": key, "ok": False, "error": "not_found"})
                 continue
-            from_stage, labeled = _apply_move(conn, url, move)
+            from_stage, labeled = _apply_move(conn, url, move, label_source="bulk_dismiss")
             cleared = False
-            if body.clear_dismiss_labels and body.action == "move" and _latest_label_source(conn, url) == "dismiss":
+            if body.clear_dismiss_labels and body.action == "move" and _latest_label_source(conn, url) in ("dismiss", "bulk_dismiss"):
                 from jobwright.labels import clear_label
 
                 clear_label(url, conn=conn, commit=False)

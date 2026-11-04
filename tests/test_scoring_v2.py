@@ -13,7 +13,7 @@ from jobwright.labels import EvalItem, build_eval_set, clear_label, label_histor
 from jobwright.scoring import matcher
 from jobwright.scoring.criteria import derive_criteria, load_criteria, parse_criteria, render_criteria
 from jobwright.scoring.evaluate import metrics
-from jobwright.scoring.examples import ExampleIndex, render_examples
+from jobwright.scoring.examples import Example, ExampleIndex, render_examples
 
 CRITERIA = {
     "summary": "Social impact program roles",
@@ -125,7 +125,7 @@ def _item(url, title, label, company="Org", rationale=""):
 
 
 def test_examples_leave_one_out_and_positive_floor():
-    items = [_item(f"n{i}", "Development Director fundraising", 0) for i in range(10)]
+    items = [_item(f"n{i}", "Development Director fundraising", 0, company=f"Org {i}") for i in range(10)]
     items += [_item("p1", "Program Officer grantmaking", 1), _item("p2", "CSR Program Manager", 1)]
     items.append(_item("self", "Development Director fundraising", 0, company="Same Org"))
     idx = ExampleIndex(items)
@@ -162,10 +162,43 @@ def test_label_snapshot_survives_prune(db):
 
 def test_eval_set_uses_implicit_board_signals(db):
     _job(db, "https://j/a", funnel_stage="applied")
-    _job(db, "https://j/c", funnel_stage="closed", board_updated_by="human")
+    _job(db, "https://j/c", funnel_stage="closed", board_updated_by="human", outcome="not_interested")
     _job(db, "https://j/b")
     labels = {i.url: (i.label, i.source) for i in build_eval_set(db)}
     assert labels == {"https://j/a": (1, "applied"), "https://j/c": (0, "closed_unapplied")}
+
+
+def test_only_not_interested_closes_count_as_implicit_negatives(db):
+    for outcome in ("withdrawn", "cancelled", "duplicate", "ghosted", None):
+        _job(db, f"https://j/{outcome}", funnel_stage="closed", board_updated_by="human", outcome=outcome)
+    _job(db, "https://j/no", funnel_stage="closed", board_updated_by="human", outcome="not_interested")
+    assert {i.url for i in build_eval_set(db)} == {"https://j/no"}
+
+
+def test_label_items_carry_reasons_and_source(db):
+    _job(db, "https://j/r")
+    record_label("https://j/r", 2, rationale="", reasons=["Too senior", "Wrong city"], source="bulk_dismiss", conn=db)
+    (item,) = build_eval_set(db)
+    assert item.reasons == ["Too senior", "Wrong city"] and item.label_source == "bulk_dismiss"
+    text = render_examples([Example(item, 1.0)])
+    assert "[reasons: Too senior, Wrong city]" in text
+
+
+def test_examples_cap_bulk_dismiss_and_dedupe_company_title():
+    def bulk(url, company):
+        it = _item(url, "Grants Manager nonprofit", 0, company=company)
+        it.label_source = "bulk_dismiss"
+        return it
+
+    items = [bulk(f"b{i}", f"Org {i}") for i in range(12)]
+    items += [_item(f"dup{i}", "Grants Manager nonprofit", 0, company="Same Org") for i in range(5)]
+    items += [_item(f"n{i}", f"Grants Officer {i}", 0, company=f"Other {i}") for i in range(8)]
+    items += [_item("p1", "Grants Lead", 1), _item("p2", "Grants Associate", 1, company="Org B")]
+    ex = ExampleIndex(items).query("Grants Manager nonprofit", "Someone", "", k=12)
+    assert len(ex) == 12
+    assert sum(e.item.label_source == "bulk_dismiss" for e in ex) == 3
+    assert sum(e.item.company == "Same Org" for e in ex) == 1
+    assert {"p1", "p2"} <= {e.item.url for e in ex}
 
 
 def test_metrics_precision_recall():
