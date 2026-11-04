@@ -7,7 +7,7 @@ daily brief.
 
 ## Why not `sites.yaml`
 
-`config/sites.yaml` is only read by `discovery/smartextract.py`, and smart-extract
+`config/sites.yaml` is only read by `discovery/smartextract/`, and smart-extract
 runs only when `DISCOVER_MODE=full` (one LLM planning call + a Playwright render
 per target). The daily brief runs `DISCOVER_MODE=fast`, so anything added to
 `sites.yaml` never reaches the daily digest. Adding boards there would look
