@@ -212,6 +212,8 @@ export type SettingsData = {
   searches: SettingsSearches
   resume_markdown: string
   has_resume_pdf: boolean
+  /** A resume PDF is on file but could not be read (e.g. no pages): upload a new one. */
+  resume_unreadable?: boolean
   resume_pdf_mtime: number | null
   cover_letter_examples: CoverLetterExample[]
 }

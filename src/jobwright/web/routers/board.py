@@ -291,16 +291,27 @@ def _apply_move(conn, url: str, body: MoveBody) -> tuple[str | None, int | None]
     rules: ``advance_funnel`` as ``human`` (the anti-clobber flag), apply stamps
     set or undone, lane position, close reason, and a "Not for me" label when
     the job was dismissed with reasons before applying and never rated.
-    Reopening a closed job clears its close reason (as ``advance_funnel``
-    clears the outcome). Moving to Applied marks it applied by hand only if it
+    Reopening a closed job clears its outcome and close reason (``advance_funnel``). Moving to Applied marks it applied by hand only if it
     was not applied already, so an agent apply keeps its flag.
     Returns ``(from_stage, label_id)``; ``label_id`` is the "Not for me" label
     this move recorded, if any.
     """
     applied_manually = None
+    restore_applied = False
     if body.to_stage == "applied":
-        prior = conn.execute("SELECT applied_at FROM jobs WHERE url = ?", (url,)).fetchone()
-        applied_manually = True if prior is None or prior["applied_at"] is None else None
+        prior = conn.execute(
+            "SELECT applied_at, undone_applied_at, undone_applied_manually FROM jobs WHERE url = ?", (url,)
+        ).fetchone()
+        if prior is not None and prior["applied_at"] is None and prior["undone_applied_at"]:
+            last = conn.execute(
+                "SELECT from_stage FROM stage_history WHERE job_url = ? ORDER BY id DESC LIMIT 1", (url,)
+            ).fetchone()
+            # Straight back to Applied (Undo / drag back): the original stamps return.
+            restore_applied = last is not None and last["from_stage"] == "applied"
+        if restore_applied:
+            applied_manually = bool(prior["undone_applied_manually"])
+        elif prior is None or prior["applied_at"] is None:
+            applied_manually = True
     try:
         from_stage = advance_funnel(
             url,
@@ -317,19 +328,21 @@ def _apply_move(conn, url: str, body: MoveBody) -> tuple[str | None, int | None]
     if body.to_stage == "applied":
         now = datetime.now(UTC).isoformat()
         conn.execute(
-            "UPDATE jobs SET applied_at = COALESCE(applied_at, ?), "
-            "apply_status = COALESCE(apply_status, 'applied') WHERE url = ?",
-            (now, url),
+            "UPDATE jobs SET applied_at = COALESCE(applied_at, CASE WHEN ? THEN undone_applied_at END, ?), "
+            "apply_status = COALESCE(apply_status, 'applied'), "
+            "undone_applied_at = NULL, undone_applied_manually = NULL WHERE url = ?",
+            (1 if restore_applied else 0, now, url),
         )
     elif from_stage == "applied" and body.to_stage in ("backlog", "prepare"):
-        # Human correcting an accidental "Applied": undo the apply stamps.
+        # Human correcting an accidental "Applied": undo the apply stamps, but
+        # keep them aside so moving straight back restores the original date
+        # (follow-up timing) and who applied.
         conn.execute(
-            "UPDATE jobs SET applied_at = NULL, applied_manually = 0, "
+            "UPDATE jobs SET undone_applied_at = applied_at, undone_applied_manually = applied_manually, "
+            "applied_at = NULL, applied_manually = 0, "
             "apply_status = CASE WHEN apply_status = 'applied' THEN NULL ELSE apply_status END WHERE url = ?",
             (url,),
         )
-    if from_stage == "closed" and body.to_stage != "closed":
-        conn.execute("UPDATE jobs SET close_reason = NULL WHERE url = ?", (url,))
     if body.position is not None:
         lane = [u for u in _lane_urls(conn, body.to_stage) if u != url]
         lane.insert(max(0, min(body.position, len(lane))), url)

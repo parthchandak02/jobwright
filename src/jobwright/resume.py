@@ -96,6 +96,11 @@ def save_pdf_with_markdown(data: bytes, pdf_path: Path, md_path: Path) -> str:
     return text
 
 
+class ResumeUnreadableError(FileNotFoundError):
+    """resume/base.pdf exists but can't be converted. Subclasses FileNotFoundError
+    so every "no resume yet" handler also covers a broken file."""
+
+
 def load_resume_text() -> str:
     """Return markdown for scoring/tailoring.
 
@@ -106,7 +111,13 @@ def load_resume_text() -> str:
     md_path = Path(config.RESUME_MD_PATH)
 
     if pdf.is_file():
-        return cached_pdf_markdown(pdf, md_path)
+        try:
+            return cached_pdf_markdown(pdf, md_path)
+        except Exception as exc:  # noqa: BLE001 - pymupdf raises many types (IndexError on 0 pages)
+            log.warning("could not convert resume PDF %s: %s", pdf, exc)
+            raise ResumeUnreadableError(
+                f"The resume PDF at {pdf} could not be read. Upload a new copy."
+            ) from exc
 
     if md_path.is_file():
         return md_path.read_text(encoding="utf-8")

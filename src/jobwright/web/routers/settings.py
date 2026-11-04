@@ -9,6 +9,7 @@ Reads and writes the same files the daily pipeline consumes:
 from __future__ import annotations
 
 import json
+import logging
 import re
 from pathlib import Path
 from typing import Annotated, Any
@@ -22,6 +23,7 @@ from jobwright import config
 from jobwright.onboarding import PROFILE_SECTIONS, accept_patterns, allowed_profile_fields
 from jobwright.resume import (
     PdfUploadError,
+    ResumeUnreadableError,
     cached_pdf_markdown,
     load_resume_text,
     read_upload,
@@ -30,6 +32,8 @@ from jobwright.resume import (
 from jobwright.users import get_user
 from jobwright.web.session import current_user_id
 from jobwright.web.txguard import TxGuardRoute
+
+log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/settings", tags=["settings"], route_class=TxGuardRoute)
 
@@ -80,8 +84,12 @@ def _write_searches(data: dict) -> None:
 def _base_materials() -> dict:
     """Base resume and cover letter samples (what the job drawer shows)."""
     resume_markdown = ""
+    resume_unreadable = False
     try:
         resume_markdown = load_resume_text()
+    except ResumeUnreadableError:
+        # A broken PDF must not take Settings down; the page asks for a new copy.
+        resume_unreadable = True
     except FileNotFoundError:
         pass
 
@@ -90,6 +98,8 @@ def _base_materials() -> dict:
     return {
         "resume_markdown": resume_markdown,
         "has_resume_pdf": has_pdf,
+        # PDF on file but it can't be converted (e.g. zero pages): ask for a new one.
+        "resume_unreadable": resume_unreadable,
         "resume_pdf_mtime": int(pdf_path.stat().st_mtime) if has_pdf else None,
         "cover_letter_examples": _list_cover_letter_examples(),
     }
@@ -260,7 +270,8 @@ def _list_cover_letter_examples() -> list[dict[str, Any]]:
         markdown = ""
         try:
             markdown = cached_pdf_markdown(path, path.with_suffix(".md"))
-        except (OSError, ValueError, RuntimeError):
+        except Exception:  # noqa: BLE001 - one broken example must not break the list
+            log.warning("could not read cover letter example %s", path, exc_info=True)
             markdown = ""
         items.append(
             {

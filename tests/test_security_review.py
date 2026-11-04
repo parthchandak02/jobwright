@@ -410,3 +410,70 @@ def test_corrupt_cover_letter_upload_leaves_nothing_behind(api_client, tmp_path)
                          files={"file": ("Acme.pdf", _pdf_bytes("Dear Acme team"), "application/pdf")})
     assert res.status_code == 200, res.text
     assert sorted(p.name for p in examples.iterdir()) == ["Acme.md", "Acme.pdf"]
+
+
+# --- QA follow-ups: apply stamps survive Undo; reopen clears close reason;
+#     an unreadable resume doesn't break Settings ----------------------------
+
+
+def _set_applied(job_id: str, at: str, manual: int) -> None:
+    from jobwright.database import get_connection
+
+    conn = get_connection()
+    conn.execute("UPDATE jobs SET applied_at = ?, applied_manually = ?, apply_status = 'applied' WHERE job_id = ?",
+                 (at, manual, job_id))
+    conn.commit()
+
+
+def test_single_move_applied_and_back_keeps_original_stamps(api_client):
+    jid = _bulk_add("drag", stage="applied")
+    _set_applied(jid, "2026-09-01T00:00:00+00:00", 0)
+    assert api_client.post(f"/api/jobs/{jid}/move", json={"to_stage": "backlog"}).status_code == 200
+    row = _job_row(jid)
+    assert row["applied_at"] is None and row["apply_status"] is None
+    assert api_client.post(f"/api/jobs/{jid}/move", json={"to_stage": "applied"}).status_code == 200
+    row = _job_row(jid)
+    assert row["applied_at"] == "2026-09-01T00:00:00+00:00" and row["applied_manually"] == 0
+    assert row["apply_status"] == "applied"
+
+
+def test_bulk_undo_of_applied_to_backlog_keeps_original_date(api_client):
+    jid = _bulk_add("bulkdrag", stage="applied")
+    _set_applied(jid, "2026-09-02T00:00:00+00:00", 1)
+    api_client.post("/api/jobs/bulk", json={"job_ids": [jid], "action": "move", "stage": "backlog"})
+    # Undo exactly as an older client would send it (no restore payload).
+    api_client.post("/api/jobs/bulk", json={"job_ids": [jid], "action": "move", "stage": "applied"})
+    row = _job_row(jid)
+    assert row["applied_at"] == "2026-09-02T00:00:00+00:00" and row["applied_manually"] == 1
+
+
+def test_later_fresh_apply_gets_a_new_date(api_client):
+    jid = _bulk_add("fresh", stage="applied")
+    _set_applied(jid, "2026-09-03T00:00:00+00:00", 1)
+    api_client.post(f"/api/jobs/{jid}/move", json={"to_stage": "backlog"})
+    api_client.post(f"/api/jobs/{jid}/move", json={"to_stage": "prepare"})
+    api_client.post(f"/api/jobs/{jid}/move", json={"to_stage": "applied"})
+    assert _job_row(jid)["applied_at"] != "2026-09-03T00:00:00+00:00"
+
+
+def test_reopen_clears_close_reason_so_later_close_is_not_stale(api_client):
+    jid = _bulk_add("stale")
+    api_client.post("/api/jobs/bulk", json={"job_ids": [jid], "action": "close", "reasons": ["Pay too low"]})
+    assert _job_row(jid)["close_reason"] == "Pay too low"
+    # Single-move reopen (drawer) and a later close without reasons.
+    api_client.post(f"/api/jobs/{jid}/move", json={"to_stage": "backlog"})
+    assert _job_row(jid)["close_reason"] is None
+    api_client.post(f"/api/jobs/{jid}/move", json={"to_stage": "closed", "outcome": "rejected"})
+    assert _job_row(jid)["close_reason"] is None
+
+
+def test_zero_page_resume_does_not_break_settings(api_client, tmp_path):
+    resume_dir = tmp_path / "users" / "testdash" / "resume"
+    resume_dir.mkdir(parents=True, exist_ok=True)
+    (resume_dir / "base.pdf").write_bytes(b"%PDF-1.4\n%%EOF\n")
+    res = api_client.get("/api/settings")
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["has_resume_pdf"] is True and body["resume_unreadable"] is True
+    assert body["resume_markdown"] == ""
+    assert api_client.get("/api/settings/materials").status_code == 200

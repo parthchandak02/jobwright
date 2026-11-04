@@ -100,6 +100,11 @@ export function DocumentsTab({ data, reload, onProfileChanged }: Props) {
           e.target.value = ''
         }}
       />
+      {data.resume_unreadable ? (
+        <p role="alert" className="text-destructive text-sm">
+          We couldn’t read your resume PDF. Replace it with a new copy so your matches and letters use it.
+        </p>
+      ) : null}
       <ProfileMaterials
         resume={{
           pdfUrl: data.has_resume_pdf ? `/api/settings/resume.pdf?t=${data.resume_pdf_mtime ?? 0}` : null,

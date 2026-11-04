@@ -425,6 +425,10 @@ _ALL_COLUMNS: dict[str, str] = {
     "outcome": "TEXT",
     "source": "TEXT DEFAULT 'discovered'",
     "applied_manually": "INTEGER DEFAULT 0",
+    # Apply stamps set aside when a human moves a job out of Applied, so moving
+    # it straight back (Undo, drag back) restores the original date and flag.
+    "undone_applied_at": "TEXT",
+    "undone_applied_manually": "INTEGER",
     "notes": "TEXT",
     "follow_up_at": "TEXT",
     "followed_up_at": "TEXT",
@@ -609,6 +613,9 @@ def advance_funnel(
     elif to_stage != "closed":
         # Clear stale outcome when moving out of Closed.
         sets.append("outcome = NULL")
+    if from_stage == "closed" and to_stage != "closed":
+        # ...and the close reason, so a later close without reasons isn't stale.
+        sets.append("close_reason = NULL")
 
     params.append(url)
     conn.execute(
