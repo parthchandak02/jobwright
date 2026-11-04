@@ -119,7 +119,8 @@ class GuestClient:
         self._lock = threading.Lock()
         self._details: dict[str, str | None] = {}
         self.requests = 0
-        self.rate_limited = 0
+        self.rate_limited = 0  # every 429/999 seen (most are retried successfully)
+        self.gave_up = 0  # requests abandoned after max_retries 429/999s
         self.descriptions_fetched = 0
         self._http = httpx.Client(
             headers=_HEADERS, timeout=15.0, follow_redirects=True,
@@ -144,6 +145,8 @@ class GuestClient:
                     self.rate_limited += 1
                 pace.throttled()
                 if attempt == self.max_retries:
+                    with self._lock:
+                        self.gave_up += 1
                     raise RateLimited(url)
                 self._sleep(self.backoff * (2 ** attempt))
                 continue

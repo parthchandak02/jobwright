@@ -314,6 +314,7 @@ def _run_one_search(
     ]
 
     all_dfs = []
+    site_errors: dict[str, int] = {}
 
     if has_linkedin_guest:
         try:
@@ -344,6 +345,7 @@ def _run_one_search(
             all_dfs.append(linkedin.to_dataframe(rows))
         except Exception as e:
             log.error("[%s] (linkedin): %s", label, e)
+            site_errors["linkedin"] = 1
 
     # Run the remaining JobSpy sites with the original location
     if other_sites:
@@ -372,6 +374,7 @@ def _run_one_search(
             all_dfs.append(df)
         except Exception as e:
             log.error("[%s] (non-gd): %s", label, e)
+            site_errors["+".join(other_sites)] = 1
 
     # Run Glassdoor separately with simplified location
     if has_glassdoor:
@@ -393,12 +396,13 @@ def _run_one_search(
             all_dfs.append(gd_df)
         except Exception as e:
             log.error("[%s] (glassdoor): %s", label, e)
+            site_errors["glassdoor"] = 1
 
     if not all_dfs:
         log.error("[%s]: all sites failed", label)
         return {
             "new": 0, "existing": 0, "skipped_known": 0, "errors": 1,
-            "filtered": 0, "total": 0, "label": label,
+            "filtered": 0, "total": 0, "label": label, "site_errors": site_errors,
         }
 
     import pandas as pd
@@ -411,7 +415,7 @@ def _run_one_search(
         log.info("[%s] 0 results", label)
         return {
             "new": 0, "existing": 0, "skipped_known": 0, "errors": 0,
-            "filtered": 0, "total": 0, "label": label,
+            "filtered": 0, "total": 0, "label": label, "site_errors": site_errors,
         }
 
     # Filter by location before storing
@@ -442,6 +446,7 @@ def _run_one_search(
         "filtered": filtered,
         "total": before,
         "label": label,
+        "site_errors": site_errors,
     }
 
 
@@ -615,6 +620,11 @@ def _full_crawl(
     total_skipped = 0
     total_errors = 0
     completed = 0
+    site_errors: dict[str, int] = {}
+    li_before = None
+    if li_rejects is not None:
+        li = linkedin.shared_client()
+        li_before = (li.requests, li.rate_limited, li.gave_up)
     t0 = time.time()
 
     search_args = (
@@ -630,6 +640,8 @@ def _full_crawl(
         total_existing += result["existing"]
         total_skipped += result.get("skipped_known", 0)
         total_errors += result["errors"]
+        for site, n in (result.get("site_errors") or {}).items():
+            site_errors[site] = site_errors.get(site, 0) + n
 
     def _progress() -> None:
         if completed % 5 == 0 or completed == len(searches):
@@ -666,18 +678,24 @@ def _full_crawl(
         "Full crawl complete: %d new | %d dupes (%d skipped known) | %d errors | %d total in DB [%.0fs]",
         total_new, total_existing, total_skipped, total_errors, db_total, elapsed,
     )
+    li_stats = None
     if li_rejects is not None:
         li = linkedin.shared_client()
         log.info(
-            "LinkedIn guest client: %d requests (%d descriptions), %d rate-limited (429)",
-            li.requests, li.descriptions_fetched, li.rate_limited,
+            "LinkedIn guest client: %d requests (%d descriptions), %d rate-limited (429), %d given up",
+            li.requests, li.descriptions_fetched, li.rate_limited, li.gave_up,
         )
+        b_req, b_rl, b_gave = li_before or (0, 0, 0)
+        li_stats = {"requests": li.requests - b_req, "throttled": li.rate_limited - b_rl,
+                    "rate_limited": li.gave_up - b_gave}
 
     return {
         "new": total_new,
         "existing": total_existing,
         "skipped_known": total_skipped,
         "errors": total_errors,
+        "site_errors": site_errors,
+        "linkedin": li_stats,
         "db_total": db_total,
         "queries": len(searches),
         "workers": effective_workers,
