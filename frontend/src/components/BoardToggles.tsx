@@ -10,7 +10,7 @@ export const BOARDS = [
 ] as const
 
 /** Boards discovery uses when none are saved (`discovery/jobspy.py`). */
-export const DEFAULT_BOARDS: readonly string[] = ['indeed', 'linkedin', 'zip_recruiter']
+export const DEFAULT_BOARDS: readonly string[] = ['indeed', 'linkedin']
 
 type Props = {
   value: string[]

@@ -85,12 +85,14 @@ location:
 # Country for Indeed/LinkedIn/Google Jobs searches
 country: "USA"
 
-# JobSpy source boards (all available options shown)
+# JobSpy source boards (all available options shown). Without this list the
+# defaults are indeed + linkedin. A board that keeps answering 403 is skipped
+# for the rest of the run and, when blocked all run, for 3 days.
 boards:
   - indeed
   - linkedin
   - glassdoor
-  - zip_recruiter
+  # - zip_recruiter  # off by default: answers HTTP 403 to most requests
   - google
 
 # Search defaults

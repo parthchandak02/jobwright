@@ -69,7 +69,7 @@ flowchart TD
 
 | Feature | What it does |
 |---------|--------------|
-| Discovery | JobSpy boards (Indeed, LinkedIn, Glassdoor, ZipRecruiter, Google; default Indeed, LinkedIn, ZipRecruiter), 48 preconfigured Workday portals, curated impact / social-sector boards, and 26 direct career sites via smart extract in `DISCOVER_MODE=full` (the daily brief runs `fast`, which skips smart extract) |
+| Discovery | JobSpy boards (Indeed, LinkedIn, Glassdoor, ZipRecruiter, Google; default Indeed and LinkedIn; ZipRecruiter only when listed in `boards`, since it answers HTTP 403 to most requests; a board that keeps refusing is skipped for the rest of the run and, if blocked all run, for 3 days), 48 preconfigured Workday portals, curated impact / social-sector boards, and 26 direct career sites via smart extract in `DISCOVER_MODE=full` (the daily brief runs `fast`, which skips smart extract) |
 | Dedupe and tombstones | A cross-board `dedupe_key` (company, title, place) merges reposts; pruned or duplicate jobs are tombstoned so they never come back |
 | Scoring v2 | One structured call per job against your match rules plus the 12 most similar rated jobs; code caps a dealbreaker or bad location at 3, pay below your floor at 4, unknown location at 6 |
 | Daily list | One WhatsApp message per day with new jobs above your cutoff, a "worth a look" count just under it, and up to 3 due follow-ups |
@@ -207,12 +207,14 @@ A normal day for a job seeker:
 | `FIREWORKS_API_KEY` | none | LLM for score, tailor, cover |
 | `LLM_MODEL` | `accounts/fireworks/models/glm-5p3-flash` | Model for every stage |
 | `GEMINI_API_KEY`, `GEMINI_FALLBACK_MODEL` | none, `gemini-3.7-flash` | Fallback on empty responses |
-| `JOBWRIGHT_SCORE_WORKERS` | 16 | Concurrent scoring calls |
+| `JOBWRIGHT_SCORE_WORKERS` | 16 | Concurrent scoring calls (halved on a rate limit, then recovers) |
+| `JOBWRIGHT_LLM_STRUCTURED_ATTEMPTS` | 6 | Attempts per scoring call on 429/5xx (backoff honors Retry-After, max 60s) |
 | `JOBWRIGHT_REASONING_T1` | `low` | Reasoning effort for the scoring model |
 | `LLM_ESCALATION_MODEL` | off | Opt-in stronger model for borderline jobs |
 | `JOBWRIGHT_SCORER` | `v2` | `v1` restores the legacy scorer |
 | `JOBWRIGHT_BRIEF_MAX_AGE_DAYS` | 7 | Only jobs discovered this recently are sent |
 | `DISCOVER_MODE` | `fast` | `full` adds smart extract of career sites |
+| `JOBWRIGHT_SITE_BLOCK_THRESHOLD`, `JOBWRIGHT_SITE_COOLDOWN_DAYS` | 3, 3 | Blocked responses in a row before a job board is skipped for the run; days a board blocked all run sits out before one probe |
 | `JOBWRIGHT_AUTH_MODE` | `cloudflare` if `JOBWRIGHT_CF_TEAM_DOMAIN` is set, else `dev` | Dashboard auth |
 | `JOBWRIGHT_PUBLIC_BASE_URL` | `https://jobwright.parthchandak.info` | Base of the links in WhatsApp messages |
 | `JOBWRIGHT_BACKUP_DIR` | `~/jobwright-backups` | Nightly backups |

@@ -129,7 +129,9 @@ PM2 process names: `jobwright-api`, `jobwright-ui`, `jobwright-tunnel`.
 | `JOBWRIGHT_PUBLIC_BASE_URL` | Deep-link base for `jobwright notify` (default `https://jobwright.parthchandak.info`) |
 | `JOBWRIGHT_CORS_ORIGINS` | Comma-separated CORS origins for dashboard |
 | `DISCOVER_MODE` | `fast` (tier-1, skip smart-extract) or `full` |
-| `JOBWRIGHT_DISCOVER_BOARDS` | Restrict JobSpy boards without editing searches.yaml (e.g. `indeed`) |
+| `JOBWRIGHT_DISCOVER_BOARDS` | Restrict JobSpy boards without editing searches.yaml (e.g. `indeed`); defaults are indeed + linkedin |
+| `JOBWRIGHT_SITE_BLOCK_THRESHOLD` / `JOBWRIGHT_SITE_COOLDOWN_DAYS` | Board circuit breaker (3 blocked in a row skip it for the run) and cooldown after a fully blocked run (3 days, `logs/site_cooldown.json`) |
+| `JOBWRIGHT_LLM_STRUCTURED_ATTEMPTS` | Scoring-call attempts on 429/5xx (6) |
 | `JOBWRIGHT_DISCOVER_WORKERS` | JobSpy parallel worker cap (default 4) |
 | `JOBWRIGHT_LINKEDIN` / `JOBWRIGHT_LINKEDIN_INTERVAL` | LinkedIn discovery client: `guest` (default, `discovery/linkedin.py`) or `jobspy` rollback; fastest spacing between LinkedIn requests (default 0.5s, widens on 429) |
 | `JOBWRIGHT_WEB_RUN_ID` | Set by `/api/run` so CLI does not create a second registry row |

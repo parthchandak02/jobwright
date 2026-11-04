@@ -116,7 +116,7 @@ boards:
   - indeed
   - linkedin
   - glassdoor
-  - zip_recruiter
+  # - zip_recruiter  # off by default: answers HTTP 403 to most requests
   - google
 
 defaults:
