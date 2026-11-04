@@ -319,6 +319,15 @@ DESCRIPTION_SELECTORS = [
 ]
 
 
+def _absolute_href(page, href: str) -> str:
+    """Resolve a raw ``href`` attribute against the page so stored apply URLs are usable."""
+    try:
+        base = page.url
+    except Exception:  # noqa: BLE001 - fake/closed pages
+        return href
+    return urljoin(base, href) if base else href
+
+
 def extract_apply_url_deterministic(page) -> str | None:
     """Try known CSS patterns for apply buttons/links."""
     for sel in APPLY_SELECTORS:
@@ -327,7 +336,7 @@ def extract_apply_url_deterministic(page) -> str | None:
             if el:
                 href = el.get_attribute("href")
                 if href and href != "#":
-                    return href
+                    return _absolute_href(page, href)
                 tag = el.evaluate("el => el.tagName.toLowerCase()")
                 if tag == "button":
                     parent_href = el.evaluate("el => el.parentElement?.querySelector('a')?.href || null")
@@ -344,7 +353,7 @@ def extract_apply_url_deterministic(page) -> str | None:
             if "apply" in text and len(text) < 50:
                 href = link.get_attribute("href")
                 if href and href != "#" and "javascript:" not in href:
-                    return href
+                    return _absolute_href(page, href)
     except Exception:
         pass
 
