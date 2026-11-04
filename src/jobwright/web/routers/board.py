@@ -284,16 +284,23 @@ def _validate_move(to_stage: str, outcome: str | None) -> None:
         raise HTTPException(400, "outcome required when closing a job")
 
 
-def _apply_move(conn, url: str, body: MoveBody) -> tuple[str | None, bool]:
+def _apply_move(conn, url: str, body: MoveBody) -> tuple[str | None, int | None]:
     """One human lane change, exactly as the board does it; does not commit.
 
     Shared by the single move and the bulk endpoint so both follow the same
     rules: ``advance_funnel`` as ``human`` (the anti-clobber flag), apply stamps
     set or undone, lane position, close reason, and a "Not for me" label when
     the job was dismissed with reasons before applying and never rated.
-    Returns ``(from_stage, labeled)``.
+    Reopening a closed job clears its close reason (as ``advance_funnel``
+    clears the outcome). Moving to Applied marks it applied by hand only if it
+    was not applied already, so an agent apply keeps its flag.
+    Returns ``(from_stage, label_id)``; ``label_id`` is the "Not for me" label
+    this move recorded, if any.
     """
-    applied_manually = True if body.to_stage == "applied" else None
+    applied_manually = None
+    if body.to_stage == "applied":
+        prior = conn.execute("SELECT applied_at FROM jobs WHERE url = ?", (url,)).fetchone()
+        applied_manually = True if prior is None or prior["applied_at"] is None else None
     try:
         from_stage = advance_funnel(
             url,
@@ -321,11 +328,13 @@ def _apply_move(conn, url: str, body: MoveBody) -> tuple[str | None, bool]:
             "apply_status = CASE WHEN apply_status = 'applied' THEN NULL ELSE apply_status END WHERE url = ?",
             (url,),
         )
+    if from_stage == "closed" and body.to_stage != "closed":
+        conn.execute("UPDATE jobs SET close_reason = NULL WHERE url = ?", (url,))
     if body.position is not None:
         lane = [u for u in _lane_urls(conn, body.to_stage) if u != url]
         lane.insert(max(0, min(body.position, len(lane))), url)
         _save_lane_order(conn, body.to_stage, lane)
-    labeled = False
+    label_id = None
     if body.to_stage == "closed":
         reasons = [r.strip() for r in (body.reasons or []) if r and r.strip()]
         reason_text = (body.close_reason or "").strip() or ", ".join(reasons)
@@ -337,9 +346,10 @@ def _apply_move(conn, url: str, body: MoveBody) -> tuple[str | None, bool]:
                 and body.outcome == "not_interested":
             from jobwright.labels import record_label
 
-            record_label(url, 2, rationale=reason_text, reasons=reasons, source="dismiss", conn=conn, commit=False)
-            labeled = True
-    return from_stage, labeled
+            label_id = record_label(
+                url, 2, rationale=reason_text, reasons=reasons, source="dismiss", conn=conn, commit=False
+            )
+    return from_stage, label_id
 
 
 @router.post("/jobs/{url:path}/move")
@@ -366,6 +376,19 @@ def move_job(url: str, body: MoveBody) -> dict:
 BULK_MAX = 500
 
 
+class BulkRestore(BaseModel):
+    """What an Undo puts back for one job (values from before the bulk action)."""
+
+    # The dismiss label the bulk close recorded (its ``label_id``): cleared so
+    # the scorer is not trained on a decision the person took back.
+    label_id: int | None = None
+    # Re-closing: the close reason the job had.
+    close_reason: str | None = None
+    # Back to Applied: the original apply stamps.
+    applied_at: str | None = None
+    applied_manually: bool | None = None
+
+
 class BulkBody(BaseModel):
     job_ids: list[str]
     # "move" = lane change to ``stage``; "close" = Closed with ``outcome``
@@ -375,19 +398,23 @@ class BulkBody(BaseModel):
     outcome: str | None = None
     reasons: list[str] | None = None
     note: str | None = None
-    # Undo of a bulk "Not for me": also clear the dismiss label that close
-    # recorded (append-only: a "cleared" marker row), so the scorer is not
-    # trained on a decision the person took back.
-    clear_dismiss_labels: bool = False
+    # Undo of an earlier bulk action, per job id: what to put back besides the lane.
+    restore: dict[str, BulkRestore] | None = None
 
 
-def _latest_label_source(conn, url: str) -> str | None:
+def _clear_own_dismiss_label(conn, url: str, label_id: int) -> bool:
+    """Clear the "Not for me" label a bulk close recorded, only if it is still
+    the job's latest label (append-only: a "cleared" marker row). A rating made
+    since, or a label someone else recorded, is left alone."""
     row = conn.execute(
-        "SELECT source, verdict FROM score_labels WHERE job_url = ? ORDER BY id DESC LIMIT 1", (url,)
+        "SELECT id, source, verdict FROM score_labels WHERE job_url = ? ORDER BY id DESC LIMIT 1", (url,)
     ).fetchone()
-    if row is None or row["verdict"] == "cleared":
-        return None
-    return row["source"]
+    if row is None or row["id"] != label_id or row["source"] != "dismiss" or row["verdict"] == "cleared":
+        return False
+    from jobwright.labels import clear_label
+
+    clear_label(url, conn=conn, commit=False)
+    return True
 
 
 @router.post("/jobs/bulk")
@@ -435,19 +462,29 @@ def bulk_jobs(body: BulkBody) -> dict:
             if conn.execute("SELECT 1 FROM jobs WHERE url = ?", (url,)).fetchone() is None:
                 results.append({"job_id": key, "ok": False, "error": "not_found"})
                 continue
-            from_stage, labeled = _apply_move(conn, url, move)
+            from_stage, label_id = _apply_move(conn, url, move)
+            job_id = job_id_for_url(url)
+            item = (body.restore or {}).get(key) or (body.restore or {}).get(job_id)
             cleared = False
-            if body.clear_dismiss_labels and body.action == "move" and _latest_label_source(conn, url) == "dismiss":
-                from jobwright.labels import clear_label
-
-                clear_label(url, conn=conn, commit=False)
-                cleared = True
+            if item is not None:
+                if item.label_id is not None and body.action == "move":
+                    cleared = _clear_own_dismiss_label(conn, url, item.label_id)
+                if to_stage == "closed" and item.close_reason:
+                    conn.execute("UPDATE jobs SET close_reason = ? WHERE url = ?", (item.close_reason, url))
+                if to_stage == "applied" and item.applied_at:
+                    conn.execute(
+                        "UPDATE jobs SET applied_at = ?, applied_manually = COALESCE(?, applied_manually) "
+                        "WHERE url = ?",
+                        (item.applied_at, None if item.applied_manually is None else int(item.applied_manually),
+                         url),
+                    )
             results.append({
-                "job_id": job_id_for_url(url),
+                "job_id": job_id,
                 "ok": True,
                 "from_stage": from_stage,
                 "to_stage": to_stage,
-                "labeled": labeled,
+                "labeled": label_id is not None,
+                "label_id": label_id,
                 "label_cleared": cleared,
             })
             done.append(url)

@@ -1,12 +1,33 @@
 import { useCallback, useState } from 'react'
 import { toast } from 'sonner'
-import { bulkJobs, type BulkRequest, type BulkResponse, type JobCard, STAGE_LABELS } from '@/lib/api'
+import {
+  bulkJobs,
+  type BulkRequest,
+  type BulkRestore,
+  type BulkResponse,
+  type BulkResult,
+  type JobCard,
+  STAGE_LABELS,
+} from '@/lib/api'
 import { errorMessage } from '@/lib/utils'
 
 export type BulkClose = { outcome: string; reasons: string[]; note: string }
 
 function plural(n: number) {
   return `${n} ${n === 1 ? 'job' : 'jobs'}`
+}
+
+/** What Undo puts back for one job besides its lane (only what the bulk action changed). */
+function restoreFor(r: BulkResult, prev: JobCard | undefined, wasClose: boolean): BulkRestore | null {
+  const out: BulkRestore = {}
+  // Only the label this bulk close recorded, never a rating made some other way.
+  if (wasClose && r.from_stage !== 'closed' && r.label_id != null) out.label_id = r.label_id
+  if (r.from_stage === 'closed' && prev?.close_reason) out.close_reason = prev.close_reason
+  if (r.from_stage === 'applied' && prev?.applied_at) {
+    out.applied_at = prev.applied_at
+    out.applied_manually = !!prev.applied_manually
+  }
+  return Object.keys(out).length ? out : null
 }
 
 /** One undo request per lane (and outcome, for jobs that were already closed). */
@@ -22,10 +43,12 @@ export function undoRequests(res: BulkResponse, before: Map<string, JobCard>, wa
       req =
         r.from_stage === 'closed'
           ? { job_ids: [], action: 'close', outcome }
-          : { job_ids: [], action: 'move', stage: r.from_stage, clear_dismiss_labels: wasClose }
+          : { job_ids: [], action: 'move', stage: r.from_stage }
       groups.set(key, req)
     }
     req.job_ids.push(r.job_id)
+    const restore = restoreFor(r, prev, wasClose)
+    if (restore) req.restore = { ...req.restore, [r.job_id]: restore }
   }
   return [...groups.values()]
 }
@@ -33,7 +56,8 @@ export function undoRequests(res: BulkResponse, before: Map<string, JobCard>, wa
 /**
  * Bulk move / close for the table selection. The server's cards are patched into
  * the board (`onCardsChanged`), and every action gets an Undo toast that puts each
- * job back in its old lane (clearing the "Not for me" label a bulk close recorded).
+ * job back in its old lane (clearing only the "Not for me" labels that bulk close recorded,
+ * and restoring close reasons and apply stamps).
  */
 export function useBulkActions(onCardsChanged: ((cards: JobCard[]) => void) | undefined, onDone: () => void) {
   const [busy, setBusy] = useState(false)

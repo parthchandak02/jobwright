@@ -219,3 +219,127 @@ def test_manual_job_rejects_non_http_urls(api_client, bad):
 def test_manual_job_accepts_http_url(api_client):
     res = api_client.post("/api/jobs", json={"url": "https://example.com/fine", "title": "Fine"})
     assert res.status_code == 200, res.text
+
+
+# --- M1: eval / rescore are admin-only --------------------------------------
+
+
+@pytest.mark.parametrize("path", ["/api/quality/eval", "/api/quality/rescore"])
+def test_quality_runs_are_admin_only(api_env, monkeypatch, path):
+    client, h, _ = api_env
+    spawned = []
+    monkeypatch.setattr("jobwright.web.routers.runs.spawn_logged_run",
+                        lambda **kw: spawned.append(kw) or {"run_id": "r1"})
+    uid = _onboard(client, h, "eve@example.com", "Eve")
+    client.cookies.set("jobwright_user", uid)
+    assert client.post(path, headers=h("eve@example.com")).status_code == 403
+    assert spawned == []
+    res = client.post(path, headers=h("boss@example.com"))
+    assert res.status_code == 200, res.text
+    assert spawned and spawned[0]["user_id"] == uid
+
+
+# --- M2 / L4: bulk Undo restores exactly what the bulk action changed --------
+
+
+def _bulk_add(slug: str, stage: str = "backlog") -> str:
+    from jobwright.database import get_connection, insert_manual_job, job_id_for_url
+
+    url = f"https://example.com/undo-{slug}"
+    insert_manual_job(url, title=f"Role {slug}", company="ExampleCo", funnel_stage=stage)
+    conn = get_connection()
+    conn.execute("UPDATE jobs SET fit_score = 6, board_updated_by = 'agent' WHERE url = ?", (url,))
+    conn.commit()
+    return job_id_for_url(url)
+
+
+def _job_row(job_id: str):
+    from jobwright.database import get_connection
+
+    return get_connection().execute("SELECT * FROM jobs WHERE job_id = ?", (job_id,)).fetchone()
+
+
+def _verdicts(job_id: str) -> list[str]:
+    from jobwright.database import get_connection
+
+    rows = get_connection().execute("SELECT verdict FROM score_labels WHERE job_id = ? ORDER BY id", (job_id,))
+    return [r[0] for r in rows]
+
+
+def test_bulk_undo_only_clears_the_label_it_was_given(api_client):
+    from jobwright.database import get_connection
+    from jobwright.labels import record_label
+
+    a = _bulk_add("mine")
+    b = _bulk_add("other")
+    res = api_client.post("/api/jobs/bulk", json={"job_ids": [a, b], "action": "close", "reasons": ["Pay"]}).json()
+    ids = {r["job_id"]: r["label_id"] for r in res["results"]}
+    assert all(isinstance(v, int) for v in ids.values())
+    # Someone else records a newer dismiss on b before the Undo lands.
+    url_b = _job_row(b)["url"]
+    record_label(url_b, 2, rationale="later", source="dismiss", conn=get_connection())
+    undo = api_client.post(
+        "/api/jobs/bulk",
+        json={"job_ids": [a, b], "action": "move", "stage": "backlog",
+              "restore": {a: {"label_id": ids[a]}, b: {"label_id": ids[b]}}},
+    ).json()
+    cleared = {r["job_id"]: r["label_cleared"] for r in undo["results"]}
+    assert cleared == {a: True, b: False}
+    assert _verdicts(a) == ["not_relevant", "cleared"]
+    assert _verdicts(b) == ["not_relevant", "not_relevant"]
+    # A label id that is not this job's latest is never cleared (old clients sent no ids).
+    c = _bulk_add("plain")
+    api_client.post("/api/jobs/bulk", json={"job_ids": [c], "action": "close", "reasons": ["x"]})
+    out = api_client.post("/api/jobs/bulk", json={"job_ids": [c], "action": "move", "stage": "backlog",
+                                                   "restore": {c: {"label_id": ids[a]}}}).json()
+    assert out["results"][0]["label_cleared"] is False
+
+
+def test_bulk_close_undo_keeps_agent_apply_flag(api_client):
+    from jobwright.database import get_connection
+
+    jid = _bulk_add("agent", stage="applied")
+    conn = get_connection()
+    conn.execute("UPDATE jobs SET applied_at = '2026-10-01T00:00:00+00:00', applied_manually = 0 WHERE job_id = ?",
+                 (jid,))
+    conn.commit()
+    api_client.post("/api/jobs/bulk", json={"job_ids": [jid], "action": "close", "outcome": "rejected"})
+    api_client.post("/api/jobs/bulk", json={"job_ids": [jid], "action": "move", "stage": "applied"})
+    row = _job_row(jid)
+    assert row["funnel_stage"] == "applied"
+    assert row["applied_manually"] == 0 and row["applied_at"] == "2026-10-01T00:00:00+00:00"
+
+
+def test_bulk_move_undo_restores_apply_stamps(api_client):
+    from jobwright.database import get_connection
+
+    jid = _bulk_add("stamps", stage="applied")
+    conn = get_connection()
+    conn.execute("UPDATE jobs SET applied_at = '2026-10-02T00:00:00+00:00', applied_manually = 0 WHERE job_id = ?",
+                 (jid,))
+    conn.commit()
+    api_client.post("/api/jobs/bulk", json={"job_ids": [jid], "action": "move", "stage": "backlog"})
+    assert _job_row(jid)["applied_at"] is None
+    api_client.post("/api/jobs/bulk", json={
+        "job_ids": [jid], "action": "move", "stage": "applied",
+        "restore": {jid: {"applied_at": "2026-10-02T00:00:00+00:00", "applied_manually": False}},
+    })
+    row = _job_row(jid)
+    assert row["applied_at"] == "2026-10-02T00:00:00+00:00" and row["applied_manually"] == 0
+
+
+def test_bulk_reopen_clears_close_reason_and_undo_restores_it(api_client):
+    jid = _bulk_add("reason")
+    api_client.post("/api/jobs/bulk", json={"job_ids": [jid], "action": "close", "outcome": "rejected",
+                                            "note": "Too far"})
+    assert _job_row(jid)["close_reason"] == "Too far"
+    api_client.post("/api/jobs/bulk", json={"job_ids": [jid], "action": "move", "stage": "backlog"})
+    row = _job_row(jid)
+    assert row["close_reason"] is None and row["outcome"] is None
+    # Undo of the reopen: closed again with the reason it had, and no new label.
+    before = _verdicts(jid)
+    api_client.post("/api/jobs/bulk", json={"job_ids": [jid], "action": "close", "outcome": "rejected",
+                                            "restore": {jid: {"close_reason": "Too far"}}})
+    row = _job_row(jid)
+    assert row["close_reason"] == "Too far" and row["outcome"] == "rejected"
+    assert _verdicts(jid) == before

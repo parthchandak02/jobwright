@@ -143,10 +143,12 @@ def test_bulk_undo_restores_stage_and_clears_dismiss_label(api_client):
     by_stage: dict[str, list[str]] = {}
     for r in results:
         by_stage.setdefault(r["from_stage"], []).append(r["job_id"])
+    label_ids = {r["job_id"]: r["label_id"] for r in results}
     for stage, ids in by_stage.items():
         res = api_client.post(
             "/api/jobs/bulk",
-            json={"job_ids": ids, "action": "move", "stage": stage, "clear_dismiss_labels": True},
+            json={"job_ids": ids, "action": "move", "stage": stage,
+                  "restore": {i: {"label_id": label_ids[i]} for i in ids}},
         )
         assert res.status_code == 200, res.text
         assert all(r["label_cleared"] for r in res.json()["results"])
@@ -161,9 +163,10 @@ def test_bulk_undo_restores_stage_and_clears_dismiss_label(api_client):
 def test_bulk_undo_keeps_hand_ratings(api_client):
     a = _add("a")
     api_client.patch(f"/api/jobs/{a}", json={"user_fit_score": 3, "user_score_reasons": ["too senior"]})
-    api_client.post("/api/jobs/bulk", json={"job_ids": [a], "action": "close", "reasons": ["x"]})
+    closed = api_client.post("/api/jobs/bulk", json={"job_ids": [a], "action": "close", "reasons": ["x"]}).json()
+    assert closed["results"][0]["label_id"] is None
     res = api_client.post(
-        "/api/jobs/bulk", json={"job_ids": [a], "action": "move", "stage": "backlog", "clear_dismiss_labels": True}
+        "/api/jobs/bulk", json={"job_ids": [a], "action": "move", "stage": "backlog", "restore": {a: {}}}
     )
     assert res.json()["results"][0]["label_cleared"] is False
     assert _row(a)["user_fit_score"] == 3

@@ -622,8 +622,18 @@ export type BulkRequest = {
   outcome?: string
   reasons?: string[]
   note?: string
-  /** Undo of a bulk "Not for me": also clear the dismiss label it recorded. */
-  clear_dismiss_labels?: boolean
+  /** Undo of an earlier bulk action: per job id, what to put back besides the lane. */
+  restore?: Record<string, BulkRestore>
+}
+
+export type BulkRestore = {
+  /** The "Not for me" label the bulk close recorded; cleared only if it is still the latest. */
+  label_id?: number
+  /** Re-closing: the close reason the job had. */
+  close_reason?: string
+  /** Back to Applied: the original apply stamps. */
+  applied_at?: string
+  applied_manually?: boolean
 }
 
 export type BulkResult = {
@@ -632,6 +642,8 @@ export type BulkResult = {
   from_stage?: string | null
   to_stage?: string
   labeled?: boolean
+  /** Id of the "Not for me" label this close recorded (null when none). */
+  label_id?: number | null
   label_cleared?: boolean
   error?: string
 }

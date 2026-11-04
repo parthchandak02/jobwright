@@ -12,7 +12,7 @@ from pydantic import BaseModel
 from jobwright import config
 from jobwright.database import get_connection
 from jobwright.web.jobkeys import resolve_job_key
-from jobwright.web.session import current_user_id
+from jobwright.web.session import current_user_id, require_admin
 from jobwright.web.txguard import TxGuardRoute
 
 router = APIRouter(prefix="/api", tags=["quality"], route_class=TxGuardRoute)
@@ -185,16 +185,20 @@ def quality(request: Request) -> dict:
 
 @router.post("/quality/eval")
 def start_eval(request: Request) -> dict:
+    """Admin only: spends LLM calls on the active profile (the page hides it for others)."""
     from jobwright.web.routers.runs import spawn_logged_run
 
+    require_admin(request)
     uid = current_user_id(request)
     return spawn_logged_run(args=["eval"], user_id=uid, stages=["eval"], log_name="web_eval", kind="eval")
 
 
 @router.post("/quality/rescore")
 def start_rescore(request: Request) -> dict:
+    """Admin only: spends LLM calls on the active profile (the page hides it for others)."""
     from jobwright.web.routers.runs import spawn_logged_run
 
+    require_admin(request)
     uid = current_user_id(request)
     return spawn_logged_run(
         args=["rescore", "--scope", "active"], user_id=uid, stages=["rescore"], log_name="web_rescore",
