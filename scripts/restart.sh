@@ -101,6 +101,8 @@ build_frontend() {
   (
     cd frontend
     if command -v pnpm >/dev/null 2>&1; then
+      # Always sync to the lockfile so packages added since the last deploy are present.
+      pnpm install --frozen-lockfile
       pnpm build
     else
       ./node_modules/.bin/vite build
@@ -111,8 +113,17 @@ build_frontend() {
 health_check() {
   require_cmd curl
   echo "==> health check :${API_PORT}"
-  curl -sf "http://127.0.0.1:${API_PORT}/api/health"
-  echo
+  # The API needs a few seconds to boot after pm2 restarts it; retry before failing.
+  local attempt
+  for attempt in $(seq 1 30); do
+    if curl -sf "http://127.0.0.1:${API_PORT}/api/health"; then
+      echo
+      return 0
+    fi
+    sleep 1
+  done
+  echo "health check failed after 30s" >&2
+  return 1
 }
 
 cmd_tmux() {

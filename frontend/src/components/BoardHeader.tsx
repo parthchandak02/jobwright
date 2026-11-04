@@ -127,7 +127,7 @@ export function BoardHeader({
               </Button>
               <Button asChild size="sm" variant="secondary" className="max-md:hidden" title="Go through Backlog jobs one at a time">
                 <Link to="/review">
-                  <Layers /> Review <Badge variant="secondary">{reviewCount}</Badge>
+                  <Layers /> <span className="board-head-label">Review</span> <Badge variant="secondary">{reviewCount}</Badge>
                 </Link>
               </Button>
             </>

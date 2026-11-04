@@ -711,12 +711,15 @@
     .board-head-title {
       flex-shrink: 0;
     }
+    .board-head .run-progress-idle {
+      min-width: 0;
+    }
     .board-head > div {
       column-gap: 0.75rem;
     }
     .board-head-search {
       width: auto;
-      min-width: 7rem;
+      min-width: 10rem;
       max-width: 16rem;
       flex: 1 1 10rem;
     }

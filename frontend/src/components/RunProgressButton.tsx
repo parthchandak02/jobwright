@@ -38,6 +38,7 @@ export function RunProgressButton({
       style={prepare ? ({ '--lane': laneTone('prepare') } as CSSProperties) : undefined}
       className={cn(
         'relative min-w-[7.5rem] justify-start overflow-hidden',
+        !run.active && 'run-progress-idle',
         prepare && run.active && 'border-[color:var(--lane)]',
         className,
       )}
@@ -67,7 +68,8 @@ export function RunProgressButton({
       ) : (
         <>
           <Sparkles className={prepare ? 'text-[color:var(--lane)]' : undefined} />
-          {idleLabel}
+          {/* Folds to icon-only in the board header beside the docked job panel (index.css). */}
+          <span className="board-head-label">{idleLabel}</span>
         </>
       )}
     </Button>
