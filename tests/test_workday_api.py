@@ -141,9 +141,30 @@ def test_search_employer_page_cap_and_max_results(fake):
     assert len(jobs) == 30 and f.search_offsets == [0, 20]
 
 
-def test_search_employer_api_error_returns_what_it_has(fake):
+def test_search_employer_first_page_error_raises(fake):
     fake([_posting(1)], fail_search=True)
-    assert wd.search_employer("samplecorp", EMP, "pm") == []
+    with pytest.raises(OSError):
+        wd.search_employer("samplecorp", EMP, "pm")
+
+
+def test_search_employer_later_page_error_keeps_what_it_has(fake, monkeypatch):
+    f = fake([_posting(i) for i in range(45)])
+
+    def flaky(req, timeout=30):
+        if req.full_url == SEARCH_URL and json.loads(req.data)["offset"] >= 20:
+            raise OSError("HTTP Error 503")
+        return f(req, timeout)
+
+    monkeypatch.setattr(wd, "_urlopen", flaky)
+    jobs = wd.search_employer("samplecorp", EMP, "pm", location_filter=False)
+    assert len(jobs) == 20
+
+
+def test_workday_outage_is_counted_as_an_error(fake, search_cfg):
+    search_cfg("{}\n")
+    fake([_posting(0)], fail_search=True)
+    result = wd.scrape_employers("pm", EMPLOYERS, location_filter=False)
+    assert result["errors"] == 1 and result["new"] == 0
 
 
 def test_fetch_details_success_and_error(fake):

@@ -235,7 +235,11 @@ def search_employer(
             data = workday_search(employer, search_text, limit=page_size, offset=offset)
         except Exception as e:
             log.error("%s: API error at offset %d: %s", employer["name"], offset, e)
-            break
+            if offset == 0:
+                # Nothing fetched: surface it so the crawl counts an error and the
+                # brief report can see a Workday outage (instead of "0 errors").
+                raise
+            break  # keep the pages already fetched
 
         if total is None:
             total = data.get("total", 0)
