@@ -477,3 +477,96 @@ def test_zero_page_resume_does_not_break_settings(api_client, tmp_path):
     assert body["has_resume_pdf"] is True and body["resume_unreadable"] is True
     assert body["resume_markdown"] == ""
     assert api_client.get("/api/settings/materials").status_code == 200
+
+
+# --- M6: users.yaml read-modify-write is locked ------------------------------
+
+
+def test_concurrent_registry_writes_are_not_lost():
+    import threading
+
+    from jobwright import users as users_mod
+
+    users_mod.add_user("base", name="Base")
+    errors: list[BaseException] = []
+
+    def add(i: int) -> None:
+        try:
+            users_mod.add_user(f"u{i:02d}", name=f"User {i}")
+        except BaseException as exc:  # noqa: BLE001
+            errors.append(exc)
+
+    def bump(field: str, n: int) -> None:
+        try:
+            for k in range(n):
+                users_mod.update_user("base", **{field: f"{field}-{k}"})
+        except BaseException as exc:  # noqa: BLE001
+            errors.append(exc)
+
+    threads = [threading.Thread(target=add, args=(i,)) for i in range(16)]
+    threads += [threading.Thread(target=bump, args=("name", 15)), threading.Thread(target=bump, args=("notes", 15))]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(30)
+    assert errors == []
+    ids = {u.user_id for u in users_mod.list_users()}
+    assert {f"u{i:02d}" for i in range(16)} <= ids
+    base = users_mod.get_user("base")
+    assert base.name == "name-14" and base.notes == "notes-14"
+
+
+def test_update_user_only_writes_changed_fields(monkeypatch):
+    """A stale in-memory copy must never overwrite fields another writer changed."""
+    from jobwright import users as users_mod
+
+    users_mod.add_user("solo", name="Solo")
+    real_get = users_mod.get_user
+    stale = real_get("solo")
+    users_mod.update_user("solo", notes="from another process")
+    monkeypatch.setattr(users_mod, "get_user", lambda uid: stale if uid == "solo" else real_get(uid))
+    users_mod.update_user("solo", name="Renamed")
+    monkeypatch.setattr(users_mod, "get_user", real_get)
+    fresh = users_mod.get_user("solo")
+    assert fresh.name == "Renamed" and fresh.notes == "from another process"
+
+
+def test_registry_lock_is_reentrant():
+    from jobwright import users as users_mod
+
+    with users_mod.registry_lock():
+        users_mod.add_user("nested", name="Nested")
+        users_mod.update_user("nested", notes="ok")
+    assert users_mod.get_user("nested").notes == "ok"
+
+
+# --- L1: the welcome is sent once even when two saves race ------------------
+
+
+def test_concurrent_welcome_sends_once(tmp_path, monkeypatch):
+    import threading
+    import time
+    from types import SimpleNamespace
+
+    import jobwright.welcome as welcome
+
+    user = SimpleNamespace(user_id="w", name="Alex Rivera", whatsapp_target="whatsapp:120363999999999901@g.us",
+                           schedule="0 7 * * *")
+    monkeypatch.setattr("jobwright.users.get_user", lambda uid: user)
+    monkeypatch.setattr(welcome, "_marker_path", lambda uid: tmp_path / "logs" / "welcome_sent.json")
+    monkeypatch.setattr("jobwright.hermes_cron.hermes_dry_run", lambda: False)
+    monkeypatch.setattr("jobwright.ops.ops_target", lambda: "")
+    sent = []
+
+    def slow_send(msg, target):
+        time.sleep(0.05)
+        sent.append(target)
+
+    monkeypatch.setattr("jobwright.notify.send_via_hermes", slow_send)
+    threads = [threading.Thread(target=welcome.send_welcome, args=("w",)) for _ in range(5)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(5)
+    assert sent == [user.whatsapp_target]
+    assert (tmp_path / "logs" / "welcome_sent.json").exists()

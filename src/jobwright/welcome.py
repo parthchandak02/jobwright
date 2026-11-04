@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
@@ -63,15 +64,27 @@ def send_welcome(user_id: str) -> dict:
         return {"sent": False, "reason": "already welcomed"}
     if hermes_dry_run():
         return {"sent": False, "reason": "dry run"}
+    # Claim the marker atomically before sending, so two saves racing (API +
+    # admin PATCH, two workers) can't both send. Removed again if the send fails.
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        fd = os.open(marker, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+    except FileExistsError:
+        return {"sent": False, "reason": "already welcomed"}
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        fh.write(json.dumps({"at": datetime.now(timezone.utc).isoformat(), "target": user.whatsapp_target}))
     first = (user.name or "").split(" ")[0]
     try:
         send_via_hermes(welcome_message(first, user.schedule), user.whatsapp_target)
-    except Exception as exc:  # noqa: BLE001
+    except BaseException as exc:
+        try:
+            marker.unlink()
+        except FileNotFoundError:
+            pass
+        if not isinstance(exc, Exception):
+            raise
         log.warning("welcome for %s failed: %s", user_id, exc)
         return {"sent": False, "reason": f"send failed: {exc}"}
-    marker.parent.mkdir(parents=True, exist_ok=True)
-    marker.write_text(json.dumps({"at": datetime.now(timezone.utc).isoformat(), "target": user.whatsapp_target}),
-                      encoding="utf-8")
     target = ops_target()
     if target and target != user.whatsapp_target:
         try:

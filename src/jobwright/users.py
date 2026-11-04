@@ -7,9 +7,13 @@ Override: JOBWRIGHT_USERS_ROOT
 
 from __future__ import annotations
 
+import fcntl
 import os
 import re
 import tempfile
+import threading
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -139,6 +143,39 @@ def load_registry() -> dict[str, Any]:
     return data
 
 
+_lock_state = threading.local()
+_thread_lock = threading.RLock()
+
+
+@contextmanager
+def registry_lock() -> Iterator[None]:
+    """Serialize users.yaml read-modify-write across threads and processes.
+
+    flock on ``users.lock`` beside the registry (API, CLI and cron share it).
+    Re-entrant in one thread, so locked helpers can call each other. Always
+    re-read the registry inside the lock before changing it.
+    """
+    with _thread_lock:
+        depth = getattr(_lock_state, "depth", 0)
+        if depth:
+            _lock_state.depth = depth + 1
+            try:
+                yield
+            finally:
+                _lock_state.depth -= 1
+            return
+        USERS_ROOT.mkdir(parents=True, exist_ok=True)
+        lock_path = REGISTRY_PATH.with_suffix(".lock")
+        with lock_path.open("a") as fh:
+            fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
+            _lock_state.depth = 1
+            try:
+                yield
+            finally:
+                _lock_state.depth = 0
+                fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+
+
 def save_registry(data: dict[str, Any]) -> None:
     """Atomically rewrite users.yaml (temp file + rename, owner-only)."""
     USERS_ROOT.mkdir(parents=True, exist_ok=True)
@@ -182,14 +219,15 @@ def is_admin_email(email: str | None) -> bool:
 
 
 def set_admin_emails(emails: list[str]) -> list[str]:
-    data = load_registry()
     cleaned: list[str] = []
     for raw in emails:
         e = normalize_email(raw)
         if e and e not in cleaned:
             cleaned.append(e)
-    data["admins"] = cleaned
-    save_registry(data)
+    with registry_lock():
+        data = load_registry()
+        data["admins"] = cleaned
+        save_registry(data)
     return cleaned
 
 
@@ -302,6 +340,18 @@ def add_user(
 ) -> UserRecord:
     """Register a user and create their data directory skeleton."""
     validate_user_id(user_id)
+    with registry_lock():
+        return _add_user_locked(
+            user_id, name=name, whatsapp_target=whatsapp_target, apply_enabled=apply_enabled,
+            schedule=schedule, digest_schedule=digest_schedule, notes=notes, human_gate=human_gate,
+            brief_top_n=brief_top_n, emails=emails,
+        )
+
+
+def _add_user_locked(
+    user_id: str, *, name: str, whatsapp_target: str, apply_enabled: bool, schedule: str,
+    digest_schedule: str, notes: str, human_gate: bool, brief_top_n: int, emails: list[str] | None,
+) -> UserRecord:
     if get_user(user_id) is not None:
         raise ValueError(f"User '{user_id}' already exists.")
 
@@ -338,12 +388,13 @@ def add_user(
 
 
 def remove_user(user_id: str, delete_data: bool = False) -> UserRecord:
-    user = get_user(user_id)
-    if user is None:
-        raise ValueError(f"User '{user_id}' not found.")
-    data = load_registry()
-    data["users"] = [u for u in data["users"] if u.get("user_id") != user_id]
-    save_registry(data)
+    with registry_lock():
+        user = get_user(user_id)
+        if user is None:
+            raise ValueError(f"User '{user_id}' not found.")
+        data = load_registry()
+        data["users"] = [u for u in data["users"] if u.get("user_id") != user_id]
+        save_registry(data)
     if delete_data:
         import shutil
         data_dir = user.resolve_data_dir()
@@ -353,15 +404,15 @@ def remove_user(user_id: str, delete_data: bool = False) -> UserRecord:
 
 
 def update_user(user_id: str, **fields: Any) -> UserRecord:
-    user = get_user(user_id)
-    if user is None:
-        raise ValueError(f"User '{user_id}' not found.")
+    """Change only ``fields`` on the freshly read record (under the registry lock),
+    so concurrent updates to other fields or other users are not overwritten."""
     allowed = {
         "name", "whatsapp_target", "apply_enabled", "schedule",
         "digest_schedule", "notes", "data_dir",
         "human_gate", "brief_top_n", "emails", "weekly_summary", "followup_days",
         "search_enabled",
     }
+    changes: dict[str, Any] = {}
     for key, value in fields.items():
         if key not in allowed:
             raise ValueError(f"Cannot update field '{key}'")
@@ -371,13 +422,20 @@ def update_user(user_id: str, **fields: Any) -> UserRecord:
             value = int(value)
             if not 1 <= value <= 90:
                 raise ValueError("followup_days must be between 1 and 90")
-        setattr(user, key, value)
-    data = load_registry()
-    data["users"] = [
-        _to_dict(user, u) if u.get("user_id") == user_id else u
-        for u in data["users"]
-    ]
-    save_registry(data)
+        changes[key] = value
+    with registry_lock():
+        data = load_registry()
+        raw = next((u for u in data["users"] if isinstance(u, dict) and u.get("user_id") == user_id), None)
+        if raw is None:
+            raise ValueError(f"User '{user_id}' not found.")
+        user = _from_dict(raw)
+        for key, value in changes.items():
+            setattr(user, key, value)
+        data["users"] = [
+            _to_dict(user, u) if isinstance(u, dict) and u.get("user_id") == user_id else u
+            for u in data["users"]
+        ]
+        save_registry(data)
     return user
 
 
