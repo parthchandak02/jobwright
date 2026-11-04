@@ -264,6 +264,9 @@ export default function App() {
     [refresh, refreshCard],
   )
 
+  /** Settings or Admin changed the signed-in profile: refresh the shell (banner, counts, schedule). */
+  const refreshProfile = useCallback(() => void refresh({ board: false, profile: true, notify: true }), [refresh])
+
   function openWhatsApp() {
     setShowSchedule(true)
     void refresh({ board: false, notify: true })
@@ -298,11 +301,7 @@ export default function App() {
         <ErrorBoundary resetKey={page}>
           {page === 'profile' ? (
             <Suspense fallback={<PageSkeleton />}>
-              <ProfilePage
-                profile={profile}
-                onBack={() => navigate('/')}
-                onProfileChanged={() => void refresh({ board: false, profile: true, notify: true })}
-              />
+              <ProfilePage profile={profile} onBack={() => navigate('/')} onProfileChanged={refreshProfile} />
             </Suspense>
           ) : page === 'quality' ? (
             <Suspense fallback={<PageSkeleton />}>
@@ -310,7 +309,7 @@ export default function App() {
             </Suspense>
           ) : page === 'admin' ? (
             <Suspense fallback={<PageSkeleton />}>
-              <AdminPage />
+              <AdminPage onActiveProfileChanged={refreshProfile} />
             </Suspense>
           ) : page === 'review' ? (
             <Suspense fallback={<PageSkeleton />}>
