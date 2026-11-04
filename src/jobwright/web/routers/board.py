@@ -193,6 +193,19 @@ def _save_lane_order(conn, stage: str, first: list[str]) -> list[str]:
     return order
 
 
+# Long text the board cards never show. The descriptions are only needed for
+# the sponsorship fallback, i.e. when sponsorship_status was never stored.
+_BOARD_HEAVY = {"full_description", "description"}
+
+
+def _board_columns(conn) -> str:
+    """Column list for board cards: everything but the job descriptions."""
+    names = [r[1] for r in conn.execute("PRAGMA table_info(jobs)").fetchall()]
+    cols = [f'"{n}"' for n in names if n not in _BOARD_HEAVY]
+    cols += [f'CASE WHEN sponsorship_status IS NULL THEN "{n}" END AS "{n}"' for n in names if n in _BOARD_HEAVY]
+    return ", ".join(cols)
+
+
 @router.get("/board")
 def get_board() -> dict:
     """Every open job plus the most recently closed ones (closed history is long)."""
@@ -200,13 +213,14 @@ def get_board() -> dict:
 
     conn = get_connection()
     days = resolve_days(None)
+    cols = _board_columns(conn)
     rows = conn.execute(
-        f"SELECT *, {LAST_CHANGE_SQL} AS last_stage_at FROM jobs "
+        f"SELECT {cols}, {LAST_CHANGE_SQL} AS last_stage_at FROM jobs "
         "WHERE COALESCE(funnel_stage, 'backlog') != 'closed' "
         f"{_OPEN_ORDER}"
     ).fetchall()
     closed = conn.execute(
-        f"SELECT * FROM jobs WHERE funnel_stage = 'closed' {_CLOSED_ORDER} LIMIT ?",
+        f"SELECT {cols} FROM jobs WHERE funnel_stage = 'closed' {_CLOSED_ORDER} LIMIT ?",
         (CLOSED_ON_BOARD,),
     ).fetchall()
     closed_total = conn.execute("SELECT COUNT(*) FROM jobs WHERE funnel_stage = 'closed'").fetchone()[0]

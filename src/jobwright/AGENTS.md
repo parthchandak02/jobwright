@@ -95,6 +95,7 @@ Single-user doctor: `jobwright doctor`. Multi-profile: `jobwright --user <id> do
 | `tests/test_calibration.py` | Calibration selection (band mix, dedupe, exclusions) and `GET /api/onboarding/calibration` with ratings through the label route |
 | `tests/test_welcome.py` | Welcome text, send once + operator heads-up, skip without chat or in dry run, failed send retried next time |
 | `tests/test_search_pause.py` | `search_enabled`: default brief skips stages, explicit stages run, follow-up-only notify (sent once), brief report ok, watchdog silent, `users set --pause-search` |
+| `tests/test_security_review.py` | Review regressions: profile paths confined to the user's folder, onboarding confirm allowlist, per-request transaction guard (`web/txguard.py`), connection invalidation on profile delete, admin-only eval/rescore, precise bulk Undo (`restore`), apply stamps kept across Applied and back, safe PDF uploads (10 MB, validate then replace), unreadable resume, users.yaml lock, welcome marker race, atomic usage flush, SIGTERM exit, board columns, http(s) manual jobs |
 | `tests/test_hermes_cron.py` | Parse `hermes cron list`; create/edit brief cron; dry-run |
 
 Add tests for new provider behavior, user-resolution logic, or dashboard APIs.

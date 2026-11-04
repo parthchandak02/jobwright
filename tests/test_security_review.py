@@ -644,3 +644,47 @@ def test_sigterm_runs_finally_and_atexit(tmp_path):
     assert proc.returncode == 143, proc.stderr.decode()
     assert (tmp_path / "finally").read_text() == "finally"
     assert (tmp_path / "atexit").read_text() == "flushed"
+
+
+# --- L6: the board does not load job descriptions ----------------------------
+
+
+def test_board_skips_descriptions_but_keeps_sponsorship_fallback(api_client, monkeypatch):
+    from jobwright.database import get_connection, insert_manual_job, job_id_for_url
+    from jobwright.web.routers import board as board_mod
+    from jobwright.web.routers.board import _row_to_card
+
+    stored = "https://example.com/board-stored"
+    derived = "https://example.com/board-derived"
+    insert_manual_job(stored, title="Stored", description="We do sponsor visas. " + "x" * 5000)
+    insert_manual_job(derived, title="Derived", description="Sorry, no visa sponsorship for this role.")
+    conn = get_connection()
+    conn.execute("UPDATE jobs SET sponsorship_status = 'required' WHERE url = ?", (stored,))
+    conn.execute("UPDATE jobs SET sponsorship_status = NULL WHERE url = ?", (derived,))
+    conn.commit()
+
+    statements: list[str] = []
+    tracing = {"on": True}
+
+    def tracing_connection(*args, **kwargs):
+        c = get_connection(*args, **kwargs)  # the handler thread's own connection
+        c.set_trace_callback(lambda sql: statements.append(sql) if tracing["on"] else None)
+        return c
+
+    monkeypatch.setattr(board_mod, "get_connection", tracing_connection)
+    board = api_client.get("/api/board")
+    tracing["on"] = False
+    assert statements
+    assert board.status_code == 200
+    cards = {c["job_id"]: c for col in board.json()["columns"].values() for c in col}
+    assert cards[job_id_for_url(stored)]["sponsorship_status"] == "required"
+    assert cards[job_id_for_url(derived)]["sponsorship_status"] == "not_required"
+    # Same card as building it from the full row.
+    full = _row_to_card(conn.execute("SELECT * FROM jobs WHERE url = ?", (stored,)).fetchone())
+    board_card = dict(cards[job_id_for_url(stored)])
+    for key in ("followup_due", "applied_days_ago", "followup_due_at"):
+        board_card.pop(key, None)
+        full.pop(key, None)
+    assert board_card == full
+    board_selects = [s for s in statements if "FROM jobs" in s and "funnel_stage" in s and "SELECT *" in s]
+    assert board_selects == []
