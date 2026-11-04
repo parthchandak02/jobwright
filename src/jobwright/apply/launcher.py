@@ -724,7 +724,7 @@ def worker_loop(worker_id: int = 0, limit: int = 1,
 
 
 # ---------------------------------------------------------------------------
-# Main entry point (called from cli.py)
+# Main entry point (called from cli/stages.py)
 # ---------------------------------------------------------------------------
 
 def main(limit: int = 1, target_url: str | None = None,

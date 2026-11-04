@@ -11,7 +11,7 @@ Before staging, committing, or pushing, check whether [AGENTS.md](AGENTS.md) is 
 
 Update in the same change set if you touched:
 
-- CLI commands, subcommands, or flags (`src/jobwright/cli.py`)
+- CLI commands, subcommands, or flags (`src/jobwright/cli/`)
 - Pipeline stages or order (`src/jobwright/pipeline.py`)
 - User registry, paths, or multi-profile behavior (`src/jobwright/users.py`, `src/jobwright/config.py`)
 - Hermes/cron scripts (`scripts/jobwright_*.sh`, installers)

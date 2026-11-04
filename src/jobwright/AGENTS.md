@@ -6,7 +6,7 @@ Nested agent notes for the Python package. Root context: [../../AGENTS.md](../..
 
 | Module | Role |
 |--------|------|
-| `cli.py` | Typer entry; `--user` before subcommands. Stages: discover, enrich, score, portfolio, tailor, cover, pdf, docx, connect. Also `tailor-job`, `notify`, `briefstats`, `dedupe` (`--apply`), `summary`, `eval`, `rescore`, `criteria show\|suggest`, `labels list\|export`, `preflight`, `ops brief-report\|watchdog\|set-target\|backup\|install-crons`, `hermes channels`, `access status\|sync`, `users`. `apply` is dry-run unless `--live` |
+| `cli/` | Typer entry (`jobwright.cli:app`; `__init__` registers commands in `--help` order, `_common` has the app, consoles and `_bootstrap`; one module per area: `stages` init/run/apply, `materials` tailor-job/network/targets, `health` status/dashboard/doctor/preflight, `brief` notify/summary/briefstats/dedupe, `scoring` eval/rescore/criteria/labels, `users`, `ops`, `access`, `hermes`). `--user` before subcommands. Stages: discover, enrich, score, portfolio, tailor, cover, pdf, docx, connect. Also `tailor-job`, `notify`, `briefstats`, `dedupe` (`--apply`), `summary`, `eval`, `rescore`, `criteria show\|suggest`, `labels list\|export`, `preflight`, `ops brief-report\|watchdog\|set-target\|backup\|install-crons`, `hermes channels`, `access status\|sync`, `users`. `apply` is dry-run unless `--live` |
 | `__main__.py` | `python -m jobwright` (dashboard spawns); records the exit code in the run registry |
 | `pipeline.py` | `STAGE_ORDER`, stage runners, `default_brief_stages()` (honors `human_gate`), `search_paused()` (default run with `search_enabled: false` runs nothing), per-user `pipeline_lock()` (flock), `logs/last_run.json`; prunes backlog junk after `score` |
 | `run_registry.py` | Durable pipeline runs in `users/<id>/logs/web_runs.json`; honors `JOBWRIGHT_WEB_RUN_ID` |
@@ -29,9 +29,9 @@ Nested agent notes for the Python package. Root context: [../../AGENTS.md](../..
 | `labels.py` | Append-only `score_labels`, `record_label` (`source`: dashboard / dismiss / bulk_dismiss / ...), eval set (explicit labels + board signals; only `not_interested` closes are implicit negatives) |
 | `job_identity.py` | `resolve_company` (never a board name), `material_prefix` (`<company>_<title>_<job_id>`) |
 | `llm.py` | Fireworks (default `accounts/fireworks/models/glm-5p3-flash`) / Gemini failover / OpenAI-compatible; `reasoning_effort`, structured output; usage ledger keyed by active user + `llm_purpose` (decorator or block), `flush_active_usage` writes it to that user's `llm_usage`; `gpt-oss*` names are rejected |
-| `database.py` | SQLite schema: `jobs`, `stage_history`, `job_tombstones` (+ triggers), `score_labels`, `score_history`, `llm_usage`, `schema_meta`; `job_id` (blake2b of URL), `advance_funnel`, stats |
+| `database.py` | SQLite schema: `jobs`, `stage_history`, `job_tombstones` (+ triggers), `score_labels`, `score_history`, `llm_usage`, `schema_meta`; `job_id` (blake2b of URL), `advance_funnel`, stats; numbered `MIGRATIONS` (`schema_meta.schema_version`, `run_migrations` from `init_db`); `brief_items` DDL (migration 2) |
 | `web/` | FastAPI: `auth.py` (Cloudflare Access JWT / dev), `session.py` (identity + per-request profile middleware), `jobkeys.py` (job routes accept `job_id`), routers `board`, `materials`, `runs`, `settings`, `notify`, `system` (`/me`, `/session`, `/profile` incl. `whatsapp_chat_name`; `PUT /profile` chat change admin-only, cron re-sync only on schedule/chat change or missing wrapper), `onboarding`, `whatsapp` (admin-only chats; non-admin test goes to own chat), `admin`, `quality` (`PATCH /criteria` cutoff-only), `connections`, `jobs` |
-| `discovery/` | `jobspy.py` (`-w` / `JOBWRIGHT_DISCOVER_WORKERS`, known-URL skip), `workday.py`, `filters.py` (fit caps; `mission_guard` opt-in), `dedupe.py` (cross-board `dedupe_key`; `collapse_duplicates` closes duplicate open cards after score), `cleanup.py` (`prune_after_score`), `known_urls.py`, `smartextract.py` (`DISCOVER_MODE`) |
+| `discovery/` | `jobspy.py` (`-w` / `JOBWRIGHT_DISCOVER_WORKERS`, known-URL skip), `workday.py`, `filters.py` (fit caps; `mission_guard` opt-in), `dedupe.py` (cross-board `dedupe_key`; `collapse_duplicates` closes duplicate open cards after score), `cleanup.py` (`prune_after_score`), `known_urls.py`, `smartextract/` (`DISCOVER_MODE`; `prompts`, `fetch` Playwright intel + HTML cleaning, `judge` LLM calls, `extract` strategy executors + per-site run, `sites` sites.yaml/targets/filtered store, `run`; public names re-exported from the package) |
 | `enrichment/` | `detail.py` (full JD), `sponsorship.py` (LLM, not on discover hot path) |
 | `scoring/` | v2: `matcher.py` (structured judgment + gates), `pipeline_v2.py` (select, Jev reject-only, persist, `score_history`), `criteria.py` (`match_criteria`), `examples.py` (TF-IDF retrieval), `evaluate.py` (`jobwright eval`), `criteria_miner.py`. Legacy: `scorer.py` (`JOBWRIGHT_SCORER=v1`, `SCORE_BATCH_SIZE`), `fastpath.py` (Jev). Also `tailor`, `tailor_instructions`, `cover_letter`, `portfolio`, `pdf`, `docx_export`, `validator` |
 | `network/` | CSV rank, per-job connect, Exa research |
@@ -51,6 +51,21 @@ Nested agent notes for the Python package. Root context: [../../AGENTS.md](../..
 - Human ratings: `labels.record_label` (append-only). Never overwrite `score_labels`.
 - Resume text for LLM stages: `resume.load_resume_text()` (PDF → cached markdown).
 - Stage 6 stdout must include one `RESULT:` line (see `apply/providers/base.py`).
+
+## Database migrations
+
+`database.MIGRATIONS` is an append-only list of `(version, name, fn)`. `init_db` (called by every stage, the CLI bootstrap and the API session) calls `run_migrations`, which reads `schema_meta['schema_version']` (missing = 0) and applies each newer step in its own `BEGIN IMMEDIATE` transaction, re-reading the version inside it so the API and the pipeline can migrate the same DB at once (the loser waits on the lock, then skips). A failing step rolls back and raises; the version stays put. A DB newer than the code is left alone (warning).
+
+- `1 baseline`: everything `init_db` used to run each start (jobs with every `_ALL_COLUMNS` column, `stage_history`, `_AUX_DDL`, the `seed_tombstones_from_history_v1` / `import_user_scores_v1` one-offs behind their legacy markers). A current production DB migrates as a no-op.
+- `2 brief_items`: the scoreboard table (`briefstats.ensure_brief_items` still creates it on demand).
+- Not migrations: `backfill_job_ids`, `backfill_sponsorship_status`, `backfill_funnel_stages` still run on every `init_db`, because some writers (e.g. discovery inserts) leave those fields empty.
+
+To add one:
+
+1. Write `_migrate_vN_<name>(conn)`. It must not commit and must be idempotent: `CREATE ... IF NOT EXISTS`, `_add_column(conn, table, col, type)`, `UPDATE ... WHERE <not yet done>`.
+2. Append `(N, "<name>", _migrate_vN_<name>)` to `MIGRATIONS`. Never renumber, edit or remove a shipped step.
+3. New `jobs` column: also add it to `_ALL_COLUMNS` (fresh DBs get it from the baseline `CREATE TABLE`). `tests/test_migrations.py::test_db_at_v1_gets_every_later_column` fails if the migration is missing.
+4. Add a test in `tests/test_migrations.py` that builds the pre-change shape and checks the step (run twice: no-op).
 
 ## Verify a change
 
@@ -73,6 +88,7 @@ Single-user doctor: `jobwright doctor`. Multi-profile: `jobwright --user <id> do
 | `tests/test_web_auth.py` | JWT verification, per-email access, admin switching, concurrent mixed-user requests |
 | `tests/test_review_flow.py` | Quick review answer + undo sequences (rating label once, Prepare / Closed, reopen clears outcome and close reason) |
 | `tests/test_bulk_jobs.py` | `POST /api/jobs/bulk`: parity with single move (stage history, apply stamps, human flag), "Not for me" labels, unknown ids, cap, one transaction, undo clears dismiss labels, active profile only |
+| `tests/test_migrations.py` | Numbered migrations: fresh DB reaches latest, older-shape DB migrates (data kept, one-offs once), legacy markers respected, current DB no-op, twice no-op, v1 snapshot guard for new columns, rollback on failure, concurrent runs apply each step once |
 | `tests/test_board_order.py` | Lane order: `board_position` migration, `POST /api/board/reorder`, move `position`, clearing on lane change, anti-clobber flag untouched |
 | `tests/test_web_multiuser.py` | Onboarding, non-admin isolation, admin settings, chat filtering, `job_id` routes + labels |
 | `tests/test_scoring_v2.py` | Criteria, gates, retrieval, labels, eval metrics, incremental persistence |

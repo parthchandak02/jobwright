@@ -1,8 +1,9 @@
 """jobwright database layer: schema, migrations, stats, and connection helpers.
 
 Single source of truth for the jobs table schema. All columns from every
-pipeline stage are created up front so any stage can run independently
-without migration ordering issues.
+pipeline stage are created up front so any stage can run independently.
+Schema changes are numbered steps in MIGRATIONS, applied by init_db (see
+run_migrations and src/jobwright/AGENTS.md "Database migrations").
 """
 
 import hashlib
@@ -117,8 +118,8 @@ def close_connection(db_path: Path | str | None = None) -> None:
 def init_db(db_path: Path | str | None = None) -> sqlite3.Connection:
     """Create the full jobs table with all columns from every pipeline stage.
 
-    This is idempotent -- safe to call on every startup. Uses CREATE TABLE IF NOT EXISTS
-    so it won't destroy existing data.
+    This is idempotent -- safe to call on every startup. Applies any pending
+    numbered migrations (run_migrations), then the per-start row backfills.
 
     Schema columns by stage:
       - Discovery:  url, title, salary, description, location, site, strategy, discovered_at
@@ -142,34 +143,160 @@ def init_db(db_path: Path | str | None = None) -> sqlite3.Connection:
     Path(path).parent.mkdir(parents=True, exist_ok=True)
 
     conn = get_connection(path)
-    column_sql = ",\n            ".join(f"{col} {dtype}" for col, dtype in _ALL_COLUMNS.items())
-    conn.execute(f"CREATE TABLE IF NOT EXISTS jobs (\n            {column_sql}\n        )")
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS stage_history (
-            id         INTEGER PRIMARY KEY AUTOINCREMENT,
-            job_url    TEXT NOT NULL,
-            from_stage TEXT,
-            to_stage   TEXT NOT NULL,
-            actor      TEXT NOT NULL,
-            at         TEXT NOT NULL,
-            note       TEXT,
-            FOREIGN KEY (job_url) REFERENCES jobs(url)
-        )
-    """)
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_stage_history_job_at "
-        "ON stage_history(job_url, at)"
-    )
-    conn.commit()
+    # Commit anything the caller left pending on this cached connection (the
+    # old init_db always committed here too), so BEGIN IMMEDIATE can start.
+    if conn.in_transaction:
+        conn.commit()
 
-    # Run migrations for any columns added after initial schema
-    ensure_columns(conn)
-    ensure_aux_schema(conn)
+    # Numbered schema migrations (see MIGRATIONS); a no-op once current.
+    run_migrations(conn)
+
+    # Row repairs, not schema: rows written by code paths that skip these
+    # fields (e.g. discovery inserts have no job_id) are fixed on every start.
     backfill_job_ids(conn)
     backfill_sponsorship_status(conn)
     backfill_funnel_stages(conn)
 
     return conn
+
+
+# ---------------------------------------------------------------------------
+# Numbered migrations
+# ---------------------------------------------------------------------------
+# schema_meta['schema_version'] holds the last applied version (missing = 0).
+# Each step runs in its own BEGIN IMMEDIATE transaction that re-reads the
+# version first, so the API and the pipeline can migrate the same file at the
+# same time: the second process waits for the lock, sees the step is done and
+# skips it. Steps must not commit, and must be idempotent (CREATE ... IF NOT
+# EXISTS, _add_column) in case a DB already has the change.
+# How to add one: src/jobwright/AGENTS.md ("Database migrations").
+
+SCHEMA_VERSION_KEY = "schema_version"
+
+_JOBS_BASE_DDL = """
+    CREATE TABLE IF NOT EXISTS stage_history (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        job_url    TEXT NOT NULL,
+        from_stage TEXT,
+        to_stage   TEXT NOT NULL,
+        actor      TEXT NOT NULL,
+        at         TEXT NOT NULL,
+        note       TEXT,
+        FOREIGN KEY (job_url) REFERENCES jobs(url)
+    )
+"""
+
+# Per-brief notify history (scoreboard; read and written by briefstats.py).
+BRIEF_ITEMS_DDL = """
+CREATE TABLE IF NOT EXISTS brief_items (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    brief_date TEXT NOT NULL,          -- YYYY-MM-DD of the notify run
+    job_url    TEXT NOT NULL,
+    job_id     TEXT,                   -- dashboard deep-link id (blake2 hash)
+    fit_score  INTEGER,                -- effective score shown/sorted by
+    jev_score  REAL,                   -- nullable: Jev fast-path score (D3)
+    cap_rank   INTEGER,                -- 1..N within a given brief's cap; NULL if not shown
+    shown      INTEGER NOT NULL DEFAULT 0  -- 1 if this item was in the notify list
+);
+"""
+
+
+def _add_column(conn: sqlite3.Connection, table: str, column: str, dtype: str) -> bool:
+    """ALTER TABLE ... ADD COLUMN unless the column exists. Returns True if added."""
+    have = {row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+    if column in have:
+        return False
+    conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {dtype}")
+    return True
+
+
+def _migrate_v1_baseline(conn: sqlite3.Connection) -> None:
+    """Bring any DB (empty or written by any older version) to the 2026-11 schema.
+
+    This is what init_db used to run on every start: the jobs table with every
+    column in _ALL_COLUMNS (missing ones added), stage_history, the aux tables,
+    indexes and triggers, and the two one-off data steps guarded by their
+    legacy schema_meta markers. On a production DB that is already current it
+    changes nothing.
+    """
+    column_sql = ",\n            ".join(f"{col} {dtype}" for col, dtype in _ALL_COLUMNS.items())
+    conn.execute(f"CREATE TABLE IF NOT EXISTS jobs (\n            {column_sql}\n        )")
+    conn.execute(_JOBS_BASE_DDL)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_stage_history_job_at ON stage_history(job_url, at)")
+    _add_missing_columns(conn)
+    for ddl in _AUX_DDL:
+        conn.execute(ddl)
+    _once(conn, "seed_tombstones_from_history_v1", _seed_tombstones_from_history)
+    _once(conn, "import_user_scores_v1", _import_user_scores)
+
+
+def _migrate_v2_brief_items(conn: sqlite3.Connection) -> None:
+    """brief_items (was created lazily by briefstats.ensure_brief_items)."""
+    conn.execute(BRIEF_ITEMS_DDL)
+
+
+# (version, name, fn). Append only: never renumber, edit or remove a shipped step.
+MIGRATIONS: list[tuple[int, str, object]] = [
+    (1, "baseline", _migrate_v1_baseline),
+    (2, "brief_items", _migrate_v2_brief_items),
+]
+LATEST_SCHEMA_VERSION = MIGRATIONS[-1][0]
+
+
+def get_schema_version(conn: sqlite3.Connection) -> int:
+    """Last applied migration (0 for a new DB or one from before migrations)."""
+    try:
+        row = conn.execute(
+            "SELECT value FROM schema_meta WHERE key = ?", (SCHEMA_VERSION_KEY,)
+        ).fetchone()
+    except sqlite3.OperationalError:  # no schema_meta table yet
+        return 0
+    try:
+        return int(row[0]) if row else 0
+    except (TypeError, ValueError):
+        return 0
+
+
+def run_migrations(conn: sqlite3.Connection | None = None) -> list[int]:
+    """Apply every migration newer than the DB's schema_version. Returns the versions applied.
+
+    Safe to call concurrently from several processes and repeatedly (a current
+    DB costs one SELECT). A failing step rolls back and raises; earlier steps
+    stay applied.
+    """
+    if conn is None:
+        conn = get_connection()
+    current = get_schema_version(conn)
+    if current >= LATEST_SCHEMA_VERSION:
+        if current > LATEST_SCHEMA_VERSION:
+            log.warning("DB schema_version %d is newer than this code (%d)", current, LATEST_SCHEMA_VERSION)
+        return []
+    if conn.in_transaction:
+        conn.commit()
+    applied: list[int] = []
+    for version, name, fn in MIGRATIONS:
+        if version <= current:
+            continue
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            conn.execute("CREATE TABLE IF NOT EXISTS schema_meta (key TEXT PRIMARY KEY, value TEXT)")
+            current = get_schema_version(conn)  # another process may have migrated meanwhile
+            if version <= current:
+                conn.commit()
+                continue
+            fn(conn)
+            conn.execute(
+                "INSERT OR REPLACE INTO schema_meta (key, value) VALUES (?, ?)",
+                (SCHEMA_VERSION_KEY, str(version)),
+            )
+            conn.commit()
+        except BaseException:
+            conn.rollback()
+            raise
+        current = version
+        applied.append(version)
+        log.debug("DB migration %d (%s) applied", version, name)
+    return applied
 
 
 _AUX_DDL = (
@@ -290,7 +417,8 @@ def _import_user_scores(conn: sqlite3.Connection) -> None:
     import_existing_user_scores(conn)
 
 
-def _run_once(conn: sqlite3.Connection, key: str, fn) -> None:
+def _once(conn: sqlite3.Connection, key: str, fn) -> None:
+    """Run fn once per DB, recorded under schema_meta[key]; does not commit."""
     if conn.execute("SELECT 1 FROM schema_meta WHERE key = ?", (key,)).fetchone():
         return
     fn(conn)
@@ -298,6 +426,10 @@ def _run_once(conn: sqlite3.Connection, key: str, fn) -> None:
         "INSERT OR REPLACE INTO schema_meta (key, value) VALUES (?, ?)",
         (key, datetime.now(timezone.utc).isoformat()),
     )
+
+
+def _run_once(conn: sqlite3.Connection, key: str, fn) -> None:
+    _once(conn, key, fn)
     conn.commit()
 
 
@@ -369,8 +501,9 @@ def is_tombstoned(conn: sqlite3.Connection, url: str) -> bool:
 
 
 # Complete column registry: column_name -> SQL type with optional default.
-# This is the single source of truth. Adding a column here is all that's needed
-# for it to appear in both new databases and migrated ones.
+# New databases get every column here from migration 1's CREATE TABLE. A column
+# added later must ALSO get a numbered migration (``_add_column``) so databases
+# already past migration 1 receive it; tests/test_migrations.py fails otherwise.
 _ALL_COLUMNS: dict[str, str] = {
     # Discovery
     "url": "TEXT PRIMARY KEY",
@@ -766,7 +899,14 @@ def ensure_columns(conn: sqlite3.Connection | None = None) -> list[str]:
     """
     if conn is None:
         conn = get_connection()
+    added = _add_missing_columns(conn)
+    if added:
+        conn.commit()
+    return added
 
+
+def _add_missing_columns(conn: sqlite3.Connection) -> list[str]:
+    """ensure_columns without the commit (used inside migration transactions)."""
     existing = {row[1] for row in conn.execute("PRAGMA table_info(jobs)").fetchall()}
     added = []
 
@@ -778,10 +918,6 @@ def ensure_columns(conn: sqlite3.Connection | None = None) -> list[str]:
                 continue
             conn.execute(f"ALTER TABLE jobs ADD COLUMN {col} {dtype}")
             added.append(col)
-
-    if added:
-        conn.commit()
-
     return added
 
 
