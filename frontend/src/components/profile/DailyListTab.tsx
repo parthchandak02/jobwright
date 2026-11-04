@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { AlertTriangle, MessageCircle, Send, Users } from 'lucide-react'
 import type { CSSProperties } from 'react'
 import { toast } from 'sonner'
@@ -13,14 +13,9 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { notifyWhatsApp, sendWhatsAppTest, updateProfile, type Profile } from '@/lib/api'
+import { cronDays, cronToTime, withCronTime } from '@/lib/cron'
 import { useMe } from '@/lib/me'
 import { cn, errorMessage } from '@/lib/utils'
-
-function cronToTime(cron: string | undefined): string {
-  const parts = (cron || '0 7 * * *').trim().split(/\s+/)
-  if (parts.length !== 5 || !/^\d+$/.test(parts[0]) || !/^\d+$/.test(parts[1])) return '07:00'
-  return `${parts[1].padStart(2, '0')}:${parts[0].padStart(2, '0')}`
-}
 
 type Settings = { target: string; time: string; weekly: boolean; followupDays: string; searching: boolean }
 
@@ -37,13 +32,20 @@ type Props = { profile: Profile; onSaved: () => void }
 
 export function DailyListTab({ profile, onSaved }: Props) {
   const isAdmin = Boolean(useMe().me?.is_admin)
-  const [s, setS] = useState<Settings>(() => ({
+  const initial = (): Settings => ({
     target: profile.whatsapp_target || '',
-    time: cronToTime(profile.schedule),
+    time: cronToTime(profile.schedule) ?? '',
     weekly: profile.weekly_summary ?? true,
     followupDays: String(profile.followup_days ?? 10),
     searching: profile.search_enabled ?? true,
-  }))
+  })
+  const [s, setS] = useState<Settings>(initial)
+  // Last values the server has, so each save sends only what the person changed. A custom
+  // schedule (e.g. "0 */3 * * 1-5") is never rewritten unless they edit the time.
+  const saved = useRef<Settings | null>(null)
+  if (saved.current === null) saved.current = s
+  const savedSchedule = useRef(profile.schedule)
+  const customSchedule = cronToTime(profile.schedule) == null
   const [picked, setPicked] = useState<PickedChat | null>(null)
   const [picking, setPicking] = useState(false)
   const [cronError, setCronError] = useState<string | null>(null)
@@ -51,18 +53,26 @@ export function DailyListTab({ profile, onSaved }: Props) {
 
   const autosave = useAutosave(
     async (v: Settings) => {
-      const [h, m] = v.time.split(':').map(Number)
-      return updateProfile({
-        schedule: `${m} ${h} * * *`,
-        ...(isAdmin && v.target ? { whatsapp_target: v.target } : {}),
-        weekly_summary: v.weekly,
-        followup_days: clampDays(v.followupDays),
-        search_enabled: v.searching,
-      })
+      const base = saved.current ?? v
+      const body: Parameters<typeof updateProfile>[0] = {}
+      if (v.time && v.time !== base.time) {
+        const schedule = withCronTime(savedSchedule.current, v.time)
+        if (schedule) body.schedule = schedule
+      }
+      if (isAdmin && v.target && v.target !== base.target) body.whatsapp_target = v.target
+      if (v.weekly !== base.weekly) body.weekly_summary = v.weekly
+      if (clampDays(v.followupDays) !== clampDays(base.followupDays)) body.followup_days = clampDays(v.followupDays)
+      if (v.searching !== base.searching) body.search_enabled = v.searching
+      if (Object.keys(body).length === 0) return null
+      const res = await updateProfile(body)
+      saved.current = v
+      if (body.schedule) savedSchedule.current = res.schedule ?? body.schedule
+      return res
     },
     {
       onSaved: (res) => {
-        setCronError(res.cron_synced === false ? res.cron_error || 'unknown error' : null)
+        if (!res) return
+        if ('cron_synced' in res) setCronError(res.cron_synced === false ? res.cron_error || 'unknown error' : null)
         onSaved()
       },
       onError: (e) => toast.error(errorMessage(e)),
@@ -72,7 +82,7 @@ export function DailyListTab({ profile, onSaved }: Props) {
   function patch(p: Partial<Settings>) {
     const next = { ...s, ...p }
     setS(next)
-    if (!next.time || !next.followupDays.trim()) return
+    if ((!next.time && !customSchedule) || !next.followupDays.trim()) return
     autosave.schedule(next)
   }
 
@@ -83,6 +93,8 @@ export function DailyListTab({ profile, onSaved }: Props) {
     picked?.name ?? (savedName && !looksUnnamed(savedName) ? savedName.replace(/^whatsapp:/, '') : s.target ? fallbackChatName(s.target) : '')
   const hasChat = Boolean(s.target || profile.whatsapp_target)
   const tz = profile.timezone
+  const days = cronDays(profile.schedule)
+  const timeHint = `${days ? `${days} at this time` : 'At this time, on the days in your schedule'}${tz ? ` (${tz})` : ''}.`
 
   return (
     <div>
@@ -136,19 +148,33 @@ export function DailyListTab({ profile, onSaved }: Props) {
           )}
         </FormField>
 
-        <FormField
-          label="Send time"
-          htmlFor="daily-time"
-          hint={tz ? `Every day at this time (${tz}).` : 'Every day at this time.'}
-        >
-          <Input
-            id="daily-time"
-            type="time"
-            value={s.time}
-            onChange={(e) => patch({ time: e.target.value })}
-            className="w-40 tabular-nums"
-          />
-        </FormField>
+        {customSchedule ? (
+          <FormField
+            label="Send time"
+            hint={isAdmin ? 'Change it in Admin or the CLI.' : 'Ask your admin to change it.'}
+          >
+            <p className="text-label text-foreground">
+              Custom schedule:{' '}
+              <span className="tabular-nums">{profile.schedule_label || profile.schedule}</span>
+              {profile.schedule_label ? (
+                <code className="ml-2 rounded bg-surface-muted px-1.5 py-0.5 text-caption text-muted-foreground">
+                  {profile.schedule}
+                </code>
+              ) : null}
+              {tz ? <span className="text-muted-foreground"> ({tz})</span> : null}
+            </p>
+          </FormField>
+        ) : (
+          <FormField label="Send time" htmlFor="daily-time" hint={timeHint}>
+            <Input
+              id="daily-time"
+              type="time"
+              value={s.time}
+              onChange={(e) => patch({ time: e.target.value })}
+              className="w-40 tabular-nums"
+            />
+          </FormField>
+        )}
 
         {cronError ? (
           <div
