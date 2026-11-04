@@ -1,6 +1,7 @@
 import { Loader2 } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { Button } from '@/components/ui/button'
+import { useRegisterActionBar } from '@/lib/actionBarPresence'
 import { cn } from '@/lib/utils'
 
 type Props = {
@@ -38,6 +39,7 @@ export function ActionBar({
   label = 'Actions',
   className,
 }: Props) {
+  useRegisterActionBar(open)
   if (!open) return null
   const text = message ?? (onSave ? 'You have unsaved changes' : null)
 

@@ -2,7 +2,13 @@ import * as React from 'react'
 import { ToggleGroup as ToggleGroupPrimitive } from 'radix-ui'
 import { cn } from '@/lib/utils'
 
-type Option<T extends string> = { value: T; label: React.ReactNode; disabled?: boolean }
+type Option<T extends string> = {
+  value: T
+  label: React.ReactNode
+  disabled?: boolean
+  /** Accessible name when `label` is an icon (or hides its text on some widths). */
+  'aria-label'?: string
+}
 
 type SegmentedProps<T extends string> = {
   value: T
@@ -10,6 +16,8 @@ type SegmentedProps<T extends string> = {
   options: Option<T>[]
   size?: 'sm' | 'md'
   className?: string
+  /** Extra classes for every option (e.g. icon spacing, touch targets). */
+  itemClassName?: string
   'aria-label': string
   disabled?: boolean
 }
@@ -20,6 +28,7 @@ function Segmented<T extends string>({
   options,
   size = 'md',
   className,
+  itemClassName,
   disabled,
   ...aria
 }: SegmentedProps<T>) {
@@ -44,9 +53,11 @@ function Segmented<T extends string>({
           key={opt.value}
           value={opt.value}
           disabled={opt.disabled}
+          aria-label={opt['aria-label']}
           className={cn(
             'inline-flex h-full items-center justify-center rounded-[calc(var(--radius)-4px)] whitespace-nowrap text-muted-foreground transition-[color,background-color,box-shadow] duration-(--dur-1) ease-out hover:text-foreground disabled:pointer-events-none disabled:opacity-50 data-[state=on]:bg-pill-active data-[state=on]:text-foreground data-[state=on]:shadow-e1',
             size === 'sm' ? 'px-2.5 text-micro' : 'px-3 text-label',
+            itemClassName,
           )}
         >
           {opt.label}

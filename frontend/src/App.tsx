@@ -290,6 +290,18 @@ export default function App() {
           showTabBar && 'max-md:[--safe-bottom:0px]',
         )}
       >
+        {page === 'board' ? (
+          <a
+            href="#jobs-main"
+            className="skip-link fixed! top-2 left-2"
+            onClick={(e) => {
+              e.preventDefault()
+              document.getElementById('jobs-main')?.focus()
+            }}
+          >
+            Skip to jobs
+          </a>
+        ) : null}
         <AppSidebar
           profile={profile}
           board={board}
@@ -339,8 +351,11 @@ export default function App() {
               />
 
               <main
+                id="jobs-main"
+                // Target of "Skip to jobs" (focused by script only, so no focus ring of its own).
+                tabIndex={-1}
                 className={cn(
-                  'min-h-0 flex-1 overflow-auto p-3 md:p-4',
+                  'min-h-0 flex-1 overflow-auto p-3 outline-none md:p-4',
                   docked && drawerOpen && showsTable && 'jobs-table-fit',
                 )}
               >

@@ -96,9 +96,10 @@ export function ScoreEditor({ job, className, badgeClassName, label = 'short', o
           onClick={(e) => e.stopPropagation()}
           onPointerDown={(e) => e.stopPropagation()}
           className={cn('touch-target relative rounded-full transition-opacity duration-(--dur-1) hover:opacity-80', className)}
-          aria-label={`Edit fit score${job.fit_score != null ? `: ${job.fit_score}` : ''}`}
         >
+          {/* Name = the visible score + words, then the action (label in name, WCAG 2.5.3). */}
           <ScoreBadge score={job.fit_score} userModified={modified} label={label} className={badgeClassName} />
+          <span className="sr-only">, edit fit score</span>
         </button>
       </PopoverTrigger>
       <PopoverContent

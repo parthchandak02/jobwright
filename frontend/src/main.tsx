@@ -74,7 +74,7 @@ createRoot(document.getElementById('root')!).render(
           richColors
           position="bottom-right"
           // Phones: sit above the bottom tab bar / drawer action bar (56px + safe area).
-          mobileOffset={{ bottom: 'calc(4.5rem + env(safe-area-inset-bottom, 0px))' }}
+          phoneBottom="calc(4.5rem + env(safe-area-inset-bottom, 0px))"
         />
       </BrowserRouter>
     </ThemeProvider>

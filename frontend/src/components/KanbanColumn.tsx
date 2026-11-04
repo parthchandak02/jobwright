@@ -19,7 +19,12 @@ type Props = {
   onScoreSaved?: (job: JobCard) => void
   /** Phone one-lane board: full width, no lane header (the stage strip above names it). */
   fill?: boolean
+  /** The lane to the right, for the keyboard "Skip to …" link at the top of this lane. */
+  nextStage?: string
+  nextLabel?: string
 }
+
+export const laneId = (stage: string) => `lane-${stage}`
 
 const EMPTY_COPY: Record<string, { title: string; body: string }> = {
   backlog: { title: 'No new jobs', body: 'New matches land here after each daily search.' },
@@ -48,6 +53,8 @@ export const KanbanColumn = memo(function KanbanColumn({
   onOpen,
   onScoreSaved,
   fill,
+  nextStage,
+  nextLabel,
 }: Props) {
   const { setNodeRef, isOver } = useDroppable({ id: stage })
   const items = useMemo(() => jobs.map((j) => j.url), [jobs])
@@ -60,9 +67,12 @@ export const KanbanColumn = memo(function KanbanColumn({
 
   return (
     <section
+      id={laneId(stage)}
+      // Target of the previous lane's skip link (focused by script only).
+      tabIndex={-1}
       aria-label={`${label}, ${jobs.length} job${jobs.length === 1 ? '' : 's'}`}
       style={{ '--lane': lane, '--tone': lane } as CSSProperties}
-      className={fill ? 'flex w-full flex-col' : LANE_WIDTH}
+      className={cn(fill ? 'flex w-full flex-col' : LANE_WIDTH, 'outline-none')}
     >
       <header className={cn('flex h-8 items-center gap-2 px-1.5', fill && 'sr-only')}>
         <span aria-hidden className="size-2 shrink-0 rounded-full bg-(--lane)" />
@@ -78,6 +88,19 @@ export const KanbanColumn = memo(function KanbanColumn({
           highlighted && 'tone-tint',
         )}
       >
+        {nextStage && !fill && jobs.length > 0 ? (
+          // Without this, reaching the next lane means tabbing through every card in this one.
+          <a
+            href={`#${laneId(nextStage)}`}
+            className="skip-link self-start"
+            onClick={(e) => {
+              e.preventDefault()
+              document.getElementById(laneId(nextStage))?.focus()
+            }}
+          >
+            Skip to {nextLabel || nextStage}
+          </a>
+        ) : null}
         <SortableContext items={items} strategy={verticalListSortingStrategy}>
           {jobs.map((job) => (
             <SortableJobCard

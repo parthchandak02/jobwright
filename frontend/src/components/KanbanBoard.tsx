@@ -305,9 +305,11 @@ export function KanbanBoard({
         onTouchStart={phone ? onTouchStart : undefined}
         onTouchEnd={phone ? onTouchEnd : undefined}
       >
-        {stages.map((stage) => (
+        {stages.map((stage, i) => (
           <KanbanColumn
             key={stage}
+            nextStage={stages[i + 1]}
+            nextLabel={stages[i + 1] ? STAGE_LABELS[stages[i + 1]] || stages[i + 1] : undefined}
             fill={!!phone}
             stage={stage}
             label={STAGE_LABELS[stage] || stage}

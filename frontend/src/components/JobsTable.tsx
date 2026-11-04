@@ -242,6 +242,8 @@ export function JobsTable({ jobs, stages, onOpen, onScoreSaved, toolbarStart, se
 
       {!desktop ? (
         <div className="flex flex-col gap-2">
+          {/* Cards title themselves with h3; keep the outline h1 → h2 → h3. */}
+          <h2 className="sr-only">Job list</h2>
           {displayJobs.length === 0
             ? noMatches
             : displayJobs.map((job) => (

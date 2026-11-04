@@ -277,6 +277,12 @@
   #root {
     height: 100%;
   }
+  /* viewport-fit=cover: keep content clear of a landscape notch (top and bottom bars pad
+     themselves with --safe-bottom). */
+  #root {
+    padding-left: env(safe-area-inset-left, 0px);
+    padding-right: env(safe-area-inset-right, 0px);
+  }
   html {
     -webkit-text-size-adjust: 100%;
     text-size-adjust: 100%;
@@ -647,6 +653,28 @@
 
 /* Desktop job panel: the job it shows is marked on the board and in the table.
    Unlayered so hover and focus utilities never hide it. */
+/* Keyboard skip links ("Skip to jobs", "Skip to Prepare"): hidden until focused. */
+.skip-link:not(:focus) {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.skip-link:focus {
+  z-index: 60;
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.25rem;
+  padding-inline: 0.75rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--foreground);
+  font-size: var(--text-label);
+  box-shadow: var(--elev-1);
+}
 /* Board lanes hold hundreds of cards: skip style, layout and paint for the ones off screen
    (they keep their last size, so drag measuring and scrolling stay right). */
 .job-card-slot {

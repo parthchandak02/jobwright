@@ -22,7 +22,10 @@ function TabLabel({ label, count, stage }: { label: string; count: number; stage
     <>
       {stage ? <span aria-hidden className="size-2 shrink-0 rounded-full bg-(--lane)" /> : null}
       <span>{label}</span>
-      <span className="text-micro font-medium text-muted-foreground">{count}</span>
+      <span className="text-micro font-medium text-muted-foreground">
+        {count}
+        <span className="sr-only"> {count === 1 ? 'job' : 'jobs'}</span>
+      </span>
     </>
   )
 }
@@ -31,12 +34,14 @@ function TabLabel({ label, count, stage }: { label: string; count: number; stage
  * Phone stage strip: a sideways-scrolling segmented control with a lane dot and count per stage.
  * On the board it picks the one lane shown; in the table it filters (with "All").
  */
+// The strip filters the one list below it rather than switching tab panels, so triggers drop
+// Radix's aria-controls (it would point at panels that don't exist).
 export function StageTabs({ stages, counts, value, onChange, allCount, className }: Props) {
   return (
     <Tabs value={value} onValueChange={onChange} className={cn('min-w-0 gap-0', className)}>
       <TabsList scrollable aria-label="Stages">
         {allCount != null ? (
-          <TabsTrigger value="all" aria-label={`All jobs, ${allCount}`} className={TRIGGER}>
+          <TabsTrigger value="all" aria-controls={undefined} className={TRIGGER}>
             <TabLabel label="All" count={allCount} />
           </TabsTrigger>
         ) : null}
@@ -44,7 +49,7 @@ export function StageTabs({ stages, counts, value, onChange, allCount, className
           <TabsTrigger
             key={stage}
             value={stage}
-            aria-label={`${STAGE_LABELS[stage] || stage}, ${counts[stage] ?? 0}`}
+            aria-controls={undefined}
             style={{ '--lane': laneTone(stage) } as CSSProperties}
             className={TRIGGER}
           >
