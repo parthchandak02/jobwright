@@ -1,7 +1,7 @@
 import { useDroppable } from '@dnd-kit/core'
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { Inbox } from 'lucide-react'
-import type { CSSProperties } from 'react'
+import { memo, useMemo, type CSSProperties } from 'react'
 import { JobCard, laneTone } from '@/lib/api'
 import { NAV_ICONS } from '@/lib/navIcons'
 import { cn } from '@/lib/utils'
@@ -36,7 +36,8 @@ const EMPTY_COPY: Record<string, { title: string; body: string }> = {
  */
 export const LANE_WIDTH = 'flex w-[17.5rem] shrink-0 flex-col md:w-auto md:max-w-[26rem] md:min-w-[17.5rem] md:flex-1'
 
-export function KanbanColumn({
+/** Memoized: while dragging, only the lanes whose cards change re-render (props must be stable). */
+export const KanbanColumn = memo(function KanbanColumn({
   stage,
   label,
   jobs,
@@ -49,6 +50,7 @@ export function KanbanColumn({
   fill,
 }: Props) {
   const { setNodeRef, isOver } = useDroppable({ id: stage })
+  const items = useMemo(() => jobs.map((j) => j.url), [jobs])
   const lane = laneTone(stage)
   const highlighted = isOver || isDropTarget
   const Icon = NAV_ICONS[stage] || Inbox
@@ -76,14 +78,14 @@ export function KanbanColumn({
           highlighted && 'tone-tint',
         )}
       >
-        <SortableContext items={jobs.map((j) => j.url)} strategy={verticalListSortingStrategy}>
+        <SortableContext items={items} strategy={verticalListSortingStrategy}>
           {jobs.map((job) => (
             <SortableJobCard
               key={job.url}
               job={job}
               stage={stage}
               onOpen={onOpen}
-              onScoreSaved={onScoreSaved ? () => onScoreSaved(job) : undefined}
+              onScoreSaved={onScoreSaved}
             />
           ))}
         </SortableContext>
@@ -108,4 +110,4 @@ export function KanbanColumn({
       </div>
     </section>
   )
-}
+})

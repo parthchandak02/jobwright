@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import { JobKeyChips } from '@/components/JobMetaBadges'
 import { placeLine } from '@/components/JobSummary'
 import { ScoreEditor } from '@/components/ScoreEditor'
@@ -21,7 +22,8 @@ type Props = {
  * One desktop row. The whole row opens the job on click; the title is a real
  * button so keyboard (Enter / Space) and screen readers reach it.
  */
-export function JobsTableRow({ job, onOpen, onScoreSaved, selected = false, onToggleSelect }: Props) {
+/** Memoized; keep `onOpen`, `onScoreSaved` and `onToggleSelect` stable. */
+export const JobsTableRow = memo(function JobsTableRow({ job, onOpen, onScoreSaved, selected = false, onToggleSelect }: Props) {
   const company = job.company || job.site
   const open = useSelectedJob(job.job_id)
   return (
@@ -101,4 +103,4 @@ export function JobsTableRow({ job, onOpen, onScoreSaved, selected = false, onTo
       </td>
     </tr>
   )
-}
+})

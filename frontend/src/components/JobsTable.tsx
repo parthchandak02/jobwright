@@ -305,7 +305,7 @@ export function JobsTable({ jobs, stages, onOpen, onScoreSaved, toolbarStart, se
                       onOpen={onOpen}
                       onScoreSaved={onScoreSaved}
                       selected={selection.isSelected(job)}
-                      onToggleSelect={selectable ? (j, range) => selection.toggle(j, range) : undefined}
+                      onToggleSelect={selectable ? selection.toggle : undefined}
                     />
                   ))
                 )}

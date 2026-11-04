@@ -1,4 +1,4 @@
-import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, lazy, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { CloudOff, Inbox, RefreshCw, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -47,6 +47,8 @@ function isWorthALook(job: JobCard): boolean {
   const s = job.fit_score
   return job.funnel_stage === 'backlog' && s != null && s >= 5 && s <= 6 && !(job.dealbreakers || []).length
 }
+
+const NO_JOBS: JobCard[] = []
 
 function allVisibleCount(columns: Record<string, JobCard[]>): number {
   return Object.values(columns).reduce((n, jobs) => n + jobs.length, 0)
@@ -141,7 +143,8 @@ export default function App() {
     else navigate(value ? `/?stage=${encodeURIComponent(value)}` : '/')
   }
 
-  const search = searchQuery.trim().toLowerCase()
+  // Filtering 300+ cards follows the typing at low priority, so keys never wait for the board.
+  const search = useDeferredValue(searchQuery.trim().toLowerCase())
 
   const allJobs = useMemo(() => (board ? board.stages.flatMap((s) => board.columns[s] || []) : []), [board])
   const ratedOnBoard = useMemo(() => allJobs.filter((j) => j.user_fit_score != null).length, [allJobs])
@@ -156,14 +159,16 @@ export default function App() {
     navigate(`/jobs/${id}${location.search}`, { replace: Boolean(jobId) })
   }
 
-  function openJob(job: JobCard) {
-    openJobId(job.job_id)
-  }
-
-  function openJobByUrl(url: string) {
-    const job = allJobs.find((j) => j.url === url)
-    if (job) openJob(job)
-  }
+  // Stable handlers for the (memoized) cards and rows: they read the latest route through a ref.
+  const openJobIdRef = useRef(openJobId)
+  openJobIdRef.current = openJobId
+  const allJobsRef = useRef(allJobs)
+  allJobsRef.current = allJobs
+  const openJob = useCallback((job: JobCard) => openJobIdRef.current(job.job_id), [])
+  const openJobByUrl = useCallback((url: string) => {
+    const job = allJobsRef.current.find((j) => j.url === url)
+    if (job) openJobIdRef.current(job.job_id)
+  }, [])
 
   function closeDrawer() {
     navigate(params.get('from') === 'review' ? '/review' : `/${location.search}`)
@@ -175,10 +180,23 @@ export default function App() {
     [search, worthOnly],
   )
 
+  // Per lane, reuse the last filtered list while that lane and the filter are unchanged, so a
+  // drag (which replaces two lanes) only re-renders those two lanes.
+  const laneCache = useRef(new WeakMap<JobCard[], { visible: (j: JobCard) => boolean; jobs: JobCard[] }>())
   const filteredColumns = useMemo(() => {
     if (!board) return {}
     const cols: Record<string, JobCard[]> = {}
-    for (const stage of board.stages) cols[stage] = (board.columns[stage] || []).filter(visible)
+    for (const stage of board.stages) {
+      const source = board.columns[stage] || NO_JOBS
+      const hit = laneCache.current.get(source)
+      if (hit && hit.visible === visible) {
+        cols[stage] = hit.jobs
+        continue
+      }
+      const jobs = source.filter(visible)
+      laneCache.current.set(source, { visible, jobs })
+      cols[stage] = jobs
+    }
     return cols
   }, [board, visible])
 
