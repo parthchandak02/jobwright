@@ -772,7 +772,7 @@ def run_tailoring(min_score: int = 7, limit: int = 20,
                 log.info(
                     "%d/%d [%s] attempts=%s | %s",
                     completed, len(jobs), status.upper(),
-                    report["attempts"], job["title"][:40],
+                    report["attempts"], (job.get("title") or "")[:40],
                 )
                 continue
 
@@ -787,7 +787,7 @@ def run_tailoring(min_score: int = 7, limit: int = 20,
                 "url": job["url"], "title": job["title"], "site": job["site"],
                 "status": "error", "attempts": 0, "path": None, "pdf_path": None,
             }
-            log.error("%d/%d [ERROR] %s -- %s", completed, len(jobs), job["title"][:40], e)
+            log.error("%d/%d [ERROR] %s -- %s", completed, len(jobs), (job.get("title") or "")[:40], e)
 
         results.append(result)
         stats[result.get("status", "error")] = stats.get(result.get("status", "error"), 0) + 1
@@ -800,7 +800,7 @@ def run_tailoring(min_score: int = 7, limit: int = 20,
             result["status"].upper(),
             result.get("attempts", "?"),
             rate * 60,
-            result["title"][:40],
+            (result.get("title") or "")[:40],
         )
 
     elapsed = time.time() - t0

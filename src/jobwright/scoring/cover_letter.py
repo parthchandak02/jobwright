@@ -412,7 +412,7 @@ def run_cover_letters(min_score: int = 7, limit: int = 20,
                 "path": None, "pdf_path": None, "error": str(e),
             }
             error_count += 1
-            log.error("%d/%d [ERROR] %s -- %s", completed, len(jobs), job["title"][:40], e)
+            log.error("%d/%d [ERROR] %s -- %s", completed, len(jobs), (job.get("title") or "")[:40], e)
 
         results.append(result)
         elapsed = time.time() - t0
@@ -420,7 +420,7 @@ def run_cover_letters(min_score: int = 7, limit: int = 20,
         if result.get("path"):
             log.info(
                 "%d/%d [OK] | %.1f jobs/min | %s",
-                completed, len(jobs), rate * 60, result["title"][:40],
+                completed, len(jobs), rate * 60, (result.get("title") or "")[:40],
             )
 
     saved = sum(1 for r in results if r.get("path"))
