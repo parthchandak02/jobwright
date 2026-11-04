@@ -36,7 +36,6 @@ export function StepAbout({ name, onName, phone, onPhone, busy, onContinue }: Pr
             onChange={(e) => onName(e.target.value)}
             placeholder="First and last name"
             autoComplete="name"
-            autoFocus
           />
         </FormField>
         <FormField

@@ -55,18 +55,20 @@ export function WelcomeShell({ progress, email, children }: ShellProps) {
     <div className="flex min-h-dvh flex-col bg-background">
       <div className="flex-1 px-page-x">
         <div className="mx-auto w-full max-w-welcome pt-5 md:pt-12">
-          <div className="flex items-center gap-2.5">
-            <BrandLogo className="size-7 text-foreground" />
-            <span className="text-subheading text-foreground">jobwright</span>
-          </div>
-          {progress != null ? <Progress progress={progress} /> : null}
-          <div className="pt-6 pb-8 md:pt-8 md:pb-12">{children}</div>
+          <header>
+            <div className="flex items-center gap-2.5">
+              <BrandLogo className="size-7 text-foreground" />
+              <span className="text-subheading text-foreground">jobwright</span>
+            </div>
+            {progress != null ? <Progress progress={progress} /> : null}
+          </header>
+          <main className="pt-6 pb-8 md:pt-8 md:pb-12">{children}</main>
         </div>
       </div>
       {email ? (
-        <p className="px-page-x pb-[calc(1.5rem+var(--safe-bottom))] text-center text-caption text-muted-foreground">
+        <footer className="px-page-x pb-[calc(1.5rem+var(--safe-bottom))] text-center text-caption text-muted-foreground">
           Signed in as {email}
-        </p>
+        </footer>
       ) : null}
     </div>
   )

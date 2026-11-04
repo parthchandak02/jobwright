@@ -18,13 +18,24 @@ export const STATUS_TEXT: Record<PersonStatus, string> = {
 }
 
 /** Filled = known (green ok, amber attention, red problem); hollow = unknown; dashed = setup pending. */
-export function StatusDot({ status, label, className }: { status: PersonStatus; label?: string; className?: string }) {
+export function StatusDot({
+  status,
+  label,
+  className,
+  decorative,
+}: {
+  status: PersonStatus
+  label?: string
+  className?: string
+  /** Hide from assistive tech when the status is already in the surrounding text (e.g. a row's name). */
+  decorative?: boolean
+}) {
+  const text = label ?? STATUS_LABEL[status]
   return (
     <span
       className={cn('inline-block size-2.5 shrink-0 rounded-full', DOT[status], className)}
-      role="img"
-      aria-label={label ?? STATUS_LABEL[status]}
-      title={label ?? STATUS_LABEL[status]}
+      {...(decorative ? { 'aria-hidden': true } : { role: 'img', 'aria-label': text })}
+      title={text}
     />
   )
 }

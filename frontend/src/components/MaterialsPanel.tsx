@@ -240,7 +240,7 @@ export function JobCoverMaterials({
   const tailor = useTailorMaterials(jobKey, 'cover', () => onTailored?.())
   useTailorToasts(tailor, logOpen, 'Cover letter tailor')
 
-  const examples = settings?.cover_letter_examples ?? []
+  const examples = useMemo(() => settings?.cover_letter_examples ?? [], [settings?.cover_letter_examples])
   const coverPdfUrl =
     jobKey && materials?.cover_pdf
       ? `${API_BASE}${jobPath(jobKey)}/materials/cover.pdf`

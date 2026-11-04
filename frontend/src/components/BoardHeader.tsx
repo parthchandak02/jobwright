@@ -13,12 +13,13 @@ import { cn } from '@/lib/utils'
 function BoardSearch({
   value,
   onChange,
-  autoFocus,
+  focusOnMount,
   className,
 }: {
   value: string
   onChange: (v: string) => void
-  autoFocus?: boolean
+  /** Focus the field when it appears (phone: right after the user taps the search button). */
+  focusOnMount?: boolean
   className?: string
 }) {
   return (
@@ -27,7 +28,10 @@ function BoardSearch({
       <Input
         type="search"
         value={value}
-        autoFocus={autoFocus}
+        // Only set when the user just opened search, so focus follows their action instead of
+        // jumping on page load.
+        // eslint-disable-next-line jsx-a11y/no-autofocus
+        autoFocus={focusOnMount}
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === 'Escape') onChange('')
@@ -83,7 +87,7 @@ export function BoardHeader({
     >
       {searchOpen ? (
         <div className="flex min-w-0 flex-1 items-center gap-1 md:hidden">
-          <BoardSearch value={search} onChange={onSearchChange} autoFocus={!search} className="flex-1" />
+          <BoardSearch value={search} onChange={onSearchChange} focusOnMount={!search} className="flex-1" />
           <Button
             type="button"
             variant="ghost"

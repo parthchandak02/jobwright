@@ -10,5 +10,7 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['src/**/*.test.ts'],
+    // tokenContrast.test.ts reads index.css with `?raw`; Vitest blanks CSS it doesn't process.
+    css: { include: [/index\.css/] },
   },
 })

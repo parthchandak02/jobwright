@@ -94,6 +94,10 @@ export function AppSidebar({
         data-pinned={pinned ? 'true' : 'false'}
         aria-hidden
       />
+      {/* Clicking anywhere in the rail pins it open: a mouse-only convenience. Keyboard users get the same
+          panel through onFocusCapture (it stays open while focus is inside), and every control in it is a
+          real button or link, so there is nothing a key handler on the <aside> would add. */}
+      {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-noninteractive-element-interactions */}
       <aside
         ref={rootRef}
         data-expanded={expanded ? 'true' : 'false'}

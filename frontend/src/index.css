@@ -101,7 +101,7 @@
 @utility tone-tint {
   border-color: color-mix(in oklab, var(--tone, var(--tone-neutral)) 22%, var(--surface));
   background-color: color-mix(in oklab, var(--tone, var(--tone-neutral)) 10%, var(--surface));
-  color: color-mix(in oklab, var(--tone, var(--tone-neutral)) 75%, var(--foreground));
+  color: color-mix(in oklab, var(--tone, var(--tone-neutral)) var(--tone-text-mix), var(--foreground));
 }
 
 @utility touch-target {
@@ -172,6 +172,9 @@
   --stage-offer: oklch(0.58 0.11 155);
   --stage-closed: oklch(0.56 0.1 330);
   --tone-neutral: oklch(0.55 0.01 260);
+  /* Share of the tone in tinted text (tone-tint, .lane-label); the rest is --foreground.
+     65% keeps every tone at WCAG AA 4.5:1 on its tint in both themes (guarded by tokenContrast.test.ts). */
+  --tone-text-mix: 65%;
   --query-daily: var(--tone-neutral);
   --query-weekly: var(--tone-neutral);
 
@@ -395,7 +398,7 @@
     background-color: color-mix(in oklab, var(--lane) 10%, var(--surface));
   }
   .lane-label {
-    color: color-mix(in oklab, var(--lane) 75%, var(--foreground));
+    color: color-mix(in oklab, var(--lane) var(--tone-text-mix), var(--foreground));
   }
 
   /* Job card — shared spacing + chips (run dialog, MetaField, Chip) */

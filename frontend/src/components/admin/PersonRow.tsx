@@ -70,20 +70,16 @@ function secondLine(u: AdminOverviewUser): { text: string; className: string } {
   return { text: u.emails[0] ?? 'No login email', className: 'text-muted-foreground' }
 }
 
-function rowLabel(u: AdminOverviewUser): string {
+/** Screen-reader-only context. Rows take their accessible name from their content (no aria-label),
+ *  so the visible text is always part of the name (WCAG 2.5.3 Label in Name). */
+function Sr({ children }: { children: string }) {
+  return <span className="sr-only">{children}</span>
+}
+
+/** Context the table header (aria-hidden) and phone row don't show: status when healthy, numbers' meanings. */
+function statusForSr(u: AdminOverviewUser, shown: string | null): string | null {
   const status = STATUS_LABEL[personStatus(u)]
-  const chat = chatDisplay(u.whatsapp?.name, u.whatsapp?.target, u.whatsapp?.type)?.label ?? 'no chat yet'
-  const parts = [u.name, status, ...(searchPaused(u) ? ['search paused'] : []), `chat ${chat}`]
-  if (u.setup_complete) {
-    parts.push(
-      `sends at ${fmtTime(u.hour, u.minute)}`,
-      `cutoff ${u.notify_threshold ?? 'not set'}+`,
-      `list ${fmtTopN(u.brief_top_n)}`,
-      `${u.counts?.new_7d ?? 0} new this week`,
-    )
-  }
-  parts.push(`AI use ${fmtUsage(u.cost_30d)}`)
-  return parts.join(', ')
+  return shown === status ? null : status
 }
 
 export function PersonRow(props: Props) {
@@ -95,6 +91,7 @@ function TableRow({ user: u, expanded, onToggle, saveState, savedAt, onPatch, ..
   const panelId = `person-${u.user_id}`
   const pending = !u.setup_complete
   const line2 = secondLine(u)
+  const srStatus = statusForSr(u, line2.text)
 
   return (
     <li className="min-w-0">
@@ -102,7 +99,6 @@ function TableRow({ user: u, expanded, onToggle, saveState, savedAt, onPatch, ..
         type="button"
         aria-expanded={expanded}
         aria-controls={panelId}
-        aria-label={rowLabel(u)}
         onClick={onToggle}
         className={cn(
           PEOPLE_GRID,
@@ -111,24 +107,45 @@ function TableRow({ user: u, expanded, onToggle, saveState, savedAt, onPatch, ..
         )}
       >
         <span className="flex min-w-0 items-center gap-3">
-          <StatusDot status={status} />
+          <StatusDot status={status} decorative />
           <span className="min-w-0">
             <span className="block truncate text-label">{u.name}</span>
+            {srStatus ? <Sr>{`, ${srStatus}`}</Sr> : null}
+            <Sr>, </Sr>
             <span className={cn('block truncate text-caption', line2.className)}>{line2.text}</span>
           </span>
         </span>
-        <ChatText u={u} />
+        <span className="flex min-w-0">
+          <Sr>, chat </Sr>
+          <ChatText u={u} />
+        </span>
         {pending ? (
-          <span className="col-span-4 text-muted-foreground">Waiting for setup</span>
+          <span className="col-span-4 text-muted-foreground">
+            <Sr>, </Sr>Waiting for setup
+          </span>
         ) : (
           <>
-            <span>{fmtTime(u.hour, u.minute)}</span>
-            <span>{u.notify_threshold != null ? `${u.notify_threshold}+` : '—'}</span>
-            <span>{fmtTopN(u.brief_top_n)}</span>
-            <span className="text-right">{u.counts?.new_7d ?? 0}</span>
+            <span>
+              <Sr>, sends at </Sr>
+              {fmtTime(u.hour, u.minute)}
+            </span>
+            <span>
+              <Sr>, cutoff </Sr>
+              {u.notify_threshold != null ? `${u.notify_threshold}+` : '—'}
+            </span>
+            <span>
+              <Sr>, list </Sr>
+              {fmtTopN(u.brief_top_n)}
+            </span>
+            <span className="text-right">
+              <Sr>, </Sr>
+              {u.counts?.new_7d ?? 0}
+              <Sr> new this week</Sr>
+            </span>
           </>
         )}
         <span className="truncate text-right text-muted-foreground" title={usageTitle(u.cost_30d)}>
+          <Sr>, AI use </Sr>
           {fmtUsage(u.cost_30d)}
         </span>
         <ChevronDown
@@ -159,6 +176,7 @@ function CardRow({ user: u, onToggle }: Props) {
   const status = personStatus(u)
   const pending = !u.setup_complete
   const statusText = status === 'ok' ? null : STATUS_LABEL[status]
+  const srStatus = statusForSr(u, statusText)
   const chat = chatDisplay(u.whatsapp?.name, u.whatsapp?.target, u.whatsapp?.type)
   const meta = pending
     ? [chat?.label ?? 'No chat yet']
@@ -171,21 +189,28 @@ function CardRow({ user: u, onToggle }: Props) {
       <button
         type="button"
         aria-haspopup="dialog"
-        aria-label={rowLabel(u)}
         onClick={onToggle}
         className="flex min-h-16 w-full min-w-0 items-center gap-3 px-4 py-3 text-left transition-colors duration-(--dur-1) active:bg-surface-muted"
       >
-        <StatusDot status={status} className="self-start mt-[0.4375rem]" />
+        <StatusDot status={status} decorative className="self-start mt-[0.4375rem]" />
         <span className="min-w-0 flex-1">
           <span className="flex min-w-0 items-baseline gap-2">
             <span className="truncate text-label">{u.name}</span>
+            {srStatus ? <Sr>{`, ${srStatus}`}</Sr> : null}
             {statusText ? (
-              <span className={cn('shrink-0 text-caption', STATUS_TEXT[status])}>{statusText}</span>
+              <span className={cn('shrink-0 text-caption', STATUS_TEXT[status])}>
+                <Sr>, </Sr>
+                {statusText}
+              </span>
             ) : null}
           </span>
           <span className="mt-0.5 block truncate text-caption text-muted-foreground tabular-nums">
+            <Sr>, </Sr>
             {meta.join(' · ')}
           </span>
+          {pending ? null : (
+            <Sr>{`, cutoff ${u.notify_threshold ?? 'not set'}+, ${u.counts?.new_7d ?? 0} new this week, AI use ${fmtUsage(u.cost_30d)}`}</Sr>
+          )}
         </span>
         <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden />
       </button>
