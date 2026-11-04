@@ -133,7 +133,7 @@ jobwright/
 ├── pyproject.toml            # Package + tooling config
 ├── profile.example.json      # Onboarding profile template
 ├── src/jobwright/           # Main package (import name kept from the original codebase)
-│   ├── cli.py                # Typer CLI: init/run/apply/status/doctor/...
+│   ├── cli/                  # Typer CLI package: init/run/apply/status/doctor/...
 │   ├── pipeline.py           # Stages 1-5 orchestrator
 │   ├── config.py             # Paths, environment, packaged-config loader
 │   ├── database.py           # SQLite job store

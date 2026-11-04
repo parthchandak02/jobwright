@@ -6,7 +6,7 @@ Detailed paths for agents. Summary: [../../AGENTS.md](../../AGENTS.md).
 
 | Path | Purpose |
 |------|---------|
-| `src/jobwright/cli.py` | Typer CLI: `run`, `tailor-job`, `apply` (dry-run unless `--live`), `notify`, `status`, `doctor`, `users`, `network`, `targets`, `eval`, `rescore`, `criteria`, `labels`, `preflight`, `ops` |
+| `src/jobwright/cli/` | Typer CLI package (one module per area, registered in `cli/__init__.py`): `run`, `tailor-job`, `apply` (dry-run unless `--live`), `notify`, `status`, `doctor`, `users`, `network`, `targets`, `eval`, `rescore`, `criteria`, `labels`, `preflight`, `ops` |
 | `src/jobwright/pipeline.py` | Stage orchestration (`STAGE_ORDER`, default brief stages, per-user flock, `logs/last_run.json`) |
 | `src/jobwright/run_registry.py` | Durable Auto Search / CLI runs (`users/<id>/logs/web_runs.json`) |
 | `src/jobwright/resume.py` | PDF source of truth → cached `resume/base.md` |
