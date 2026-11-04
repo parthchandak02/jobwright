@@ -73,6 +73,17 @@ REQUIRED_SECTIONS: set[str] = {"SUMMARY", "TECHNICAL SKILLS", "EXPERIENCE", "PRO
 
 # ── Helpers ───────────────────────────────────────────────────────────────
 
+def _watchlist_hit(term: str, text: str) -> bool:
+    """Whole-word match for a FABRICATION_WATCHLIST term in lowercased text.
+
+    Plain substring matching flagged "scalable" (scala), "trust" (rust) and
+    "Springboard" (spring). "certif" stays a prefix so it still catches
+    certified / certification.
+    """
+    tail = "" if term == "certif" else r"(?![a-z0-9+#])"
+    return re.search(r"(?<![a-z0-9])" + re.escape(term) + tail, text) is not None
+
+
 def _build_skills_set(profile: dict) -> set[str]:
     """Build the set of allowed skills from the profile's skills_boundary."""
     boundary = profile.get("skills_boundary", {})
@@ -139,7 +150,7 @@ def validate_json_fields(data: dict, profile: dict, mode: str = "normal") -> dic
                 continue
             if fake in allowed_skills:
                 continue
-            if fake in skills_text:
+            if _watchlist_hit(fake, skills_text):
                 errors.append(f"Fabricated skill: '{fake}'")
 
     # Experience: preserved companies should appear (warnings in lenient — tailoring may condense)
@@ -268,7 +279,7 @@ def validate_tailored_resume(text: str, profile: dict, original_text: str = "") 
         for fake in FABRICATION_WATCHLIST:
             if len(fake) <= 2:
                 continue
-            if fake in skills_block:
+            if _watchlist_hit(fake, skills_block):
                 errors.append(f"FABRICATED SKILL in Technical Skills: '{fake}'")
 
     # 8. Scan full document for fabrication watchlist items not in original
@@ -277,7 +288,7 @@ def validate_tailored_resume(text: str, profile: dict, original_text: str = "") 
         for fake in FABRICATION_WATCHLIST:
             if len(fake) <= 2:
                 continue
-            if fake in text_lower and fake not in original_lower:
+            if _watchlist_hit(fake, text_lower) and not _watchlist_hit(fake, original_lower):
                 warnings.append(f"New tool/skill appeared: '{fake}' (not in original)")
 
     # 9. Em dashes (should be auto-fixed by sanitize_text, but safety net)

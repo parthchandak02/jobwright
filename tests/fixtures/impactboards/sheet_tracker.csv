@@ -1,0 +1,6 @@
+"Date Job Posted","Location","Position","Company / Organization","Salary","Job Link"
+"{RECENT_MDY}","San Francisco, CA","Social Impact Manager","Example Org","$120,000 - $140,000","https://jobs.example.com/example-org/social-impact-manager"
+"{RECENT_MDY}","Remote","CSR Program Lead","Sample Corp","","https://jobs.example.com/sample-corp/csr-program-lead"
+"{OLD_MDY}","New York, NY","Old Sustainability Role","Old Example Co","","https://jobs.example.com/old/sustainability"
+"{RECENT_MDY}","Remote","Missing Link Role","Linkless Org","","not a link"
+"{RECENT_MDY}","Remote","","Untitled Org","","https://jobs.example.com/untitled"
