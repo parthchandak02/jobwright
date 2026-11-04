@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>The Impact Job (fake fixture)</title>
+    <link>https://www.theimpactjob.com/</link>
+    <item>
+      <title>Program Director, Climate Grants</title>
+      <link>https://www.theimpactjob.com/jobs/program-director-climate-grants-1001</link>
+      <company>Example Org</company>
+      <location>San Francisco, CA</location>
+      <description>Lead a portfolio of climate grants for Example Org.</description>
+      <pubDate>{RECENT_RFC822}</pubDate>
+    </item>
+    <item>
+      <title>Partnerships Manager</title>
+      <link>https://www.theimpactjob.com/jobs/partnerships-manager-1002</link>
+      <company>Sample Foundation</company>
+      <location>Remote</location>
+      <description>Build partnerships across the sector.</description>
+      <pubDate>{RECENT_ISO}</pubDate>
+    </item>
+    <item>
+      <title>Stale Posting From Last Year</title>
+      <link>https://www.theimpactjob.com/jobs/stale-posting-1003</link>
+      <company>Old Example Co</company>
+      <location>New York, NY</location>
+      <description>This posting is old and should be dropped.</description>
+      <pubDate>{OLD_RFC822}</pubDate>
+    </item>
+    <item>
+      <title>Posting Without A Link</title>
+      <company>Linkless Org</company>
+      <location>Remote</location>
+      <pubDate>{RECENT_RFC822}</pubDate>
+    </item>
+    <item>
+      <title>Development Associate</title>
+      <link>https://www.theimpactjob.com/jobs/development-associate-1004</link>
+      <company></company>
+      <location></location>
+      <description></description>
+      <pubDate>sometime soon</pubDate>
+    </item>
+  </channel>
+</rss>

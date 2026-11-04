@@ -105,6 +105,18 @@ def _recent(date_str: str | None, max_age_days: int) -> bool:
     raw = _clean(date_str)
     if not raw:
         return True
+    # RSS 2.0 pubDate is RFC 822 ("Mon, 02 Nov 2026 10:00:00 +0000"), which no
+    # strptime format below matches; without this the RSS age window never applied.
+    from email.utils import parsedate_to_datetime
+
+    try:
+        dt = parsedate_to_datetime(raw)
+    except (TypeError, ValueError, IndexError):
+        dt = None
+    if dt is not None:
+        if dt.tzinfo is None:
+            return dt >= datetime.now() - timedelta(days=max_age_days)
+        return dt >= datetime.now(dt.tzinfo) - timedelta(days=max_age_days)
     for fmt in DATE_FORMATS:
         try:
             dt = datetime.strptime(raw, fmt)
