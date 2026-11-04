@@ -10,6 +10,7 @@ Three-tier extraction cascade (cheapest first):
   Tier 3: LLM-assisted extraction (1 LLM call)
 """
 
+import html
 import json
 import logging
 import re
@@ -498,6 +499,11 @@ def clean_description(text: str) -> str:
     """Convert HTML description to clean readable text."""
     if not text:
         return ""
+
+    # JSON-LD descriptions are often entity-escaped HTML ("&lt;p&gt;...");
+    # unescape first so the tags are parsed instead of kept as literal text.
+    if "<" not in text and "&lt;" in text:
+        text = html.unescape(text)
 
     if "<" in text and ">" in text:
         soup = BeautifulSoup(text, "html.parser")
