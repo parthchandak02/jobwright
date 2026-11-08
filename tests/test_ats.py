@@ -79,3 +79,35 @@ def test_fetch_greenhouse_schema_mock():
 
         schema = fetch_greenhouse_schema("stripe", "12345")
         assert schema["title"] == "Test Role"
+
+
+def test_detect_ats_every_family():
+    from jobwright.apply.ats.detect import ats_family
+
+    cases = {
+        "https://boards.greenhouse.io/exampleorg/jobs/4001": "greenhouse",
+        "https://job-boards.eu.greenhouse.io/exampleorg/jobs/4001": "greenhouse",
+        "https://jobs.eu.lever.co/exampleorg/abc-123/apply": "lever",
+        "https://jobs.ashbyhq.com/exampleorg/1f2e3d4c/application": "ashby",
+        "https://exampleorg.wd1.myworkdayjobs.com/en-US/External/job/Remote/Analyst_R1": "workday",
+        "https://careers-exampleorg.icims.com/jobs/1234/analyst/job": "icims",
+        "https://jobs.smartrecruiters.com/ExampleOrg/7430000000000-analyst": "smartrecruiters",
+        "https://jobs.jobvite.com/exampleorg/job/oAbc123": "jobvite",
+        "https://exampleorg.bamboohr.com/careers/42": "bamboohr",
+        "https://apply.workable.com/exampleorg/j/ABC123/": "workable",
+        "https://ats.rippling.com/exampleorg/jobs/9b1c": "rippling",
+        "https://career4.successfactors.com/sfcareer/jobreqcareer?jobId=1": "successfactors",
+        "https://workforcenow.adp.com/mascsr/default/mdf/recruitment/recruitment.html?cid=x": "adp",
+        "https://exampleorg.applytojob.com/apply/AbC123/Analyst": "applytojob",
+        "https://exampleorg.breezy.hr/p/abc123-analyst": "breezy",
+        "https://exampleorg.taleo.net/careersection/2/jobdetail.ftl?job=1": "taleo",
+        "https://jobs.dayforcehcm.com/en-US/exampleorg/CANDIDATEPORTAL/jobs/1": "dayforce",
+    }
+    for url, family in cases.items():
+        assert detect_ats(url) == family, url
+        assert ats_family(url) == family, url
+    assert detect_ats("https://careers.example.org/jobs/1") is None
+    assert ats_family("https://careers.example.org/jobs/1") == "other"
+    assert ats_family("") is None
+    # An aggregator URL carrying an encoded ATS link is not the ATS.
+    assert detect_ats("https://agg.example.net/r?url=https%3A%2F%2Fjobs.lever.co%2Fx%2F1") is None
