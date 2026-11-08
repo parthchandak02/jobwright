@@ -319,12 +319,20 @@ def test_profile_picker_and_profiles_of_others_refused(world):
     res = world.post("/oauth/authorize", headers=access(ALEX), follow_redirects=False,
                      data={"consent": consent_nonce(page.text), "user_id": "blake", "action": "allow"})
     assert res.status_code == 403
-    # Admins get no wider access: only profiles that list their own login.
-    users_mod.set_admin_emails([BLAKE])
-    page = world.get("/oauth/authorize", params=authorize_query(cid), headers=access(BLAKE))
-    assert "Alex Rivera" not in page.text
     tokens = connect(world, ALEX, "alex2")
     assert ok(world, tokens["access_token"], "get_overview")["profile"]["name"] == "Alex Second"
+
+
+def test_admin_may_connect_any_profile_until_admin_rights_end(world):
+    """Same as the dashboard: an admin's picker lists every profile; dropping admin ends that access."""
+    users_mod.set_admin_emails([BLAKE])
+    cid = register(world)
+    page = world.get("/oauth/authorize", params=authorize_query(cid), headers=access(BLAKE))
+    assert "Which profile?" in page.text and "Alex Rivera" in page.text
+    tokens = connect(world, BLAKE, "alex")
+    assert ok(world, tokens["access_token"], "get_overview")["profile"]["name"] == "Alex Rivera"
+    users_mod.set_admin_emails([])
+    assert rpc(world, tokens["access_token"], "tools/list").status_code == 401
 
 
 def test_scopes_limit_tools(world):

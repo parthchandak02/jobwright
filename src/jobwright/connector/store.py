@@ -343,10 +343,10 @@ def verify_access(token: str) -> Principal | None:
         if not row["last_used_at"] or t - row["last_used_at"] > _TOUCH_SECONDS:
             conn.execute("UPDATE grants SET last_used_at = ? WHERE id = ?", (t, row["id"]))
             conn.execute("UPDATE clients SET last_used_at = ? WHERE id = ?", (t, row["client_id"]))
-    from jobwright.users import get_user
+    from jobwright.users import email_opens_profile, get_user
 
     user = get_user(row["user_id"])
-    if user is None or row["email"] not in user.emails:
+    if not email_opens_profile(row["email"], user):
         # The login was removed from the profile (or the profile deleted): access ends with it.
         revoke_grant(row["id"], reason="login no longer opens this profile")
         return None

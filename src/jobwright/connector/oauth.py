@@ -9,8 +9,8 @@ The person is identified exactly like on the dashboard: ``/oauth/authorize``
 stays behind Cloudflare Access, so it carries the Access JWT and
 ``web.auth.identify`` verifies it. Their login email picks the jobwright
 profile(s) whose ``emails`` list it (users.yaml); with several, the consent
-page asks which. Admin rights do not widen this: a Claude can only be
-connected to a profile that lists the person's own login.
+page asks which. Admins may pick any profile, as on the dashboard; everyone else
+can only connect a profile that lists their own login.
 
 Public (must bypass Access): ``/.well-known/oauth-*``, ``/oauth/register``,
 ``/oauth/token``, ``/oauth/revoke`` and ``/mcp`` (bearer-protected).
@@ -371,9 +371,10 @@ def authorize_page(request: Request) -> Response:
 
 
 def _profiles_for(email: str):
-    from jobwright.users import users_for_email
+    """Profiles this login may connect: its own, or every profile for an admin (as on the dashboard)."""
+    from jobwright.users import profiles_for_login
 
-    return users_for_email(email) if email else []
+    return profiles_for_login(email) if email else []
 
 
 def _redirect(uri: str, params: dict) -> RedirectResponse:
@@ -451,10 +452,10 @@ async def token(request: Request) -> JSONResponse:
             return _denied(request, "code_verifier does not match")
         if f.get("resource") and f["resource"].rstrip("/") != resource_url():
             return _json({"error": "invalid_target"}, 400)
-        from jobwright.users import get_user
+        from jobwright.users import email_opens_profile, get_user
 
         user = get_user(row["user_id"])
-        if user is None or row["email"] not in user.emails:
+        if not email_opens_profile(row["email"], user):
             return _denied(request, "this login no longer opens that profile")
         grant_id = store.create_grant(client_id=row["client_id"], user_id=row["user_id"], email=row["email"],
                                       scope=row["scope"])

@@ -237,6 +237,28 @@ def is_admin_email(email: str | None) -> bool:
     return bool(e) and e in list_admin_emails()
 
 
+def email_opens_profile(email: str | None, user: "UserRecord | None") -> bool:
+    """Whether this login may open ``user``: listed on the profile, or an admin.
+
+    Same rule as the dashboard (admins may switch to any profile); used by the
+    Claude connector at sign-in, token exchange and on every tool call, so
+    removing someone's email (or admin rights) ends their connector access.
+    """
+    if user is None:
+        return False
+    e = normalize_email(email)
+    if not e:
+        return False
+    return e in {normalize_email(x) for x in user.emails} or is_admin_email(e)
+
+
+def profiles_for_login(email: str | None) -> list["UserRecord"]:
+    """Profiles a login may open: its own, or every profile for an admin."""
+    if is_admin_email(email):
+        return list_users()
+    return users_for_email(email)
+
+
 def set_admin_emails(emails: list[str]) -> list[str]:
     cleaned: list[str] = []
     for raw in emails:
