@@ -41,7 +41,7 @@ from typing import Any, Iterator
 from jobwright import config
 
 SCHEMA_VERSION = 1
-SOURCES = ("settings", "cli", "whatsapp", "profile", "api")
+SOURCES = ("settings", "cli", "whatsapp", "profile", "api", "connector")
 
 
 @dataclass(frozen=True)

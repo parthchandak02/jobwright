@@ -136,6 +136,11 @@ class UserRecord:
     # person replies "skip <n>" / "skip all"; auto: apply right after picking.
     apply_mode: str = "veto"
     apply_veto_minutes: int = 180
+    # Who fills and sends applications: "connector" (default) = the person's
+    # own Claude through the jobwright connector (docs/agents/claude-connector.md,
+    # ADR-009), "server" = the server-side runner (apply due / apply --live),
+    # "off" = nobody.
+    apply_via: str = "connector"
 
     def resolve_data_dir(self) -> Path:
         if self.data_dir:
@@ -318,7 +323,16 @@ def _from_dict(raw: dict[str, Any]) -> UserRecord:
         apply_paused_reason=str(raw.get("apply_paused_reason") or ""),
         apply_mode="auto" if str(raw.get("apply_mode") or "veto").lower() == "auto" else "veto",
         apply_veto_minutes=_bounded_int(raw.get("apply_veto_minutes"), 180, 0, 1440),
+        apply_via=_apply_via(raw.get("apply_via")),
     )
+
+
+APPLY_VIA = ("connector", "server", "off")
+
+
+def _apply_via(value: Any) -> str:
+    v = str(value or "connector").strip().lower()
+    return v if v in APPLY_VIA else "connector"
 
 
 def _bounded_int(value: Any, default: int, lo: int, hi: int) -> int:
@@ -440,7 +454,7 @@ def update_user(user_id: str, **fields: Any) -> UserRecord:
         "digest_schedule", "notes", "data_dir",
         "human_gate", "brief_top_n", "emails", "weekly_summary", "followup_days",
         "search_enabled", "apply_daily_cap", "apply_min_score", "apply_employer_cap",
-        "apply_paused", "apply_paused_reason", "apply_mode", "apply_veto_minutes",
+        "apply_paused", "apply_paused_reason", "apply_mode", "apply_veto_minutes", "apply_via",
     }
     changes: dict[str, Any] = {}
     for key, value in fields.items():
@@ -460,6 +474,8 @@ def update_user(user_id: str, **fields: Any) -> UserRecord:
             value = int(value)
             if not 1 <= value <= 10:
                 raise ValueError("apply_min_score must be between 1 and 10")
+        if key == "apply_via" and value not in APPLY_VIA:
+            raise ValueError("apply_via must be connector, server or off")
         if key == "apply_mode" and value not in ("veto", "auto"):
             raise ValueError("apply_mode must be veto or auto")
         if key == "apply_veto_minutes":

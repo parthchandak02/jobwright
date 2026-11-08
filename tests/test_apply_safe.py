@@ -41,6 +41,8 @@ FULL_ANSWERS = {
 @pytest.fixture
 def env(monkeypatch):
     users_mod.add_user("alex", name="Alex Rivera", apply_enabled=True, whatsapp_target=GROUP)
+    # These tests drive the server-side runner; the default is the person's own Claude (connector).
+    users_mod.update_user("alex", apply_via="server")
     data = config.set_active_user("alex")
     close_connection()
     init_db()

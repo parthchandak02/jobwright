@@ -73,6 +73,7 @@ def apply_status(request: Request) -> dict:
     return {
         "apply_enabled": bool(user and user.apply_enabled),
         "apply_mode": user.apply_mode if user else "veto",
+        "apply_via": user.apply_via if user else "off",
         "apply_daily_cap": user.apply_daily_cap if user else 0,
         "apply_min_score": user.apply_min_score if user else 8,
         "apply_veto_minutes": user.apply_veto_minutes if user else 180,

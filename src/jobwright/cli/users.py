@@ -133,7 +133,7 @@ def users_show(user_id: str = typer.Argument(...)) -> None:
     console.print(f"  apply_enabled:   {user.apply_enabled}")
     console.print(
         f"  auto apply:      cap {user.apply_daily_cap}/day, score >= {user.apply_min_score}, "
-        f"employer cap {user.apply_employer_cap}/30d"
+        f"employer cap {user.apply_employer_cap}/30d, via {user.apply_via}"
         + (f", PAUSED ({user.apply_paused_reason or 'paused'})" if user.apply_paused else "")
     )
     console.print(f"  whatsapp_target: {user.whatsapp_target or '-'}")
@@ -210,6 +210,10 @@ def users_set(
     apply_employer_cap: int | None = typer.Option(
         None, "--apply-employer-cap", help="Applications to one employer within 30 days (default 1).",
     ),
+    apply_via: str | None = typer.Option(
+        None, "--apply-via",
+        help="Who applies: connector (the person's own Claude, default), server (runner) or off.",
+    ),
 ) -> None:
     """Update fields on an existing user."""
     from jobwright.users import update_user
@@ -235,6 +239,8 @@ def users_set(
         fields["apply_min_score"] = apply_min_score
     if apply_employer_cap is not None:
         fields["apply_employer_cap"] = apply_employer_cap
+    if apply_via is not None:
+        fields["apply_via"] = apply_via.strip().lower()
     if not fields:
         console.print("[yellow]No fields to update.[/yellow]")
         raise typer.Exit(code=1)

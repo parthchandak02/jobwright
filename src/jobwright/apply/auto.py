@@ -17,6 +17,12 @@ Flow (``apply_mode: veto``, the default for the first weeks):
    the confirmation screenshots and evidence links.
 
 ``apply_mode: auto`` applies right after picking (``apply auto`` = pick + due).
+
+With ``apply_via: connector`` (the default) the picks are the list the
+person's own Claude works through (``list_picks`` / ``start_application`` in
+the jobwright connector, ``apply/connector.py``): ``start_application`` turns
+a pick ``claimed`` and ``record_submission`` closes it; ``due`` leaves those
+profiles alone (the server runner is off for them).
 No cron is installed by this module; see docs/agents/auto-apply.md.
 """
 
@@ -34,9 +40,9 @@ from jobwright.database import ANTI_CLOBBER_SQL, MANUAL_SOURCE_EXCLUSION_SQL, ge
 
 log = logging.getLogger(__name__)
 
-OPEN_PICK_STATUSES = ("planned", "running")
+OPEN_PICK_STATUSES = ("planned", "running", "claimed")
 # A job picked once with these statuses is never picked again automatically.
-NO_REPICK_STATUSES = ("planned", "running", "vetoed", "applied")
+NO_REPICK_STATUSES = ("planned", "running", "claimed", "vetoed", "applied")
 
 
 class VetoError(ValueError):
@@ -117,7 +123,7 @@ def candidates(user_id: str | None, limit: int, min_score: int | None = None, co
 def _planned_today(conn) -> int:
     start = datetime.now().astimezone().replace(hour=0, minute=0, second=0, microsecond=0)
     row = conn.execute(
-        "SELECT COUNT(*) FROM apply_picks WHERE status IN ('planned', 'running') AND picked_at >= ?",
+        "SELECT COUNT(*) FROM apply_picks WHERE status IN ('planned', 'running', 'claimed') AND picked_at >= ?",
         (_iso(start.astimezone(timezone.utc)),),
     ).fetchone()
     return int(row[0])
@@ -127,7 +133,8 @@ def pick(user_id: str | None, *, post: bool = True, now: datetime | None = None,
     """Choose today's picks and (veto mode) post them. Returns {picks, reasons}."""
     conn = conn or get_connection()
     user = _user(user_id)
-    gate = safety.check_profile(user_id, live=True)
+    channel = user.apply_via if user and user.apply_via in safety.CHANNELS else "server"
+    gate = safety.check_profile(user_id, live=True, channel=channel)
     if not gate.ok:
         return {"picks": [], "reasons": gate.reasons}
     room = user.apply_daily_cap - safety.live_submissions_today(conn) - _planned_today(conn)
@@ -151,7 +158,7 @@ def pick(user_id: str | None, *, post: bool = True, now: datetime | None = None,
         picks.append(get_pick(int(cur.lastrowid), conn))
     conn.commit()
     if post and user.apply_mode == "veto":
-        _send(user_id, render_picks_message(picks))
+        _send(user_id, render_picks_message(picks, connector=channel == "connector"))
     return {"picks": picks, "reasons": []}
 
 
@@ -177,11 +184,15 @@ def picks_for_job(job_url: str, conn=None) -> list[dict]:
         "SELECT * FROM apply_picks WHERE job_url = ? ORDER BY id DESC", (job_url,)).fetchall()]
 
 
-def render_picks_message(picks: list[dict]) -> str:
+def render_picks_message(picks: list[dict], *, connector: bool = False) -> str:
     from jobwright.whatsapp import bold, italic
 
     when = _clock(picks[0]["apply_after"])
-    lines = [f"🤖 {bold('Applying for you today')}", f"I'll apply to these at {when} unless you reply:"]
+    if connector:
+        lines = [f"🤖 {bold('Picked for your Claude today')}",
+                 f"Your Claude may apply to these from {when} unless you reply:"]
+    else:
+        lines = [f"🤖 {bold('Applying for you today')}", f"I'll apply to these at {when} unless you reply:"]
     lines.append(italic("skip <number>") + " or " + italic("skip all"))
     lines.append("")
     base = _dashboard_url()

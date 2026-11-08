@@ -361,12 +361,19 @@ def _migrate_v4_apply_evidence(conn: sqlite3.Connection) -> None:
         conn.execute(ddl)
 
 
+def _migrate_v5_connector_claims(conn: sqlite3.Connection) -> None:
+    """submissions.client_id: which Claude connector client claimed / recorded an application."""
+    _add_column(conn, "submissions", "client_id", "TEXT")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_submissions_job_outcome ON submissions(job_url, outcome)")
+
+
 # (version, name, fn). Append only: never renumber, edit or remove a shipped step.
 MIGRATIONS: list[tuple[int, str, object]] = [
     (1, "baseline", _migrate_v1_baseline),
     (2, "brief_items", _migrate_v2_brief_items),
     (3, "application_url_source", _migrate_v3_application_url_source),
     (4, "apply_evidence", _migrate_v4_apply_evidence),
+    (5, "connector_claims", _migrate_v5_connector_claims),
 ]
 LATEST_SCHEMA_VERSION = MIGRATIONS[-1][0]
 

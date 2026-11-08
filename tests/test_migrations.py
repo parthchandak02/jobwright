@@ -341,6 +341,18 @@ def test_v4_apply_evidence_tables(db_path):
     conn.execute("DROP TABLE apply_picks")
     conn.execute("UPDATE schema_meta SET value = '3' WHERE key = 'schema_version'")
     conn.commit()
-    assert run_migrations(conn) == [4]
+    assert run_migrations(conn) == [4, 5]
     assert "apply_picks" in _tables(conn)
+    assert run_migrations(conn) == []
+
+
+def test_v5_connector_claims_column(db_path):
+    """Migration 5 adds submissions.client_id (connector claims); rerun is a no-op."""
+    conn = init_db(db_path)
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(submissions)").fetchall()}
+    assert "client_id" in cols
+    conn.execute("UPDATE schema_meta SET value = '4' WHERE key = 'schema_version'")
+    conn.commit()
+    assert run_migrations(conn) == [5]
+    db_mod._migrate_v5_connector_claims(conn)  # idempotent
     assert run_migrations(conn) == []

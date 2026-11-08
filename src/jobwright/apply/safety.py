@@ -5,7 +5,11 @@ when it picks jobs):
 
 - ``JOBWRIGHT_APPLY_KILL`` (any non-empty value except 0/false/no) stops every
   apply, dry runs included.
-- Live submits need ``apply_enabled`` in users.yaml, and the profile must not
+- ``apply_via`` (users.yaml) says who applies: ``connector`` (default, the
+  person's own Claude through the jobwright connector, ``apply/connector.py``),
+  ``server`` (this runner) or ``off``. A live run on one channel is refused
+  when the profile applies through another.
+- Server-side live submits need ``apply_enabled`` in users.yaml, and the profile must not
   be ``apply_paused`` (set automatically after ``CONSECUTIVE_FAILURE_LIMIT``
   failed or unverified live attempts in a row).
 - ``apply_daily_cap`` live submissions per local day (default 2).
@@ -144,7 +148,8 @@ def consecutive_failures(conn=None) -> int:
     conn = conn or get_connection()
     rows = conn.execute(
         "SELECT outcome FROM submissions WHERE dry_run = 0 AND outcome NOT IN "
-        "('needs_answer', 'skipped', 'blocked', 'captcha_timeout', 'expired') "
+        "('needs_answer', 'skipped', 'blocked', 'captcha_timeout', 'expired', "
+        "'claimed', 'abandoned', 'needs_human') "
         "ORDER BY id DESC LIMIT 10"
     ).fetchall()
     n = 0
@@ -174,8 +179,18 @@ def maybe_auto_pause(user_id: str | None, conn=None) -> bool:
     return True
 
 
-def check_profile(user_id: str | None, *, live: bool) -> GateResult:
-    """Profile-level gates (kill switch, enabled, paused, daily cap)."""
+CHANNELS = ("server", "connector")
+
+
+def check_profile(user_id: str | None, *, live: bool, channel: str = "server") -> GateResult:
+    """Profile-level gates (kill switch, channel, enabled, paused, daily cap).
+
+    ``channel`` is who is about to apply: ``server`` (the runner) or
+    ``connector`` (the person's own Claude). ``apply_enabled`` is only required
+    for the server: with the connector the person's Claude fills the form in
+    the person's own browser and ``apply_enabled`` only decides whether it may
+    also press Submit (``apply/connector.py``).
+    """
     reasons: list[str] = []
     if kill_switch_on():
         reasons.append("kill switch JOBWRIGHT_APPLY_KILL is set")
@@ -184,7 +199,13 @@ def check_profile(user_id: str | None, *, live: bool) -> GateResult:
         if user is None:
             reasons.append("unknown profile")
         else:
-            if not user.apply_enabled:
+            via = getattr(user, "apply_via", "connector")
+            if via == "off":
+                reasons.append("applying is turned off for this profile (apply_via: off)")
+            elif via != channel:
+                who = "its own Claude (connector)" if via == "connector" else "the server runner"
+                reasons.append(f"this profile applies through {who} (apply_via: {via})")
+            if channel == "server" and not user.apply_enabled:
                 reasons.append("apply_enabled is false")
             if user.apply_paused:
                 reasons.append(f"auto-apply paused: {user.apply_paused_reason or 'paused'}")
