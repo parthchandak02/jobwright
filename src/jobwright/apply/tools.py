@@ -246,7 +246,8 @@ class ApplyTools:
     def _record(self, label: str, value: str, source: str, key: str | None = None, attestation: bool = False,
                 ref: str | None = None) -> None:
         # Replace an earlier record for the same element.
-        self.state.fields = [f for f in self.state.fields if not (ref and f.selector == ref)]
+        # Refs are renumbered by every snapshot: only the same label + ref is "the same field".
+        self.state.fields = [f for f in self.state.fields if not (ref and f.selector == ref and f.label == label)]
         self.state.fields.append(FieldRecord(label=label, value=value, source=source, key=key or None,
                                              attestation=attestation, selector=ref))
 

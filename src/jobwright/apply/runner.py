@@ -280,7 +280,7 @@ def apply_job(
 
         agent = AnthropicApplyAgent()
     filler = get_filler(apply_url, make_open_answer(agent, materials.resume_text, materials.cover_letter_text))
-    provider = f"filler:{family}" if filler is not None else getattr(agent, "provider_name", "agent")
+    provider = f"filler:{getattr(filler, 'ats', family)}" if filler is not None else getattr(agent, "provider_name", "agent")
     model = getattr(agent, "model", None)
     sub_id = evidence.start_submission(job, run_id, ats=family, provider=provider, model=model, dry_run=dry_run)
     out = ApplyOutcome("failed", url, title=base.title, company=base.company, submission_id=sub_id, run_id=run_id)

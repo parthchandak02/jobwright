@@ -104,7 +104,7 @@ SPECS: tuple[AnswerSpec, ...] = (
     AnswerSpec("portfolio_url", "Portfolio / website URL", "common", False, required=False),
     AnswerSpec("education_highest", "Highest education (degree, school, year)", "common", False),
     AnswerSpec("how_heard", "How did you hear about us", "common", False, hint="e.g. Company website"),
-    AnswerSpec("referral", "Referred by an employee", "common", False, choices=_YES_NO),
+    AnswerSpec("referral", "Referred by an employee", "common", False, required=False, choices=_YES_NO),
     AnswerSpec("notice_period", "Notice period", "common", False, required=False),
     AnswerSpec("pronouns", "Pronouns (optional)", "common", False, required=False),
     AnswerSpec("preferred_name", "Preferred name (optional)", "common", False, required=False),
