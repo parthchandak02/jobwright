@@ -478,7 +478,25 @@ def bulk_response(body: dict) -> dict:
     return {"action": body.get("action"), "to_stage": to_stage, "updated": len(jobs), "results": results, "jobs": jobs}
 
 
+def connector_status(state: dict) -> dict:
+    """Settings → Claude. state["claude"]: "none" (nothing set up), "connected" (default: answers missing), "done"."""
+    stage = state.get("claude", "connected")
+    clients = [] if stage == "none" else [{
+        "id": "grant-demo-1", "client_name": "Claude", "email": EMAIL,
+        "scopes": ["jobs:read", "jobs:write", "apply"], "created_at": 1790000000, "last_used_at": 1790500000,
+        "active": True}]
+    return {
+        "enabled": True, "url": "https://jobwright.example.com/mcp", "apply_via": "connector", "apply_enabled": False,
+        "can_choose_server": state["admin"], "scopes": [], "clients": clients,
+        "missing_answers": 0 if stage == "done" else 6, "apply_paused": False,
+        "daily_pick": {"scheduled": True, "time": "07:30", "days": "daily", "next_at": "2026-09-29T07:30-07:00",
+                       "apply_at": "2026-09-29T10:30-07:00", "veto_minutes": 180},
+    }
+
+
 def api_response(method: str, path: str, state: dict, body: dict | None = None):
+    if path == "/api/connector":
+        return connector_status(state)
     if path == "/api/jobs/bulk" and method == "POST":
         return bulk_response(body or {})
     if path == "/api/me":

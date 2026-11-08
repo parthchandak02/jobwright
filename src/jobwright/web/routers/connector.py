@@ -12,6 +12,9 @@ from typing import Literal
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
+from jobwright import hermes_cron
+from jobwright.apply import answers as answers_mod
+from jobwright.apply import safety
 from jobwright.connector import store
 from jobwright.connector.oauth import resource_url
 from jobwright.connector.server import enabled
@@ -28,6 +31,7 @@ class ConnectorSettings(BaseModel):
 
 def _state(user_id: str, request: Request) -> dict:
     user = get_user(user_id)
+    veto = user.apply_veto_minutes if user else 180
     return {
         "enabled": enabled(),
         "url": resource_url(),
@@ -36,6 +40,11 @@ def _state(user_id: str, request: Request) -> dict:
         "can_choose_server": get_identity(request).is_admin,
         "scopes": [{"scope": s, "label": store.SCOPE_LABELS[s]} for s in store.SCOPES],
         "clients": store.list_grants(user_id),
+        # Setup guide: how many required application answers are still empty, whether applying is
+        # stopped, and when the daily picks arrive (from the Hermes pick script, if one is installed).
+        "missing_answers": len(answers_mod.load_answers().missing()),
+        "apply_paused": bool(user and user.apply_paused) or safety.kill_switch_on(),
+        "daily_pick": hermes_cron.apply_pick_schedule(user_id, veto),
     }
 
 

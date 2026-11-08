@@ -368,6 +368,8 @@ def test_dashboard_lists_and_revokes_connected_claudes(world):
     status = world.get("/api/connector", headers=access(ALEX)).json()
     assert status["url"] == f"{BASE}/mcp" and status["apply_via"] == "connector"
     assert [c["client_name"] for c in status["clients"]] == ["Claude"]
+    assert status["missing_answers"] > 0 and status["apply_paused"] is False
+    assert status["daily_pick"]["scheduled"] is False and status["daily_pick"]["veto_minutes"] == 180
     grant = status["clients"][0]["id"]
     assert world.get("/api/connector", headers=access(BLAKE)).json()["clients"] == []
     assert world.delete(f"/api/connector/clients/{grant}", headers=access(BLAKE)).status_code == 404

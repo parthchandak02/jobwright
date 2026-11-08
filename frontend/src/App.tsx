@@ -26,6 +26,7 @@ import { StageTabs } from '@/components/StageTabs'
 import { StatusBanner } from '@/components/StatusBanner'
 import { CalibrationBanner } from '@/components/CalibrationBanner'
 import { SearchPausedBanner } from '@/components/SearchPausedBanner'
+import { ClaudeSetupBanner } from '@/components/ClaudeSetupBanner'
 import { ViewModeTabs, type ViewMode } from '@/components/ViewModeTabs'
 
 const ProfilePage = lazy(() => import('@/components/ProfilePage').then((m) => ({ default: m.ProfilePage })))
@@ -375,6 +376,7 @@ export default function App() {
               >
                 <SearchPausedBanner profile={profile} onResumed={() => void refresh({ board: false, profile: true })} />
                 {board && allJobs.length > 0 ? <CalibrationBanner refreshKey={ratedOnBoard} /> : null}
+                {board ? <ClaudeSetupBanner /> : null}
                 {worthOnly ? (
                   <div className="mb-3 flex flex-wrap items-center gap-2">
                     <Chip>Worth a look: scored 5–6, no dealbreakers</Chip>

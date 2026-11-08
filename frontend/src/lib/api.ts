@@ -1025,6 +1025,25 @@ export type ConnectorStatus = {
   can_choose_server: boolean
   scopes: { scope: string; label: string }[]
   clients: ConnectedClaude[]
+  /** Required application answers still empty. */
+  missing_answers: number
+  /** Applying is paused for this profile or stopped by the operator. */
+  apply_paused: boolean
+  daily_pick: DailyPickSchedule
+}
+
+/** When the daily apply picks arrive in WhatsApp (from the server's pick schedule). */
+export type DailyPickSchedule = {
+  /** A daily pick job exists for this profile. */
+  scheduled: boolean
+  /** Server clock "HH:MM" when known. */
+  time: string | null
+  days: 'daily' | 'weekdays' | null
+  /** Next pick, ISO with offset, when known. */
+  next_at: string | null
+  /** End of the skip window (next_at + veto_minutes). */
+  apply_at: string | null
+  veto_minutes: number
 }
 
 export const getConnector = () => apiFetch<ConnectorStatus>('/connector')

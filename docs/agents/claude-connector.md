@@ -17,6 +17,18 @@ evidence).
 4. For applying, turn on **Claude in Chrome**. Then ask, for example: "Apply to today's jobwright picks with
    Claude in Chrome. Ask me before anything you are unsure of."
 
+The dashboard walks people through this: Settings → **Claude** (also "Use with Claude" in the sidebar, a
+phone tab when the bar has room, and a dismissable board card until a Claude is connected) is a four-step
+checklist with live status: connect (done when a Claude is connected), save application answers (done when
+none are missing), Claude in Chrome and the daily scheduled task (both ticked by the person, stored in
+localStorage), then copy-ready "Things to ask" prompts. `GET /api/connector` carries what it needs:
+`missing_answers` (count of required answers still empty), `apply_paused` (paused or kill switch) and
+`daily_pick` (`scheduled`, `time`, `days`, `next_at`, `apply_at` = next pick + `veto_minutes`).
+`daily_pick.scheduled` is true when `jobwright_apply_pick_<user>.sh` exists in the Hermes scripts dir
+(`JOBWRIGHT_HERMES_SCRIPTS_DIR`); the time comes from the enabled Hermes job running that script in
+`cron/jobs.json` next to it (`JOBWRIGHT_HERMES_CRON_JOBS` overrides the path). No script: the guide says picks
+aren't scheduled yet and to ask the admin.
+
 Disconnect any time: dashboard Settings → Claude → Disconnect (ends every token of that connection at once),
 or remove the connector in Claude.
 

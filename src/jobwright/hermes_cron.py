@@ -357,3 +357,96 @@ def ensure_weekly_summary_cron(schedule: str = "0 18 * * 0") -> dict:
         + _logged_run(py, "summary", "weekly_summary")
     )
     return _ensure_script_cron(WEEKLY_SUMMARY_CRON_NAME, "jobwright_weekly_summary.sh", body, schedule)
+
+
+# ---------------------------------------------------------------------------
+# Daily apply picks (read-only: Settings → Claude shows when picks arrive)
+# ---------------------------------------------------------------------------
+
+
+def apply_pick_script_name(user_id: str) -> str:
+    return f"jobwright_apply_pick_{user_id}.sh"
+
+
+def _hermes_cron_jobs_file():
+    from pathlib import Path
+
+    override = os.environ.get("JOBWRIGHT_HERMES_CRON_JOBS")
+    if override:
+        return Path(os.path.expanduser(override))
+    return _hermes_scripts_dir().parent / "cron" / "jobs.json"
+
+
+def _apply_pick_cron_expr(script_name: str) -> str | None:
+    """The cron expression of the enabled Hermes job that runs ``script_name``, if Hermes lists one."""
+    import json
+
+    try:
+        data = json.loads(_hermes_cron_jobs_file().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    jobs = data.get("jobs") if isinstance(data, dict) else data
+    if isinstance(jobs, dict):
+        jobs = list(jobs.values())
+    for job in jobs if isinstance(jobs, list) else []:
+        if not isinstance(job, dict) or job.get("script") != script_name:
+            continue
+        if job.get("enabled") is False or job.get("paused_at") or job.get("state") == "paused":
+            continue
+        schedule = job.get("schedule")
+        expr = schedule.get("expr") if isinstance(schedule, dict) else schedule
+        if isinstance(expr, str) and len(expr.split()) == 5:
+            return expr
+    return None
+
+
+def _next_cron_run(expr: str, now) -> object | None:
+    """Next run of a once-a-day cron (fixed minute and hour) at or after ``now`` (local time), else None."""
+    from datetime import timedelta
+
+    from jobwright.ops import _cron_runs_today
+
+    parts = expr.split()
+    if not parts[0].isdigit() or not parts[1].isdigit():
+        return None
+    hour, minute = int(parts[1]), int(parts[0])
+    if hour > 23 or minute > 59:
+        return None
+    for offset in range(8):
+        day = now + timedelta(days=offset)
+        at = day.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        if at >= now.replace(second=0, microsecond=0) and _cron_runs_today(expr, day):
+            return at
+    return None
+
+
+def apply_pick_schedule(user_id: str, veto_minutes: int, now=None) -> dict:
+    """When this profile's daily picks are posted, from the Hermes wrapper script and its cron entry.
+
+    ``scheduled`` is true when ``jobwright_apply_pick_<user>.sh`` exists in the Hermes scripts dir
+    (``JOBWRIGHT_HERMES_SCRIPTS_DIR``). The time comes from Hermes' ``cron/jobs.json`` next to it when
+    the job there has a fixed daily time; otherwise ``time`` and ``next_at`` are None.
+    """
+    from datetime import datetime, timedelta
+
+    from jobwright.users import describe_cron_schedule
+
+    name = apply_pick_script_name(user_id)
+    out: dict = {"scheduled": False, "time": None, "days": None, "next_at": None, "apply_at": None,
+                 "veto_minutes": int(veto_minutes)}
+    if not (_hermes_scripts_dir() / name).is_file():
+        return out
+    out["scheduled"] = True
+    expr = _apply_pick_cron_expr(name)
+    if not expr:
+        return out
+    now = (now or datetime.now()).astimezone()
+    nxt = _next_cron_run(expr, now)
+    if nxt is None:
+        return out
+    label = describe_cron_schedule(expr)
+    out["time"] = f"{nxt.hour:02d}:{nxt.minute:02d}"
+    out["days"] = "weekdays" if label.startswith("Weekdays") else "daily" if label.startswith("Every day") else None
+    out["next_at"] = nxt.isoformat(timespec="minutes")
+    out["apply_at"] = (nxt + timedelta(minutes=int(veto_minutes))).isoformat(timespec="minutes")
+    return out

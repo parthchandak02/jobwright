@@ -57,7 +57,7 @@ Reuse order: shadcn defaults → domain primitive → new token/class. Tailwind 
 | Desktop rail (hover expand + click pin) | `AppSidebar` |
 | Stage filters | `SidebarNav` + `NavItem` (44px rows on phone) |
 | Profile / theme rows in the rail | `SidebarActionButton` |
-| Page links (Match quality, Admin for admins, Profile & settings, theme) | `ShellNavActions` + `SHELL_LINKS` (single source for `AppSidebar` and `PhoneTabBar`; `tabLabel` is the short tab name; add a page in one line) |
+| Page links (Match quality, Admin for admins, Use with Claude, Profile & settings, theme) | `ShellNavActions` + `SHELL_LINKS` (single source for `AppSidebar` and `PhoneTabBar`; `tabLabel` is the short tab name; add a page in one line; `search` makes a link point at a tab such as `?tab=claude` and wins the active state over the plain path; `phoneOptional` links show in the phone bar only while it has at most 5 tabs; logic in `lib/shellNav.ts`) |
 | Crash fallback around routes and pages | `ErrorBoundary` (`resetKey`: route path or page) |
 | Switch profile (admins: all) | `ProfileSwitcher` (reloads the app); in the Settings header (phone bar too, next to `ThemeToggle`) and the desktop rail footer (folds away when collapsed) |
 | Identity gate (no profile → `/welcome`) | `AppGate` |
@@ -122,6 +122,7 @@ Reuse order: shadcn defaults → domain primitive → new token/class. Tailwind 
 | Optional "Rate a few jobs" after Finish (`/welcome/rate`): waiting `EmptyState` + progress while jobs are scored (polls `GET /api/onboarding/calibration`), one card at a time with Good fit / Not for me + `ReasonChips`, Skip, Finish later | `pages/CalibrationPage.tsx` (inside `WelcomeShell` with no `progress`, which hides the 6-step bar) |
 | Quick review (`/review`, inside the app shell): unrated Backlog queue (`lib/reviewQueue.ts`: order, Strong 7+ filter, progress, keys, swipe threshold), one `ReviewCard` at a time (swipe on touch/pen with tinted edge + label, `MatchExplanation`, `JobDescriptionPane`), optional `ReasonChips`, sticky answer bar (Not for me / Skip / Interested, Undo), toast with Undo; session kept in `sessionStorage` per profile | `pages/ReviewPage.tsx`, `components/review/ReviewCard.tsx` |
 | Board nudge until 10 ratings (dismissal per profile in localStorage, `lib/calibration.ts`) | `CalibrationBanner` (`refreshKey` = rated cards on the board) |
+| Board nudge to connect the person's own Claude (until one is connected; dismissal per profile, `lib/claudeGuide.ts`) | `ClaudeSetupBanner` |
 | Welcome-local helpers (not yet promoted) | `parts.tsx`: `Disclosure` (optional/advanced fields), `DropZone` (PDF-only drop/upload), `MutedList` |
 
 ### Admin (`components/admin/`)
