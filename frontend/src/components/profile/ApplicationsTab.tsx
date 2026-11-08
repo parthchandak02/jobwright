@@ -24,6 +24,16 @@ const NOT_SET = '__not_set__'
 
 function statusLine(s: ApplyStatus): { text: string; tone: 'success' | 'warning' | 'secondary' } {
   if (s.kill_switch) return { text: 'Stopped for everyone by the operator', tone: 'warning' }
+  if (s.apply_via === 'off') return { text: 'Off. Turn it on in Settings, Claude.', tone: 'secondary' }
+  if (s.apply_via === 'connector') {
+    if (s.apply_paused) return { text: `Paused: ${s.apply_paused_reason || 'paused'}`, tone: 'warning' }
+    return {
+      text: `Your own Claude applies (Settings, Claude): up to ${s.apply_daily_cap} a day, ${
+        s.apply_enabled ? `submitting on its own for jobs scoring ${s.apply_min_score}+` : 'you press Submit'
+      }.`,
+      tone: 'success',
+    }
+  }
   if (!s.apply_enabled) return { text: 'Off. Ask the operator to turn on automatic applications.', tone: 'secondary' }
   if (s.apply_paused) return { text: `Paused: ${s.apply_paused_reason || 'paused'}`, tone: 'warning' }
   const when =
@@ -147,7 +157,7 @@ export function ApplicationsTab() {
         description="jobwright applies for you only with what you save here and your resume."
       />
       <p className="flex flex-wrap items-center gap-2 text-body text-muted-foreground">
-        <Badge variant={line.tone}>{status.apply_enabled && !status.apply_paused ? 'On' : 'Off'}</Badge>
+        <Badge variant={line.tone}>{line.tone === 'success' ? 'On' : 'Off'}</Badge>
         {line.text}
       </p>
 

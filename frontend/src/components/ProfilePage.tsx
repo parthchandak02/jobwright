@@ -6,6 +6,7 @@ import { ProfileSwitcher } from '@/components/ProfileSwitcher'
 import { ThemeToggle } from '@/components/ThemeToggle'
 import { AboutTab } from '@/components/profile/AboutTab'
 import { ApplicationsTab } from '@/components/profile/ApplicationsTab'
+import { ClaudeTab } from '@/components/profile/ClaudeTab'
 import { DailyListTab } from '@/components/profile/DailyListTab'
 import { DocumentsTab } from '@/components/profile/DocumentsTab'
 import { RulesTab } from '@/components/profile/RulesTab'
@@ -29,6 +30,7 @@ const PROFILE_TABS = [
   { value: 'whatsapp', label: 'Daily list' },
   { value: 'about', label: 'About you' },
   { value: 'applying', label: 'Applications' },
+  { value: 'claude', label: 'Claude' },
 ] as const
 
 const PANEL = 'data-[state=inactive]:hidden'
@@ -140,6 +142,9 @@ export function ProfilePage({ profile, onProfileChanged }: Props) {
             </TabsContent>
             <TabsContent value="applying" tabIndex={-1} className={PANEL}>
               <ApplicationsTab key={profile.user_id} />
+            </TabsContent>
+            <TabsContent value="claude" tabIndex={-1} className={PANEL}>
+              <ClaudeTab key={profile.user_id} />
             </TabsContent>
           </>
         )}

@@ -921,9 +921,12 @@ export type ApplicationAnswers = {
   missing: string[]
 }
 
+export type ApplyVia = 'connector' | 'server' | 'off'
+
 export type ApplyStatus = {
   apply_enabled: boolean
   apply_mode: 'veto' | 'auto'
+  apply_via?: ApplyVia
   apply_daily_cap: number
   apply_min_score: number
   apply_veto_minutes: number
@@ -1002,6 +1005,33 @@ export const getAnswers = () => apiFetch<ApplicationAnswers>('/answers')
 export const putAnswers = (answers: Record<string, string | null>) =>
   apiFetch<ApplicationAnswers>('/answers', { method: 'PUT', body: JSON.stringify({ answers }) })
 export const getApplyStatus = () => apiFetch<ApplyStatus>('/apply/status')
+
+/** A Claude app connected to this profile through the jobwright connector. */
+export type ConnectedClaude = {
+  id: string
+  client_name: string
+  email: string
+  scopes: string[]
+  created_at: number
+  last_used_at: number | null
+  active: boolean
+}
+
+export type ConnectorStatus = {
+  enabled: boolean
+  url: string
+  apply_via: ApplyVia
+  apply_enabled: boolean
+  can_choose_server: boolean
+  scopes: { scope: string; label: string }[]
+  clients: ConnectedClaude[]
+}
+
+export const getConnector = () => apiFetch<ConnectorStatus>('/connector')
+export const revokeConnectedClaude = (id: string) =>
+  apiFetch<ConnectorStatus>(`/connector/clients/${encodeURIComponent(id)}`, { method: 'DELETE' })
+export const putApplyVia = (apply_via: ApplyVia) =>
+  apiFetch<ConnectorStatus>('/connector/settings', { method: 'PUT', body: JSON.stringify({ apply_via }) })
 export const getPending = (id: string) => apiFetch<PendingInput>(`/apply/pending/${encodeURIComponent(id)}`)
 export const providePending = (id: string, value: string) =>
   apiFetch<PendingInput>(`/apply/pending/${encodeURIComponent(id)}/provide`, {
