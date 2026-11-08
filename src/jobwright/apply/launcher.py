@@ -1,4 +1,9 @@
-"""Apply orchestration: acquire jobs, spawn agent sessions, track results.
+"""LEGACY apply orchestration (ApplyPilot fork): dry runs only.
+
+The live path is apply/runner.py + apply/agent.py. This module keeps the
+queue helpers (list_ready_jobs, acquire_job, mark_job, reset_failed) that
+other code uses, and the old MCP worker loop for dry-run debugging.
+
 
 This is the main entry point for the apply pipeline. It pulls jobs from
 the database, launches Chrome + Cursor/Claude agent for each one, parses the
@@ -202,21 +207,28 @@ if platform.system() != "Windows":
 # MCP config
 # ---------------------------------------------------------------------------
 
+# Pinned: never run ``@latest`` (an unreviewed npm release would get a live
+# browser). Bump deliberately after reading the changelog.
+PLAYWRIGHT_MCP_PACKAGE = "@playwright/mcp@0.0.84"
+
+
 def _make_mcp_config(cdp_port: int) -> dict:
-    """Build MCP config dict for a specific CDP port."""
+    """Build the (legacy) MCP config for a specific CDP port.
+
+    Only the pinned Playwright MCP server. There is deliberately no email
+    server: jobwright never reads anyone's mailbox (verification codes are
+    asked from the person over WhatsApp, see apply/hitl.py).
+    """
     return {
         "mcpServers": {
             "playwright": {
                 "command": "npx",
                 "args": [
-                    "@playwright/mcp@latest",
+                    "-y",
+                    PLAYWRIGHT_MCP_PACKAGE,
                     f"--cdp-endpoint=http://localhost:{cdp_port}",
                     f"--viewport-size={config.DEFAULTS['viewport']}",
                 ],
-            },
-            "gmail": {
-                "command": "npx",
-                "args": ["-y", "@gongrzhe/server-gmail-autoauth-mcp"],
             },
         }
     }
@@ -500,8 +512,8 @@ def _get_agent_provider():
 
 
 def run_job(job: dict, port: int, worker_id: int = 0,
-            model: str = "composer-2.5", dry_run: bool = False) -> tuple[str, int]:
-    """Run one apply agent session via configured AgentProvider.
+            model: str = "composer-2.5", dry_run: bool = True) -> tuple[str, int]:
+    """Run one LEGACY apply agent session (dry run only).
 
     Returns:
         Tuple of (status_string, duration_ms).
@@ -515,6 +527,9 @@ def run_job(job: dict, port: int, worker_id: int = 0,
         if resolved:
             resume_text = resolved.read_text(encoding="utf-8")
 
+    if not dry_run:
+        # Legacy providers cannot submit: no answer-bank checks, no evidence.
+        return "failed:legacy_provider_live_disabled", 0
     mcp_config = _make_mcp_config(port)
     worker_dir = reset_worker_dir(worker_id)
 

@@ -1,7 +1,7 @@
 """Chrome lifecycle management for apply workers.
 
 Handles launching an isolated Chrome instance with remote debugging,
-worker profile setup/cloning, and cross-platform process cleanup.
+fresh per-user worker profiles (never cloned), and cross-platform process cleanup.
 """
 
 import json
@@ -98,64 +98,22 @@ def _kill_on_port(port: int) -> None:
 # ---------------------------------------------------------------------------
 
 def setup_worker_profile(worker_id: int) -> Path:
-    """Create an isolated Chrome profile for a worker.
+    """Return a fresh, per-user Chrome profile directory for a worker.
 
-    On first run, clones from an existing worker profile (preferred, since
-    it already has session cookies) or from the user's real Chrome profile.
-    Subsequent runs reuse the existing worker profile.
-
-    Args:
-        worker_id: Numeric worker identifier.
-
-    Returns:
-        Path to the worker's Chrome user-data directory.
+    The profile lives under the active user's data dir
+    (``<user dir>/chrome-workers/worker-N``) and starts EMPTY. It is never
+    copied from the operator's own Chrome profile or from another worker:
+    an apply session must only ever carry the applicant's own cookies,
+    created inside this profile. (The old ApplyPilot code cloned the Mac
+    user's real Chrome profile, which handed the operator's sessions to an
+    agent acting for someone else.)
     """
     profile_dir = config.CHROME_WORKER_DIR / f"worker-{worker_id}"
-    if (profile_dir / "Default").exists():
-        return profile_dir  # Already initialized
-
-    # Find a source: prefer existing worker (has session cookies), else user profile
-    source: Path | None = None
-    for wid in range(10):
-        if wid == worker_id:
-            continue
-        candidate = config.CHROME_WORKER_DIR / f"worker-{wid}"
-        if (candidate / "Default").exists():
-            source = candidate
-            break
-    if source is None:
-        source = config.get_chrome_user_data()
-
-    logger.info("[worker-%d] Copying Chrome profile from %s (first time setup)...",
-                worker_id, source.name)
     profile_dir.mkdir(parents=True, exist_ok=True)
-
-    # Copy essential profile dirs -- skip caches and heavy transient data
-    skip = {
-        "ShaderCache", "GrShaderCache", "Service Worker", "Cache",
-        "Code Cache", "GPUCache", "CacheStorage", "Crashpad",
-        "BrowserMetrics", "SafeBrowsing", "Crowd Deny",
-        "MEIPreload", "SSLErrorAssistant", "recovery", "Temp",
-        "SingletonLock", "SingletonSocket", "SingletonCookie",
-    }
-
-    for item in source.iterdir():
-        if item.name in skip:
-            continue
-        dst = profile_dir / item.name
-        try:
-            if item.is_dir():
-                shutil.copytree(
-                    str(item), str(dst), dirs_exist_ok=True,
-                    ignore=shutil.ignore_patterns(
-                        "Cache", "Code Cache", "GPUCache", "Service Worker",
-                    ),
-                )
-            else:
-                shutil.copy2(str(item), str(dst))
-        except (PermissionError, OSError):
-            pass  # skip locked files
-
+    try:
+        profile_dir.chmod(0o700)
+    except OSError:
+        pass
     return profile_dir
 
 

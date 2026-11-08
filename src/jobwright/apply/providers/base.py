@@ -123,9 +123,17 @@ class AgentProvider(ABC):
             cls._active.pop(worker_id, None)
 
 
+# Legacy Playwright-MCP providers from the ApplyPilot fork. They have no
+# answer-bank checks, hidden secrets or evidence, so they may only run dry
+# (the CLI refuses --live with them). The live path is apply/agent.py.
+LEGACY_PROVIDERS = ("cursor-sdk", "cursor-cli", "claude")
+
+
 def get_provider(name: str | None = None) -> AgentProvider:
-    """Factory for agent providers."""
+    """Factory for the legacy (dry-run only) agent providers."""
     provider_name = (name or os.environ.get("AGENT_PROVIDER", "cursor-sdk")).lower()
+    if provider_name == "anthropic":
+        provider_name = "cursor-sdk"
 
     if provider_name == "cursor-sdk":
         from jobwright.apply.providers.cursor_sdk import CursorSdkProvider

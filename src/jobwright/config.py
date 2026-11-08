@@ -314,17 +314,6 @@ def get_chrome_path() -> str:
     )
 
 
-def get_chrome_user_data() -> Path:
-    """Default Chrome user data directory, cross-platform."""
-    system = platform.system()
-    if system == "Windows":
-        return Path(os.environ.get("LOCALAPPDATA", "")) / "Google" / "Chrome" / "User Data"
-    elif system == "Darwin":
-        return Path.home() / "Library" / "Application Support" / "Google" / "Chrome"
-    else:
-        return Path.home() / ".config" / "google-chrome"
-
-
 def ensure_dirs():
     """Create all required directories."""
     s = _state()
@@ -351,15 +340,21 @@ def write_private_text(path: Path, content: str) -> None:
 
 
 def get_agent_provider() -> str:
-    """Return configured stage-6 agent provider name."""
+    """Return configured stage-6 agent provider name.
+
+    ``anthropic`` (default) is the safe tool-driven agent in apply/agent.py.
+    ``cursor-sdk`` / ``cursor-cli`` / ``claude`` are legacy and dry-run only.
+    """
     load_env()
-    return os.environ.get("AGENT_PROVIDER", "cursor-sdk").lower()
+    return os.environ.get("AGENT_PROVIDER", "anthropic").lower()
 
 
 def has_apply_agent() -> bool:
     """Check if stage-6 agent backend is available."""
     load_env()
     provider = get_agent_provider()
+    if provider == "anthropic":
+        return bool(os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN"))
     if provider == "cursor-sdk":
         return bool(os.environ.get("CURSOR_API_KEY"))
     if provider == "cursor-cli":
@@ -656,7 +651,9 @@ def check_tier(required: int, feature: str) -> None:
     if required >= 3:
         provider = get_agent_provider()
         if not has_apply_agent():
-            if provider == "cursor-sdk":
+            if provider == "anthropic":
+                missing.append("ANTHROPIC_API_KEY — set in the repo .env")
+            elif provider == "cursor-sdk":
                 missing.append("CURSOR_API_KEY — set in the repo .env (Cursor Dashboard → Integrations)")
             elif provider == "cursor-cli":
                 missing.append("Cursor Agent CLI — install: curl https://cursor.com/install -fsSL | bash")
