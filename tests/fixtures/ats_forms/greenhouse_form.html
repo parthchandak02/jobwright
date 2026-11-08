@@ -1,0 +1,63 @@
+<!doctype html>
+<html><head><title>Job Application for Operations Analyst at Example Org</title>
+<script src="https://job-boards.greenhouse.io/static/combobox.js"></script></head>
+<body>
+<main class="job-post">
+<h1 class="section-header">Operations Analyst</h1>
+<form id="application-form" method="post" enctype="multipart/form-data"
+      action="https://job-boards.greenhouse.io/exampleorg/jobs/4001/confirmation">
+  <div class="field-wrapper"><label id="first_name-label" for="first_name">First Name<span class="required">*</span></label>
+    <input id="first_name" name="first_name" type="text" aria-required="true"></div>
+  <div class="field-wrapper"><label for="last_name">Last Name<span class="required">*</span></label>
+    <input id="last_name" name="last_name" type="text" aria-required="true"></div>
+  <div class="field-wrapper"><label for="email">Email<span class="required">*</span></label>
+    <input id="email" name="email" type="text" aria-required="true"></div>
+  <div class="field-wrapper"><label for="phone">Phone</label><input id="phone" name="phone" type="tel"></div>
+  <div class="field-wrapper"><label for="candidate-location">Location (City)</label>
+    <input id="candidate-location" name="location" role="combobox" aria-controls="candidate-location-listbox" autocomplete="off">
+    <div id="candidate-location-listbox" role="listbox" style="display:none"
+         data-options="Austin, Texas, United States|Boston, Massachusetts, United States"></div></div>
+  <div class="file-upload"><label for="resume">Resume/CV<span class="required">*</span></label>
+    <input id="resume" name="resume" type="file" accept=".pdf,.doc,.docx,.txt,.rtf"></div>
+  <div class="file-upload"><label for="cover_letter">Cover Letter</label>
+    <input id="cover_letter" name="cover_letter" type="file" accept=".pdf,.doc,.docx,.txt,.rtf"></div>
+  <div class="field-wrapper"><label for="question_1001">LinkedIn Profile</label>
+    <input id="question_1001" name="question_1001" type="text"></div>
+  <div class="field-wrapper"><label for="question_1002">Website</label>
+    <input id="question_1002" name="question_1002" type="text"></div>
+  <div class="select"><label id="question_1003-label" for="question_1003">Are you legally authorized to work in the United States?<span class="required">*</span></label>
+    <input id="question_1003" role="combobox" aria-controls="question_1003-listbox" aria-labelledby="question_1003-label">
+    <div id="question_1003-listbox" role="listbox" style="display:none" data-options="Yes|No"></div></div>
+  <div class="select"><label for="question_1004">Will you now or in the future require sponsorship for employment visa status (e.g. H-1B)?<span class="required">*</span></label>
+    <select id="question_1004" name="question_1004"><option value="">Select...</option>
+      <option value="1">Yes</option><option value="0">No</option></select></div>
+  <div class="field-wrapper"><label for="question_1005">Why do you want to work at Example Org?<span class="required">*</span></label>
+    <textarea id="question_1005" name="question_1005"></textarea></div>
+  <fieldset id="question_1006-fieldset"><legend>Which of these tools have you used?</legend>
+    <label><input type="checkbox" name="question_1006[]" value="501"> Spreadsheets</label>
+    <label><input type="checkbox" name="question_1006[]" value="502"> SQL</label>
+    <label><input type="checkbox" name="question_1006[]" value="503"> Python</label></fieldset>
+  <div class="field-wrapper"><label for="question_1007">What are your salary expectations?<span class="required">*</span></label>
+    <input id="question_1007" name="question_1007" type="text"></div>
+  <div class="select"><label for="question_1008">I certify that the information I have provided is true and complete.<span class="required">*</span></label>
+    <select id="question_1008" name="question_1008"><option value="">Select...</option>
+      <option value="1">I acknowledge</option></select></div>
+  <div class="eeoc">
+    <div class="select"><label for="gender">Gender</label><select id="gender" name="gender"><option value="">Select...</option>
+      <option value="1">Male</option><option value="2">Female</option><option value="3">Decline To Self Identify</option></select></div>
+    <div class="select"><label for="hispanic_ethnicity">Are you Hispanic/Latino?</label><select id="hispanic_ethnicity" name="hispanic_ethnicity">
+      <option value="">Select...</option><option value="Yes">Yes</option><option value="No">No</option>
+      <option value="Decline">Decline To Self Identify</option></select></div>
+    <div class="select"><label for="veteran_status">Veteran Status</label><select id="veteran_status" name="veteran_status">
+      <option value="">Select...</option><option value="1">I am not a protected veteran</option>
+      <option value="2">I identify as one or more of the classifications of a protected veteran</option>
+      <option value="3">I don't wish to answer</option></select></div>
+    <div class="select"><label for="disability_status">Disability Status</label><select id="disability_status" name="disability_status">
+      <option value="">Select...</option><option value="1">Yes, I have a disability (or previously had a disability)</option>
+      <option value="2">No, I do not have a disability and have not had one in the past</option>
+      <option value="3">I do not want to answer</option></select></div>
+  </div>
+  <iframe title="reCAPTCHA" width="256" height="60" src="https://www.google.com/recaptcha/enterprise/anchor?ar=1&k=test-key&size=invisible"></iframe>
+  <button type="submit" class="btn btn--pill">Submit application</button>
+</form>
+</main></body></html>

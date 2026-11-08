@@ -1,6 +1,10 @@
-"""ATS detection and hybrid API helpers for stage-6 apply."""
+"""ATS detection, hybrid API helpers and deterministic form fillers for stage-6 apply.
 
-from jobwright.apply.ats.detect import detect_ats
+Fillers (Greenhouse, Lever, Ashby): ``fillers.filler_for(url, answer_open_question)``;
+answer keys and rules: ``forms`` module docstring.
+"""
+
+from jobwright.apply.ats.detect import ats_family, detect_ats
 from jobwright.apply.ats.greenhouse import (
     fetch_greenhouse_schema,
     parse_greenhouse_url,
@@ -9,6 +13,7 @@ from jobwright.apply.ats.greenhouse import (
 )
 
 __all__ = [
+    "ats_family",
     "detect_ats",
     "fetch_greenhouse_schema",
     "parse_greenhouse_url",

@@ -1,0 +1,46 @@
+{
+  "id": 4001, "title": "Operations Analyst", "absolute_url": "https://job-boards.greenhouse.io/exampleorg/jobs/4001",
+  "location": {"name": "Remote"},
+  "questions": [
+    {"label": "First Name", "required": true, "fields": [{"name": "first_name", "type": "input_text", "values": []}]},
+    {"label": "Last Name", "required": true, "fields": [{"name": "last_name", "type": "input_text", "values": []}]},
+    {"label": "Email", "required": true, "fields": [{"name": "email", "type": "input_text", "values": []}]},
+    {"label": "Phone", "required": false, "fields": [{"name": "phone", "type": "input_text", "values": []}]},
+    {"label": "Resume/CV", "required": true, "fields": [
+      {"name": "resume", "type": "input_file", "values": []}, {"name": "resume_text", "type": "textarea", "values": []}]},
+    {"label": "Cover Letter", "required": false, "fields": [
+      {"name": "cover_letter", "type": "input_file", "values": []}, {"name": "cover_letter_text", "type": "textarea", "values": []}]},
+    {"label": "LinkedIn Profile", "required": false, "fields": [{"name": "question_1001", "type": "input_text", "values": []}]},
+    {"label": "Website", "required": false, "fields": [{"name": "question_1002", "type": "input_text", "values": []}]},
+    {"label": "Are you legally authorized to work in the United States?", "required": true, "fields": [
+      {"name": "question_1003", "type": "multi_value_single_select", "values": [{"label": "Yes", "value": 1}, {"label": "No", "value": 0}]}]},
+    {"label": "Will you now or in the future require sponsorship for employment visa status (e.g. H-1B)?", "required": true, "fields": [
+      {"name": "question_1004", "type": "multi_value_single_select", "values": [{"label": "Yes", "value": 1}, {"label": "No", "value": 0}]}]},
+    {"label": "Why do you want to work at Example Org?", "required": true, "fields": [{"name": "question_1005", "type": "textarea", "values": []}]},
+    {"label": "Which of these tools have you used?", "required": false, "fields": [
+      {"name": "question_1006", "type": "multi_value_multi_select", "values": [
+        {"label": "Spreadsheets", "value": 501}, {"label": "SQL", "value": 502}, {"label": "Python", "value": 503}]}]},
+    {"label": "What are your salary expectations?", "required": true, "fields": [{"name": "question_1007", "type": "input_text", "values": []}]},
+    {"label": "I certify that the information I have provided is true and complete.", "required": true, "fields": [
+      {"name": "question_1008", "type": "multi_value_single_select", "values": [{"label": "I acknowledge", "value": 1}]}]}
+  ],
+  "location_questions": [
+    {"label": "Location (City)", "required": false, "fields": [{"name": "location", "type": "input_text", "values": []}]}
+  ],
+  "compliance": [
+    {"type": "eeoc", "description": "<p>Voluntary self-identification.</p>", "questions": [
+      {"label": "Gender", "required": false, "fields": [{"name": "gender", "type": "multi_value_single_select", "values": [
+        {"label": "Male", "value": 1}, {"label": "Female", "value": 2}, {"label": "Decline To Self Identify", "value": 3}]}]},
+      {"label": "Are you Hispanic/Latino?", "required": false, "fields": [{"name": "hispanic_ethnicity", "type": "multi_value_single_select", "values": [
+        {"label": "Yes", "value": "Yes"}, {"label": "No", "value": "No"}, {"label": "Decline To Self Identify", "value": "Decline"}]}]},
+      {"label": "Veteran Status", "required": false, "fields": [{"name": "veteran_status", "type": "multi_value_single_select", "values": [
+        {"label": "I am not a protected veteran", "value": 1},
+        {"label": "I identify as one or more of the classifications of a protected veteran", "value": 2},
+        {"label": "I don't wish to answer", "value": 3}]}]},
+      {"label": "Disability Status", "required": false, "fields": [{"name": "disability_status", "type": "multi_value_single_select", "values": [
+        {"label": "Yes, I have a disability (or previously had a disability)", "value": 1},
+        {"label": "No, I do not have a disability and have not had one in the past", "value": 2},
+        {"label": "I do not want to answer", "value": 3}]}]}
+    ]}
+  ]
+}

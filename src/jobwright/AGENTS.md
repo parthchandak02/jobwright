@@ -35,7 +35,8 @@ Nested agent notes for the Python package. Root context: [../../AGENTS.md](../..
 | `enrichment/` | `detail.py` (full JD), `sponsorship.py` (LLM, not on discover hot path), `apply_url.py` (employer application URL for fit >= 7 jobs lacking one, run at the end of enrich: LinkedIn offsite link via the guest client + site breaker, aggregator redirect unwrapping, Greenhouse/Lever/Ashby public board match; `logs/ats_board_cache.json`; `JOBWRIGHT_APPLY_URL_LIMIT` (60), `JOBWRIGHT_APPLY_URLS=off`) |
 | `scoring/` | v2: `matcher.py` (structured judgment + gates), `pipeline_v2.py` (select, Jev reject-only, persist, `score_history`), `criteria.py` (`match_criteria`), `examples.py` (TF-IDF retrieval), `evaluate.py` (`jobwright eval`), `criteria_miner.py`. Legacy: `scorer.py` (`JOBWRIGHT_SCORER=v1`, `SCORE_BATCH_SIZE`), `fastpath.py` (Jev). Also `tailor`, `tailor_instructions`, `cover_letter`, `portfolio`, `pdf`, `docx_export`, `validator` |
 | `network/` | CSV rank, per-job connect, Exa research |
-| `apply/` | `launcher`, `chrome`, `prompt`, `dashboard`, `ats/` |
+| `apply/` | `launcher`, `chrome`, `prompt`, `dashboard`, `fill.py` (FormFiller protocol: `FillResult(fields, needs, ready_to_submit)`), `ats/` |
+| `apply/ats/` | `detect.py` (`detect_ats` / `ats_family`: greenhouse, lever, ashby, workday, icims, smartrecruiters, jobvite, bamboohr, workable, rippling, successfactors, adp, applytojob, breezy, taleo, dayforce, other), `greenhouse.py` (boards-api schema), `ashby.py` (form schema), `forms.py` (filler engine; answer keys in its docstring; CAPTCHA detection), `fillers.py` (`GreenhouseFiller`, `LeverFiller`, `AshbyFiller`, `filler_for`; `fill` never submits; `submit`, `verify`) |
 | `apply/providers/` | `base.parse_result_output`, `cursor_sdk`, `cursor_cli`, `claude` |
 | `wizard/init.py` | `jobwright init` onboarding (PDF resume, not `.txt`) |
 | `config/*.yaml` | Shipped employers, sites, search templates |
