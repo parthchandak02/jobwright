@@ -23,6 +23,7 @@ from datetime import datetime, timezone
 from jobspy import scrape_jobs
 
 from jobwright import config
+from jobwright.apply.ats.detect import ats_family
 from jobwright.config import load_location_filters
 from jobwright.database import get_connection, init_db
 from jobwright.discovery import linkedin
@@ -251,17 +252,22 @@ def store_jobspy_results(
             sponsorship_status = derive_sponsorship_status(full_description)
 
         # Extract apply URL if JobSpy provided it
-        apply_url = str(row.get("job_url_direct", "")) if str(row.get("job_url_direct", "")) != "nan" else None
+        apply_url = _direct_url(row.get("job_url_direct"))
+        apply_source = None
+        if apply_url:
+            apply_source = "linkedin_offsite" if site_name == "linkedin" else "board_direct"
         posted = str(row.get("date_posted", ""))[:10]
         date_posted = posted if re.fullmatch(r"\d{4}-\d{2}-\d{2}", posted) else None
 
         try:
             conn.execute(
                 "INSERT INTO jobs (url, title, salary, description, location, site, company, strategy, discovered_at, "
-                "full_description, application_url, detail_scraped_at, sponsorship_status, date_posted) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "full_description, application_url, detail_scraped_at, sponsorship_status, date_posted, "
+                "application_url_source, application_ats) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (url, title, salary, description, location_str, site_label, company, strategy, now,
-                 full_description, apply_url, detail_scraped_at, sponsorship_status, date_posted),
+                 full_description, apply_url, detail_scraped_at, sponsorship_status, date_posted,
+                 apply_source, ats_family(apply_url)),
             )
             new += 1
             seen_batch.add(url)
@@ -276,6 +282,19 @@ def store_jobspy_results(
 # -- Single search execution -------------------------------------------------
 
 _LINKEDIN_REJECT_VERSION = 2
+
+
+def _direct_url(value) -> str | None:
+    """JobSpy's job_url_direct, or None for None / NaN / "None" / "nan" / non-URLs / login walls."""
+    if value is None:
+        return None
+    text = str(value).strip()
+    if text.lower() in ("", "none", "nan", "null") or not text.lower().startswith(("http://", "https://")):
+        return None
+    low = text.lower()
+    if "linkedin.com/" in low and any(w in low for w in ("/signup", "cold-join", "/authwall", "/login")):
+        return None
+    return text
 
 
 def _card_salary(card: dict) -> str | None:

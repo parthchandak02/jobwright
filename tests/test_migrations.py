@@ -161,7 +161,7 @@ def test_current_db_without_version_migrates_as_noop(db_path):
     conn.commit()
     before = [r for r in _schema(conn) if r[1] != "brief_items"]
     before_meta = _meta(conn)
-    assert run_migrations(conn) == [1, 2]
+    assert run_migrations(conn) == list(range(1, LATEST_SCHEMA_VERSION + 1))
     assert [r for r in _schema(conn) if r[1] != "brief_items"] == before
     assert "brief_items" in _tables(conn)
     after_meta = _meta(conn)
@@ -301,3 +301,34 @@ def test_ensure_brief_items_still_works_on_a_bare_db(tmp_path):
     briefstats.ensure_brief_items(conn)
     assert "brief_items" in _tables(conn)
     conn.close()
+
+
+def test_v3_adds_application_url_columns_and_is_idempotent(db_path):
+    """A DB at version 2 gets the apply-URL provenance columns; data is kept; twice is a no-op."""
+    raw = sqlite3.connect(db_path)
+    cols = ", ".join(f"{c} {_ALL_COLUMNS[c]}" for c in V1_JOBS_COLUMNS)
+    raw.execute(f"CREATE TABLE jobs ({cols})")
+    raw.execute("INSERT INTO jobs (url, application_url) VALUES ('https://example.com/j/1', 'https://example.com/a')")
+    raw.execute("INSERT INTO jobs (url, application_url) VALUES ('https://example.com/j/2', 'None')")
+    raw.execute("INSERT INTO jobs (url, application_url) VALUES ('https://example.com/j/3', 'nan')")
+    raw.execute(
+        "INSERT INTO jobs (url, application_url) VALUES ('https://example.com/j/4', "
+        "'https://www.linkedin.com/signup/cold-join?session_redirect=x')"
+    )
+    raw.commit()
+    raw.close()
+    conn = get_connection(db_path)
+    conn.execute(db_mod._JOBS_BASE_DDL)
+    for ddl in db_mod._AUX_DDL:
+        conn.execute(ddl)
+    conn.execute(db_mod.BRIEF_ITEMS_DDL)
+    conn.execute("INSERT OR REPLACE INTO schema_meta (key, value) VALUES ('schema_version', '2')")
+    conn.commit()
+    assert 3 in run_migrations(conn)
+    new_cols = {"application_url_source", "application_ats", "application_url_checked_at"}
+    assert new_cols <= _columns(conn)
+    apps = dict(conn.execute("SELECT url, application_url FROM jobs").fetchall())
+    assert apps == {"https://example.com/j/1": "https://example.com/a", "https://example.com/j/2": None,
+                    "https://example.com/j/3": None, "https://example.com/j/4": None}
+    db_mod._migrate_v3_application_url_source(conn)  # idempotent
+    assert run_migrations(conn) == []

@@ -118,6 +118,7 @@ class GuestClient:
         self._sleep = sleep
         self._lock = threading.Lock()
         self._details: dict[str, str | None] = {}
+        self._apply_urls: dict[str, str] = {}
         self.requests = 0
         self.rate_limited = 0  # every 429/999 seen (most are retried successfully)
         self.gave_up = 0  # requests abandoned after max_retries 429/999s
@@ -159,14 +160,35 @@ class GuestClient:
         return None
 
     def _fetch_description(self, job_id: str) -> str | None:
-        """Job page first; jobs-guest jobPosting only when the page has no description."""
+        """Job page first; jobs-guest jobPosting only when the page has no description.
+
+        Either page also carries the offsite "Apply on company website" link
+        (``<code id="applyUrl">``); it is kept for ``apply_url`` at no extra
+        request cost. Easy Apply jobs have none.
+        """
+        from jobwright.enrichment.apply_url import parse_linkedin_offsite
+
         resp = self.get(PAGE_URL.format(job_id), bucket="page")
         if resp is not None and "/signup" not in str(resp.url) and "/authwall" not in str(resp.url):
+            self._remember_apply_url(job_id, parse_linkedin_offsite(resp.text))
             text = parse_detail(resp.text)
             if text:
                 return text
         resp = self.get(DETAIL_URL.format(job_id), bucket="api")
-        return parse_detail(resp.text) if resp is not None else None
+        if resp is None:
+            return None
+        self._remember_apply_url(job_id, parse_linkedin_offsite(resp.text))
+        return parse_detail(resp.text)
+
+    def _remember_apply_url(self, job_id: str, url: str | None) -> None:
+        if url:
+            with self._lock:
+                self._apply_urls[job_id] = url
+
+    def apply_url(self, job_id: str) -> str | None:
+        """Employer apply URL seen while fetching this job's description (None: Easy Apply / unknown)."""
+        with self._lock:
+            return self._apply_urls.get(job_id)
 
     def description(self, job_id: str) -> str | None:
         """Job description markdown, fetched once per job per client."""
@@ -415,10 +437,12 @@ def scrape(
                 k in f"{card['title']} {card['location']}".lower() for k in _REMOTE_KEYWORDS
             )
             card["description"] = None
+            card["job_url_direct"] = None
             if not seen_before(card):
                 fresh += 1
             if keep(card):
                 card["description"] = client.description(card["job_id"])
+                card["job_url_direct"] = client.apply_url(card["job_id"])
                 if card["description"] and not card["is_remote"]:
                     card["is_remote"] = any(
                         k in card["description"].lower() for k in _REMOTE_KEYWORDS
@@ -441,7 +465,7 @@ def to_dataframe(rows: list[dict]):
         {
             "site": "linkedin",
             "job_url": r["job_url"],
-            "job_url_direct": None,
+            "job_url_direct": r.get("job_url_direct"),
             "title": r["title"],
             "company": r["company"],
             "location": r["location"],

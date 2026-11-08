@@ -70,8 +70,10 @@ def linkedin_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 def test_load_apply_blocked_includes_linkedin():
     from jobwright.config import load_apply_blocked, load_blocked_sites
 
-    apply_sites, apply_patterns = load_apply_blocked()
-    assert "linkedin" in apply_sites
+    from jobwright.config import load_apply_blocked_hosts
+
+    _apply_sites, apply_patterns = load_apply_blocked()
+    assert "linkedin.com" in load_apply_blocked_hosts()
     assert any("linkedin.com/jobs" in p for p in apply_patterns)
 
     disc_sites, disc_patterns = load_blocked_sites()
@@ -150,3 +152,41 @@ def test_apply_queue_excludes_linkedin(linkedin_db, monkeypatch):
 
     claimed_target = launcher.acquire_job(target_url=li_url, min_score=7)
     assert claimed_target is None
+
+
+def test_apply_blocked_judges_by_application_url():
+    from jobwright.config import is_apply_blocked_job
+
+    li = "https://www.linkedin.com/jobs/view/1234567890"
+    # LinkedIn card, no employer link: blocked.
+    assert is_apply_blocked_job("linkedin", li)
+    assert is_apply_blocked_job("linkedin", li, None)
+    assert is_apply_blocked_job("linkedin", li, "None")
+    # LinkedIn URLs in application_url stay blocked.
+    assert is_apply_blocked_job("linkedin", li, li)
+    assert is_apply_blocked_job("indeed", "https://example.org/j", "https://www.linkedin.com/signup/cold-join?x=1")
+    # LinkedIn card whose resolved application_url is the employer ATS: eligible.
+    assert not is_apply_blocked_job("linkedin", li, "https://job-boards.greenhouse.io/exampleorg/jobs/4001")
+    assert not is_apply_blocked_job("indeed", "https://www.indeed.com/viewjob?jk=1", None)
+
+
+def test_apply_blocked_sql_lets_resolved_linkedin_cards_through(linkedin_db):
+    from jobwright.config import apply_blocked_sql
+
+    conn, _db, li_url, _resume = linkedin_db
+    conn.execute("UPDATE jobs SET application_url = ? WHERE url = ?",
+                 ("https://jobs.lever.co/exampleorg/abc/apply", li_url))
+    conn.execute(
+        "INSERT INTO jobs (url, title, site, application_url) VALUES (?, 'Analyst', 'linkedin', NULL)",
+        ("https://www.linkedin.com/jobs/view/5550001",),
+    )
+    conn.execute(
+        "INSERT INTO jobs (url, title, site, application_url) VALUES (?, 'Analyst', 'linkedin', ?)",
+        ("https://www.linkedin.com/jobs/view/5550002", "https://www.linkedin.com/jobs/view/5550002"),
+    )
+    conn.commit()
+    sql, params = apply_blocked_sql()
+    urls = {r[0] for r in conn.execute(f"SELECT url FROM jobs WHERE 1=1 {sql}", params)}
+    assert li_url in urls
+    assert "https://www.linkedin.com/jobs/view/5550001" not in urls
+    assert "https://www.linkedin.com/jobs/view/5550002" not in urls

@@ -255,10 +255,27 @@ def _migrate_v2_brief_items(conn: sqlite3.Connection) -> None:
     conn.execute(BRIEF_ITEMS_DDL)
 
 
+def _migrate_v3_application_url_source(conn: sqlite3.Connection) -> None:
+    """Where application_url came from, its ATS family, and when resolution last ran.
+
+    Also clears junk application URLs: the literal strings 'None' / 'nan' an
+    older JobSpy insert stored for a missing job_url_direct, and LinkedIn
+    signup / cold-join login walls (neither is an application page).
+    """
+    for col in ("application_url_source", "application_ats", "application_url_checked_at"):
+        _add_column(conn, "jobs", col, _ALL_COLUMNS[col])
+    conn.execute(
+        "UPDATE jobs SET application_url = NULL WHERE application_url IN ('None', 'none', 'nan', 'NaN', '') "
+        "OR (application_url LIKE '%linkedin.com/%' AND (application_url LIKE '%/signup%' "
+        "OR application_url LIKE '%cold-join%' OR application_url LIKE '%/authwall%'))"
+    )
+
+
 # (version, name, fn). Append only: never renumber, edit or remove a shipped step.
 MIGRATIONS: list[tuple[int, str, object]] = [
     (1, "baseline", _migrate_v1_baseline),
     (2, "brief_items", _migrate_v2_brief_items),
+    (3, "application_url_source", _migrate_v3_application_url_source),
 ]
 LATEST_SCHEMA_VERSION = MIGRATIONS[-1][0]
 
@@ -538,6 +555,11 @@ _ALL_COLUMNS: dict[str, str] = {
     # Enrichment
     "full_description": "TEXT",
     "application_url": "TEXT",
+    # enrichment.apply_url: how application_url was found (detail_page, linkedin_offsite,
+    # redirect, ats_board, ...), its ATS family (apply.ats.detect.ats_family), last attempt
+    "application_url_source": "TEXT",
+    "application_ats": "TEXT",
+    "application_url_checked_at": "TEXT",
     "detail_scraped_at": "TEXT",
     "detail_error": "TEXT",
     "sponsorship_status": "TEXT",
