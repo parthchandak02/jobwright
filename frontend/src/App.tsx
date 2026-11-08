@@ -32,6 +32,10 @@ const ProfilePage = lazy(() => import('@/components/ProfilePage').then((m) => ({
 const QualityPage = lazy(() => import('@/pages/QualityPage').then((m) => ({ default: m.QualityPage })))
 const AdminPage = lazy(() => import('@/pages/AdminPage').then((m) => ({ default: m.AdminPage })))
 const ReviewPage = lazy(() => import('@/pages/ReviewPage').then((m) => ({ default: m.ReviewPage })))
+const ApplyPendingPage = lazy(() => import('@/pages/ApplyPendingPage').then((m) => ({ default: m.ApplyPendingPage })))
+const ApplyEvidencePage = lazy(() =>
+  import('@/pages/ApplyEvidencePage').then((m) => ({ default: m.ApplyEvidencePage })),
+)
 
 const VIEW_KEY = 'jobwright-view'
 /** The lane the phone board shows when no stage is picked (last one chosen). */
@@ -60,13 +64,15 @@ function initialView(): ViewMode {
   return window.matchMedia('(max-width: 767px)').matches ? 'table' : 'board'
 }
 
-type Page = 'board' | 'profile' | 'quality' | 'admin' | 'review'
+type Page = 'board' | 'profile' | 'quality' | 'admin' | 'review' | 'apply-pending' | 'apply-evidence'
 
 function pageFor(pathname: string): Page {
   if (pathname.startsWith('/profile')) return 'profile'
   if (pathname.startsWith('/quality')) return 'quality'
   if (pathname.startsWith('/admin')) return 'admin'
   if (pathname.startsWith('/review')) return 'review'
+  if (pathname.startsWith('/apply/pending/')) return 'apply-pending'
+  if (pathname.startsWith('/apply/submissions/')) return 'apply-evidence'
   return 'board'
 }
 
@@ -322,6 +328,14 @@ export default function App() {
           ) : page === 'admin' ? (
             <Suspense fallback={<PageSkeleton />}>
               <AdminPage onActiveProfileChanged={refreshProfile} />
+            </Suspense>
+          ) : page === 'apply-pending' ? (
+            <Suspense fallback={<PageSkeleton />}>
+              <ApplyPendingPage />
+            </Suspense>
+          ) : page === 'apply-evidence' ? (
+            <Suspense fallback={<PageSkeleton />}>
+              <ApplyEvidencePage />
             </Suspense>
           ) : page === 'review' ? (
             <Suspense fallback={<PageSkeleton />}>

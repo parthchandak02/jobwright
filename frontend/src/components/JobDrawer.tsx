@@ -1,3 +1,4 @@
+import { ApplyPlanCallout } from '@/components/drawer/ApplyPlanCallout'
 import { useState, type ReactNode } from 'react'
 import { ArrowLeft, BellRing, CheckCircle2, ExternalLink, Loader2, Sparkles, XCircle } from 'lucide-react'
 import { toast } from 'sonner'
@@ -216,6 +217,7 @@ export function JobDrawer({ jobKey, onClose, onChanged, onOpenJob, preview }: Pr
               {followUpLabel(job.applied_days_ago)}. No reply yet, so a short note can help.
             </Callout>
           ) : null}
+          {job.job_id ? <ApplyPlanCallout jobId={job.job_id} /> : null}
           <DesktopActions actions={actions} />
         </DrawerSection>
       )

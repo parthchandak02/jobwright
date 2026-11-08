@@ -896,3 +896,122 @@ export const patchCutoff = (notify_threshold: number) =>
     method: 'PATCH',
     body: JSON.stringify({ notify_threshold }),
   })
+
+// ---------------------------------------------------------------------------
+// Automatic applications: answer bank, human-in-the-loop requests, evidence
+// ---------------------------------------------------------------------------
+
+export type AnswerEntry = { value: string; source: string; updated_at: string }
+
+export type AnswerFieldSpec = {
+  key: string
+  label: string
+  category: string
+  attestation: boolean
+  required: boolean
+  hint: string
+  choices: string[]
+}
+
+export type ApplicationAnswers = {
+  version: number
+  answers: Record<string, AnswerEntry>
+  custom: Record<string, AnswerEntry & { question: string }>
+  fields: AnswerFieldSpec[]
+  missing: string[]
+}
+
+export type ApplyStatus = {
+  apply_enabled: boolean
+  apply_mode: 'veto' | 'auto'
+  apply_daily_cap: number
+  apply_min_score: number
+  apply_veto_minutes: number
+  apply_paused: boolean
+  apply_paused_reason: string
+  kill_switch: boolean
+  submitted_today: number
+  missing_answers: string[]
+}
+
+export type PendingInput = {
+  id: string
+  kind: 'captcha' | 'email_code' | 'answer'
+  prompt: string
+  company: string | null
+  job_id: string | null
+  status: 'open' | 'resolved' | 'expired' | 'cancelled'
+  created_at: string
+  expires_at: string | null
+  resolved_at: string | null
+  resolved_by: string | null
+  has_screenshot?: boolean
+}
+
+export type SubmissionField = {
+  label: string
+  value: string
+  source: string
+  required?: boolean
+  key?: string | null
+  attestation?: boolean
+}
+
+export type ApplyPick = {
+  id: number
+  number: number
+  job_url: string
+  job_id: string | null
+  title: string | null
+  company: string | null
+  score: number | null
+  picked_at: string
+  apply_after: string
+  status: 'planned' | 'running' | 'vetoed' | 'applied' | 'failed' | 'skipped'
+  vetoed_by: string | null
+  outcome: string | null
+  submission_id: number | null
+}
+
+export type Submission = {
+  id: number
+  run_id: string
+  job_url: string
+  job_id: string | null
+  company: string | null
+  title: string | null
+  ats: string | null
+  provider: string | null
+  model: string | null
+  dry_run: boolean
+  outcome: string
+  verification_confidence: string | null
+  verification_evidence: string | null
+  fields: SubmissionField[]
+  needs: { kind: string; detail: string; question?: string }[]
+  screenshots: Record<string, string>
+  steps: number | null
+  cost_usd: number | null
+  error: string | null
+  started_at: string
+  finished_at: string | null
+  picks?: ApplyPick[]
+}
+
+export const getAnswers = () => apiFetch<ApplicationAnswers>('/answers')
+export const putAnswers = (answers: Record<string, string | null>) =>
+  apiFetch<ApplicationAnswers>('/answers', { method: 'PUT', body: JSON.stringify({ answers }) })
+export const getApplyStatus = () => apiFetch<ApplyStatus>('/apply/status')
+export const getPending = (id: string) => apiFetch<PendingInput>(`/apply/pending/${encodeURIComponent(id)}`)
+export const providePending = (id: string, value: string) =>
+  apiFetch<PendingInput>(`/apply/pending/${encodeURIComponent(id)}/provide`, {
+    method: 'POST',
+    body: JSON.stringify({ value }),
+  })
+export const pendingScreenshotUrl = (id: string, bust: number) =>
+  `${API_BASE}/apply/pending/${encodeURIComponent(id)}/screenshot?t=${bust}`
+export const getSubmission = (id: number | string) => apiFetch<Submission>(`/apply/submissions/${id}`)
+export const submissionScreenshotUrl = (id: number | string, name: string) =>
+  `${API_BASE}/apply/submissions/${id}/screenshots/${encodeURIComponent(name)}`
+export const vetoPick = (id: number) =>
+  apiFetch<{ picks: ApplyPick[] }>(`/apply/picks/${id}/veto`, { method: 'POST' })

@@ -55,6 +55,8 @@ function AppRoutes() {
         <Route path="/admin" element={<App />} />
         <Route path="/review" element={<App />} />
         <Route path="/jobs/:jobId" element={<App />} />
+        <Route path="/apply/pending/:pendingId" element={<App />} />
+        <Route path="/apply/submissions/:submissionId" element={<App />} />
         <Route path="*" element={<App />} />
       </Routes>
     </ErrorBoundary>

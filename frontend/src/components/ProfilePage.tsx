@@ -5,6 +5,7 @@ import { Page } from '@/components/PageHeader'
 import { ProfileSwitcher } from '@/components/ProfileSwitcher'
 import { ThemeToggle } from '@/components/ThemeToggle'
 import { AboutTab } from '@/components/profile/AboutTab'
+import { ApplicationsTab } from '@/components/profile/ApplicationsTab'
 import { DailyListTab } from '@/components/profile/DailyListTab'
 import { DocumentsTab } from '@/components/profile/DocumentsTab'
 import { RulesTab } from '@/components/profile/RulesTab'
@@ -27,6 +28,7 @@ const PROFILE_TABS = [
   { value: 'documents', label: 'Documents' },
   { value: 'whatsapp', label: 'Daily list' },
   { value: 'about', label: 'About you' },
+  { value: 'applying', label: 'Applications' },
 ] as const
 
 const PANEL = 'data-[state=inactive]:hidden'
@@ -135,6 +137,9 @@ export function ProfilePage({ profile, onProfileChanged }: Props) {
             </TabsContent>
             <TabsContent value="about" forceMount tabIndex={-1} className={PANEL}>
               <AboutTab profile={data.profile} onSaved={onProfileChanged} onOpenRules={() => setTab('rules')} />
+            </TabsContent>
+            <TabsContent value="applying" tabIndex={-1} className={PANEL}>
+              <ApplicationsTab key={profile.user_id} />
             </TabsContent>
           </>
         )}
