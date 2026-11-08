@@ -31,10 +31,11 @@ from jobwright import config
 from jobwright.apply import evidence, hitl, safety
 from jobwright.apply.answers import load_answers
 from jobwright.apply.browser import ATS_HOSTS, BrowserSession, allowed_hosts_for, registrable_domain
-from jobwright.apply.fill import FieldRecord, FillResult, Materials, Need, get_filler
+from jobwright.apply.fill import FieldRecord, FillResult, Need
+from jobwright.apply.materials import Materials
 from jobwright.apply.secret_store import SecretStore, default_store
 from jobwright.apply.tools import ApplyTools
-from jobwright.apply.verify import verify_page
+from jobwright.apply.verify import Verification, verify_page
 from jobwright.database import get_connection
 
 log = logging.getLogger(__name__)
@@ -177,14 +178,62 @@ class _Human:
         return hitl.wait_for(row["id"], timeout_s=self.wait_s, poll_s=self.poll_s, on_tick=tick)
 
 
-def _run_filler(filler, session: BrowserSession, job: dict, answers, materials: Materials) -> FillResult:
-    res = filler.fill(session.page, job, answers, materials)
-    # Re-check the filler's work: every attestation must come from the bank.
+# Filler needs whose detail starts with these are the filler's own trouble
+# (could not read / fill the form), not a question for the person: the agent
+# takes over instead.
+_FILLER_TROUBLE = ("form", "field", "cv/cover")
+
+
+def _need_head(need: Need) -> str:
+    head, sep, _rest = need.detail.partition(": ")
+    return head.strip() if sep else ""
+
+
+def get_filler(apply_url: str, open_answer: Callable[[str, dict], str] | None = None):
+    """The deterministic filler for this URL's ATS (apply/ats/fillers.py), or None."""
+    if os.environ.get("JOBWRIGHT_APPLY_FILLERS", "on").strip().lower() in ("0", "off", "false", "no"):
+        return None
+    try:
+        from jobwright.apply.ats.fillers import filler_for
+    except ImportError:
+        return None
+    return filler_for(apply_url, open_answer)
+
+
+def _run_filler(filler, session: BrowserSession, job: dict, answers, materials: Materials,
+                profile: dict) -> FillResult:
+    res = filler.fill(session.page, job, answers.as_filler_dict(), materials.as_filler_dict(profile, answers))
+    # Re-check the filler's work with our own classifier: an attestation must
+    # come from the answer bank, whatever the filler's own rules said.
+    from jobwright.apply.answers import is_attestation, key_for_question
+
     for f in res.fields:
-        if f.attestation and f.source != "answer_bank":
-            res.needs.append(Need(kind="answer", prompt=f.label, key=f.key))
+        if f.source != "answer_bank" and f.source != "file" and is_attestation(f.label):
+            res.needs.append(Need(kind="answer", detail=f"question: {f.label}", key=key_for_question(f.label)))
             res.ready_to_submit = False
+        if f.source == "answer_bank":
+            f.attestation = is_attestation(f.label)
+            f.key = f.key or key_for_question(f.label)
     return res
+
+
+def make_open_answer(agent: Any, resume_text: str, cover_text: str = "") -> Callable[[str, dict], str]:
+    """Open questions for the fillers, written by the model from the resume.
+
+    Refuses attestations outright (empty answer = the filler records a Need).
+    """
+    from jobwright.apply.answers import is_attestation
+
+    def answer(question: str, job: dict) -> str:
+        if is_attestation(question) or agent is None or not hasattr(agent, "answer_open_question"):
+            return ""
+        try:
+            return agent.answer_open_question(question, job, resume_text, cover_text)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("open question failed: %s", exc)
+            return ""
+
+    return answer
 
 
 def apply_job(
@@ -220,18 +269,22 @@ def apply_job(
         return base
     rdir = evidence.run_dir(run_id)
     transcript = evidence.Transcript(rdir / "transcript.jsonl")
-    filler = get_filler(family)
-    if agent is None and filler is None:
+    answers = load_answers()
+    materials = materials_for(job)
+    try:
+        profile = config.load_profile()
+    except FileNotFoundError:
+        profile = {}
+    if agent is None:
         from jobwright.apply.agent import AnthropicApplyAgent
 
         agent = AnthropicApplyAgent()
+    filler = get_filler(apply_url, make_open_answer(agent, materials.resume_text, materials.cover_letter_text))
     provider = f"filler:{family}" if filler is not None else getattr(agent, "provider_name", "agent")
     model = getattr(agent, "model", None)
     sub_id = evidence.start_submission(job, run_id, ats=family, provider=provider, model=model, dry_run=dry_run)
     out = ApplyOutcome("failed", url, title=base.title, company=base.company, submission_id=sub_id, run_id=run_id)
 
-    answers = load_answers()
-    materials = materials_for(job)
     store = secret_store or default_store()
     apply_host = (urlparse(apply_url).hostname or "").lower()
     allowed = allowed_hosts_for(apply_url, family)
@@ -260,23 +313,24 @@ def apply_job(
         status = None
         if filler is not None:
             transcript.write("filler", {"family": family})
-            res = _run_filler(filler, session, job, answers, materials)
-            fields.extend(res.fields)
-            if res.handled:
-                status = _finish_filler(res, session, tools, human, dry_run)
-                needs.extend(n for n in res.needs if n.kind == "answer")
+            try:
+                res = _run_filler(filler, session, job, answers, materials, profile)
+            except Exception as exc:  # noqa: BLE001 - the agent takes over
+                log.warning("filler %s failed: %s", family, exc)
+                transcript.write("filler_error", str(exc)[:300])
+                res = None
+            if res is not None:
+                fields.extend(res.fields)
+                transcript.write("filler_result", {"fields": len(res.fields),
+                                                   "needs": [n.detail for n in res.needs],
+                                                   "ready": res.ready_to_submit})
+                status = _finish_filler(res, filler, session, tools, human, dry_run)
+                if status is not None:
+                    needs.extend(n for n in res.needs if n.kind == "answer"
+                                 and _need_head(n) not in _FILLER_TROUBLE)
         if status is None:
-            if agent is None:
-                from jobwright.apply.agent import AnthropicApplyAgent
-
-                agent = AnthropicApplyAgent()
-            from jobwright import config as cfg
             from jobwright.apply.prompt import build_agent_system_prompt
 
-            try:
-                profile = cfg.load_profile()
-            except FileNotFoundError:
-                profile = {}
             system = build_agent_system_prompt(
                 job=job, profile=profile, answers=answers, resume_text=materials.resume_text,
                 cover_letter_text=materials.cover_letter_text, dry_run=dry_run,
@@ -295,6 +349,10 @@ def apply_job(
         if tools.state.submitted and not dry_run:
             v = verify_page(session.page, url_before=tools.state.url_before_submit,
                             submit_selector=tools.state.submit_selector)
+            if not v.verified and filler is not None and getattr(tools.state, "filler_submitted", False):
+                ok, conf, ev = filler.verify(session.page)
+                if ok and conf in ("high", "medium"):
+                    v = Verification(True, conf, ev)
             shot = session.screenshot(rdir / "confirmation.png", full_page=True)
             if shot:
                 screenshots["confirmation"] = shot
@@ -332,7 +390,7 @@ def apply_job(
             pass
 
     duration_ms = int((time.monotonic() - started) * 1000)
-    questions = [n.prompt for n in needs if n.kind == "answer"]
+    questions = [n.question for n in needs if n.kind == "answer"]
     if outcome == "needs_answer":
         error = "needs answer: " + "; ".join(questions)[:250]
         for q, n in zip(questions, [n for n in needs if n.kind == "answer"]):
@@ -357,26 +415,32 @@ def apply_job(
     return out
 
 
-def _finish_filler(res: FillResult, session: BrowserSession, tools: ApplyTools, human: _Human,
+def _finish_filler(res: FillResult, filler, session: BrowserSession, tools: ApplyTools, human: _Human,
                    dry_run: bool) -> str | None:
     """Act on a deterministic filler's result. None = hand over to the agent."""
     for need in [n for n in res.needs if n.kind == "captcha"]:
-        if human(need.kind, need.prompt) is None:
+        if human("captcha", need.detail) is None:
             return "captcha_timeout"
+    if any(n.kind == "account" for n in res.needs):
+        return "dry_run_ready" if dry_run else None  # dry runs stop before accounts
     if any(n.kind == "email_code" for n in res.needs):
         return None  # the agent can ask for the code and type it with fill_secret
-    if any(n.kind == "answer" for n in res.needs):
+    questions = [n for n in res.needs if n.kind == "answer" and _need_head(n) not in _FILLER_TROUBLE]
+    if questions:
         return "needs_answer"
-    if not res.ready_to_submit or not res.submit_selector:
+    if any(n.kind == "answer" for n in res.needs):
+        return None  # the filler could not read / fill something: the agent tries
+    if not res.ready_to_submit:
         return None
     tools.shot("filled", full_page=True)
     tools.shot("review")
     if dry_run:
         return "dry_run_ready"
     tools.state.url_before_submit = session.page.url
-    tools.state.submit_selector = res.submit_selector
-    session.page.locator(res.submit_selector).first.click(timeout=15_000)
+    if not filler.submit(session.page):
+        return None
     tools.state.submitted = True
+    tools.state.filler_submitted = True
     try:
         session.page.wait_for_load_state("domcontentloaded", timeout=15_000)
     except Exception:  # noqa: BLE001

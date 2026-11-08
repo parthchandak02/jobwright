@@ -1,0 +1,76 @@
+<!doctype html>
+<html><head><title>Data Engineer @ Example Org</title>
+<script src="https://jobs.ashbyhq.com/static/combobox.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  for (const group of document.querySelectorAll('._yesno')) {
+    const hidden = group.querySelector('input[type=checkbox]');
+    for (const btn of group.querySelectorAll('button')) {
+      btn.addEventListener('click', () => {
+        for (const b of group.querySelectorAll('button')) b.setAttribute('aria-pressed', 'false');
+        btn.setAttribute('aria-pressed', 'true');
+        hidden.checked = btn.textContent.trim() === 'Yes';
+        group.dataset.answer = btn.textContent.trim();
+      });
+    }
+  }
+  document.querySelector('.ashby-application-form-submit-button').addEventListener('click', () => {
+    window.__submitted = (window.__submitted || 0) + 1;
+    document.querySelector('.ashby-application-form-container').innerHTML =
+      '<div class="ashby-application-form-success-container"><h2>Thanks for applying!</h2>' +
+      '<p>Your application was successfully submitted.</p></div>';
+  });
+});
+</script></head>
+<body><div id="root"><div class="ashby-job-posting-right-pane">
+<div class="ashby-application-form-container">
+  <div class="ashby-application-form-section-container">
+    <div class="ashby-application-form-field-entry">
+      <label class="ashby-application-form-question-title" for="_systemfield_name">Name<span class="required">*</span></label>
+      <input id="_systemfield_name" name="_systemfield_name" type="text" required></div>
+    <div class="ashby-application-form-field-entry">
+      <label class="ashby-application-form-question-title" for="_systemfield_email">Email<span class="required">*</span></label>
+      <input id="_systemfield_email" name="_systemfield_email" type="email" required></div>
+    <div class="ashby-application-form-field-entry">
+      <label class="ashby-application-form-question-title" for="_systemfield_resume">Resume<span class="required">*</span></label>
+      <input id="_systemfield_resume" name="_systemfield_resume" type="file"></div>
+    <div class="ashby-application-form-field-entry">
+      <label class="ashby-application-form-question-title" for="_systemfield_location">Location</label>
+      <input id="_systemfield_location" role="combobox" aria-controls="_systemfield_location-list" autocomplete="off">
+      <div id="_systemfield_location-list" role="listbox" style="display:none" data-options="Denver, Colorado, United States|Dublin, Ireland"></div></div>
+    <div class="ashby-application-form-field-entry">
+      <label class="ashby-application-form-question-title" for="5b0f6c1e-0d0e-4b7a-9a51-3f1f3c2d1a01">Phone number</label>
+      <input id="5b0f6c1e-0d0e-4b7a-9a51-3f1f3c2d1a01" name="5b0f6c1e-0d0e-4b7a-9a51-3f1f3c2d1a01" type="tel"></div>
+    <div class="ashby-application-form-field-entry">
+      <label class="ashby-application-form-question-title" for="5b0f6c1e-0d0e-4b7a-9a51-3f1f3c2d1a02">Are you legally authorized to work in the United States?<span class="required">*</span></label>
+      <div class="_yesno"><button type="button">Yes</button><button type="button">No</button>
+        <input type="checkbox" name="5b0f6c1e-0d0e-4b7a-9a51-3f1f3c2d1a02" id="5b0f6c1e-0d0e-4b7a-9a51-3f1f3c2d1a02" style="display:none"></div></div>
+    <div class="ashby-application-form-field-entry">
+      <label class="ashby-application-form-question-title">How did you hear about us?</label>
+      <fieldset>
+        <label><input type="radio" name="5b0f6c1e-0d0e-4b7a-9a51-3f1f3c2d1a03" value="LinkedIn"> LinkedIn</label>
+        <label><input type="radio" name="5b0f6c1e-0d0e-4b7a-9a51-3f1f3c2d1a03" value="Company website"> Company website</label>
+        <label><input type="radio" name="5b0f6c1e-0d0e-4b7a-9a51-3f1f3c2d1a03" value="Referral"> Referral</label>
+      </fieldset></div>
+    <div class="ashby-application-form-field-entry">
+      <label class="ashby-application-form-question-title">Which languages do you speak?</label>
+      <fieldset>
+        <label><input type="checkbox" name="5b0f6c1e-0d0e-4b7a-9a51-3f1f3c2d1a04" value="English"> English</label>
+        <label><input type="checkbox" name="5b0f6c1e-0d0e-4b7a-9a51-3f1f3c2d1a04" value="Spanish"> Spanish</label>
+      </fieldset></div>
+    <div class="ashby-application-form-field-entry">
+      <label class="ashby-application-form-question-title" for="5b0f6c1e-0d0e-4b7a-9a51-3f1f3c2d1a05">Tell us about a data pipeline you are proud of.<span class="required">*</span></label>
+      <textarea id="5b0f6c1e-0d0e-4b7a-9a51-3f1f3c2d1a05" name="5b0f6c1e-0d0e-4b7a-9a51-3f1f3c2d1a05"></textarea></div>
+    <div class="ashby-application-form-field-entry">
+      <label class="ashby-application-form-question-title" for="5b0f6c1e-0d0e-4b7a-9a51-3f1f3c2d1a06">What is your desired salary?<span class="required">*</span></label>
+      <input id="5b0f6c1e-0d0e-4b7a-9a51-3f1f3c2d1a06" name="5b0f6c1e-0d0e-4b7a-9a51-3f1f3c2d1a06" type="text"></div>
+  </div>
+  <div class="ashby-application-form-section-container ashby-survey">
+    <div class="ashby-application-form-field-entry">
+      <label class="ashby-application-form-question-title" for="_systemfield_eeoc_gender">Gender</label>
+      <input id="_systemfield_eeoc_gender" role="combobox" aria-controls="_systemfield_eeoc_gender-list" autocomplete="off">
+      <div id="_systemfield_eeoc_gender-list" role="listbox" style="display:none" data-options="Male|Female|Decline to self-identify"></div></div>
+  </div>
+  <button type="button" class="ashby-application-form-submit-button">Submit Application</button>
+</div>
+</div></div></body></html>

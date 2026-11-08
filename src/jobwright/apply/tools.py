@@ -29,7 +29,8 @@ from typing import Any, Callable
 from jobwright.apply import answers as answers_mod
 from jobwright.apply.browser import BrowserSession, host_allowed
 from jobwright.apply.evidence import Transcript
-from jobwright.apply.fill import FieldRecord, Materials, Need
+from jobwright.apply.fill import FieldRecord, Need
+from jobwright.apply.materials import Materials
 from jobwright.apply.secret_store import MemorySecretStore, SecretStore, account_password
 
 log = logging.getLogger(__name__)
@@ -150,6 +151,7 @@ class ToolState:
     url_before_submit: str = ""
     finished: dict | None = None
     captcha_seen: bool = False
+    filler_submitted: bool = False
     steps: int = 0
 
 
@@ -216,9 +218,9 @@ class ApplyTools:
 
     def _need(self, kind: str, prompt: str, key: str | None = None, category: str | None = None) -> Need:
         for n in self.state.needs:
-            if n.kind == kind and n.prompt == prompt:
+            if n.kind == kind and n.detail == prompt:
                 return n
-        need = Need(kind=kind, prompt=prompt, key=key, category=category)
+        need = Need(kind=kind, detail=prompt, key=key, category=category)
         self.state.needs.append(need)
         return need
 
@@ -336,7 +338,7 @@ class ApplyTools:
                         "Call finish(status='dry_run_ready').")
             open_needs = self.open_answer_needs()
             if open_needs:
-                return ("REFUSED: unanswered attestation(s): " + "; ".join(n.prompt for n in open_needs)
+                return ("REFUSED: unanswered attestation(s): " + "; ".join(n.question for n in open_needs)
                         + ". Call finish(status='needs_answer').")
             if "filled" not in self.state.screenshots:
                 self.shot("filled", full_page=True)
@@ -451,7 +453,7 @@ class ApplyTools:
         if value is None:
             return ("No reply in time. Call finish(status='captcha_timeout')." if kind == "captcha"
                     else "No code arrived in time. Call finish(status='failed') with reason 'no email code'.")
-        self.state.needs = [n for n in self.state.needs if not (n.kind == kind and n.prompt == prompt)]
+        self.state.needs = [n for n in self.state.needs if not (n.kind == kind and n.detail == prompt)]
         if kind == "email_code":
             self.session_secrets.put("email_code", value)
             self.transcript.forbid(value)

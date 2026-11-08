@@ -108,8 +108,40 @@ class AnthropicApplyAgent:
             return self.client.beta.messages.create(**kwargs)
         return self.client.beta.messages.create(betas=[FALLBACK_BETA], fallbacks="default", **kwargs)
 
+    def _usage(self, resp: Any) -> tuple[int, int, float]:
+        from jobwright.llm import record_usage
+
+        usage = _get(resp, "usage") or {}
+        i = int(_get(usage, "input_tokens", 0) or 0)
+        o = int(_get(usage, "output_tokens", 0) or 0)
+        cr = int(_get(usage, "cache_read_input_tokens", 0) or 0)
+        cw = int(_get(usage, "cache_creation_input_tokens", 0) or 0)
+        served = _get(resp, "model", None) or self.model
+        record_usage("anthropic", served, {"prompt_tokens": i + cr + cw, "completion_tokens": o,
+                                           "prompt_tokens_details": {"cached_tokens": cr}})
+        return i + cr + cw, o, estimate_cost(served, i, o, cr, cw)
+
+    def answer_open_question(self, question: str, job: dict, resume_text: str, cover_text: str = "") -> str:
+        """One short, truthful answer to an open (non-attestation) form question."""
+        from jobwright.apply.prompt import open_question_prompt
+        from jobwright.llm import llm_purpose
+
+        with llm_purpose("apply"):
+            resp = self._create(
+                model=self.model, max_tokens=2000,
+                system=open_question_prompt(job, resume_text, cover_text),
+                messages=[{"role": "user", "content": f"Question on the application form: {question}"}],
+                output_config={"effort": "low"},
+            )
+            self._usage(resp)
+        if _get(resp, "stop_reason") == "refusal":
+            return ""
+        text = " ".join(_block_dict(b).get("text", "") for b in (_get(resp, "content") or [])
+                        if _block_dict(b).get("type") == "text").strip()
+        return "" if text.upper().startswith("NO_ANSWER") else text
+
     def run(self, tools: ApplyTools, system_prompt: str, transcript: Transcript) -> AgentResult:
-        from jobwright.llm import llm_purpose, record_usage
+        from jobwright.llm import llm_purpose
 
         max_steps = _int_env("JOBWRIGHT_APPLY_MAX_STEPS", 60)
         timeout_s = _int_env("JOBWRIGHT_APPLY_TIMEOUT_S", 900)
@@ -145,17 +177,10 @@ class AnthropicApplyAgent:
                     log.warning("apply agent API error: %s", exc)
                     transcript.write("error", str(exc)[:500])
                     return AgentResult("error", "model call failed", steps, tin, tout, cost, error=str(exc)[:300])
-                usage = _get(resp, "usage") or {}
-                i = int(_get(usage, "input_tokens", 0) or 0)
-                o = int(_get(usage, "output_tokens", 0) or 0)
-                cr = int(_get(usage, "cache_read_input_tokens", 0) or 0)
-                cw = int(_get(usage, "cache_creation_input_tokens", 0) or 0)
-                tin += i + cr + cw
-                tout += o
-                served = _get(resp, "model", None) or self.model
-                cost += estimate_cost(served, i, o, cr, cw)
-                record_usage("anthropic", served, {"prompt_tokens": i + cr + cw, "completion_tokens": o,
-                                                   "prompt_tokens_details": {"cached_tokens": cr}})
+                used_in, used_out, used_cost = self._usage(resp)
+                tin += used_in
+                tout += used_out
+                cost += used_cost
                 content = [_block_dict(b) for b in (_get(resp, "content") or [])]
                 stop = _get(resp, "stop_reason")
                 transcript.write("assistant", {"stop_reason": stop, "content": [

@@ -63,32 +63,34 @@ SPECS: tuple[AnswerSpec, ...] = (
                choices=_YES_NO),
     AnswerSpec("requires_sponsorship", "Will need visa sponsorship now or in the future", "sponsorship", True,
                choices=_YES_NO),
-    AnswerSpec("criminal_history", "Ever convicted of a felony / crime (as asked by forms)", "criminal_background", True,
+    AnswerSpec("criminal_record", "Ever convicted of a felony / crime (as asked by forms)", "criminal_background", True,
                choices=_YES_NO),
-    AnswerSpec("background_check_consent", "Willing to undergo a background check", "criminal_background", True,
+    AnswerSpec("background_check", "Willing to undergo a background check", "criminal_background", True,
                choices=_YES_NO),
     AnswerSpec("age_18_plus", "At least 18 years old", "age", True, choices=_YES_NO),
-    AnswerSpec("certify_accurate", "Allowed to tick \"I certify the information is true\"", "certification", True,
+    AnswerSpec("certify", "Allowed to tick \"I certify the information is true\"", "certification", True,
                choices=_YES_NO, hint="Yes lets jobwright tick the certification box on your behalf."),
     AnswerSpec("salary_expectation", "Salary expectation (as you want it written)", "salary", True,
                hint="e.g. 120,000 USD per year, or \"Open to discussing\""),
     AnswerSpec("start_date", "Earliest start date / availability", "start_date", True,
                hint="e.g. Two weeks after an offer"),
-    AnswerSpec("willing_to_relocate", "Willing to relocate", "relocation", True, choices=_YES_NO),
-    AnswerSpec("previously_employed_companies", "Companies you worked for before (or \"none\")",
-               "previous_employment", True,
-               hint="Comma-separated. Used to answer \"Have you worked here before?\""),
+    AnswerSpec("relocation", "Willing to relocate", "relocation", True, choices=_YES_NO),
+    AnswerSpec("previously_worked_here", "Worked for this employer before (most people: No)",
+               "previous_employment", True, choices=_YES_NO,
+               hint="Jobs at an employer you worked for are better applied to by hand."),
+    AnswerSpec("onsite", "Able to work on-site / hybrid when the job asks", "relocation", True,
+               choices=_YES_NO),
     AnswerSpec("eeo_gender", "Gender (EEO, voluntary)", "eeo", True,
                hint="Write exactly what to select, or \"Decline to self-identify\""),
-    AnswerSpec("eeo_race_ethnicity", "Race / ethnicity (EEO, voluntary)", "eeo", True,
+    AnswerSpec("eeo_race", "Race / ethnicity (EEO, voluntary)", "eeo", True,
                hint="Write exactly what to select, or \"Decline to self-identify\""),
-    AnswerSpec("eeo_hispanic_latino", "Hispanic or Latino (EEO, voluntary)", "eeo", True,
+    AnswerSpec("eeo_hispanic", "Hispanic or Latino (EEO, voluntary)", "eeo", True,
                hint="Yes / No / Decline to self-identify"),
     AnswerSpec("eeo_veteran", "Veteran status (EEO, voluntary)", "eeo", True,
                hint="e.g. I am not a protected veteran / Decline to self-identify"),
     AnswerSpec("eeo_disability", "Disability status (EEO, voluntary)", "eeo", True,
                hint="e.g. No, I do not have a disability / I do not want to answer"),
-    AnswerSpec("eeo_sexual_orientation", "Sexual orientation (EEO, voluntary)", "eeo", True,
+    AnswerSpec("eeo_lgbtq", "Sexual orientation (EEO, voluntary)", "eeo", True,
                required=False, hint="Only some forms ask; leave empty to skip those jobs"),
     # --- Common fields (AI may not invent these either; they are facts) ----
     AnswerSpec("phone", "Phone", "common", False),
@@ -102,6 +104,7 @@ SPECS: tuple[AnswerSpec, ...] = (
     AnswerSpec("portfolio_url", "Portfolio / website URL", "common", False, required=False),
     AnswerSpec("education_highest", "Highest education (degree, school, year)", "common", False),
     AnswerSpec("how_heard", "How did you hear about us", "common", False, hint="e.g. Company website"),
+    AnswerSpec("referral", "Referred by an employee", "common", False, choices=_YES_NO),
     AnswerSpec("notice_period", "Notice period", "common", False, required=False),
     AnswerSpec("pronouns", "Pronouns (optional)", "common", False, required=False),
     AnswerSpec("preferred_name", "Preferred name (optional)", "common", False, required=False),
@@ -152,7 +155,8 @@ _CATEGORY_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("start_date", re.compile(
         r"start date|when can you start|available to start|earliest (start|date)|availability to (begin|start)|"
         r"date available|notice before starting", re.I)),
-    ("relocation", re.compile(r"relocat", re.I)),
+    ("relocation", re.compile(r"relocat|\b(on-?site|in[- ]office|in[- ]person|hybrid)\b.{0,40}\b(work|able|willing|days?)\b|"
+                              r"\bcommut", re.I)),
     ("previous_employment", re.compile(
         r"previously (worked|been employed)|former employee|worked (here|for us|for this company|at \w+) "
         r"(before|previously)|ever (been )?(employed|worked) (by|for|at)|current or former employee|"
@@ -160,10 +164,10 @@ _CATEGORY_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
 )
 
 _EEO_KEYS: tuple[tuple[re.Pattern[str], str], ...] = (
-    (re.compile(r"hispanic|latin[oax]", re.I), "eeo_hispanic_latino"),
-    (re.compile(r"sexual orientation|lgbt", re.I), "eeo_sexual_orientation"),
+    (re.compile(r"hispanic|latin[oax]", re.I), "eeo_hispanic"),
+    (re.compile(r"sexual orientation|lgbt", re.I), "eeo_lgbtq"),
     (re.compile(r"\bgender\b|\bsex\b|transgender", re.I), "eeo_gender"),
-    (re.compile(r"\brace\b|ethnicit", re.I), "eeo_race_ethnicity"),
+    (re.compile(r"\brace\b|ethnicit", re.I), "eeo_race"),
     (re.compile(r"veteran", re.I), "eeo_veteran"),
     (re.compile(r"disabilit|disabled", re.I), "eeo_disability"),
 )
@@ -172,11 +176,11 @@ _CATEGORY_KEY = {
     "work_authorization": "work_authorized",
     "sponsorship": "requires_sponsorship",
     "age": "age_18_plus",
-    "certification": "certify_accurate",
+    "certification": "certify",
     "salary": "salary_expectation",
     "start_date": "start_date",
-    "relocation": "willing_to_relocate",
-    "previous_employment": "previously_employed_companies",
+    "relocation": "relocation",
+    "previous_employment": "previously_worked_here",
 }
 
 _COMMON_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
@@ -184,6 +188,7 @@ _COMMON_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"linkedin", re.I), "linkedin_url"),
     (re.compile(r"github", re.I), "github_url"),
     (re.compile(r"portfolio|personal (web)?site|website", re.I), "portfolio_url"),
+    (re.compile(r"\breferr(ed|al)\b(?!.*source)", re.I), "referral"),
     (re.compile(r"how did you (hear|find|learn)|where did you (hear|find)|referral source|source of application",
                 re.I), "how_heard"),
     (re.compile(r"notice period", re.I), "notice_period"),
@@ -221,8 +226,10 @@ def key_for_question(text: str, category: str | None = None) -> str | None:
     if category == "criminal_background":
         if re.search(r"background (check|screen)", t, re.I) and not re.search(
                 r"felony|convicted|conviction|criminal record|charges", t, re.I):
-            return "background_check_consent"
-        return "criminal_history"
+            return "background_check"
+        return "criminal_record"
+    if category == "relocation" and not re.search(r"relocat", t, re.I):
+        return "onsite"
     if category:
         return _CATEGORY_KEY.get(category)
     for pattern, key in _COMMON_PATTERNS:
@@ -339,8 +346,7 @@ class AnswerBank:
     def lookup(self, question: str, company: str = "", model_category: str | None = None) -> tuple[str | None, str | None]:
         """(key, value) for a form question; value None = not in the bank.
 
-        ``previously_employed_companies`` is turned into Yes/No for this
-        employer. A custom answer saved for this exact question wins.
+        A custom answer saved for this exact question wins.
         """
         custom = self.custom(question)
         if custom is not None:
@@ -349,11 +355,6 @@ class AnswerBank:
         key = key_for_question(question, category)
         if key is None:
             return None, None
-        if key == "previously_employed_companies":
-            raw = self.get(key)
-            if raw is None:
-                return key, None
-            return key, "Yes" if company and _company_listed(company, raw) else "No"
         return key, self.get(key)
 
     def missing(self, include_optional: bool = False) -> list[AnswerSpec]:
@@ -373,6 +374,12 @@ class AnswerBank:
             lines.append(f"- custom [saved answer] {entry['question']}: {entry['value']}")
         return "\n".join(lines)
 
+    def as_filler_dict(self) -> dict:
+        """The ``answers`` dict the deterministic ATS fillers take (apply/ats/forms.py)."""
+        out: dict = {k: v["value"] for k, v in self.data["answers"].items()}
+        out["questions"] = {e["question"]: e["value"] for e in self.data["custom"].values()}
+        return out
+
     def as_public_dict(self) -> dict:
         return {
             "version": SCHEMA_VERSION,
@@ -385,17 +392,6 @@ class AnswerBank:
             ],
             "missing": [s.key for s in self.missing()],
         }
-
-
-def _company_listed(company: str, raw: str) -> bool:
-    if raw.strip().lower() in {"none", "no", "n/a", "-"}:
-        return False
-    norm = normalize_question(company)
-    for part in re.split(r"[,;\n]+", raw):
-        p = normalize_question(part)
-        if p and (p == norm or (len(p) > 3 and (p in norm or norm in p))):
-            return True
-    return False
 
 
 def load_answers() -> AnswerBank:

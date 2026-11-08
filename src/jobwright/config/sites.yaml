@@ -27,12 +27,21 @@ blocked:
     - "%workopolis.com/out%"
 
 # ── Apply blocked — full brief OK (materials + digest + connect), never auto-apply
+# Judged by the job's apply URL (application_url, else url), not by the board it
+# came from: a LinkedIn card whose application_url is the employer's own page
+# (enrichment/apply_url.py) may be applied to; a LinkedIn URL never.
+# (A legacy ``sites:`` list here blocks those boards only while they lack an
+# off-site application_url.)
 apply_blocked:
-  sites:
-    - "linkedin"
+  hosts:
+    - "linkedin.com"
   url_patterns:
     - "%linkedin.com/jobs%"
     - "%linkedin.com%apply%"
+
+# ── Aggregator / redirect hosts — never the employer's application page ───
+# enrichment/apply_url.py unwraps or looks past these (defaults are built in).
+aggregator_hosts: []
 
 # ── Blocked SSO domains — cannot authenticate through these ──────────────
 blocked_sso:

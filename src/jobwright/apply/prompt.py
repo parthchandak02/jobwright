@@ -129,3 +129,19 @@ def build_prompt(job: dict, tailored_resume: str, dry_run: bool = True, worker_i
         "End with exactly one line: RESULT:DRYRUN, or RESULT:FAILED:<reason>."
     )
     return "\n\n".join(p for p in (text, ats_context, legacy) if p)
+
+
+def open_question_prompt(job: dict, resume_text: str, cover_text: str = "") -> str:
+    """System prompt for one open question asked by a deterministic filler."""
+    return "\n\n".join(p for p in [
+        "Write the applicant's answer to one open question on a job application form, in the first person.",
+        "Use only facts from the resume (and the cover letter). Never invent experience, tools, numbers, "
+        "titles or dates. 2-5 sentences unless the question asks for a length; plain language.",
+        "If the question is an attestation (work authorization, sponsorship, criminal history, background "
+        "check, demographics, age, certification, salary, start date, relocation, prior employment here) or "
+        "cannot be answered truthfully from the resume, reply exactly NO_ANSWER.",
+        "Reply with the answer text only.",
+        "== JOB ==\n" + _job_block(job),
+        "== RESUME ==\n" + (resume_text or "")[:MAX_RESUME_CHARS],
+        ("== COVER LETTER ==\n" + cover_text[:4000]) if cover_text else "",
+    ] if p)

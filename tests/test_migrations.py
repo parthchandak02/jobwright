@@ -303,13 +303,44 @@ def test_ensure_brief_items_still_works_on_a_bare_db(tmp_path):
     conn.close()
 
 
-def test_v3_apply_evidence_tables(db_path):
-    """Migration 3 adds pending_inputs, submissions and apply_picks; rerun is a no-op."""
+def test_v3_adds_application_url_columns_and_is_idempotent(db_path):
+    """A DB at version 2 gets the apply-URL provenance columns; data is kept; twice is a no-op."""
+    raw = sqlite3.connect(db_path)
+    cols = ", ".join(f"{c} {_ALL_COLUMNS[c]}" for c in V1_JOBS_COLUMNS)
+    raw.execute(f"CREATE TABLE jobs ({cols})")
+    raw.execute("INSERT INTO jobs (url, application_url) VALUES ('https://example.com/j/1', 'https://example.com/a')")
+    raw.execute("INSERT INTO jobs (url, application_url) VALUES ('https://example.com/j/2', 'None')")
+    raw.execute("INSERT INTO jobs (url, application_url) VALUES ('https://example.com/j/3', 'nan')")
+    raw.execute(
+        "INSERT INTO jobs (url, application_url) VALUES ('https://example.com/j/4', "
+        "'https://www.linkedin.com/signup/cold-join?session_redirect=x')"
+    )
+    raw.commit()
+    raw.close()
+    conn = get_connection(db_path)
+    conn.execute(db_mod._JOBS_BASE_DDL)
+    for ddl in db_mod._AUX_DDL:
+        conn.execute(ddl)
+    conn.execute(db_mod.BRIEF_ITEMS_DDL)
+    conn.execute("INSERT OR REPLACE INTO schema_meta (key, value) VALUES ('schema_version', '2')")
+    conn.commit()
+    assert 3 in run_migrations(conn)
+    new_cols = {"application_url_source", "application_ats", "application_url_checked_at"}
+    assert new_cols <= _columns(conn)
+    apps = dict(conn.execute("SELECT url, application_url FROM jobs").fetchall())
+    assert apps == {"https://example.com/j/1": "https://example.com/a", "https://example.com/j/2": None,
+                    "https://example.com/j/3": None, "https://example.com/j/4": None}
+    db_mod._migrate_v3_application_url_source(conn)  # idempotent
+    assert run_migrations(conn) == []
+
+
+def test_v4_apply_evidence_tables(db_path):
+    """Migration 4 adds pending_inputs, submissions and apply_picks; rerun is a no-op."""
     conn = init_db(db_path)
     assert {"pending_inputs", "submissions", "apply_picks"} <= _tables(conn)
     conn.execute("DROP TABLE apply_picks")
-    conn.execute("UPDATE schema_meta SET value = '2' WHERE key = 'schema_version'")
+    conn.execute("UPDATE schema_meta SET value = '3' WHERE key = 'schema_version'")
     conn.commit()
-    assert run_migrations(conn) == [3]
+    assert run_migrations(conn) == [4]
     assert "apply_picks" in _tables(conn)
     assert run_migrations(conn) == []

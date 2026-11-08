@@ -743,10 +743,13 @@ def scrape_site_batch(
                     sponsorship_status = classify_sponsorship(full_description)
                     conn.execute(
                         "UPDATE jobs SET full_description = ?, application_url = ?, "
+                        "application_url_source = CASE WHEN ? IS NULL THEN application_url_source "
+                        "ELSE 'detail_page' END, "
                         "detail_scraped_at = ?, detail_error = NULL, sponsorship_status = ? "
                         "WHERE url = ?",
                         (
                             full_description,
+                            result.get("application_url"),
                             result.get("application_url"),
                             now,
                             sponsorship_status,
@@ -987,5 +990,15 @@ def run_enrichment(limit: int = 100, workers: int = 1) -> dict:
 
     # Run the detail scraper
     stats = _run_detail_scraper(conn, max_per_site=limit, workers=workers)
+
+    # Employer application pages for strong matches that lack one (LinkedIn
+    # offsite links, aggregator redirects, public ATS boards). Never fails the stage.
+    try:
+        from jobwright.enrichment.apply_url import run_apply_url_resolution
+
+        stats["apply_urls"] = run_apply_url_resolution(conn)
+    except Exception as e:  # noqa: BLE001
+        log.warning("Apply URL resolution failed: %s", e)
+        stats["apply_urls"] = {"error": str(e)}
 
     return stats

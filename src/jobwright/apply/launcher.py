@@ -118,10 +118,6 @@ def _ready_jobs_query(
     from jobwright.database import ANTI_CLOBBER_SQL, MANUAL_SOURCE_EXCLUSION_SQL
 
     blocked_sites, blocked_patterns = _load_blocked()
-    if include_apply_blocked:
-        apply_sites, apply_patterns = _load_apply_blocked()
-        blocked_sites = set(blocked_sites) | set(apply_sites)
-        blocked_patterns = list(blocked_patterns) + list(apply_patterns)
 
     params: list = [max_attempts, min_score]
     site_clause = ""
@@ -133,6 +129,12 @@ def _ready_jobs_query(
     if blocked_patterns:
         url_clauses = " ".join("AND url NOT LIKE ?" for _ in blocked_patterns)
         params.extend(blocked_patterns)
+    if include_apply_blocked:
+        # Judged by the apply URL: a LinkedIn card resolved to the employer's
+        # own application page is eligible; LinkedIn URLs never are.
+        apply_sql, apply_params = config.apply_blocked_sql()
+        url_clauses += apply_sql
+        params.extend(apply_params)
     where = (
         "tailored_resume_path IS NOT NULL"
         " AND applied_at IS NULL"
@@ -289,7 +291,7 @@ def acquire_job(target_url: str | None = None, min_score: int = 7,
                     is_discovery_blocked_job,
                 )
                 if is_discovery_blocked_job(row["site"], row["url"]) or is_apply_blocked_job(
-                    row["site"], row["url"]
+                    row["site"], row["url"], application_url=row["application_url"]
                 ):
                     conn.rollback()
                     logger.warning(

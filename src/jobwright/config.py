@@ -450,19 +450,76 @@ def load_apply_blocked() -> tuple[set[str], list[str]]:
     return sites, patterns
 
 
-def is_apply_blocked_job(site: str | None, url: str | None) -> bool:
-    """True if site/url matches apply_blocked (e.g. LinkedIn)."""
+def load_apply_blocked_hosts() -> list[str]:
+    """Hosts (with subdomains) whose URLs are never auto-applied (sites.yaml apply_blocked.hosts)."""
+    cfg = load_sites_config()
+    blocked = cfg.get("apply_blocked", {}) or {}
+    return [str(h).lower().strip() for h in (blocked.get("hosts") or []) if h]
+
+
+def _real_url(value: str | None) -> str | None:
+    if not value:
+        return None
+    text = str(value).strip()
+    return text if text.lower().startswith(("http://", "https://")) else None
+
+
+def apply_target_url(url: str | None, application_url: str | None = None) -> str:
+    """The URL an apply would open: application_url when it is a real URL, else the job url."""
+    return _real_url(application_url) or (url or "")
+
+
+def is_apply_blocked_job(site: str | None, url: str | None, application_url: str | None = None) -> bool:
+    """True when the job's apply URL is on an apply-blocked host / pattern (e.g. LinkedIn).
+
+    Judged by ``apply_target_url(url, application_url)``: a LinkedIn-sourced
+    card whose application_url is the employer's own page is not blocked. A
+    legacy ``apply_blocked.sites`` entry still blocks that board's jobs while
+    they have no off-site application_url.
+    """
+    from urllib.parse import urlparse
+
     sites, patterns = load_apply_blocked()
-    site_l = (site or "").strip()
-    if site_l in sites:
+    target = apply_target_url(url, application_url).lower()
+    if (site or "").strip() in sites and not _real_url(application_url):
         return True
-    url_l = (url or "").lower()
+    try:
+        host = (urlparse(target).hostname or "").lower()
+    except ValueError:
+        host = ""
+    for h in load_apply_blocked_hosts():
+        if host == h or host.endswith("." + h):
+            return True
     for pat in patterns:
         # YAML patterns use SQL LIKE wildcards (%); treat as substring.
         needle = pat.replace("%", "").lower()
-        if needle and needle in url_l:
+        if needle and needle in target:
             return True
     return False
+
+
+def apply_blocked_sql() -> tuple[str, list]:
+    """SQL fragment (``AND ...``) + params excluding apply-blocked jobs by their apply URL.
+
+    Mirrors ``is_apply_blocked_job`` for the apply queue query: the target is
+    ``application_url`` when it is an http(s) URL, else ``url``.
+    """
+    sites, patterns = load_apply_blocked()
+    target = ("(CASE WHEN application_url LIKE 'http%' THEN application_url ELSE url END)")
+    clauses: list[str] = []
+    params: list = []
+    for h in load_apply_blocked_hosts():
+        clauses.append(f"lower({target}) NOT LIKE ? AND lower({target}) NOT LIKE ?")
+        params.extend([f"%://{h}/%", f"%.{h}/%"])
+    for pat in patterns:
+        clauses.append(f"lower({target}) NOT LIKE ?")
+        params.append(pat.lower())
+    if sites:
+        marks = ",".join("?" * len(sites))
+        clauses.append(f"NOT (COALESCE(site, '') IN ({marks}) AND COALESCE(application_url, '') NOT LIKE 'http%')")
+        params.extend(sorted(sites))
+    sql = "".join(f" AND {c}" for c in clauses)
+    return sql, params
 
 
 def is_discovery_blocked_job(site: str | None, url: str | None) -> bool:

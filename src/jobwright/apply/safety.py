@@ -200,9 +200,7 @@ def check_job(job: dict, user_id: str | None, *, live: bool, min_score: int | No
 
     reasons: list[str] = []
     url = job.get("url") or ""
-    apply_url = job.get("application_url") or url
-    if is_apply_blocked_job(job.get("site"), url) or is_apply_blocked_job(job.get("site"), apply_url) \
-            or "linkedin.com" in apply_url.lower():
+    if is_apply_blocked_job(job.get("site"), url, application_url=job.get("application_url")):
         reasons.append("site is never applied to automatically (LinkedIn / apply_blocked)")
     elif is_discovery_blocked_job(job.get("site"), url):
         reasons.append("site is blocked")
