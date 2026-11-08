@@ -1,0 +1,23 @@
+{
+  "_comment": "Example body for POST /accounts/{account_id}/access/apps (Cloudflare API v4). A second self-hosted Access app that lets Claude reach the connector's public paths. Owner applies it by hand; jobwright never changes Access apps. Keep the main 'jobwright' app as it is: it still protects /oauth/authorize and everything else. Never add a plain /oauth path here. Verify field names against the current Access API before use.",
+  "type": "self_hosted",
+  "name": "jobwright connector (public paths)",
+  "domain": "jobwright.parthchandak.info/mcp",
+  "destinations": [
+    { "type": "public", "uri": "jobwright.parthchandak.info/mcp" },
+    { "type": "public", "uri": "jobwright.parthchandak.info/.well-known/oauth-protected-resource" },
+    { "type": "public", "uri": "jobwright.parthchandak.info/.well-known/oauth-authorization-server" },
+    { "type": "public", "uri": "jobwright.parthchandak.info/oauth/register" },
+    { "type": "public", "uri": "jobwright.parthchandak.info/oauth/token" },
+    { "type": "public", "uri": "jobwright.parthchandak.info/oauth/revoke" }
+  ],
+  "app_launcher_visible": false,
+  "session_duration": "24h",
+  "policies": [
+    {
+      "name": "connector public (bearer-protected in the app)",
+      "decision": "bypass",
+      "include": [{ "everyone": {} }]
+    }
+  ]
+}

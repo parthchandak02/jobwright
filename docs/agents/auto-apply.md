@@ -3,6 +3,11 @@
 How jobwright applies for a consenting person: 1-2 applications a day, only to jobs scoring 8+, under the
 person's own email, with every answer traceable. Design record: [ADR-008](../adr/ADR-008-safe-automatic-apply.md).
 
+> **Default since ADR-009:** profiles apply through the person's **own Claude** (`apply_via: connector`,
+> [claude-connector.md](claude-connector.md)), with the same gates, answer bank and evidence as below. The
+> server-side runner described here only runs live for profiles set to `apply_via: server`
+> (`jobwright users set <id> --apply-via server`, admins only on the dashboard).
+
 ## Rules the code enforces
 
 | Rule | Where |

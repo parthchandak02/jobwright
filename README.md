@@ -185,6 +185,19 @@ A normal day for a job seeker:
 > [!TIP]
 > Rate about ten jobs in the first days (the board shows a "Rate 10 jobs" banner until you do). Ratings are the fastest way to make the list sharper, and **Match quality** shows whether a different cutoff would suit you better.
 
+### From your own Claude
+
+jobwright is also a **Claude connector**. In Claude (claude.ai, the desktop app or your phone) open
+**Settings → Connectors → Add custom connector** and paste `https://jobwright.parthchandak.info/mcp` (the
+dashboard shows it under **Settings → Claude**). Sign in as on the dashboard and press Allow. Your Claude can
+then read your board, rate and move jobs, tailor your resume and, with **Claude in Chrome**, apply for you in
+your own browser: it claims each job first so nothing is sent twice, uses only your saved answers for
+work-authorization, EEO and similar questions, asks you for codes and CAPTCHAs, and records every field and a
+screenshot so the card moves to Applied only with a confirmation. jobwright spends no AI tokens on this. Your
+daily limit and "skip" replies still apply; disconnect any time in Settings → Claude.
+Guide: [docs/agents/claude-connector.md](docs/agents/claude-connector.md); design:
+[ADR-009](docs/adr/ADR-009-users-own-claude-applies.md).
+
 ## Configuration
 
 **Per profile** (under `users/<id>/`, or `~/.jobwright/` for a single user):
@@ -198,7 +211,7 @@ A normal day for a job seeker:
 | `cover-letter/examples/` | Style and tone for cover letters |
 | `connections.csv` (optional) | LinkedIn export for per-job connections |
 
-**Registry** `users/users.yaml`: each profile's login `emails`, `whatsapp_target`, `schedule`, `human_gate` (review-first, on for new profiles), `brief_top_n` (10 for new profiles), `weekly_summary`, `followup_days`, `search_enabled` (default true; false pauses the daily search), `apply_enabled`; top-level `admins` and `ops_target`.
+**Registry** `users/users.yaml`: each profile's login `emails`, `whatsapp_target`, `schedule`, `human_gate` (review-first, on for new profiles), `brief_top_n` (10 for new profiles), `weekly_summary`, `followup_days`, `search_enabled` (default true; false pauses the daily search), `apply_enabled`, `apply_via` (`connector` = your own Claude applies, default; `server`; `off`); top-level `admins` and `ops_target`.
 
 **Environment** (one gitignored `.env` at the repo root, shared by all profiles; full commented list in [.env.example](.env.example)):
 
@@ -231,7 +244,7 @@ A normal day for a job seeker:
 - **Find and prepare only by default.** `jobwright apply` is dry-run unless `--live`; live apply needs `apply_enabled` for the profile and runs only from the dashboard button (with a confirm) or an explicit command, never from cron. Auto-apply to LinkedIn is blocked in code.
 - **No invented experience.** Tailoring works only from your base resume; a resume that fails validation is not saved or exported.
 - **No silent failures.** Problems (failed preflight or stages, a crashed, locked or timed-out pipeline, a broken or rate-limited job board, zero scored jobs, notify failure, a brief that never ran or is stuck) alert the operator's chat, not the job seeker's, with a macOS notification or ntfy fallback when WhatsApp itself is down. If some stages fail, the list still goes out with whatever is ready, and the same job is never sent twice.
-- **Each login sees only its own profile.** Cloudflare Access verifies the login; the API binds the profile per request. Only admins can list or change WhatsApp chats.
+- **Each login sees only its own profile.** Cloudflare Access verifies the login; the API binds the profile per request. A connected Claude gets a token for one profile only (scoped, hashed at rest, revocable in Settings → Claude). Only admins can list or change WhatsApp chats.
 - **Never commit** `.env`, `users/`, `~/.jobwright/`, `ecosystem.config.js`, resumes, `connections.csv` or any API token.
 - **The repo is public, so personal data is blocked.** `scripts/check_private_data.py` rejects real-looking emails, WhatsApp chat ids and every value in your local registry. It runs as a pre-commit and pre-push hook (install once per clone with `bash scripts/install_git_hooks.sh`) and in CI. Use placeholders such as `alex@example.com` in docs and tests.
 
@@ -375,6 +388,7 @@ Shipped board and site definitions live in `src/jobwright/config/` (`employers.y
 | [docs/agents/hermes-operator-guide.md](docs/agents/hermes-operator-guide.md) | Operators: Hermes and WhatsApp operations |
 | [docs/agents/hermes-setup.md](docs/agents/hermes-setup.md) | Cron and script setup |
 | [docs/agents/dashboard-hosting.md](docs/agents/dashboard-hosting.md) | Dashboard hosting, auth and app surfaces |
+| [docs/agents/claude-connector.md](docs/agents/claude-connector.md) | Using jobwright (and applying) from your own Claude; connector OAuth and Access setup |
 | [docs/agents/repo-map.md](docs/agents/repo-map.md) | Paths, scripts, API and environment |
 | [docs/adr/](docs/adr/) | Architecture decisions (multi-user auth, scoring v2, ops) |
 | [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) | How to contribute |

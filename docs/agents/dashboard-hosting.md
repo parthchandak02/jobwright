@@ -137,6 +137,14 @@ cloudflare-pp-cli accounts access applications-update-an-application \
 
 Optional: Zero Trust → Settings → Authentication → Global session duration → match (7–30d). WhatsApp in-app browser uses a separate cookie jar; users may OTP once per in-app context even with 30d app session.
 
+#### Claude connector paths (Bypass)
+
+The Claude connector ([claude-connector.md](claude-connector.md)) needs `/mcp`, `/.well-known/oauth-*`,
+`/oauth/register`, `/oauth/token` and `/oauth/revoke` reachable without Access (they authenticate with
+OAuth bearer tokens in the app). Add a second self-hosted Access app for those paths with a Bypass policy
+([example body](claude-connector-access.example.json)); keep `/oauth/authorize` and everything else behind the
+main app. The tunnel config does not change.
+
 #### Allowlist sync (`jobwright access`)
 
 jobwright owns one allow policy on the Access app, named **`jobwright users`**, and keeps its include list equal to every `users.yaml` profile email plus admins (lowercased, deduped). Other policies are read for reporting and never modified.

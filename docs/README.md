@@ -6,6 +6,7 @@ Start with the top-level [README](../README.md) for setup and usage. **Agents** 
 
 - [docs/agents/README.md](agents/README.md) - agent doc index (Hermes, WhatsApp, repo map)
 - [docs/agents/install-hermes-skill.md](agents/install-hermes-skill.md) - install thin skill to `~/.hermes/skills/`
+- [docs/agents/claude-connector.md](agents/claude-connector.md) - use jobwright (and apply) from your own Claude; OAuth + Cloudflare Access setup
 
 ## Contents
 
@@ -23,3 +24,5 @@ Start with the top-level [README](../README.md) for setup and usage. **Agents** 
 - [ADR-005: Multi-user dashboard: Cloudflare Access identity, per-request profile](adr/ADR-005-multi-user-auth-and-request-context.md)
 - [ADR-006: Scoring v2: per-user criteria, retrieved examples, labels, evals](adr/ADR-006-scoring-v2-labels-and-evals.md)
 - [ADR-007: Operator alerts, backups, and running from the internal disk](adr/ADR-007-ops-alerts-backups-internal-disk.md)
+- [ADR-008: Safe automatic applications](adr/ADR-008-safe-automatic-apply.md)
+- [ADR-009: The person's own Claude applies (jobwright connector)](adr/ADR-009-users-own-claude-applies.md)
