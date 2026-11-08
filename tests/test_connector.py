@@ -233,7 +233,7 @@ def test_authorize_needs_the_dashboard_identity(world):
     cid = register(world)
     assert world.get("/oauth/authorize", params=authorize_query(cid)).status_code == 401
     unknown = world.get("/oauth/authorize", params=authorize_query(cid), headers=access("user9@example.com"))
-    assert unknown.status_code == 403 and "does not open a jobwright profile" in unknown.text
+    assert unknown.status_code == 403 and "isn't linked to a jobwright profile" in unknown.text
     page = world.get("/oauth/authorize", params=authorize_query(cid), headers=access(ALEX))
     assert page.status_code == 200 and "Alex Rivera" in page.text
     assert "frame-ancestors 'none'" in page.headers["content-security-policy"]
@@ -309,6 +309,19 @@ def test_consent_is_bound_to_the_login_and_cancel_returns_access_denied(world):
     cross = world.post("/oauth/authorize", headers={**access(ALEX), "origin": "https://evil.example"},
                        data={"consent": consent_nonce(page.text), "user_id": "alex", "action": "allow"})
     assert cross.status_code == 403
+
+
+def test_consent_page_lets_its_own_form_through(world):
+    """Regression: with Referrer-Policy no-referrer, browsers send "Origin: null" on the page's own POST
+    and the Origin check refused every real Allow. The page must keep the real origin and still be accepted."""
+    cid = register(world)
+    page = world.get("/oauth/authorize", params=authorize_query(cid), headers=access(ALEX))
+    assert page.headers["referrer-policy"] == "same-origin"
+    assert "<!--email_off-->" in page.text  # Cloudflare would otherwise show "[email protected]"
+    res = world.post("/oauth/authorize", headers={**access(ALEX), "origin": BASE}, follow_redirects=False,
+                     data={"consent": consent_nonce(page.text), "user_id": "alex", "action": "allow",
+                           "scope": ["jobs:write", "apply"]})
+    assert res.status_code == 302 and "code=" in res.headers["location"]
 
 
 def test_profile_picker_and_profiles_of_others_refused(world):

@@ -278,75 +278,169 @@ def _identity(request: Request):
         return None, str(exc)
 
 
-_CSS = (
-    "body{margin:0;min-height:100vh;display:grid;place-items:center;background:#f7f6f3;color:#1d1d1b;"
-    "font:16px/1.5 ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif}"
-    "main{box-sizing:border-box;width:min(420px,calc(100vw - 24px));display:grid;gap:14px;padding:28px;background:#fff;border:1px solid #e6e3dc;"
-    "border-radius:14px}h1{margin:0;font:600 22px/1.3 Georgia,serif}p{margin:0}.muted{color:#6b6860;font-size:14px}"
-    ".warn{color:#a3360f}fieldset{border:0;margin:0;padding:0;display:grid;gap:8px}legend{font-weight:600;"
-    "margin-bottom:6px}label{display:flex;gap:10px;align-items:flex-start}input{margin-top:4px}"
-    ".row{display:flex;gap:10px}button{flex:1;font:inherit;font-weight:600;padding:12px;border-radius:10px;"
-    "border:1px solid #d6d2c8;background:#fff;color:inherit;cursor:pointer}button.primary{background:#2d4a3e;"
-    "color:#fff;border-color:#2d4a3e}"
-    "@media(prefers-color-scheme:dark){body{background:#151513;color:#eceae4}main{background:#1e1e1b;"
-    "border-color:#33322e}.muted{color:#a3a097}button{background:#1e1e1b;border-color:#3d3b36}"
-    "button.primary{background:#9cc3a8;color:#151513;border-color:#9cc3a8}.warn{color:#f0936b}}"
-)
+_CSS = """
+*{box-sizing:border-box}
+:root{--bg:#fbfaf9;--card:#fff;--fg:#1b1c1f;--muted:#6b6d73;--line:#e7e5e1;--soft:#f3f2ef;
+--primary:#3664be;--primary-fg:#fff;--tint:rgba(54,100,190,.08);--warn:#9a3b0f;--warn-bg:#fdf1ea}
+@media(prefers-color-scheme:dark){:root{--bg:#0c0d0f;--card:#16171a;--fg:#ecebe8;--muted:#9a9ca3;
+--line:#2a2b30;--soft:#1d1e22;--primary:#8aa8e6;--primary-fg:#0c0d0f;--tint:rgba(138,168,230,.12);
+--warn:#f2a07a;--warn-bg:#2a1a12}}
+body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px 14px;
+background:var(--bg);color:var(--fg);font:15px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+-webkit-font-smoothing:antialiased}
+main{width:100%;max-width:440px;background:var(--card);border:1px solid var(--line);border-radius:18px;
+padding:28px;box-shadow:0 1px 2px rgba(0,0,0,.04),0 8px 24px rgba(0,0,0,.05)}
+.brand{display:flex;align-items:center;gap:10px;margin-bottom:22px;font-weight:600;letter-spacing:-.01em}
+.brand img{width:32px;height:32px;border-radius:8px}
+h1{margin:0 0 6px;font-size:22px;line-height:1.25;font-weight:650;letter-spacing:-.015em}
+p{margin:0}.lead{color:var(--muted)}.who{margin-top:10px;font-size:13px;color:var(--muted)}
+.who b{color:var(--fg);font-weight:600}
+h2{margin:26px 0 10px;font-size:13px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+.hint{margin:-4px 0 10px;font-size:13px;color:var(--muted)}
+.cards{display:grid;gap:8px}
+.card{display:flex;align-items:center;gap:12px;padding:12px 14px;border:1px solid var(--line);border-radius:12px;
+cursor:pointer;transition:border-color .12s,background .12s}
+.card:hover{border-color:var(--muted)}
+.card input{position:absolute;opacity:0;pointer-events:none}
+.card:has(input:checked){border-color:var(--primary);background:var(--tint)}
+.card:has(input:focus-visible){outline:2px solid var(--primary);outline-offset:2px}
+.avatar{flex:none;width:36px;height:36px;border-radius:50%;display:grid;place-items:center;font-weight:600;
+font-size:14px;background:var(--soft);color:var(--fg)}
+.card:has(input:checked) .avatar{background:var(--primary);color:var(--primary-fg)}
+.name{font-weight:600}.sub{font-size:13px;color:var(--muted)}
+.dot{margin-left:auto;width:18px;height:18px;border-radius:50%;border:2px solid var(--line);flex:none}
+.card:has(input:checked) .dot{border:5px solid var(--primary)}
+.perms{border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.perm{display:flex;gap:14px;align-items:flex-start;padding:14px;cursor:pointer}
+.perm+.perm{border-top:1px solid var(--line)}
+.perm .t{display:block;font-weight:600}.perm .d{display:block;font-size:13px;color:var(--muted);margin-top:2px}
+.perm .txt{flex:1}
+.badge{flex:none;font-size:12px;color:var(--muted);background:var(--soft);border-radius:999px;padding:3px 9px;margin-top:2px}
+.switch{flex:none;appearance:none;-webkit-appearance:none;margin:2px 0 0;width:40px;height:24px;border-radius:999px;
+background:var(--line);position:relative;cursor:pointer;transition:background .15s}
+.switch::after{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#fff;
+box-shadow:0 1px 2px rgba(0,0,0,.25);transition:transform .15s}
+.switch:checked{background:var(--primary)}.switch:checked::after{transform:translateX(16px)}
+.switch:focus-visible{outline:2px solid var(--primary);outline-offset:2px}
+.note{margin-top:18px;font-size:13px;color:var(--muted)}
+.warn{margin-top:14px;padding:10px 12px;border-radius:10px;background:var(--warn-bg);color:var(--warn);font-size:14px}
+.actions{display:grid;gap:8px;margin-top:22px}
+button{font:inherit;font-weight:600;border-radius:12px;padding:13px 16px;cursor:pointer;border:1px solid transparent;
+min-height:46px}
+button.primary{background:var(--primary);color:var(--primary-fg)}
+button.primary:hover{filter:brightness(1.05)}
+button.ghost{background:transparent;color:var(--muted);border-color:var(--line)}
+button:focus-visible{outline:2px solid var(--primary);outline-offset:2px}
+.msg h1{margin-bottom:8px}.msg .lead{color:var(--fg)}
+@media (max-width:420px){main{padding:22px 18px;border-radius:16px}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+"""
+
+_BRAND = "<div class=brand><img src='/icon-192.png' alt='' width=32 height=32><span>jobwright</span></div>"
+
+
+def _email(addr: str | None) -> str:
+    # Cloudflare's email obfuscation rewrites addresses into "[email protected]" links; opt this one out.
+    return f"<!--email_off-->{html.escape(addr or '')}<!--/email_off-->"
 
 
 def _page(body: str, status: int = 200, *, form_target: str | None = None) -> HTMLResponse:
     esc = html.escape
-    csp = "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+    csp = ("default-src 'none'; style-src 'unsafe-inline'; img-src 'self'; frame-ancestors 'none'; "
+           "base-uri 'none'; form-action 'self'")
     if form_target:
         csp += f" {form_target}"
     doc = (f"<!doctype html><html lang=en><meta charset=utf-8><meta name=viewport content='width=device-width,"
-           f"initial-scale=1'><meta name=robots content=noindex><title>{esc('Connect Claude to jobwright')}</title>"
-           f"<style>{_CSS}</style><main>{body}</main></html>")
+           f"initial-scale=1'><meta name=robots content=noindex><meta name=color-scheme content='light dark'>"
+           f"<title>{esc('Connect Claude to jobwright')}</title><link rel=icon href='/favicon.ico'>"
+           f"<style>{_CSS}</style><main>{_BRAND}{body}</main></html>")
     resp = HTMLResponse(doc, status_code=status)
     resp.headers["Content-Security-Policy"] = csp
     resp.headers["X-Frame-Options"] = "DENY"
-    resp.headers["Referrer-Policy"] = "no-referrer"
+    # "same-origin", not "no-referrer": with no-referrer browsers send "Origin: null" on our own form POST,
+    # which the Origin check rejects. same-origin still sends nothing to claude.ai.
+    resp.headers["Referrer-Policy"] = "same-origin"
     return _no_store(resp)  # type: ignore[return-value]
 
 
-def _message(title: str, text: str, status: int) -> HTMLResponse:
-    return _page(f"<h1>{html.escape(title)}</h1><p>{html.escape(text)}</p>", status)
+def _message(title: str, text: str, status: int, *, html_text: str | None = None) -> HTMLResponse:
+    body = (f"<div class=msg><h1>{html.escape(title)}</h1><p class=lead>{html_text or html.escape(text)}</p>"
+            f"<p class=note>You can close this tab and start again from Claude.</p></div>")
+    return _page(body, status)
+
+
+_PERM_TEXT = {
+    "jobs:read": ("See your jobs", "Jobs, scores, today's picks and your saved answers."),
+    "jobs:write": ("Update your board", "Rate and move jobs, save answers and tailored resumes, skip picks."),
+    "apply": ("Apply for you", "Fill applications in your own browser with Claude in Chrome, using only your "
+              "saved answers, and keep a record of every answer sent."),
+}
+
+
+def _initials(name: str) -> str:
+    parts = [w for w in (name or "?").split() if w]
+    return ("".join(w[0] for w in parts[:2]) or "?").upper()
 
 
 def _consent_page(q: dict, identity, profiles, nonce: str) -> HTMLResponse:
+    from jobwright.users import is_admin_email, normalize_email
+
     esc = html.escape
     client = store.get_client(q["client_id"]) or {"client_name": "Claude"}
     target = urlsplit(q["redirect_uri"])
     host = target.hostname or ""
     origin = f"{target.scheme}://{target.netloc}"
     asked = store.normalize_scope(q.get("scope")).split()
+    me = normalize_email(identity.email)
+    admin = is_admin_email(identity.email)
     local = ("" if q["redirect_uri"] in HOSTED_CALLBACKS else
              "<p class=warn>This returns to a program on your own computer. Only continue if you started it.</p>")
+
+    def own(p) -> bool:
+        return me in {normalize_email(x) for x in p.emails}
+
     if len(profiles) == 1:
         p = profiles[0]
         picker = (f"<input type=hidden name=user_id value='{esc(p.user_id)}'>"
-                  f"<p>Profile: <b>{esc(p.name or p.user_id)}</b></p>")
+                  f"<h2>Job search</h2><div class=cards><div class=card style='cursor:default'>"
+                  f"<span class=avatar>{esc(_initials(p.name or p.user_id))}</span>"
+                  f"<span><span class=name>{esc(p.name or p.user_id)}</span></span></div></div>")
     else:
-        opts = "".join(
-            f"<label><input type=radio name=user_id value='{esc(p.user_id)}' required{' checked' if i == 0 else ''}>"
-            f"<span>{esc(p.name or p.user_id)} <span class=muted>({esc(p.user_id)})</span></span></label>"
-            for i, p in enumerate(profiles))
-        picker = f"<fieldset><legend>Which profile?</legend>{opts}</fieldset>"
-    perms = "".join(
-        f"<label><input type=checkbox name=scope value='{esc(s)}'{' checked' if s in asked else ''}"
-        f"{' disabled checked' if s == 'jobs:read' else ''}><span>{esc(store.SCOPE_LABELS[s])}</span></label>"
-        for s in store.SCOPES)
+        ordered = sorted(profiles, key=lambda p: (not own(p), (p.name or p.user_id).lower()))
+        cards = "".join(
+            f"<label class=card><input type=radio name=user_id value='{esc(p.user_id)}' required"
+            f"{' checked' if i == 0 and own(p) else ''}><span class=avatar>{esc(_initials(p.name or p.user_id))}</span>"
+            f"<span><span class=name>{esc(p.name or p.user_id)}</span><br>"
+            f"<span class=sub>{'Your job search' if own(p) else 'Admin access'}</span></span>"
+            f"<span class=dot aria-hidden=true></span></label>"
+            for i, p in enumerate(ordered))
+        hint = ("<p class=hint>You're an admin, so you can connect anyone's job search.</p>"
+                if admin and any(not own(p) for p in profiles) else "")
+        picker = f"<h2>Which profile?</h2>{hint}<div class=cards role=radiogroup>{cards}</div>"
+
+    rows = []
+    for s in store.SCOPES:
+        title, desc = _PERM_TEXT.get(s, (store.SCOPE_LABELS[s], ""))
+        if s == "jobs:read":
+            control = "<span class=badge>Always on</span>"
+            rows.append(f"<div class=perm><span class=txt><span class=t>{esc(title)}</span>"
+                        f"<span class=d>{esc(desc)}</span></span>{control}</div>")
+        else:
+            checked = " checked" if s in asked else ""
+            rows.append(f"<label class=perm><span class=txt><span class=t>{esc(title)}</span>"
+                        f"<span class=d>{esc(desc)}</span></span>"
+                        f"<input class=switch type=checkbox role=switch name=scope value='{esc(s)}'{checked}"
+                        f" aria-label='{esc(title)}'></label>")
     body = (
-        f"<h1>Connect Claude to jobwright</h1>"
-        f"<p><b>{esc(client['client_name'])}</b>, returning to <b>{esc(host)}</b>, asks to use jobwright as "
-        f"<b>{esc(identity.email)}</b>.</p>{local}"
-        f"<form method=post action='/oauth/authorize' style='display:grid;gap:14px'>"
+        f"<h1>Connect {esc(client['client_name'])} to your job search</h1>"
+        f"<p class=lead>{esc(client['client_name'])} on <b>{esc(host)}</b> will be able to use jobwright for you.</p>"
+        f"<p class=who>Signed in as <b>{_email(identity.email)}</b></p>{local}"
+        f"<form method=post action='/oauth/authorize'>"
         f"<input type=hidden name=consent value='{esc(nonce)}'>{picker}"
-        f"<fieldset><legend>Allow it to</legend>{perms}</fieldset>"
-        f"<p class=muted>Your Claude applies in your own browser, with your saved answers only. You can disconnect "
-        f"it any time in jobwright Settings, Claude.</p>"
-        f"<div class=row><button name=action value=deny>Cancel</button>"
-        f"<button class=primary name=action value=allow>Allow</button></div></form>"
+        f"<h2>What Claude can do</h2><div class=perms>{''.join(rows)}</div>"
+        f"<p class=note>You can disconnect at any time in jobwright: Settings, Claude.</p>"
+        f"<div class=actions><button class=primary name=action value=allow>Connect</button>"
+        f"<button class=ghost name=action value=deny formnovalidate>Cancel</button></div></form>"
     )
     return _page(body, form_target=origin)
 
@@ -364,8 +458,10 @@ def authorize_page(request: Request) -> Response:
         return _message("Sign in first", f"Open this from the jobwright sign-in. ({err})", 401)
     profiles = _profiles_for(identity.email)
     if not profiles:
-        return _message("No jobwright profile", f"{identity.email or 'This login'} does not open a jobwright profile "
-                        "yet. Set one up on the dashboard first.", 403)
+        return _message("No jobwright profile yet", "", 403,
+                        html_text=f"{_email(identity.email) if identity.email else 'This login'} isn't linked to a "
+                        "jobwright profile. Ask the person who runs your jobwright to add this email, then "
+                        "connect again from Claude.")
     nonce = store.create_consent(identity.email, q)
     return _consent_page(q, identity, profiles, nonce)
 
@@ -389,7 +485,8 @@ async def authorize_submit(request: Request) -> Response:
         return _message("Too many tries", "Wait a few minutes, then connect again from Claude.", 429)
     origin = request.headers.get("origin")
     if origin and origin.rstrip("/") not in (base_url(), _request_origin(request)):
-        return _message("Can't connect", "This form was sent from another site.", 403)
+        return _message("Can't connect", "This page was opened from another site, so it was blocked for your "
+                        "safety. Start connecting again from Claude.", 403)
     form = await request.form()
     identity, err = _identity(request)
     if identity is None:
