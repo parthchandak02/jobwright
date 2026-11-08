@@ -485,3 +485,38 @@ def test_run_impact_boards_browser_env_off(http, search_cfg, monkeypatch):
     monkeypatch.setattr(ib, "_browser_fetch", must_not_run)
     report = ib.run_impact_boards()
     assert report["_total_new"] == 0
+
+
+def test_strip_tracking_keeps_needed_params():
+    assert ib._strip_tracking(
+        "https://ats.example.com/r.html?cid=1&jobId=9?utm_source=onpurposecareers"
+    ) == "https://ats.example.com/r.html?cid=1&jobId=9"
+    assert ib._strip_tracking("https://x.example.com/job/1?ref=onpurpose&gh_src=a") == (
+        "https://x.example.com/job/1?gh_src=a"
+    )
+    assert ib._strip_tracking("https://x.example.com/job/2/") == "https://x.example.com/job/2/"
+
+
+def test_parse_onpurpose_rendered_cards_read_title_and_company():
+    html = """<div class="grid">
+      <div class="item"><div><h5>Director of Programs</h5><h6>Example Org</h6><p>Remote</p></div>
+        <a href="https://apply.example-ats.com/example-org/j/1?utm_source=onpurposecareers">Apply Now</a></div>
+      <div class="item"><div><h5>Program Officer</h5><h6>Sample Foundation</h6><p>Oakland, CA</p></div>
+        <a href="https://jobs.example.com/rec.html?cid=7&jobId=2?utm_source=onpurposecareers">Apply Now</a></div>
+    </div>"""
+    jobs = ib.parse_onpurpose(html)
+    assert [(j["title"], j["company"]) for j in jobs] == [
+        ("Director of Programs", "Example Org"), ("Program Officer", "Sample Foundation"),
+    ]
+    assert jobs[0]["url"] == "https://apply.example-ats.com/example-org/j/1"
+    assert jobs[1]["url"] == "https://jobs.example.com/rec.html?cid=7&jobId=2"
+
+
+def test_browser_board_with_zero_cards_is_reported_as_error(http, search_cfg, monkeypatch):
+    monkeypatch.setattr(ib, "_browser_fetch", lambda targets: {n: [] for n, _, _ in targets})
+    monkeypatch.setattr(
+        ib, "_browser_fetch_parsed",
+        lambda targets: {"__errors__": {"On Purpose": "browser: RuntimeError: rendered page had 0 job cards"}},
+    )
+    report = ib.run_impact_boards(workers=2, include_browser=True)
+    assert "0 job cards" in report["On Purpose"]["error"]

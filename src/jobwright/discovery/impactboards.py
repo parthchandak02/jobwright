@@ -286,33 +286,71 @@ def fetch_wave() -> list[dict]:
     return jobs
 
 
-def fetch_onpurpose() -> list[dict]:
-    """On Purpose careers board — cards link out to each employer's ATS."""
-    url = "https://www.onpurposecareers.org/jobboard"
-    with _client() as c:
-        r = c.get(url)
-        r.raise_for_status()
-    soup = BeautifulSoup(r.text, "html.parser")
+ONPURPOSE_URL = "https://www.onpurposecareers.org/jobboard"
+
+
+def _strip_tracking(url: str) -> str:
+    """Drop utm_* tracking params but keep the rest (ADP/iCIMS links need theirs)."""
+    from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+
+    # Some boards append "?utm_source=..." after a URL that already has a query.
+    url = re.sub(r"\?(utm_[^#]*)$", lambda m: "&" + m.group(1), url) if url.count("?") > 1 else url
+    parts = urlsplit(url)
+    query = [(k, v) for k, v in parse_qsl(parts.query, keep_blank_values=True) if not k.lower().startswith("utm_") and k.lower() != "ref"]
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), ""))
+
+
+def _apply_link_count(node) -> int:
+    return sum(1 for x in node.find_all("a", href=True)
+               if "apply now" in _clean(x.get_text(" ", strip=True)).lower())
+
+
+def parse_onpurpose(html: str, base_url: str = ONPURPOSE_URL) -> list[dict]:
+    """Jobs from a (rendered) On Purpose board page.
+
+    Each card has the role title and the employer as its first two headings and
+    an "Apply now" link straight to the employer's own site or ATS.
+    """
+    soup = BeautifulSoup(html, "html.parser")
     jobs: list[dict] = []
     seen: set[str] = set()
     for a in soup.find_all("a", href=True):
         if "apply now" not in _clean(a.get_text(" ", strip=True)).lower():
             continue
-        href = urljoin(url, a["href"]).split("?")[0]
+        href = _strip_tracking(urljoin(base_url, a["href"]))
         if href in seen or "onpurposecareers.org" in href:
             continue
         seen.add(href)
+        # Climb to the card: the largest ancestor that still holds only this
+        # one "Apply now" link (one level more would take in the next card).
         card = a
-        for _ in range(4):
-            if card.parent is None:
+        for _ in range(8):
+            parent = card.parent
+            if parent is None or _apply_link_count(parent) > 1:
                 break
-            card = card.parent
+            card = parent
+        headings = [h for h in card.find_all(["h1", "h2", "h3", "h4", "h5", "h6"])
+                    if _clean(h.get_text(" ", strip=True))]
         card_text = _clean(card.get_text(" ", strip=True)) if card else ""
-        heading = card.find(["h1", "h2", "h3", "h4"]) if card else None
-        title = _clean(heading.get_text(" ", strip=True)) if heading else None
-        jobs.append({"url": href, "title": title, "company": None,
+        title = _clean(headings[0].get_text(" ", strip=True)) if headings else None
+        company = _clean(headings[1].get_text(" ", strip=True)) if len(headings) > 1 else None
+        jobs.append({"url": href, "title": title, "company": company,
                      "location": _guess_location(card_text), "description": None})
     return jobs
+
+
+def fetch_onpurpose() -> list[dict]:
+    """On Purpose careers board, plain HTTP.
+
+    The board is a Wix site that renders its cards in the browser, so this
+    usually finds nothing; the daily run uses the browser path
+    (``BROWSER_PARSED_BOARDS``). Kept for tests and for a layout that is
+    server-rendered again.
+    """
+    with _client() as c:
+        r = c.get(ONPURPOSE_URL)
+        r.raise_for_status()
+    return parse_onpurpose(r.text)
 
 
 def _sheet_jobs(sheet_id: str, max_age_days: int | None = None) -> list[dict]:
@@ -399,6 +437,43 @@ def _browser_fetch(targets: list[tuple[str, str, str]]) -> dict[str, list[dict]]
     return out
 
 
+def _browser_fetch_parsed(targets: list[tuple[str, str, Callable[[str], list[dict]]]]) -> dict[str, list[dict]]:
+    """Render each (name, url, parser) target and parse the rendered HTML.
+
+    Zero parsed jobs raises for that board so a layout change shows up as an
+    error in the brief report instead of a silent "0 jobs".
+    """
+    from playwright.sync_api import sync_playwright
+
+    out: dict[str, list[dict]] = {}
+    errors: dict[str, str] = {}
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page(user_agent=UA)
+        for name, url, parser in targets:
+            try:
+                page.goto(url, timeout=60000, wait_until="domcontentloaded")
+                page.wait_for_timeout(6000)
+                for _ in range(5):
+                    page.mouse.wheel(0, 4000)
+                    page.wait_for_timeout(800)
+                jobs = parser(page.content())
+                if not jobs:
+                    raise RuntimeError("rendered page had 0 job cards (layout changed?)")
+                out[name] = jobs
+            except Exception as e:  # noqa: BLE001 - one board must not sink the rest
+                log.warning("Browser board %s failed: %s", name, e)
+                errors[name] = f"browser: {type(e).__name__}: {e}"
+        browser.close()
+    if errors:
+        out["__errors__"] = errors  # type: ignore[assignment]
+    return out
+
+
+BROWSER_PARSED_BOARDS: list[tuple[str, str, Callable[[str], list[dict]]]] = [
+    ("On Purpose", ONPURPOSE_URL, parse_onpurpose),
+]
+
 BROWSER_BOARDS: list[tuple[str, str, str]] = [
     ("Skoll Foundation", "https://skoll.org/community/jobs/", r"skoll\.org/job/"),
     ("Net Impact", "https://careers.netimpact.org/", r"careers\.netimpact\.org/job/[a-z0-9]"),
@@ -415,7 +490,6 @@ HTTP_BOARDS: list[tuple[str, Callable[[], list[dict]]]] = [
     ("Next Billion", fetch_nextbillion),
     ("FinDev Gateway", fetch_findevgateway),
     ("WAVE", fetch_wave),
-    ("On Purpose", fetch_onpurpose),
     ("SIS Global (sheet)", fetch_sis_global),
     ("CSR Jobs (sheet)", fetch_csr_jobs_sheet),
 ]
@@ -461,11 +535,19 @@ def run_impact_boards(workers: int = 4, include_browser: bool | None = None) -> 
         except Exception as e:  # noqa: BLE001
             for name, _, _ in BROWSER_BOARDS:
                 errors[name] = f"browser: {type(e).__name__}: {e}"
+        try:
+            parsed = _browser_fetch_parsed(BROWSER_PARSED_BOARDS)
+            errors.update(parsed.pop("__errors__", {}))  # type: ignore[arg-type]
+            fetched.update(parsed)
+        except Exception as e:  # noqa: BLE001
+            for name, _, _ in BROWSER_PARSED_BOARDS:
+                errors[name] = f"browser: {type(e).__name__}: {e}"
 
     report: dict[str, Any] = {}
     total_new = 0
     cap = _max_per_board()
-    for name in [n for n, _ in HTTP_BOARDS] + [n for n, _, _ in BROWSER_BOARDS]:
+    browser_names = [n for n, _, _ in BROWSER_BOARDS] + [n for n, _, _ in BROWSER_PARSED_BOARDS]
+    for name in [n for n, _ in HTTP_BOARDS] + browser_names:
         if name in errors:
             report[name] = {"jobs": 0, "new": 0, "existing": 0, "error": errors[name]}
             continue
