@@ -734,3 +734,36 @@ def test_hermes_group_prompt_knows_veto_and_codes(env):
     assert "jobwright --user alex apply veto all" in text
     assert "jobwright --user alex apply provide <ref> <code>" in text
     assert "Never read anyone's email" in text
+
+
+# ---------------------------------------------------------------------------
+# Prompt and legacy path hygiene
+# ---------------------------------------------------------------------------
+
+
+def test_prompt_is_honest_and_carries_no_secrets(env):
+    from jobwright.apply.prompt import build_agent_system_prompt, build_prompt
+
+    profile = json.loads((env["dir"] / "profile.json").read_text())
+    text = build_agent_system_prompt(job={"url": "https://jobs.example.com/1", "title": "Analyst"}, profile=profile,
+                                     answers=answers_mod.load_answers(), resume_text="SQL", dry_run=False,
+                                     has_resume_file=True, has_cover_file=False)
+    lowered = text.lower()
+    for banned in ("whatever it takes", "capsolver", "don't sell short", "never-use-this", "gmail"):
+        assert banned not in lowered
+    assert "criminal_record [ATTESTATION]" in text and "(NOT SAVED)" in text
+    assert "Never claim experience" in text
+    legacy = build_prompt({"url": "https://jobs.example.com/1"}, "SQL")
+    assert "never-use-this" not in legacy and "RESULT:DRYRUN" in legacy
+
+
+def test_legacy_path_has_no_gmail_pinned_mcp_and_fresh_profiles(env):
+    from jobwright.apply import chrome, launcher
+
+    servers = launcher._make_mcp_config(9222)["mcpServers"]
+    assert list(servers) == ["playwright"]
+    assert all("@latest" not in a for a in servers["playwright"]["args"])
+    profile = chrome.setup_worker_profile(0)
+    assert profile.is_relative_to(Path(config.APP_DIR)) and list(profile.iterdir()) == []
+    assert launcher.run_job({"title": "x"}, port=9222, dry_run=False)[0] == "failed:legacy_provider_live_disabled"
+    assert not hasattr(config, "get_chrome_user_data")
