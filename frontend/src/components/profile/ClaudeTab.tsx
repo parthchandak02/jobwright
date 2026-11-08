@@ -107,7 +107,7 @@ export function ClaudeTab() {
         <li>For applying, turn on Claude in Chrome so Claude can fill forms in your own browser.</li>
       </ol>
 
-      <SectionHeader title="Try asking" description="Tap to copy, then paste into a new chat." />
+      <SectionHeader title="Try asking" description="Copy one, then paste it into a new chat." />
       <ul className="space-y-2">
         {PROMPTS.map((p) => (
           <li key={p} className="flex items-start gap-3 rounded-lg border border-border px-4 py-3">

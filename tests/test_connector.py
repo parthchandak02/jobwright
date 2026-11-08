@@ -215,8 +215,9 @@ def test_discovery_metadata_and_401_challenge(world):
 def test_register_accepts_only_claude_or_loopback_callbacks(world):
     assert world.post("/oauth/register", json={"redirect_uris": ["https://evil.example/cb"]}).status_code == 400
     assert world.post("/oauth/register", json={"redirect_uris": []}).status_code == 400
-    assert world.post("/oauth/register", json={"redirect_uris": [CALLBACK],
-                                               "token_endpoint_auth_method": "client_secret_post"}).status_code == 400
+    secretless = world.post("/oauth/register", json={"redirect_uris": [CALLBACK],
+                                                     "token_endpoint_auth_method": "client_secret_post"}).json()
+    assert secretless["token_endpoint_auth_method"] == "none" and "client_secret" not in secretless
     assert world.post("/oauth/register", json={"redirect_uris": ["http://localhost:3118/callback"]}).status_code == 201
     assert world.post("/oauth/register", json={"redirect_uris": ["https://claude.com/api/mcp/auth_callback"]}
                       ).status_code == 201
@@ -628,6 +629,30 @@ def test_server_runner_is_off_for_connector_profiles(world):
         users_mod.update_user("alex", apply_via="off")
         assert any("turned off" in r for r in safety.check_profile("alex", live=True, channel="connector").reasons)
         close_connection()
+
+
+def test_server_live_apply_entry_points_refuse_connector_profiles(world, monkeypatch):
+    from typer.testing import CliRunner
+
+    from jobwright import cli
+
+    users_mod.update_user("alex", apply_enabled=True)
+    res = world.post("/api/apply", json={"dry_run": False, "confirm": True}, headers=access(ALEX))
+    assert res.status_code == 403 and "apply_via: connector" in res.json()["detail"]
+    monkeypatch.setattr(cli, "_bootstrap", lambda: None)
+    monkeypatch.setattr("jobwright.config.get_active_user_id", lambda: "alex")
+    out = CliRunner().invoke(cli.app, ["apply", "--live"])
+    assert out.exit_code == 1 and "server runner is off" in out.output
+
+
+def test_move_job_outcomes_match_the_board(world):
+    from jobwright.database import CLOSED_OUTCOMES
+
+    t = connect(world)["access_token"]
+    tools = {x["name"]: x for x in rpc(world, t, "tools/list").json()["result"]["tools"]}
+    outcome = tools["move_job"]["inputSchema"]["properties"]["outcome"]
+    enum = next(o["enum"] for o in outcome["anyOf"] if "enum" in o)
+    assert set(enum) == set(CLOSED_OUTCOMES)
 
 
 def test_request_tailoring_and_saved_materials_with_expiring_links(world, monkeypatch):

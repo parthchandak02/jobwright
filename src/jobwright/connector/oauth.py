@@ -236,10 +236,8 @@ async def register(request: Request) -> JSONResponse:
     if not isinstance(uris, list) or not uris or len(uris) > 5 or not all(allowed_redirect(u) for u in uris):
         return _json({"error": "invalid_redirect_uri",
                       "error_description": "Only Claude's own callback or a local address may be registered."}, 400)
-    method = body.get("token_endpoint_auth_method") or "none"
-    if method != "none":
-        return _json({"error": "invalid_client_metadata",
-                      "error_description": "Only public clients (token_endpoint_auth_method none)."}, 400)
+    # Public clients only: whatever auth method is asked for, the answer is "none" (no secret is issued),
+    # as RFC 7591 lets the server decide. PKCE is what binds the code to the client.
     name = body.get("client_name") if isinstance(body.get("client_name"), str) else "Claude"
     name = " ".join(name.split())[:80] or "Claude"
     client = store.register_client(name, uris)
@@ -283,7 +281,7 @@ def _identity(request: Request):
 _CSS = (
     "body{margin:0;min-height:100vh;display:grid;place-items:center;background:#f7f6f3;color:#1d1d1b;"
     "font:16px/1.5 ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif}"
-    "main{width:min(420px,90vw);display:grid;gap:14px;padding:28px;background:#fff;border:1px solid #e6e3dc;"
+    "main{box-sizing:border-box;width:min(420px,calc(100vw - 24px));display:grid;gap:14px;padding:28px;background:#fff;border:1px solid #e6e3dc;"
     "border-radius:14px}h1{margin:0;font:600 22px/1.3 Georgia,serif}p{margin:0}.muted{color:#6b6860;font-size:14px}"
     ".warn{color:#a3360f}fieldset{border:0;margin:0;padding:0;display:grid;gap:8px}legend{font-weight:600;"
     "margin-bottom:6px}label{display:flex;gap:10px;align-items:flex-start}input{margin-top:4px}"

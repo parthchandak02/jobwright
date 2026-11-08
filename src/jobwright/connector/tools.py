@@ -342,7 +342,7 @@ def move_job(
     job_id: JobId,
     stage: Literal["backlog", "prepare", "applied", "in_progress", "offer", "closed"],
     outcome: Annotated[Optional[Literal["not_interested", "accepted", "rejected", "withdrawn", "ghosted",
-                                        "duplicate", "expired"]],
+                                        "cancelled", "duplicate"]],
                        Field(description="Required when stage is closed")] = None,
     note: Annotated[Optional[str], Field(max_length=500)] = None,
     person_confirmed: Annotated[bool, Field(description="Moving to applied: true only when the person says "

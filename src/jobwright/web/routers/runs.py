@@ -488,6 +488,12 @@ def apply_job(body: ApplyBody, request: Request) -> dict:
             raise HTTPException(400, "Live apply requires confirm=true")
         if not is_apply_enabled(user_id):
             raise HTTPException(403, f"apply_enabled is false for user {user_id}")
+        from jobwright.users import get_user
+
+        via = getattr(get_user(user_id), "apply_via", "connector")
+        if via != "server":
+            raise HTTPException(403, f"This profile applies through {'its own Claude' if via == 'connector' else 'nobody'} "
+                                     f"(apply_via: {via}); the server runner is off for it.")
 
     args = ["apply", "-w", "1", "--limit", str(max(1, body.limit))]
     if body.dry_run:

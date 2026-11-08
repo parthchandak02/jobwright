@@ -93,6 +93,17 @@ def apply(
             "Finding + tailoring still work without apply."
         )
         raise typer.Exit(code=1)
+    if live:
+        from jobwright.users import get_user
+
+        via = getattr(get_user(active), "apply_via", "connector") if active else "server"
+        if via != "server":
+            console.print(
+                f"[red]Live apply via the server runner is off[/red] for '{active}' (apply_via: {via}).\n"
+                "This profile applies through the person's own Claude (docs/agents/claude-connector.md).\n"
+                f"Owner only: jobwright users set {active} --apply-via server"
+            )
+            raise typer.Exit(code=1)
     if agent_provider:
         os.environ["AGENT_PROVIDER"] = agent_provider
     from jobwright.config import get_agent_provider
