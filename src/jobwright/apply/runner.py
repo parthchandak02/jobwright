@@ -291,7 +291,8 @@ def apply_job(
     # navigate() may only go to the employer's own / ATS hosts (not CDNs).
     nav_hosts = {apply_host, registrable_domain(apply_host), *ATS_HOSTS.get(family or "", ())} - {""}
     if headless is None:
-        headless = os.environ.get("JOBWRIGHT_APPLY_HEADLESS", "1" if dry_run else "0") not in ("0", "false", "no")
+        raw = os.environ.get("JOBWRIGHT_APPLY_HEADLESS", "").strip().lower() or ("1" if dry_run else "0")
+        headless = raw not in ("0", "false", "no")
     factory = session_factory or BrowserSession
     session = factory(allowed_hosts=allowed, dry_run=dry_run, headless=headless)
     fields: list[FieldRecord] = []

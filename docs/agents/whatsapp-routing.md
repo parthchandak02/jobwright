@@ -36,6 +36,9 @@ Or via Python: `jobwright users list`.
 | `bug: ...`, `this is broken` | Operator guide -> Continuous improvement (reproduce first; do not guess) |
 | `help jobs` | Summarize Daily Brief + one daily notify + dashboard + find-only vs apply |
 | `turn off apply` | `jobwright users set $USER_ID --no-apply` (confirm first) |
+| `skip 2`, `skip all` (after an "Applying for you today" message) | `jobwright --user $USER_ID apply veto --number 2 --by whatsapp` / `apply veto all --by whatsapp`; reply with what it printed ("Too late" = it already ran). See [auto-apply.md](auto-apply.md) |
+| a pasted code (after "please paste the code from <company>", ref XXXXXXXX) | `jobwright --user $USER_ID apply provide <ref> <code>`; never echo the code back |
+| an answer (after "I need your answer to ...", ref XXXXXXXX) | `jobwright --user $USER_ID apply provide <ref> "<answer>"` |
 | `network`, `connections` (text only) | `jobwright --user $USER_ID network` -> paste digest |
 | `targets`, `companies` | `jobwright --user $USER_ID targets` -> paste digest |
 
