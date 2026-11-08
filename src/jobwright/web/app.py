@@ -90,6 +90,15 @@ for _path in ("/mcp", "/mcp/"):
 
 _static_dir = pathlib.Path(__file__).resolve().parents[3] / "frontend" / "dist"
 
+# index.html (and other unhashed files) must be revalidated so a refresh after a deploy loads the new
+# bundle; Vite's content-hashed files under assets/ never change, so browsers may keep them for a year.
+_NO_CACHE = {"Cache-Control": "no-cache"}
+_IMMUTABLE = {"Cache-Control": "public, max-age=31536000, immutable"}
+
+
+def _cache_headers(rel: pathlib.Path) -> dict[str, str]:
+    return _IMMUTABLE if rel.parts and rel.parts[0] == "assets" else _NO_CACHE
+
 
 @app.get("/{full_path:path}", include_in_schema=False)
 async def spa_fallback(full_path: str) -> FileResponse:
@@ -102,10 +111,10 @@ async def spa_fallback(full_path: str) -> FileResponse:
         except (OSError, RuntimeError):
             candidate = root
         if candidate != root and candidate.is_relative_to(root) and candidate.is_file():
-            return FileResponse(str(candidate))
+            return FileResponse(str(candidate), headers=_cache_headers(candidate.relative_to(root)))
         index = _static_dir / "index.html"
         if index.exists():
-            return FileResponse(str(index))
+            return FileResponse(str(index), headers=_NO_CACHE)
     raise HTTPException(
         status_code=404,
         detail="Frontend not built. Run: cd frontend && pnpm build",

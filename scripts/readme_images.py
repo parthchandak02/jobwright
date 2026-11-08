@@ -499,6 +499,11 @@ def api_response(method: str, path: str, state: dict, body: dict | None = None):
         return connector_status(state)
     if path == "/api/jobs/bulk" and method == "POST":
         return bulk_response(body or {})
+    if path == "/api/version":
+        return {"build_id": None, "version": "abc1234", "built_at": "2026-09-28T07:00:00-07:00",
+                "deployed_at": "2026-09-28T07:01:00-07:00", "package_version": "0.6.0",
+                "subject": "Board: clean cards, colour only for fit",
+                "changes": ["Board: clean cards, colour only for fit", "Settings shows the version and what's new"]}
     if path == "/api/me":
         return me(state["admin"], state.get("setup_complete", True))
     if path == "/api/board":

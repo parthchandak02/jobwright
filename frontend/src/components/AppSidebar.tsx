@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { BrandLogo, APP_SHELL_HEADER_HEIGHT } from '@/components/BrandLogo'
 import { ProfileSwitcher } from '@/components/ProfileSwitcher'
 import { ShellNavActions } from '@/components/ShellNavActions'
+import { useVersionLine } from '@/components/AppVersion'
 import { SidebarNav } from '@/components/SidebarNav'
 import { BoardResponse, Profile } from '@/lib/api'
 import { useMe } from '@/lib/me'
@@ -36,6 +37,8 @@ export function AppSidebar({
   const manyProfiles = (me?.profiles.length ?? 0) > 1
   const profileLabel = manyProfiles ? undefined : profile?.name || profile?.user_id || 'Profile'
 
+  // Desktop extra: hovering the logo shows the running version (Settings shows it too).
+  const versionText = useVersionLine()
   const rootRef = useRef<HTMLElement>(null)
   const openTimer = useRef(0)
   const closeTimer = useRef(0)
@@ -124,6 +127,7 @@ export function AppSidebar({
             to="/"
             className="flex min-w-0 flex-1 items-center gap-2 rounded-md"
             aria-label="Back to board"
+            title={versionText}
             onClick={(event) => event.stopPropagation()}
           >
             <BrandLogo className="size-7" />
@@ -142,17 +146,13 @@ export function AppSidebar({
           onFilterStage={onFilterStage}
         />
         <div className="mt-auto flex w-[var(--sidebar-panel)] shrink-0 flex-col gap-0.5 border-t border-sidebar-border p-2">
-          {/* Profile switcher (several profiles only): folds away in the icon rail. */}
+          <ShellNavActions profileLabel={profileLabel} />
+          {/* Several profiles: who you are viewing, last in the rail (the usual account spot). */}
           {manyProfiles ? (
-            <div className="grid grid-rows-[0fr] transition-[grid-template-rows] duration-(--dur-2) ease-out group-data-[expanded=false]:-mb-0.5 group-data-[expanded=true]:grid-rows-[1fr]">
-              <div className="sidebar-label min-h-0">
-                <div className="p-0.5 pb-1.5">
-                  <ProfileSwitcher className="w-full" onOpenChange={setSwitcherOpen} />
-                </div>
-              </div>
+            <div className="mt-1 border-t border-sidebar-border pt-1">
+              <ProfileSwitcher variant="sidebar" onOpenChange={setSwitcherOpen} />
             </div>
           ) : null}
-          <ShellNavActions profileLabel={profileLabel} />
         </div>
       </aside>
     </>

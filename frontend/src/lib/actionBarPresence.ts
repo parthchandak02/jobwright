@@ -36,3 +36,8 @@ export function useActionBarShown(): boolean {
     () => false,
   )
 }
+
+/** Outside React (the update check): is a sticky ActionBar (unsaved changes, bulk selection) shown? */
+export function actionBarShownNow(): boolean {
+  return shown > 0
+}

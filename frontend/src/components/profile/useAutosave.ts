@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { SaveState } from '@/components/SaveStatus'
+import { useUnsavedWhile } from '@/lib/unsavedWork'
 
 type Options<T, R> = {
   ms?: number
@@ -17,6 +18,8 @@ export function useAutosave<T, R = unknown>(save: (value: T) => Promise<R>, { ms
   const pending = useRef<{ value: T } | null>(null)
   const last = useRef<{ value: T } | null>(null)
   const seq = useRef(0)
+  // A waiting or failed save keeps the update check from reloading the page.
+  useUnsavedWhile(state === 'saving' || state === 'error')
 
   useEffect(() => {
     saveRef.current = save

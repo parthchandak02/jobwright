@@ -26,6 +26,8 @@ function Toaster({ phoneBottom, ...props }: Props) {
       toastOptions={{
         classNames: {
           toast: 'rounded-popover border border-border bg-popover text-popover-foreground shadow-e1',
+          // Toast actions (Undo, Refresh) look like our secondary button instead of Sonner's black pill.
+          actionButton: 'rounded-md! border! border-border-strong! bg-surface! text-foreground! font-medium!',
         },
       }}
       {...props}

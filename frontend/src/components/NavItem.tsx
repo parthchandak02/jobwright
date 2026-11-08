@@ -1,6 +1,5 @@
 import type { CSSProperties } from 'react'
 import type { LucideIcon } from 'lucide-react'
-import { Badge } from '@/components/ui/badge'
 import { laneTone } from '@/lib/api'
 import { cn } from '@/lib/utils'
 
@@ -10,19 +9,12 @@ type Props = {
   count: number
   icon: LucideIcon
   onClick: () => void
+  /** A board stage: adds the 6px lane dot on the icon. */
   stage?: string
-  countVariant?: 'secondary' | 'outline'
 }
 
-export function NavItem({
-  active,
-  label,
-  count,
-  icon: Icon,
-  onClick,
-  stage,
-  countVariant = 'outline',
-}: Props) {
+/** Sidebar row: neutral icon (+ lane dot for stages), Title Case label, muted count. */
+export function NavItem({ active, label, count, icon: Icon, onClick, stage }: Props) {
   const lane = stage ? laneTone(stage) : undefined
 
   return (
@@ -48,21 +40,15 @@ export function NavItem({
           />
         ) : null}
       </span>
+      <span className="sidebar-label min-w-0 flex-1 truncate text-left">{label}</span>
       <span
         className={cn(
-          'sidebar-label flex-1 text-left',
-          lane && 'lane-label text-micro font-semibold tracking-wide uppercase',
+          'sidebar-label shrink-0 text-caption tabular-nums',
+          active ? 'text-sidebar-accent-foreground' : 'text-muted-foreground',
         )}
       >
-        {label}
+        {count}
       </span>
-      {lane ? (
-        <span className="sidebar-label shrink-0 text-micro font-medium text-muted-foreground tabular-nums">{count}</span>
-      ) : (
-        <span className="sidebar-label shrink-0">
-          <Badge variant={countVariant}>{count}</Badge>
-        </span>
-      )}
     </button>
   )
 }

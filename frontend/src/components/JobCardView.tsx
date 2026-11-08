@@ -67,7 +67,7 @@ export const JobCardView = memo(function JobCardView({
     <div
       style={lane ? ({ '--lane': lane } as CSSProperties) : undefined}
       className={cn(
-        'relative overflow-hidden rounded-lg border border-border bg-surface py-3 pr-3 pl-3.5 text-foreground transition-[border-color,box-shadow] duration-(--dur-1) ease-out hover:border-border-strong hover:shadow-e1',
+        'relative overflow-hidden rounded-lg border border-border bg-surface p-3 text-foreground transition-[border-color,box-shadow] duration-(--dur-1) ease-out hover:border-border-strong hover:shadow-e1',
         opens && 'cursor-pointer',
         dragging && 'cursor-grabbing rotate-1 border-border-strong shadow-e1',
         selected && 'job-card-selected',
@@ -75,7 +75,6 @@ export const JobCardView = memo(function JobCardView({
       // A sortable card's wrapper carries the job key; a plain card carries it itself.
       {...(opens && !openButton ? { [JOB_KEY_ATTR]: job.job_id } : {})}
     >
-      {lane ? <span aria-hidden className="absolute inset-y-0 left-0 w-[3px] bg-(--lane)" /> : null}
       {showStage && stage ? (
         <p className="lane-label mb-1.5 text-micro font-semibold tracking-wide uppercase">{STAGE_LABELS[stage] || stage}</p>
       ) : null}

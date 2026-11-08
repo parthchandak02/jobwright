@@ -4,6 +4,7 @@ import { BrowserRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { AppGate } from '@/components/AppGate'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { PageSkeleton } from '@/components/PageSkeleton'
+import { UpdateNotifier } from '@/components/UpdateNotifier'
 import { Toaster } from '@/components/ui/sonner'
 import { MeProvider } from '@/lib/me'
 import { ThemeProvider } from '@/lib/theme'
@@ -72,6 +73,7 @@ createRoot(document.getElementById('root')!).render(
             <AppRoutes />
           </AppGate>
         </MeProvider>
+        <UpdateNotifier />
         <Toaster
           richColors
           position="bottom-right"

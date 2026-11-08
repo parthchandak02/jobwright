@@ -35,7 +35,6 @@ export function SidebarNav({
         label="All jobs"
         count={board?.total ?? 0}
         icon={NAV_ICONS.all}
-        countVariant="secondary"
         onClick={() => select('all')}
       />
       {stages.map((stage) => (

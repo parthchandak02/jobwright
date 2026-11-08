@@ -84,6 +84,15 @@ def health() -> dict:
     return {"ok": True, "version": __version__}
 
 
+@router.get("/version")
+def version(response: Response) -> dict:
+    """Deployed build (no secrets): the browser compares build_id with its own to offer a refresh."""
+    from jobwright.web.version import version_payload
+
+    response.headers["Cache-Control"] = "no-store"
+    return version_payload()
+
+
 @router.get("/me")
 def me(request: Request) -> dict:
     """Who is logged in, which profiles they may open, and the active one."""

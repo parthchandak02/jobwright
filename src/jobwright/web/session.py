@@ -127,7 +127,8 @@ class DashboardUserMiddleware:
             await self.app(scope, receive, send)
             return
         path = scope["path"]
-        if path == "/api/health":
+        # Liveness and the deployed version need no login (no secrets in either).
+        if path in ("/api/health", "/api/version"):
             await self.app(scope, receive, send)
             return
 

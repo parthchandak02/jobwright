@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
+import { AppVersion } from '@/components/AppVersion'
 import { Page } from '@/components/PageHeader'
 import { ProfileSwitcher } from '@/components/ProfileSwitcher'
 import { ThemeToggle } from '@/components/ThemeToggle'
@@ -148,6 +149,7 @@ export function ProfilePage({ profile, onProfileChanged }: Props) {
             </TabsContent>
           </>
         )}
+        <AppVersion className="mt-section" />
       </Page>
     </Tabs>
   )

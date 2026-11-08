@@ -501,7 +501,7 @@ export default function App() {
           onSaved={() => void refresh({ notify: true })}
         />
 
-        {showTabBar ? <PhoneTabBar /> : null}
+        {showTabBar ? <PhoneTabBar badges={{ '/review': reviewCount(board) }} /> : null}
       </div>
     </>
   )

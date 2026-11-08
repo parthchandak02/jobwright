@@ -122,19 +122,13 @@ export function BoardHeader({
             <Search />
           </Button>
 
+          {/* Phones reach Review from the tab bar (it carries the count), so only desktop shows it here. */}
           {reviewCount > 0 ? (
-            <>
-              <Button asChild size="icon-sm" variant="ghost" className="md:hidden">
-                <Link to="/review" aria-label={`Review ${reviewCount} Backlog jobs`}>
-                  <Layers />
-                </Link>
-              </Button>
-              <Button asChild size="sm" variant="secondary" className="max-md:hidden" title="Go through Backlog jobs one at a time">
-                <Link to="/review">
-                  <Layers /> <span className="board-head-label">Review</span> <Badge variant="secondary">{reviewCount}</Badge>
-                </Link>
-              </Button>
-            </>
+            <Button asChild size="sm" variant="secondary" className="max-md:hidden" title="Go through Backlog jobs one at a time">
+              <Link to="/review" aria-label={`Review ${reviewCount} Backlog jobs`}>
+                <Layers /> <span className="board-head-label">Review</span> <Badge variant="secondary">{reviewCount}</Badge>
+              </Link>
+            </Button>
           ) : null}
           <AutoSearchControls onRunDone={onRunDone} />
 
@@ -176,7 +170,7 @@ export function BoardHeader({
           >
             <Plus />
           </Button>
-          <Button size="sm" variant="secondary" className="max-md:hidden" onClick={onAddJob}>
+          <Button size="sm" variant="secondary" className="max-md:hidden" onClick={onAddJob} title="Add a job by its link">
             <Plus />
             <span className="board-head-label">Add job</span>
           </Button>

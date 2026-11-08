@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import type { SaveState } from '@/components/SaveStatus'
 import { saveJobNotes, type JobCard } from '@/lib/api'
+import { useUnsavedWhile } from '@/lib/unsavedWork'
 import { errorMessage } from '@/lib/utils'
 
 const NOTES_SAVE_MS = 800
@@ -15,6 +16,8 @@ export function useJobNotes(job: JobCard | null) {
   const [state, setState] = useState<SaveState>('idle')
   const [savedAt, setSavedAt] = useState<number | null>(null)
   const saved = useRef('')
+  // Typed notes not saved yet (or a failed save) keep the update check from reloading the page.
+  useUnsavedWhile(state === 'saving' || state === 'error' || notes !== saved.current)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const jobRef = useRef(job)
   jobRef.current = job

@@ -16,7 +16,7 @@ const JOBS_TAB: ShellLink = { path: '/', label: 'Jobs', tabLabel: 'Jobs', icon: 
  * 56px plus the safe area; render as the last child of the app shell's column so pages end above it.
  * The board's stage filter and view are kept when coming back to Jobs.
  */
-export function PhoneTabBar({ className }: { className?: string }) {
+export function PhoneTabBar({ className, badges }: { className?: string; badges?: Record<string, number> }) {
   const navigate = useNavigate()
   const { pathname, search } = useLocation()
   const { me } = useMe()
@@ -36,6 +36,7 @@ export function PhoneTabBar({ className }: { className?: string }) {
       {links.map((link) => {
         const active = isLinkActive(link, pathname, search, links)
         const Icon = link.icon
+        const badge = link.search ? 0 : (badges?.[link.path] ?? 0)
         return (
           <button
             key={link.path + (link.search ?? '')}
@@ -51,8 +52,21 @@ export function PhoneTabBar({ className }: { className?: string }) {
               active ? 'font-medium text-primary' : 'text-muted-foreground hover:text-foreground',
             )}
           >
-            <Icon className="size-5" strokeWidth={active ? 2.25 : 1.75} aria-hidden />
-            <span className="max-w-full truncate px-1">{link.tabLabel}</span>
+            <span className="relative">
+              <Icon className="size-5" strokeWidth={active ? 2.25 : 1.75} aria-hidden />
+              {badge > 0 ? (
+                <span
+                  aria-hidden
+                  className="absolute -top-1.5 left-3 min-w-4 rounded-full bg-primary px-1 text-center text-micro leading-4 font-medium text-primary-foreground tabular-nums"
+                >
+                  {badge > 99 ? '99+' : badge}
+                </span>
+              ) : null}
+            </span>
+            <span className="max-w-full truncate px-1">
+              {link.tabLabel}
+              {badge > 0 ? <span className="sr-only">, {badge} to review</span> : null}
+            </span>
           </button>
         )
       })}

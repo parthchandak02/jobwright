@@ -746,14 +746,15 @@
   }
 }
 
-/* Board header beside the docked job panel: labels fold into icons (kept for screen readers),
-   search shrinks to 7rem first, then the title truncates. Only while the panel is open.
-   Fits PANEL_BOARD_RESERVE (40rem) with 4-digit job and Review counts. */
+/* Board header when it is narrow (a mid-width window, or beside the docked job panel): labels fold
+   into icons (kept for screen readers; each button keeps a tooltip), search shrinks to 7rem first,
+   then the title truncates. 72rem is where every label still fits; the folded row fits 40rem
+   (PANEL_BOARD_RESERVE, and a 768px window) with 4-digit job and Review counts. */
 @media (min-width: 768px) {
-  .board-beside-panel .board-head {
+  .board-head {
     container: board-head / inline-size;
   }
-  @container board-head (max-width: 60rem) {
+  @container board-head (max-width: 72rem) {
     .board-head-label {
       position: absolute;
       width: 1px;
