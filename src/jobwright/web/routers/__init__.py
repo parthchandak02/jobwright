@@ -4,6 +4,7 @@ from jobwright.web.routers.admin import router as admin_router
 from jobwright.web.routers.apply import router as apply_router
 from jobwright.web.routers.board import router as board_router
 from jobwright.web.routers.connections import router as connections_router
+from jobwright.web.routers.connector import router as connector_router
 from jobwright.web.routers.jobs import router as jobs_router
 from jobwright.web.routers.materials import router as materials_router
 from jobwright.web.routers.notify import router as notify_router
@@ -22,6 +23,7 @@ __all__ = [
     "whatsapp_router",
     "board_router",
     "connections_router",
+    "connector_router",
     "jobs_router",
     "materials_router",
     "notify_router",

@@ -27,11 +27,11 @@ jobs:
           python-version: ${{ matrix.python-version }}
           enable-cache: true
       - name: Install
-        run: uv sync --extra web --extra dev
+        run: uv sync --extra web --extra dev --extra connector
       - name: Ruff
         run: uv run ruff check src/ tests/
       - name: Pytest (with coverage report)
-        run: uv run --extra dev --extra web pytest tests/ -q --cov=jobwright --cov-report=term-missing:skip-covered --cov-fail-under=55
+        run: uv run --extra dev --extra web --extra connector pytest tests/ -q --cov=jobwright --cov-report=term-missing:skip-covered --cov-fail-under=55
 
   frontend:
     runs-on: ubuntu-latest

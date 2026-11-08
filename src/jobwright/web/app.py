@@ -17,12 +17,17 @@ from jobwright import __version__
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
+from starlette.routing import Route
+
+from jobwright.connector.oauth import router as connector_oauth_router
+from jobwright.connector.server import connector_lifespan, files_router as connector_files_router, mcp_endpoint
 from jobwright.web.bootstrap import bootstrap_dashboard
 from jobwright.web.routers import (
     admin_router,
     apply_router,
     board_router,
     connections_router,
+    connector_router,
     jobs_router,
     materials_router,
     notify_router,
@@ -39,7 +44,8 @@ from jobwright.web.session import DashboardUserMiddleware
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     bootstrap_dashboard()
-    yield
+    async with connector_lifespan():
+        yield
 
 
 app = FastAPI(title="jobwright Dashboard", version=__version__, lifespan=lifespan)
@@ -72,6 +78,15 @@ app.include_router(notify_router)
 app.include_router(runs_router)
 app.include_router(settings_router)
 app.include_router(apply_router)
+app.include_router(connector_router)
+
+# Claude connector (docs/agents/claude-connector.md): OAuth + /mcp. These paths are outside /api, so the
+# dashboard middleware leaves them alone; each authenticates itself (Access JWT on /oauth/authorize, bearer
+# tokens on /mcp). Registered before the SPA fallback below.
+app.include_router(connector_oauth_router)
+app.include_router(connector_files_router)
+for _path in ("/mcp", "/mcp/"):
+    app.router.routes.append(Route(_path, endpoint=mcp_endpoint, methods=["GET", "POST", "DELETE"]))
 
 _static_dir = pathlib.Path(__file__).resolve().parents[3] / "frontend" / "dist"
 
