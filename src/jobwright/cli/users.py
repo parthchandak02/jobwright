@@ -131,6 +131,11 @@ def users_show(user_id: str = typer.Argument(...)) -> None:
     data_dir = user.resolve_data_dir()
     console.print(f"[bold]{user.user_id}[/bold] ({user.name})")
     console.print(f"  apply_enabled:   {user.apply_enabled}")
+    console.print(
+        f"  auto apply:      cap {user.apply_daily_cap}/day, score >= {user.apply_min_score}, "
+        f"employer cap {user.apply_employer_cap}/30d"
+        + (f", PAUSED ({user.apply_paused_reason or 'paused'})" if user.apply_paused else "")
+    )
     console.print(f"  whatsapp_target: {user.whatsapp_target or '-'}")
     console.print(f"  schedule:        {user.schedule}")
     console.print(f"  digest_schedule: {user.digest_schedule}")
@@ -196,6 +201,15 @@ def users_set(
         None, "--search/--pause-search",
         help="Keep looking for new jobs (default on); --pause-search stops the daily search.",
     ),
+    apply_daily_cap: int | None = typer.Option(
+        None, "--apply-daily-cap", help="Automatic applications per day (default 2, 0 = none).",
+    ),
+    apply_min_score: int | None = typer.Option(
+        None, "--apply-min-score", help="Only auto-apply to jobs scoring at least this (default 8).",
+    ),
+    apply_employer_cap: int | None = typer.Option(
+        None, "--apply-employer-cap", help="Applications to one employer within 30 days (default 1).",
+    ),
 ) -> None:
     """Update fields on an existing user."""
     from jobwright.users import update_user
@@ -215,6 +229,12 @@ def users_set(
         fields["brief_top_n"] = brief_top_n
     if search is not None:
         fields["search_enabled"] = search
+    if apply_daily_cap is not None:
+        fields["apply_daily_cap"] = apply_daily_cap
+    if apply_min_score is not None:
+        fields["apply_min_score"] = apply_min_score
+    if apply_employer_cap is not None:
+        fields["apply_employer_cap"] = apply_employer_cap
     if not fields:
         console.print("[yellow]No fields to update.[/yellow]")
         raise typer.Exit(code=1)

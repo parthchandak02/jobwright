@@ -20,6 +20,7 @@ from fastapi.responses import FileResponse
 from jobwright.web.bootstrap import bootstrap_dashboard
 from jobwright.web.routers import (
     admin_router,
+    apply_router,
     board_router,
     connections_router,
     jobs_router,
@@ -70,6 +71,7 @@ app.include_router(jobs_router)
 app.include_router(notify_router)
 app.include_router(runs_router)
 app.include_router(settings_router)
+app.include_router(apply_router)
 
 _static_dir = pathlib.Path(__file__).resolve().parents[3] / "frontend" / "dist"
 

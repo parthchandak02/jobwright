@@ -53,8 +53,11 @@ def render_system_prompt(user: UserRecord) -> str:
     uid = user.user_id
     name = user.name.strip() or uid
     url = _dashboard_url()
-    apply_line = "apply_enabled: true (only from the dashboard apply button)" if user.apply_enabled \
-        else "apply_enabled: false (find-only until they opt in)"
+    if user.apply_enabled:
+        apply_line = (f"apply_enabled: true (automatic applications, mode {user.apply_mode}, "
+                      f"up to {user.apply_daily_cap}/day, score {user.apply_min_score}+)")
+    else:
+        apply_line = "apply_enabled: false (find-only until they opt in)"
     lines = [
         f"You are the Hermes operator for jobwright in {name}'s WhatsApp group (user: {uid}).",
         MARKER,
@@ -78,7 +81,18 @@ def render_system_prompt(user: UserRecord) -> str:
             f"(dashboard Auto Tailor or jobwright --user {uid} run tailor cover docx)."
         )
     lines += [
-        f"Review, ratings and apply happen in the dashboard ({url}/jobs/<job_id>), not over WhatsApp. Never auto-apply.",
+        f"Review and ratings happen in the dashboard ({url}/jobs/<job_id>), not over WhatsApp.",
+        "Never start an application yourself (no `apply --live`, no `apply due`); jobwright's own schedule does that.",
+        "Automatic applications (replies to jobwright's own messages in this group):",
+        f"  - After an \"Applying for you today\" message, \"skip 2\" -> jobwright --user {uid} apply veto --number 2 --by whatsapp;",
+        f"    \"skip all\" -> jobwright --user {uid} apply veto all --by whatsapp. Reply with what it printed"
+        " (a \"Too late\" error means it already ran).",
+        f"  - After \"please paste the code from <company>\" (ref XXXXXXXX), when {name} pastes a code ->",
+        f"    jobwright --user {uid} apply provide <ref> <code>. Never repeat the code back in the chat.",
+        f"  - After \"I need your answer to ...\" (ref XXXXXXXX), their reply ->"
+        f" jobwright --user {uid} apply provide <ref> \"<their answer>\".",
+        "  - A CAPTCHA link is for the person to open; you cannot solve it. Never use a CAPTCHA solver.",
+        "  - Never read anyone's email, and never ask for passwords.",
         f"When {name} says a job is or is not a fit, ask them to rate it or tap \"Not for me\" in the dashboard.",
         "Scoring model is configured in the repo .env; never choose or switch models here, and never use gpt-oss.",
         "Never send test messages to this group. Brief problems alert the operator (ops_target), not this chat.",

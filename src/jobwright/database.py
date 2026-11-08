@@ -255,10 +255,101 @@ def _migrate_v2_brief_items(conn: sqlite3.Connection) -> None:
     conn.execute(BRIEF_ITEMS_DDL)
 
 
+APPLY_DDL = (
+    # Human-in-the-loop requests raised by an apply run (apply/hitl.py).
+    # Codes are never stored: resolved_value stays NULL for email_code and
+    # captcha; value_hash proves what was provided.
+    """
+    CREATE TABLE IF NOT EXISTS pending_inputs (
+        id             TEXT PRIMARY KEY,
+        job_url        TEXT,
+        job_id         TEXT,
+        run_id         TEXT,
+        company        TEXT,
+        kind           TEXT NOT NULL,
+        prompt         TEXT NOT NULL,
+        question_key   TEXT,
+        status         TEXT NOT NULL DEFAULT 'open',
+        created_at     TEXT NOT NULL,
+        expires_at     TEXT,
+        notified_at    TEXT,
+        resolved_at    TEXT,
+        resolved_by    TEXT,
+        resolved_value TEXT,
+        value_hash     TEXT
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_pending_inputs_status ON pending_inputs(status, created_at)",
+    # One row per apply attempt with its evidence (apply/evidence.py).
+    """
+    CREATE TABLE IF NOT EXISTS submissions (
+        id                      INTEGER PRIMARY KEY AUTOINCREMENT,
+        run_id                  TEXT NOT NULL,
+        job_url                 TEXT NOT NULL,
+        job_id                  TEXT,
+        company                 TEXT,
+        title                   TEXT,
+        dedupe_key              TEXT,
+        ats                     TEXT,
+        provider                TEXT,
+        model                   TEXT,
+        dry_run                 INTEGER NOT NULL DEFAULT 1,
+        outcome                 TEXT,
+        verification_confidence TEXT,
+        verification_evidence   TEXT,
+        fields_json             TEXT,
+        needs_json              TEXT,
+        screenshots_json        TEXT,
+        transcript_path         TEXT,
+        run_dir                 TEXT,
+        steps                   INTEGER,
+        input_tokens            INTEGER,
+        output_tokens           INTEGER,
+        cost_usd                REAL,
+        error                   TEXT,
+        started_at              TEXT NOT NULL,
+        finished_at             TEXT
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_submissions_started ON submissions(started_at)",
+    "CREATE INDEX IF NOT EXISTS idx_submissions_job ON submissions(job_url)",
+    # Daily automatic picks with a veto window (apply/auto.py).
+    """
+    CREATE TABLE IF NOT EXISTS apply_picks (
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        batch         TEXT NOT NULL,
+        number        INTEGER NOT NULL,
+        job_url       TEXT NOT NULL,
+        job_id        TEXT,
+        title         TEXT,
+        company       TEXT,
+        score         INTEGER,
+        picked_at     TEXT NOT NULL,
+        apply_after   TEXT NOT NULL,
+        status        TEXT NOT NULL DEFAULT 'planned',
+        vetoed_by     TEXT,
+        vetoed_at     TEXT,
+        outcome       TEXT,
+        submission_id INTEGER,
+        note          TEXT
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_apply_picks_status ON apply_picks(status, apply_after)",
+    "CREATE INDEX IF NOT EXISTS idx_apply_picks_job ON apply_picks(job_url)",
+)
+
+
+def _migrate_v3_apply_evidence(conn: sqlite3.Connection) -> None:
+    """pending_inputs (human-in-the-loop), submissions (apply evidence), apply_picks (veto window)."""
+    for ddl in APPLY_DDL:
+        conn.execute(ddl)
+
+
 # (version, name, fn). Append only: never renumber, edit or remove a shipped step.
 MIGRATIONS: list[tuple[int, str, object]] = [
     (1, "baseline", _migrate_v1_baseline),
     (2, "brief_items", _migrate_v2_brief_items),
+    (3, "apply_evidence", _migrate_v3_apply_evidence),
 ]
 LATEST_SCHEMA_VERSION = MIGRATIONS[-1][0]
 

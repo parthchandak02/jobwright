@@ -122,6 +122,20 @@ class UserRecord:
     # brief (no discover/enrich/score/...; notify sends only due follow-ups).
     # Explicit runs (dashboard, `jobwright run <stages>`) still work.
     search_enabled: bool = True
+    # Automatic applications (jobwright apply auto). apply_enabled gates any
+    # live submit; the cap / min score / employer cap bound what auto picks.
+    apply_daily_cap: int = 2
+    apply_min_score: int = 8
+    # Applications to one employer allowed within 30 days.
+    apply_employer_cap: int = 1
+    # Set automatically after consecutive failures (or by an operator);
+    # `jobwright --user <id> apply resume` clears it.
+    apply_paused: bool = False
+    apply_paused_reason: str = ""
+    # veto: post the day's picks and apply apply_veto_minutes later unless the
+    # person replies "skip <n>" / "skip all"; auto: apply right after picking.
+    apply_mode: str = "veto"
+    apply_veto_minutes: int = 180
 
     def resolve_data_dir(self) -> Path:
         if self.data_dir:
@@ -297,7 +311,22 @@ def _from_dict(raw: dict[str, Any]) -> UserRecord:
         weekly_summary=bool(raw.get("weekly_summary", True)),
         followup_days=_positive_int(raw.get("followup_days"), DEFAULT_FOLLOWUP_DAYS),
         search_enabled=bool(raw.get("search_enabled", True)),
+        apply_daily_cap=_bounded_int(raw.get("apply_daily_cap"), 2, 0, 10),
+        apply_min_score=_bounded_int(raw.get("apply_min_score"), 8, 1, 10),
+        apply_employer_cap=_bounded_int(raw.get("apply_employer_cap"), 1, 1, 5),
+        apply_paused=bool(raw.get("apply_paused", False)),
+        apply_paused_reason=str(raw.get("apply_paused_reason") or ""),
+        apply_mode="auto" if str(raw.get("apply_mode") or "veto").lower() == "auto" else "veto",
+        apply_veto_minutes=_bounded_int(raw.get("apply_veto_minutes"), 180, 0, 1440),
     )
+
+
+def _bounded_int(value: Any, default: int, lo: int, hi: int) -> int:
+    try:
+        n = int(value)
+    except (TypeError, ValueError):
+        return default
+    return min(max(n, lo), hi)
 
 
 def _positive_int(value: Any, default: int) -> int:
@@ -410,7 +439,8 @@ def update_user(user_id: str, **fields: Any) -> UserRecord:
         "name", "whatsapp_target", "apply_enabled", "schedule",
         "digest_schedule", "notes", "data_dir",
         "human_gate", "brief_top_n", "emails", "weekly_summary", "followup_days",
-        "search_enabled",
+        "search_enabled", "apply_daily_cap", "apply_min_score", "apply_employer_cap",
+        "apply_paused", "apply_paused_reason", "apply_mode", "apply_veto_minutes",
     }
     changes: dict[str, Any] = {}
     for key, value in fields.items():
@@ -422,6 +452,24 @@ def update_user(user_id: str, **fields: Any) -> UserRecord:
             value = int(value)
             if not 1 <= value <= 90:
                 raise ValueError("followup_days must be between 1 and 90")
+        if key == "apply_daily_cap":
+            value = int(value)
+            if not 0 <= value <= 10:
+                raise ValueError("apply_daily_cap must be between 0 and 10")
+        if key == "apply_min_score":
+            value = int(value)
+            if not 1 <= value <= 10:
+                raise ValueError("apply_min_score must be between 1 and 10")
+        if key == "apply_mode" and value not in ("veto", "auto"):
+            raise ValueError("apply_mode must be veto or auto")
+        if key == "apply_veto_minutes":
+            value = int(value)
+            if not 0 <= value <= 1440:
+                raise ValueError("apply_veto_minutes must be between 0 and 1440")
+        if key == "apply_employer_cap":
+            value = int(value)
+            if not 1 <= value <= 5:
+                raise ValueError("apply_employer_cap must be between 1 and 5")
         changes[key] = value
     with registry_lock():
         data = load_registry()

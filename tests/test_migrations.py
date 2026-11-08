@@ -161,7 +161,7 @@ def test_current_db_without_version_migrates_as_noop(db_path):
     conn.commit()
     before = [r for r in _schema(conn) if r[1] != "brief_items"]
     before_meta = _meta(conn)
-    assert run_migrations(conn) == [1, 2]
+    assert run_migrations(conn) == list(range(1, LATEST_SCHEMA_VERSION + 1))
     assert [r for r in _schema(conn) if r[1] != "brief_items"] == before
     assert "brief_items" in _tables(conn)
     after_meta = _meta(conn)
@@ -301,3 +301,15 @@ def test_ensure_brief_items_still_works_on_a_bare_db(tmp_path):
     briefstats.ensure_brief_items(conn)
     assert "brief_items" in _tables(conn)
     conn.close()
+
+
+def test_v3_apply_evidence_tables(db_path):
+    """Migration 3 adds pending_inputs, submissions and apply_picks; rerun is a no-op."""
+    conn = init_db(db_path)
+    assert {"pending_inputs", "submissions", "apply_picks"} <= _tables(conn)
+    conn.execute("DROP TABLE apply_picks")
+    conn.execute("UPDATE schema_meta SET value = '2' WHERE key = 'schema_version'")
+    conn.commit()
+    assert run_migrations(conn) == [3]
+    assert "apply_picks" in _tables(conn)
+    assert run_migrations(conn) == []

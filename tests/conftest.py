@@ -34,6 +34,11 @@ _SECRET_ENV = (
     "JOBWRIGHT_OPS_NTFY_TOKEN",
     "JOBWRIGHT_OPS_TARGET",
     "JOBWRIGHT_BACKUP_DIR",
+    "ANTHROPIC_API_KEY",
+    "ANTHROPIC_AUTH_TOKEN",
+    "JOBWRIGHT_APPLY_KILL",
+    "JOBWRIGHT_APPLY_MODEL",
+    "AGENT_PROVIDER",
 )
 
 
@@ -68,6 +73,11 @@ def _hermetic(tmp_path_factory, monkeypatch):
         raise AssertionError("tests must not POST to ntfy; stub jobwright.ops._notify_ntfy")
 
     monkeypatch.setattr("jobwright.ops._notify_ntfy", _no_network)
+
+    def _no_anthropic(*_a, **_k):
+        raise AssertionError("tests must not call the Anthropic API; pass a fake client")
+
+    monkeypatch.setattr("jobwright.apply.agent.make_client", _no_anthropic)
 
     users_root = sandbox / "users"
     monkeypatch.setenv("JOBWRIGHT_USERS_ROOT", str(users_root))

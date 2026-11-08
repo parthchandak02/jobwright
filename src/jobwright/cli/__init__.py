@@ -5,7 +5,8 @@ and are registered here, in the order ``jobwright --help`` lists them:
 
 | Module | Commands |
 |--------|----------|
-| ``stages``    | ``init``, ``run``, ``apply`` |
+| ``stages``    | ``init``, ``run`` |
+| ``apply_cmds`` | ``apply`` (+ ``auto``, ``pick``, ``veto``, ``due``, ``provide``, ...), ``answers ...`` |
 | ``materials`` | ``tailor-job``, ``network``, ``targets`` |
 | ``health``    | ``status``, ``dashboard``, ``doctor``, ``preflight`` |
 | ``brief``     | ``notify``, ``summary``, ``briefstats``, ``dedupe`` |
@@ -133,14 +134,16 @@ from jobwright.cli.scoring import (  # noqa: E402
     labels_list,
     rescore,
 )
-from jobwright.cli.stages import apply, init, run  # noqa: E402
+from jobwright.cli.apply_cmds import answers_app, apply, apply_app  # noqa: E402
+from jobwright.cli.stages import init, run  # noqa: E402
 from jobwright.cli.users import users_add, users_app, users_list, users_remove, users_set, users_show  # noqa: E402
 
 app.add_typer(users_app, name="users")
 app.command()(init)
 app.command()(run)
 app.command("tailor-job")(tailor_job)
-app.command()(apply)
+app.add_typer(apply_app, name="apply")
+app.add_typer(answers_app, name="answers")
 app.command()(status)
 app.command()(dashboard)
 app.command()(doctor)
@@ -171,6 +174,6 @@ __all__ = [
     "ops_restore", "ops_set_target", "ops_watchdog", "ops_weekly_eval",
     "criteria_app", "criteria_show", "criteria_suggest", "eval_cmd", "labels_app", "labels_export", "labels_list",
     "rescore",
-    "apply", "init", "run",
+    "apply", "apply_app", "answers_app", "init", "run",
     "users_add", "users_app", "users_list", "users_remove", "users_set", "users_show",
 ]
