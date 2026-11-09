@@ -7,6 +7,7 @@ import {
   Copy,
   FileCheck2,
   FileText,
+  Hand,
   Ghost,
   Mail,
   MapPinOff,
@@ -52,6 +53,9 @@ export function jobChips(job: JobCard, dealLabels: Record<string, string>): JobC
   const closed = job.funnel_stage === 'closed'
   if (job.is_dead && !closed) {
     chips.push({ key: 'dead', kind: 'alert', label: 'Posting closed', icon: Ban, tone: '--destructive', title: 'No longer accepting applications (checked automatically)' })
+  }
+  if (job.needs_you) {
+    chips.push({ key: 'needs-you', kind: 'alert', label: 'Needs you', icon: Hand, tone: '--warning', title: `Your Claude filled the form. ${job.needs_you}` })
   }
   if (job.followup_due) {
     chips.push({ key: 'followup', kind: 'alert', label: 'Follow up', icon: BellRing, tone: '--stage-in-progress', title: `${followUpLabel(job.applied_days_ago)}. No reply yet.` })

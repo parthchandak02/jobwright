@@ -1151,3 +1151,31 @@ def test_linkedin_only_job_gets_employer_link_found_on_the_spot(world, monkeypat
     assert packet["job"]["application_url"] == "https://job-boards.greenhouse.io/zenni/jobs/42"
     assert not packet["job"]["linkedin_only"]
     assert job_row("alex", jid)["application_url_source"] == "ats_board"
+
+
+def test_each_person_turns_auto_apply_and_auto_send_on_and_off(world):
+    out = world.put("/api/connector/settings", json={"apply_enabled": True}, headers=access(ALEX)).json()
+    assert out["apply_enabled"] and users_mod.get_user("alex").apply_enabled
+    assert out["apply_min_score"] >= 1 and out["apply_daily_cap"] >= 1
+    out = world.put("/api/connector/settings", json={"apply_via": "off", "apply_enabled": False},
+                    headers=access(ALEX)).json()
+    assert out["apply_via"] == "off" and not out["apply_enabled"]
+    assert world.put("/api/connector/settings", json={}, headers=access(ALEX)).status_code == 400
+
+
+def test_handoff_tells_the_person_on_whatsapp_and_flags_the_card(world, monkeypatch):
+    from jobwright.apply import hitl
+
+    sent: list[str] = []
+    monkeypatch.setattr(hitl, "notify_handoff",
+                        lambda job, notes, user_id: sent.append(hitl.render_handoff(job, notes, BASE)) or True)
+    jid, tok = _ready_to_apply(world)
+    t = tok["access_token"]
+    claim = ok(world, t, "start_application", {"job_id": jid})["claim"]["claim_id"]
+    res = ok(world, t, "record_submission", {"job_id": jid, "claim_id": claim, "outcome": "needs_human",
+                                             "notes": "Tick I Accept under Point of Data Transfer, then Submit"})
+    assert res["whatsapp_sent"] and len(sent) == 1
+    assert "waiting for you" in sent[0] and "Point of Data Transfer" in sent[0] and f"/jobs/{jid}" in sent[0]
+    board = world.get("/api/board", headers=access(ALEX)).json()
+    card = next(j for col in board["columns"].values() for j in col if j["job_id"] == jid)
+    assert card["needs_you"].startswith("Tick I Accept")

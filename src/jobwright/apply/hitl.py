@@ -425,6 +425,39 @@ def notify_questions(rows: list[dict], user_id: str | None, *, title: str = "") 
     return True
 
 
+def render_handoff(job: dict, notes: str, base_url: str) -> str:
+    """WhatsApp text when the person's Claude filled a form and handed it back (needs_human)."""
+    what = " at ".join(x for x in (job.get("title"), job.get("company")) if x) or "A job"
+    lines = [f"📝 {what}: your Claude filled in the application and it's waiting for you."]
+    if notes.strip():
+        lines.append(f"What's left: {' '.join(notes.split())[:400]}")
+    link = job.get("application_url") or job.get("url")
+    if link:
+        lines.append(f"Form: {link}")
+    if job.get("job_id"):
+        lines.append(f"In jobwright: {base_url.rstrip('/')}/jobs/{job['job_id']}")
+    return "\n".join(lines)
+
+
+def notify_handoff(job: dict, notes: str, user_id: str | None) -> bool:
+    """Tell the person on WhatsApp that a filled form waits for them (no-op without a chat)."""
+    from jobwright.notify import SendUncertain, send_via_hermes
+    from jobwright.users import get_user
+
+    user = get_user(user_id) if user_id else None
+    if not (user and user.whatsapp_target):
+        return False
+    base = os.environ.get("JOBWRIGHT_PUBLIC_BASE_URL", "https://jobwright.parthchandak.info")
+    try:
+        send_via_hermes(render_handoff(job, notes, base), user.whatsapp_target)
+    except SendUncertain:
+        return True
+    except Exception as exc:  # noqa: BLE001
+        log.warning("Posting hand-off failed: %s", exc)
+        return False
+    return True
+
+
 def notify(row: dict, user_id: str | None, *, title: str = "") -> bool:
     """Post the request to the person's WhatsApp group (no-op in Hermes dry run)."""
     from jobwright.notify import SendUncertain, send_via_hermes

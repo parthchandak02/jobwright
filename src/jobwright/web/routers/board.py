@@ -140,6 +140,10 @@ def _row_to_card(row, followup_days: int | None = None) -> dict:
         "application_url": d.get("application_url") or d.get("url"),
         "discovered_at": d.get("discovered_at"),
         "apply_status": d.get("apply_status"),
+        # Claude filled the form and handed it back (record_submission needs_human): what's left for the person.
+        "needs_you": (d.get("apply_error") or "")[len("needs you:"):].strip() or "Finish and submit"
+        if (d.get("apply_error") or "").startswith("needs you") and d.get("funnel_stage") not in ("applied", "closed")
+        else None,
     }
 
 

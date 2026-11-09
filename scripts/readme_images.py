@@ -487,7 +487,7 @@ def connector_status(state: dict) -> dict:
         "active": True}]
     return {
         "enabled": True, "url": "https://jobwright.example.com/mcp", "apply_via": "connector", "apply_enabled": False,
-        "can_choose_server": state["admin"], "scopes": [], "clients": clients,
+        "apply_min_score": 8, "apply_daily_cap": 2, "can_choose_server": state["admin"], "scopes": [], "clients": clients,
         "missing_answers": 0 if stage == "done" else 6, "apply_paused": False,
         "daily_pick": {"scheduled": True, "time": "07:30", "days": "daily", "next_at": "2026-09-29T07:30-07:00",
                        "apply_at": "2026-09-29T10:30-07:00", "veto_minutes": 180},

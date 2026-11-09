@@ -123,6 +123,8 @@ export type JobCard = {
   application_url: string | null
   discovered_at: string | null
   apply_status: string | null
+  /** Claude filled the form and handed it back: what's left for the person. */
+  needs_you?: string | null
   full_description?: string
   score_confidence?: number | null
   score_tier?: string | null
@@ -1059,6 +1061,8 @@ export type ConnectorStatus = {
   url: string
   apply_via: ApplyVia
   apply_enabled: boolean
+  apply_min_score: number
+  apply_daily_cap: number
   can_choose_server: boolean
   scopes: { scope: string; label: string }[]
   clients: ConnectedClaude[]
@@ -1086,8 +1090,9 @@ export type DailyPickSchedule = {
 export const getConnector = () => apiFetch<ConnectorStatus>('/connector')
 export const revokeConnectedClaude = (id: string) =>
   apiFetch<ConnectorStatus>(`/connector/clients/${encodeURIComponent(id)}`, { method: 'DELETE' })
-export const putApplyVia = (apply_via: ApplyVia) =>
-  apiFetch<ConnectorStatus>('/connector/settings', { method: 'PUT', body: JSON.stringify({ apply_via }) })
+export const putConnectorSettings = (body: { apply_via?: ApplyVia; apply_enabled?: boolean }) =>
+  apiFetch<ConnectorStatus>('/connector/settings', { method: 'PUT', body: JSON.stringify(body) })
+export const putApplyVia = (apply_via: ApplyVia) => putConnectorSettings({ apply_via })
 export const listPending = (status: 'open' | 'resolved' = 'open') =>
   apiFetch<{ pending: PendingInput[] }>(`/apply/pending?status=${status}`)
 export const getPending = (id: string) => apiFetch<PendingInput>(`/apply/pending/${encodeURIComponent(id)}`)

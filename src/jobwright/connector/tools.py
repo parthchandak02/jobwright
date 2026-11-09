@@ -641,10 +641,31 @@ def record_submission(
     from jobwright.apply.connector import record_submission as record
 
     principal = _principal()
-    return record(_job(job_id), principal.user_id, client_id=principal.client_id,
-                  client_name=principal.client_name, outcome=outcome, fields=[f.model_dump() for f in fields],
-                  claim_id=claim_id, confirmation_text=confirmation_text, confirmation_url=confirmation_url,
-                  screenshot_png_base64=screenshot_png_base64, notes=notes)
+    job = _job(job_id)
+    out = record(job, principal.user_id, client_id=principal.client_id,
+                 client_name=principal.client_name, outcome=outcome, fields=[f.model_dump() for f in fields],
+                 claim_id=claim_id, confirmation_text=confirmation_text, confirmation_url=confirmation_url,
+                 screenshot_png_base64=screenshot_png_base64, notes=notes)
+    if out.get("outcome") == "needs_human":
+        out["whatsapp_sent"] = _tell_person_about_handoff(job, notes, principal.user_id)
+    return out
+
+
+def _tell_person_about_handoff(job: dict, notes: str, user_id: str) -> bool:
+    """One WhatsApp message that a filled form waits for the person, unless ask_person just posted this
+    job's questions (that message already says so)."""
+    from datetime import datetime, timedelta, timezone
+
+    from jobwright.apply import hitl
+    from jobwright.database import get_connection
+
+    since = (datetime.now(timezone.utc) - timedelta(minutes=30)).isoformat(timespec="seconds")
+    recent = get_connection().execute(
+        "SELECT 1 FROM pending_inputs WHERE job_url = ? AND notified_at >= ? LIMIT 1", (job["url"], since)
+    ).fetchone()
+    if recent:
+        return False
+    return hitl.notify_handoff(job, notes, user_id)
 
 
 class Question(BaseModel):

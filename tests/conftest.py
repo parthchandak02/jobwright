@@ -50,6 +50,14 @@ def _hermetic(tmp_path_factory, monkeypatch):
     sandbox = tmp_path_factory.mktemp("hermetic")
     monkeypatch.setenv("JOBWRIGHT_ENV", str(sandbox / "no-global.env"))
     monkeypatch.setenv("JOBWRIGHT_AUTH_MODE", "dev")
+    # Never reach real WhatsApp from a test: the hermes CLI exists on the dev Mac, so a harmless stand-in
+    # comes first on PATH (tests that check sending patch subprocess / send_via_hermes as before).
+    fake_bin = sandbox / "fake-hermes-bin"
+    fake_bin.mkdir(exist_ok=True)
+    fake = fake_bin / "hermes"
+    fake.write_text("#!/bin/sh\nexit 0\n")
+    fake.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{fake_bin}{os.pathsep}{os.environ.get('PATH', '')}")
     # Starlette's TestClient connects as host "testclient"; treat it as this machine
     # so dev-mode anonymous admin keeps working in tests (real dev needs loopback).
     from jobwright.web import auth as auth_mod

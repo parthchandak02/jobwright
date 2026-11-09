@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { Check, Copy, ExternalLink } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
+import { AutoApplyCard } from '@/components/profile/AutoApplyCard'
 import { ConfirmAction } from '@/components/profile/ConfirmAction'
 import { SectionHeader } from '@/components/SectionHeader'
 import { Badge } from '@/components/ui/badge'
@@ -435,6 +436,7 @@ export function ClaudeTab() {
 
   return (
     <div>
+      <AutoApplyCard data={data} onChange={setData} />
       <SectionHeader
         title="Use jobwright from your Claude"
         description={
@@ -503,6 +505,8 @@ export function ClaudeTab() {
         <p className="text-body text-muted-foreground">No Claude is connected yet.</p>
       )}
 
+      {data.can_choose_server ? (
+        <>
       <SectionHeader as="h3" title="Who sends applications" help={via?.hint || undefined} />
       <Segmented
         aria-label="Who sends applications"
@@ -521,6 +525,8 @@ export function ClaudeTab() {
             ? 'Claude may press Submit on jobs that meet your minimum score. Everything else it fills, then you submit.'
             : 'Claude fills each form and stops on the review page; you check it and press Submit yourself.'}
         </p>
+      ) : null}
+        </>
       ) : null}
 
       <ConfirmAction
