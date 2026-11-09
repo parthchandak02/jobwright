@@ -901,7 +901,17 @@ export const patchCutoff = (notify_threshold: number) =>
 // Automatic applications: answer bank, human-in-the-loop requests, evidence
 // ---------------------------------------------------------------------------
 
-export type AnswerEntry = { value: string; source: string; updated_at: string }
+export type AnswerEntry = {
+  value: string
+  /** resume | told_claude | connector (older Claude saves) | settings | cli | whatsapp | profile | api */
+  source: string
+  /** "From your resume" / "You told Claude" / "You entered" */
+  source_label?: string
+  updated_at: string
+  previous?: { value: string; source: string; updated_at: string } | null
+}
+
+export type AnswerSectionId = 'contact' | 'education' | 'eligibility' | 'pay_start' | 'diversity' | 'other'
 
 export type AnswerFieldSpec = {
   key: string
@@ -911,6 +921,18 @@ export type AnswerFieldSpec = {
   required: boolean
   hint: string
   choices: string[]
+  section?: AnswerSectionId
+}
+
+/** A value the person's Claude saved in the last 14 days (Undo puts previous_value back). */
+export type RecentAnswer = {
+  key?: string
+  question?: string
+  label: string
+  value: string
+  source: string
+  updated_at: string
+  previous_value: string | null
 }
 
 export type ApplicationAnswers = {
@@ -918,7 +940,9 @@ export type ApplicationAnswers = {
   answers: Record<string, AnswerEntry>
   custom: Record<string, AnswerEntry & { question: string }>
   fields: AnswerFieldSpec[]
+  sections?: { id: AnswerSectionId; title: string }[]
   missing: string[]
+  recent?: RecentAnswer[]
 }
 
 export type ApplyVia = 'connector' | 'server' | 'off'
@@ -949,6 +973,10 @@ export type PendingInput = {
   resolved_at: string | null
   resolved_by: string | null
   has_screenshot?: boolean
+  /** The form's options for a question from the person's Claude (empty: free text). */
+  choices?: string[]
+  /** 'connector' when the person's own Claude asked it (ask_person). */
+  asked_by?: string | null
 }
 
 export type SubmissionField = {
@@ -1004,6 +1032,8 @@ export type Submission = {
 export const getAnswers = () => apiFetch<ApplicationAnswers>('/answers')
 export const putAnswers = (answers: Record<string, string | null>) =>
   apiFetch<ApplicationAnswers>('/answers', { method: 'PUT', body: JSON.stringify({ answers }) })
+export const undoAnswer = (target: { key?: string; question?: string }) =>
+  apiFetch<ApplicationAnswers>('/answers/undo', { method: 'POST', body: JSON.stringify(target) })
 export const getApplyStatus = () => apiFetch<ApplyStatus>('/apply/status')
 
 /** A Claude app connected to this profile through the jobwright connector. */
@@ -1051,6 +1081,8 @@ export const revokeConnectedClaude = (id: string) =>
   apiFetch<ConnectorStatus>(`/connector/clients/${encodeURIComponent(id)}`, { method: 'DELETE' })
 export const putApplyVia = (apply_via: ApplyVia) =>
   apiFetch<ConnectorStatus>('/connector/settings', { method: 'PUT', body: JSON.stringify({ apply_via }) })
+export const listPending = (status: 'open' | 'resolved' = 'open') =>
+  apiFetch<{ pending: PendingInput[] }>(`/apply/pending?status=${status}`)
 export const getPending = (id: string) => apiFetch<PendingInput>(`/apply/pending/${encodeURIComponent(id)}`)
 export const providePending = (id: string, value: string) =>
   apiFetch<PendingInput>(`/apply/pending/${encodeURIComponent(id)}/provide`, {

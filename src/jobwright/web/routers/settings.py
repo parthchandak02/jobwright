@@ -155,10 +155,18 @@ class ProfileSettings(BaseModel):
 @router.put("/profile")
 def put_profile(body: ProfileSettings) -> dict:
     profile = _load_profile()
+    changed_personal: list[str] = []
     for section, data in allowed_profile_fields(body.model_dump(exclude_none=True)).items():
         if data:
+            if section == "personal":
+                old = profile.get("personal") or {}
+                changed_personal = [k for k, v in data.items() if old.get(k) != v]
             profile.setdefault(section, {}).update(data)
     _write_json(profile)
+    if changed_personal:
+        from jobwright.apply.answers import note_profile_edit
+
+        note_profile_edit(changed_personal)  # contact answers typed here now say "You entered"
     return {"ok": True}
 
 

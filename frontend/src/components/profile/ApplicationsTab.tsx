@@ -3,6 +3,7 @@ import { toast } from 'sonner'
 import { FormField } from '@/components/FormField'
 import { SaveStatus } from '@/components/SaveStatus'
 import { SectionHeader } from '@/components/SectionHeader'
+import { ClaudeQuestions } from '@/components/profile/ClaudeQuestions'
 import { useAutosave } from '@/components/profile/useAutosave'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
@@ -11,10 +12,12 @@ import { Skeleton } from '@/components/ui/skeleton'
 import {
   getAnswers,
   getApplyStatus,
+  listPending,
   putAnswers,
   type AnswerFieldSpec,
   type ApplicationAnswers,
   type ApplyStatus,
+  type PendingInput,
 } from '@/lib/api'
 import { errorMessage } from '@/lib/utils'
 
@@ -83,17 +86,31 @@ export function ApplicationsTab() {
   const [data, setData] = useState<ApplicationAnswers | null>(null)
   const [status, setStatus] = useState<ApplyStatus | null>(null)
   const [values, setValues] = useState<Values>({})
+  const [pending, setPending] = useState<PendingInput[]>([])
   const dirty = useRef<Set<string>>(new Set())
+
+  function showAnswers(a: ApplicationAnswers) {
+    setData(a)
+    setValues(Object.fromEntries(Object.entries(a.answers).map(([k, e]) => [k, e.value])))
+  }
 
   useEffect(() => {
     Promise.all([getAnswers(), getApplyStatus()])
       .then(([a, s]) => {
-        setData(a)
+        showAnswers(a)
         setStatus(s)
-        setValues(Object.fromEntries(Object.entries(a.answers).map(([k, e]) => [k, e.value])))
       })
       .catch((e) => toast.error(errorMessage(e)))
+    listPending('open')
+      .then((r) => setPending(r.pending))
+      .catch(() => setPending([]))
   }, [])
+
+  function questionAnswered(id: string) {
+    setPending((list) => list.filter((p) => p.id !== id))
+    // The answer may have filled a standard answer too: show it (unless the person is mid-edit).
+    if (!dirty.current.size) getAnswers().then(showAnswers).catch(() => undefined)
+  }
 
   const autosave = useAutosave(
     (next: Values) => {
@@ -142,7 +159,7 @@ export function ApplicationsTab() {
         label={spec.label}
         htmlFor={`answer-${spec.key}`}
         optional={!spec.required}
-        hint={spec.hint || (entry ? `Saved from ${entry.source}` : undefined)}
+        hint={spec.hint || (entry ? entry.source_label || `Saved from ${entry.source}` : undefined)}
         labelAction={isMissing ? <Badge variant="warning">Needed</Badge> : undefined}
       >
         <AnswerControl spec={spec} value={values[spec.key] || ''} onChange={(v) => patch(spec.key, v)} />
@@ -161,6 +178,8 @@ export function ApplicationsTab() {
         {line.text}
       </p>
 
+      <ClaudeQuestions pending={pending} onAnswered={questionAnswered} />
+
       <SectionHeader
         title="Application answers"
         description="Questions about work authorization, sponsorship, background, demographics, salary and start date are answered only from here. If one is missing, the job is skipped and you get the question in WhatsApp."
@@ -173,7 +192,10 @@ export function ApplicationsTab() {
 
       {customs.length ? (
         <>
-          <SectionHeader title="Answers to specific questions" description="Saved from your WhatsApp replies." />
+          <SectionHeader
+            title="Answers to specific questions"
+            description="Saved from your answers to questions from your Claude or in WhatsApp."
+          />
           <ul className="divide-y divide-border rounded-lg border border-border">
             {customs.map((c) => (
               <li key={c.question} className="px-4 py-3">

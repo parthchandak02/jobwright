@@ -15,7 +15,13 @@ Three kinds:
 - ``answer``: a required attestation (or other fact) is not in the answer
   bank. The job is skipped right away (no waiting); the question is posted so
   the person can reply, which saves the answer for this question and makes the
-  job eligible again.
+  job eligible again. The person's own Claude raises these too
+  (``ask_questions``, connector tool ``ask_person``, ``asked_by = 'connector'``)
+  with optional choices; the person answers them in Settings → Applications.
+  An answer is always saved for that exact question (custom answer) and, when
+  the question maps to a standard answer key, to that key as well (always when
+  Claude named the key, otherwise only when the key is still empty), so the
+  next form with the same question fills itself.
 
 Resolution: CLI ``apply provide``, ``POST /api/apply/pending/{id}/provide``.
 """
@@ -23,6 +29,7 @@ Resolution: CLI ``apply provide``, ``POST /api/apply/pending/{id}/provide``.
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import os
 import secrets
@@ -87,6 +94,9 @@ def create_pending(
     run_id: str | None = None,
     ttl: timedelta | None = None,
     question_key: str | None = None,
+    choices: list[str] | None = None,
+    key_explicit: bool = False,
+    asked_by: str | None = None,
     conn=None,
 ) -> dict:
     if kind not in KINDS:
@@ -108,6 +118,9 @@ def create_pending(
         "status": "open",
         "created_at": _iso(now),
         "expires_at": _iso(now + ttl),
+        "meta_json": json.dumps({"choices": [str(c)[:200] for c in (choices or [])][:20],
+                                 "key_explicit": bool(key_explicit)}) if (choices or key_explicit) else None,
+        "asked_by": asked_by,
     }
     if kind == "answer":
         # One open question per job + question text: don't ask twice.
@@ -116,15 +129,15 @@ def create_pending(
             (row["job_url"], row["prompt"]),
         ).fetchone()
         if dup:
-            return dict(dup)
+            return _public(dict(dup))
     conn.execute(
         "INSERT INTO pending_inputs (id, job_url, job_id, run_id, company, kind, prompt, question_key, status, "
-        "created_at, expires_at) VALUES (:id, :job_url, :job_id, :run_id, :company, :kind, :prompt, "
-        ":question_key, :status, :created_at, :expires_at)",
+        "created_at, expires_at, meta_json, asked_by) VALUES (:id, :job_url, :job_id, :run_id, :company, :kind, "
+        ":prompt, :question_key, :status, :created_at, :expires_at, :meta_json, :asked_by)",
         row,
     )
     conn.commit()
-    return row
+    return _public(dict(row))
 
 
 def get_pending(pending_id: str, conn=None) -> dict | None:
@@ -133,9 +146,19 @@ def get_pending(pending_id: str, conn=None) -> dict | None:
     return _public(dict(row)) if row else None
 
 
+def _meta(row: dict) -> dict:
+    try:
+        meta = json.loads(row.get("meta_json") or "{}")
+    except ValueError:
+        meta = {}
+    return meta if isinstance(meta, dict) else {}
+
+
 def _public(row: dict) -> dict:
     if row.get("kind") in ("email_code", "captcha"):
         row["resolved_value"] = None
+    row["choices"] = [str(c) for c in (_meta(row).get("choices") or [])]
+    row.pop("meta_json", None)
     return row
 
 
@@ -196,9 +219,7 @@ def provide(pending_id: str, value: str, *, by: str = "cli", conn=None) -> dict:
         stored = None
     else:
         stored = value[:2000]
-        from jobwright.apply.answers import set_custom_answer
-
-        set_custom_answer(row["prompt"], value, source="whatsapp" if by in ("cli", "whatsapp") else "api")
+        _save_answer(row, stored, by)
     conn.execute(
         "UPDATE pending_inputs SET status = 'resolved', resolved_at = ?, resolved_by = ?, resolved_value = ?, "
         "value_hash = ? WHERE id = ? AND status = 'open'",
@@ -212,6 +233,63 @@ def provide(pending_id: str, value: str, *, by: str = "cli", conn=None) -> dict:
         )
     conn.commit()
     return get_pending(pending_id, conn) or row
+
+
+def _save_answer(row: dict, value: str, by: str) -> None:
+    """The person's answer goes into the answer bank so the next form with this question fills itself."""
+    from jobwright.apply import answers as answers_mod
+
+    source = "whatsapp" if by in ("cli", "whatsapp") else ("settings" if by.startswith("dashboard") else "api")
+    answers_mod.set_custom_answer(row["prompt"], value, source=source)
+    key = row.get("question_key")
+    if row.get("asked_by") != "connector" or key not in answers_mod.SPEC_BY_KEY:
+        return
+    if _meta(row).get("key_explicit") or answers_mod.load_answers().get(key) is None:
+        answers_mod.set_answers({key: value}, source=source)
+
+
+def ask_questions(questions: list[dict], *, job: dict, asked_by: str = "connector", conn=None) -> list[dict]:
+    """Questions only the person can answer, raised by their Claude for one job (kind ``answer``).
+
+    Each question is ``{"text", "choices"?, "key"?}``. ``key`` (a standard answer key) means Claude
+    matched it to that answer; without it the keyword classifier's key is filled only when empty.
+    Already-answered questions are returned with ``status = 'answered'`` and their saved value instead.
+    """
+    from jobwright.apply import answers as answers_mod
+
+    conn = conn or get_connection()
+    bank = answers_mod.load_answers()
+    out: list[dict] = []
+    for q in questions:
+        text = " ".join(str(q.get("text") or "").split())[:500]
+        if len(text) < 3:
+            raise ValueError("Each question needs its text, word for word from the form")
+        explicit = (q.get("key") or "").strip() or None
+        if explicit and explicit not in answers_mod.SPEC_BY_KEY:
+            raise ValueError(f"Unknown answer key {explicit!r}")
+        key = explicit or answers_mod.key_for_question(text)
+        choices = [" ".join(str(c).split()) for c in (q.get("choices") or []) if str(c).strip()]
+        saved = bank.custom(text)
+        if saved is None and explicit:
+            saved = bank.get(explicit)
+        if saved is not None:
+            out.append({"question": text, "status": "answered", "value": saved})
+            continue
+        row = create_pending("answer", text, job=job, question_key=key, choices=choices,
+                             key_explicit=bool(explicit), asked_by=asked_by, conn=conn)
+        out.append({"question": text, "status": "asked", "id": row["id"], "choices": row.get("choices") or [],
+                    "saves_to": key or "this exact question", "kind": answers_mod.question_kind(text)})
+    return out
+
+
+def answered_questions(conn=None, *, days: int = 30, limit: int = 50) -> list[dict]:
+    """Recently answered ``answer`` requests (with the answer: the person gave it to be used)."""
+    conn = conn or get_connection()
+    since = _iso(_now() - timedelta(days=days))
+    rows = conn.execute(
+        "SELECT * FROM pending_inputs WHERE kind = 'answer' AND status = 'resolved' AND resolved_at >= ? "
+        "ORDER BY resolved_at DESC LIMIT ?", (since, limit)).fetchall()
+    return [_public(dict(r)) for r in rows]
 
 
 def cancel(pending_id: str, conn=None) -> None:
@@ -309,6 +387,42 @@ def render_message(row: dict, *, title: str = "") -> str:
         f"Reply with your answer (ref {ref}), or save it in Settings → Application answers. "
         f"I skipped this job for now."
     )
+
+
+def render_questions(rows: list[dict], *, title: str = "") -> str:
+    from jobwright.whatsapp import bold
+
+    company = (rows[0].get("company") if rows else "") or "the employer"
+    lines = [f"❓ Your Claude is applying to {bold(title or 'a job')} at {bold(company)} and needs your answer:"]
+    for r in rows:
+        choices = f" ({' / '.join(r.get('choices') or [])})" if r.get("choices") else ""
+        lines.append(f"• “{r['prompt']}”{choices} (ref {r['id']})")
+    lines.append(f"Reply with the ref and your answer, or answer in Settings → Applications: {_dashboard_url()}"
+                 "/profile?tab=applying. I'll remember it for every application after this.")
+    return "\n".join(lines)
+
+
+def notify_questions(rows: list[dict], user_id: str | None, *, title: str = "") -> bool:
+    """One WhatsApp message for several questions from the person's Claude (no-op without a chat)."""
+    from jobwright.notify import SendUncertain, send_via_hermes
+    from jobwright.users import get_user
+
+    rows = [r for r in rows if r.get("id") and not r.get("notified_at")]
+    user = get_user(user_id) if user_id else None
+    if not rows or not (user and user.whatsapp_target):
+        return False
+    try:
+        send_via_hermes(render_questions(rows, title=title), user.whatsapp_target)
+    except SendUncertain:
+        pass
+    except Exception as exc:  # noqa: BLE001
+        log.warning("Posting questions failed: %s", exc)
+        return False
+    conn = get_connection()
+    for r in rows:
+        conn.execute("UPDATE pending_inputs SET notified_at = ? WHERE id = ?", (_iso(_now()), r["id"]))
+    conn.commit()
+    return True
 
 
 def notify(row: dict, user_id: str | None, *, title: str = "") -> bool:

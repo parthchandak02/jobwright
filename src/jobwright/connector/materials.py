@@ -93,6 +93,59 @@ def _render(md_path: Path) -> tuple[Path | None, Path | None, list[str]]:
     return docx, pdf, notes
 
 
+def _fresh(out: Path, src: Path) -> bool:
+    try:
+        return out.is_file() and out.stat().st_mtime >= src.stat().st_mtime
+    except OSError:
+        return False
+
+
+def ensure_pdf(md_path: Path | None, out: Path | None = None) -> Path | None:
+    """A PDF for a Markdown resume / cover letter, rendered once with the pipeline's own export (None when
+    Chromium is missing or the file is not there)."""
+    if not md_path or not md_path.is_file():
+        return None
+    target = out or md_path.with_suffix(".pdf")
+    if _fresh(target, md_path):
+        return target
+    try:
+        from jobwright.scoring.pdf import convert_to_pdf
+
+        return convert_to_pdf(md_path, target)
+    except Exception as exc:  # noqa: BLE001 - Chromium missing etc.
+        log.info("PDF not made for %s: %s", md_path.name, exc)
+        return None
+
+
+def ensure_docx(md_path: Path | None, out: Path | None = None) -> Path | None:
+    if not md_path or not md_path.is_file():
+        return None
+    target = out or md_path.with_suffix(".docx")
+    if _fresh(target, md_path):
+        return target
+    try:
+        from jobwright.scoring.docx_export import material_to_docx
+
+        return material_to_docx(md_path, target)
+    except Exception as exc:  # noqa: BLE001
+        log.info("DOCX not made for %s: %s", md_path.name, exc)
+        return None
+
+
+def base_resume_files() -> tuple[Path | None, Path | None]:
+    """(PDF, DOCX) of the base resume. The uploaded ``base.pdf`` is used as is; with only Markdown (no
+    upload, or an old profile), a PDF and DOCX are rendered next to it as ``base_rendered.*`` (never
+    ``base.pdf``, which is the person's own upload and the source of truth)."""
+    pdf = Path(config.RESUME_PDF_PATH)
+    md = Path(config.RESUME_MD_PATH)
+    rendered_docx = Path(config.RESUME_DIR) / "base_rendered.docx"
+    if pdf.is_file():
+        return pdf, ensure_docx(md, rendered_docx)
+    if not md.is_file():
+        return None, None
+    return ensure_pdf(md, Path(config.RESUME_DIR) / "base_rendered.pdf"), ensure_docx(md, rendered_docx)
+
+
 def save_materials(job: dict, *, resume_markdown: str | None, cover_letter_text: str | None) -> dict:
     """Store Claude's tailored resume / cover letter for one job and render the files."""
     from jobwright.database import maybe_agent_advance_to_prepare

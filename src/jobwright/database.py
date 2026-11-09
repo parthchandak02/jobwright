@@ -367,6 +367,12 @@ def _migrate_v5_connector_claims(conn: sqlite3.Connection) -> None:
     conn.execute("CREATE INDEX IF NOT EXISTS idx_submissions_job_outcome ON submissions(job_url, outcome)")
 
 
+def _migrate_v6_pending_questions(conn: sqlite3.Connection) -> None:
+    """pending_inputs.meta_json / asked_by: questions the person's Claude asks (connector ask_person)."""
+    _add_column(conn, "pending_inputs", "meta_json", "TEXT")
+    _add_column(conn, "pending_inputs", "asked_by", "TEXT")
+
+
 # (version, name, fn). Append only: never renumber, edit or remove a shipped step.
 MIGRATIONS: list[tuple[int, str, object]] = [
     (1, "baseline", _migrate_v1_baseline),
@@ -374,6 +380,7 @@ MIGRATIONS: list[tuple[int, str, object]] = [
     (3, "application_url_source", _migrate_v3_application_url_source),
     (4, "apply_evidence", _migrate_v4_apply_evidence),
     (5, "connector_claims", _migrate_v5_connector_claims),
+    (6, "pending_questions", _migrate_v6_pending_questions),
 ]
 LATEST_SCHEMA_VERSION = MIGRATIONS[-1][0]
 

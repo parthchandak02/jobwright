@@ -27,6 +27,9 @@ REFRESH_SECONDS = 30 * 86_400
 CODE_SECONDS = 300
 CONSENT_SECONDS = 600
 DOWNLOAD_SECONDS = 15 * 60
+# A link may be fetched a few times within its lifetime (the page's upload snippet, a retry, the person
+# opening it in a tab), never more.
+DOWNLOAD_MAX_USES = 5
 # A rotated refresh token is kept (hash only) this long so a replay is noticed.
 ROTATED_KEEP_SECONDS = REFRESH_SECONDS
 
@@ -114,6 +117,9 @@ def connect() -> Iterator[sqlite3.Connection]:
                 try:
                     conn.execute("PRAGMA journal_mode=WAL")
                     conn.executescript(_SCHEMA)
+                    cols = {r[1] for r in conn.execute("PRAGMA table_info(downloads)").fetchall()}
+                    if "uses" not in cols:
+                        conn.execute("ALTER TABLE downloads ADD COLUMN uses INTEGER NOT NULL DEFAULT 0")
                     conn.commit()
                 finally:
                     conn.close()
@@ -374,20 +380,29 @@ def list_grants(user_id: str) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 
-def create_download(user_id: str, path: Path, *, seconds: int = DOWNLOAD_SECONDS) -> tuple[str, int]:
+def create_download(user_id: str, path: Path, *, seconds: int = DOWNLOAD_SECONDS,
+                    filename: str | None = None) -> tuple[str, int]:
+    """A random, profile-scoped link token (only its hash is kept) for one generated file."""
     token = new_secret("jwd_")
     t = now()
     with connect() as conn:
         conn.execute("DELETE FROM downloads WHERE expires_at < ?", (t,))
         conn.execute("INSERT INTO downloads (hash, user_id, path, filename, created_at, expires_at) "
-                     "VALUES (?, ?, ?, ?, ?, ?)", (digest(token), user_id, str(path), path.name, t, t + seconds))
+                     "VALUES (?, ?, ?, ?, ?, ?)",
+                     (digest(token), user_id, str(path), filename or path.name, t, t + seconds))
     return token, t + seconds
 
 
-def resolve_download(token: str) -> dict | None:
+def resolve_download(token: str, *, count: bool = True) -> dict | None:
+    """The download row for a live token, counting one use (None = unknown, expired or used up)."""
     if not token or not token.startswith("jwd_"):
         return None
     with connect() as conn:
+        if count:
+            conn.execute("UPDATE downloads SET uses = uses + 1 WHERE hash = ? AND expires_at > ? AND uses < ?",
+                         (digest(token), now(), DOWNLOAD_MAX_USES))
+            if conn.execute("SELECT changes()").fetchone()[0] == 0:
+                return None
         row = conn.execute("SELECT * FROM downloads WHERE hash = ?", (digest(token),)).fetchone()
     if row is None or row["expires_at"] <= now():
         return None
