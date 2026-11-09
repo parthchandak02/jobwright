@@ -911,7 +911,14 @@ export type AnswerEntry = {
   previous?: { value: string; source: string; updated_at: string } | null
 }
 
-export type AnswerSectionId = 'contact' | 'education' | 'eligibility' | 'pay_start' | 'diversity' | 'other'
+export type AnswerSectionId =
+  | 'contact'
+  | 'education'
+  | 'eligibility'
+  | 'experience'
+  | 'pay_start'
+  | 'diversity'
+  | 'other'
 
 export type AnswerFieldSpec = {
   key: string

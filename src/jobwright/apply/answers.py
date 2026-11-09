@@ -102,6 +102,8 @@ SPECS: tuple[AnswerSpec, ...] = (
                hint="e.g. No, I do not have a disability / I do not want to answer"),
     AnswerSpec("eeo_lgbtq", "Sexual orientation (EEO, voluntary)", "eeo", True,
                required=False, hint="Only some forms ask; leave empty to skip those jobs"),
+    AnswerSpec("privacy_consent", "OK to accept a candidate privacy notice / data-transfer consent", "consent",
+               True, choices=_YES_NO, hint="Many forms require ticking it to apply. Yes lets jobwright tick it."),
     # --- Common fields (AI may not invent these either; they are facts) ----
     AnswerSpec("phone", "Phone", "common", False),
     AnswerSpec("address_line", "Street address", "common", False),
@@ -114,7 +116,17 @@ SPECS: tuple[AnswerSpec, ...] = (
     AnswerSpec("portfolio_url", "Portfolio / website URL", "common", False, required=False),
     AnswerSpec("education_highest", "Highest education (degree, school, year)", "common", False, required=False,
                hint="Optional: your Claude can take it from your resume"),
-    AnswerSpec("how_heard", "How did you hear about us", "common", False, hint="e.g. Company website"),
+    AnswerSpec("how_heard", "How did you hear about us", "common", False,
+               hint="Your default when a form asks, e.g. Company website"),
+    # Experience as numbers, so "how many years of ..." range questions are exact, not judgment calls.
+    AnswerSpec("years_experience", "Years of relevant work experience (number)", "common", False, required=False,
+               hint="A number, e.g. 9. Your Claude can take it from your resume"),
+    AnswerSpec("years_leadership", "Years in leadership roles (number)", "common", False, required=False,
+               hint="A number, e.g. 6"),
+    AnswerSpec("years_managing", "Years managing or supervising people (number)", "common", False,
+               required=False, hint="A number, e.g. 5"),
+    AnswerSpec("largest_team", "Most people you have managed at once (number)", "common", False,
+               required=False, hint="A number, e.g. 8"),
     AnswerSpec("referral", "Referred by an employee", "common", False, required=False, choices=_YES_NO),
     AnswerSpec("notice_period", "Notice period", "common", False, required=False),
     AnswerSpec("pronouns", "Pronouns (optional)", "common", False, required=False),
@@ -147,6 +159,7 @@ SECTIONS: tuple[tuple[str, str], ...] = (
     ("contact", "Contact and address"),
     ("education", "Education"),
     ("eligibility", "Work eligibility"),
+    ("experience", "Experience"),
     ("pay_start", "Pay and start date"),
     ("diversity", "Diversity questions (optional)"),
     ("other", "Other questions forms asked"),
@@ -156,7 +169,8 @@ _SECTION_OF: dict[str, str] = {
     "education_highest": "education",
     **{k: "eligibility" for k in ("work_authorized", "requires_sponsorship", "currently_in_country", "relocation",
                                   "onsite", "willing_to_travel", "criminal_record", "background_check",
-                                  "age_18_plus", "certify", "previously_worked_here")},
+                                  "age_18_plus", "certify", "previously_worked_here", "privacy_consent")},
+    **{k: "experience" for k in ("years_experience", "years_leadership", "years_managing", "largest_team")},
     **{k: "pay_start" for k in ("salary_expectation", "start_date", "notice_period")},
     **{s.key: "diversity" for s in SPECS if s.category == "eeo"},
     "how_heard": "other", "referral": "other",
@@ -187,6 +201,10 @@ def source_label(source: str | None) -> str:
 # Order matters: the first matching category wins ("require sponsorship to
 # work" is sponsorship, not work authorization).
 _CATEGORY_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("consent", re.compile(
+        r"privacy (notice|policy|statement)|data[- ](transfer|processing|protection)|candidate privacy|"
+        r"consent to (the )?(processing|transfer|collection)|\bgdpr\b|i (accept|agree)\b.{0,60}"
+        r"(privacy|personal data|data)", re.I)),
     ("certification", re.compile(
         r"\bi (hereby )?(certify|attest|affirm)\b|\bcertify that\b|\binformation (provided |given )?"
         r"(is|are) (true|accurate|complete)", re.I)),
@@ -234,6 +252,7 @@ _EEO_KEYS: tuple[tuple[re.Pattern[str], str], ...] = (
 )
 
 _CATEGORY_KEY = {
+    "consent": "privacy_consent",
     "work_authorization": "work_authorized",
     "sponsorship": "requires_sponsorship",
     "age": "age_18_plus",
@@ -264,6 +283,13 @@ _COMMON_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"how did you (hear|find|learn)|where did you (hear|find)|referral source|source of application",
                 re.I), "how_heard"),
     (re.compile(r"notice period", re.I), "notice_period"),
+    (re.compile(r"(how many|largest|number of)\b.{0,30}\b(people|direct reports|employees|team members|staff)"
+                r"\b.{0,30}\b(manag|supervis|lead)|team size", re.I), "largest_team"),
+    (re.compile(r"years?\b.{0,40}\b(manag|supervis)\w*\b.{0,20}\b(people|staff|team|others|employees|"
+                r"direct reports)|years?\b.{0,30}\b(people management|supervisory)", re.I), "years_managing"),
+    (re.compile(r"years?\b.{0,40}\b(leadership|leading|senior leader|executive)", re.I), "years_leadership"),
+    (re.compile(r"years? of (relevant |professional |related |work )?experience|how many years", re.I),
+     "years_experience"),
     (re.compile(r"pronoun", re.I), "pronouns"),
     (re.compile(r"preferred (first )?name", re.I), "preferred_name"),
     (re.compile(r"(street )?address( line)?\b(?!.*email)", re.I), "address_line"),
@@ -561,13 +587,97 @@ class AnswerBank:
         }
 
 
+_MONEY = re.compile(r"([$£€₹]|usd|eur|gbp|inr)?\s*(\d[\d,]*(?:\.\d+)?)\s*(k|K|thousand)?", re.I)
+_CURRENCY = {"$": "USD", "usd": "USD", "£": "GBP", "gbp": "GBP", "€": "EUR", "eur": "EUR", "₹": "INR", "inr": "INR"}
+
+
+def structured_salary(text: str) -> dict | None:
+    """Numbers forms need from a pay answer: {"min", "max", "number", "currency", "period"} (None = no number).
+    "number" is what to type in a single numeric box: the range midpoint, or the floor for "above X"."""
+    t = (text or "").strip()
+    nums: list[float] = []
+    currency = None
+    for sym, num, k in _MONEY.findall(t):
+        value = float(num.replace(",", ""))
+        if k:
+            value *= 1000
+        if value < 1000 and not re.search(r"hour|/hr|\bhr\b", t, re.I):
+            continue
+        nums.append(value)
+        currency = currency or _CURRENCY.get(sym.lower()) if sym else currency
+    if not nums:
+        return None
+    period = "hour" if re.search(r"hour|/hr|\bhr\b", t, re.I) else "year"
+    lo, hi = min(nums), max(nums)
+    above = re.search(r"\b(above|over|at least|minimum|min|from|\+)", t, re.I) and len(nums) == 1
+    out = {"min": int(lo), "max": None if above else int(hi), "currency": currency or "USD", "period": period}
+    out["number"] = int(lo) if above or lo == hi else int(round((lo + hi) / 2, -3))
+    return out
+
+
+_WEEKS = re.compile(r"(\d+|one|two|three|four|six|eight)\s*(week|wk)s?", re.I)
+_WORD_NUM = {"one": 1, "two": 2, "three": 3, "four": 4, "six": 6, "eight": 8}
+
+
+def structured_start(text: str, today: datetime | None = None) -> dict | None:
+    """A start-date answer as {"date": ISO or None, "rule": ...}: forms with a date picker get a date."""
+    from datetime import timedelta
+
+    t = (text or "").strip()
+    if not t:
+        return None
+    today = (today or datetime.now(timezone.utc)).date()
+    m = re.search(r"\b(20\d\d)-(\d\d)-(\d\d)\b", t)
+    if m:
+        return {"date": m.group(0), "rule": "fixed date"}
+    for fmt in ("%B %d, %Y", "%b %d, %Y", "%m/%d/%Y", "%d %B %Y"):
+        try:
+            return {"date": datetime.strptime(t, fmt).date().isoformat(), "rule": "fixed date"}
+        except ValueError:
+            pass
+    if re.search(r"\b(immediately|asap|right away|now)\b", t, re.I):
+        return {"date": (today + timedelta(days=7)).isoformat(), "rule": "immediately (date = a week from today)"}
+    w = _WEEKS.search(t)
+    if w:
+        n = int(w.group(1)) if w.group(1).isdigit() else _WORD_NUM[w.group(1).lower()]
+        return {"date": (today + timedelta(weeks=n)).isoformat(),
+                "rule": f"{n} weeks after an offer (date = {n} weeks from today)"}
+    return {"date": None, "rule": t}
+
+
+def structured_value(key: str, value: str | None) -> dict | None:
+    """Machine-friendly form of a saved answer, for numeric / date / choice fields."""
+    if not value:
+        return None
+    if key == "salary_expectation":
+        return structured_salary(value)
+    if key == "start_date":
+        return structured_start(value)
+    if key in ("years_experience", "years_leadership", "years_managing", "largest_team"):
+        m = re.search(r"\d+(?:\.\d+)?", value)
+        return {"number": float(m.group(0)) if "." in m.group(0) else int(m.group(0))} if m else None
+    return None
+
+
 def load_answers() -> AnswerBank:
     profile = _read_profile()
     return AnswerBank(profile.get("application_answers"), profile=profile)
 
 
+def clean_value(key: str, text: str) -> str:
+    """A saved value as forms need it: a choice question keeps just the choice ("No, never" -> "No")."""
+    text = " ".join((text or "").split())
+    spec = SPEC_BY_KEY.get(key)
+    if text and spec and spec.choices:
+        hit = match_option(text, list(spec.choices))
+        if hit:
+            return hit
+    return text
+
+
 def _store_value(profile: dict, bank: dict, key: str, text: str, source: str, now: str) -> None:
     """Write one standard answer (``text`` empty clears it), keeping the value it replaced for Undo."""
+    text = clean_value(key, text)
     old_view = AnswerBank(bank, profile=profile)
     old_value = old_view.get(key)
     old_meta = bank["answers"].get(key) or {}
@@ -726,6 +836,33 @@ def is_job_specific(text: str) -> bool:
     return bool(JOB_SPECIFIC.search(" ".join((text or "").split())))
 
 
+# Different wordings of the same answer across forms (EEO and consent wording varies by ATS).
+_SAME_MEANING: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("decline", re.compile(r"\b(decline|prefer not|do not wish|don ?t wish|do not want|don ?t want|choose not|"
+                           r"rather not|not to (say|answer|disclose|identify)|wish not)\b", re.I)),
+    ("not_veteran", re.compile(r"\b(not a (protected )?veteran|i am not a( protected)? veteran|non[- ]?veteran|"
+                               r"not (a )?protected veteran|no military)\b", re.I)),
+    ("veteran", re.compile(r"^(?!.*\bnot\b).*\b(protected veteran|identify as (one or more|a) .*veteran|"
+                           r"i am a veteran)\b", re.I)),
+    ("no_disability", re.compile(r"\bno\b.{0,30}\b(do not|don ?t) have a disability|"
+                                 r"\bnot (have )?(a )?disab|^no disability", re.I)),
+    ("disability", re.compile(r"^(?!.*\b(no|not|don ?t|do not)\b).*\b(yes\b.{0,30}disabilit|"
+                              r"i have a disability|have had one)", re.I)),
+    ("not_hispanic", re.compile(r"\bnot hispanic|\bno\b.{0,20}\bhispanic|non[- ]hispanic", re.I)),
+    ("male", re.compile(r"^(male|man|cisgender man|cis man)$", re.I)),
+    ("female", re.compile(r"^(female|woman|cisgender woman|cis woman)$", re.I)),
+)
+
+
+def same_meaning(text: str) -> str | None:
+    """Which shared meaning a value or option has (None = none known)."""
+    t = " ".join((text or "").replace("’", "").replace("'", "").split())
+    for name, pattern in _SAME_MEANING:
+        if pattern.search(t):
+            return name
+    return None
+
+
 def match_option(answer: str, options: list[str]) -> str | None:
     """The option that says the same thing as ``answer`` (None = no safe match)."""
     if not answer:
@@ -735,6 +872,11 @@ def match_option(answer: str, options: list[str]) -> str | None:
     for o, n in norm:
         if n == a:
             return o
+    meaning = same_meaning(answer)
+    if meaning:
+        hits = [o for o, _n in norm if same_meaning(o) == meaning]
+        if len(hits) == 1:
+            return hits[0]
     yes_no = {"yes": "yes", "y": "yes", "true": "yes", "no": "no", "n": "no", "false": "no"}
     if a in yes_no:
         want = yes_no[a]

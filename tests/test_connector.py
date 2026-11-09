@@ -37,7 +37,7 @@ CHALLENGE = base64.urlsafe_b64encode(hashlib.sha256(VERIFIER.encode()).digest())
 ALEX, BLAKE = "user1@example.com", "user2@example.com"
 FULL_ANSWERS = {
     "work_authorized": "Yes", "requires_sponsorship": "No", "criminal_record": "No", "background_check": "Yes",
-    "age_18_plus": "Yes", "certify": "Yes", "salary_expectation": "Open to discussing",
+    "age_18_plus": "Yes", "certify": "Yes", "privacy_consent": "Yes", "salary_expectation": "Open to discussing",
     "start_date": "Two weeks after an offer", "relocation": "No", "onsite": "Yes", "previously_worked_here": "No",
     "eeo_gender": "Decline to self-identify", "eeo_race": "Decline to self-identify",
     "eeo_hispanic": "Decline to self-identify", "eeo_veteran": "I am not a protected veteran",
@@ -905,7 +905,8 @@ def test_ask_person_once_then_every_form_fills_itself(world):
         {"text": "Desired pay", "key": "favourite_colour"}]})
 
 
-def test_set_application_url_for_linkedin_only_jobs(world):
+def test_set_application_url_for_linkedin_only_jobs(world, monkeypatch):
+    monkeypatch.setattr("jobwright.enrichment.apply_url.resolve_one", lambda job: None)  # nothing found: Claude searches
     jid, tok = _ready_to_apply(world, url="https://www.linkedin.com/jobs/view/4000000001", site="linkedin")
     t = tok["access_token"]
     packet = ok(world, t, "get_application_packet", {"job_id": jid})
@@ -979,7 +980,7 @@ def test_save_profile_facts_other_questions_dedupe_and_job_specific_refused(worl
     got = world.get("/api/answers", headers=access(ALEX)).json()
     assert got["answers"]["education_highest"]["source_label"] == "From your resume"
     assert next(iter(got["custom"].values()))["source_label"] == "You told Claude"
-    assert {s["id"] for s in got["sections"]} == {"contact", "education", "eligibility", "pay_start",
+    assert {s["id"] for s in got["sections"]} == {"contact", "education", "eligibility", "experience", "pay_start",
                                                    "diversity", "other"}
     assert {f["key"]: f["section"] for f in got["fields"]}["salary_expectation"] == "pay_start"
 
@@ -1108,3 +1109,45 @@ def test_claude_can_fix_a_wrong_title_and_company_and_gets_site_tips(world):
     assert "Give the application link" in refused(world, t, "set_application_url", {"job_id": jid})
     steps = " ".join(ok(world, t, "get_application_packet", {"job_id": jid})["next_steps"])
     assert "react-select" in steps and "Attach the files yourself" in steps
+
+
+def test_answers_carry_numbers_dates_and_match_other_wordings():
+    from datetime import datetime, timezone
+
+    from jobwright.apply import answers as a
+
+    assert a.structured_salary("Above $100,000") == {"min": 100000, "max": None, "currency": "USD",
+                                                       "period": "year", "number": 100000}
+    assert a.structured_salary("$150K-$170K")["number"] == 160000
+    assert a.structured_salary("Open to discussing") is None
+    day = datetime(2026, 11, 9, tzinfo=timezone.utc)
+    assert a.structured_start("Two weeks after an offer", day)["date"] == "2026-11-23"
+    assert a.structured_start("2027-01-15", day) == {"date": "2027-01-15", "rule": "fixed date"}
+    assert a.clean_value("previously_worked_here", "No (never worked at SAF)") == "No"
+    veteran = ["I am not a protected veteran", "I identify as one or more of the classifications of protected "
+               "veteran", "I don't wish to answer"]
+    assert a.match_option("Not a Veteran", veteran) == veteran[0]
+    assert a.match_option("Decline to self-identify", veteran) == veteran[2]
+    disability = ["Yes, I have a disability (or previously had a disability)", "No, I don't have a disability",
+                  "I do not want to answer"]
+    assert a.match_option("No, I do not have a disability", disability) == disability[1]
+    assert a.value_agrees("Not a Veteran", "I am not a protected veteran")
+    for question, key in (("How many years have you supervised staff?", "years_managing"),
+                          ("Years of leadership experience", "years_leadership"),
+                          ("How many direct reports have you managed?", "largest_team"),
+                          ("How many years of experience do you have?", "years_experience"),
+                          ("I accept the candidate privacy notice and consent to data transfer", "privacy_consent")):
+        assert a.key_for_question(question) == key, question
+
+
+def test_linkedin_only_job_gets_employer_link_found_on_the_spot(world, monkeypatch):
+    from jobwright.enrichment import apply_url
+
+    monkeypatch.setattr(apply_url, "resolve_one", lambda job: apply_url.Resolution(
+        "https://job-boards.greenhouse.io/zenni/jobs/42", "ats_board", "greenhouse"))
+    jid = add_job("alex", "https://www.linkedin.com/jobs/view/4242424242")
+    t = connect(world)["access_token"]
+    packet = ok(world, t, "get_application_packet", {"job_id": jid})
+    assert packet["job"]["application_url"] == "https://job-boards.greenhouse.io/zenni/jobs/42"
+    assert not packet["job"]["linkedin_only"]
+    assert job_row("alex", jid)["application_url_source"] == "ats_board"

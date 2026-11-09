@@ -31,6 +31,7 @@ from __future__ import annotations
 import base64
 import binascii
 import json
+import logging
 import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -41,6 +42,8 @@ from jobwright.apply import answers as answers_mod
 from jobwright.apply import evidence, safety
 from jobwright.apply.verify import verify_confirmation
 from jobwright.database import get_connection
+
+log = logging.getLogger(__name__)
 
 CLAIM_SECONDS = 2 * 3600
 SCREENSHOT_MAX_BYTES = 3 * 1024 * 1024
@@ -503,10 +506,35 @@ def _next_steps(job: dict, materials: dict, missing: list[dict], gates: dict) ->
                      "then pause the job with record_submission(outcome=needs_human). In a live conversation "
                      "you may ask the person directly and save it with save_profile_facts.")
     steps.append("Answer questions the resume answers (education, years of experience, people managed, "
-                 "budgets, sectors) from the resume yourself: see answer_policy.from_resume.")
+                 "budgets, sectors) from the resume yourself: see answer_policy.from_resume. Saved numbers "
+                 "(years_experience, years_managing, largest_team) decide range questions exactly.")
+    steps.append("Numeric, date and range fields: use answers[].structured (salary number / min / max, start "
+                 "date as YYYY-MM-DD) instead of the sentence. Choice fields: pick the option that means the "
+                 "same as the saved answer (forms word EEO options differently). Consent boxes (privacy, data "
+                 "transfer): tick only when privacy_consent is Yes.")
     if not gates.get("allowed"):
         steps.insert(0, "A gate refuses this application: " + "; ".join(gates.get("refusals") or []))
     return steps
+
+
+def _find_employer_link(job: dict, conn) -> dict | None:
+    """LinkedIn-only job: try the resolver now (LinkedIn's "apply on company website" link, redirects, the
+    company's Greenhouse / Lever / Ashby board). Returns the updated job, or None (Claude searches then)."""
+    try:
+        from jobwright.enrichment.apply_url import resolve_one
+
+        found = resolve_one(job)
+    except Exception as exc:  # noqa: BLE001 - network, rate limits: Claude falls back to searching
+        log.info("employer link lookup failed for %s: %s", job.get("url"), exc)
+        return None
+    if not found:
+        return None
+    conn.execute("UPDATE jobs SET application_url = ?, application_url_source = ?, application_ats = ?, "
+                 "application_url_checked_at = ? WHERE url = ?",
+                 (found.url, found.source, found.ats, _iso(_now()), job["url"]))
+    conn.commit()
+    return {**job, "application_url": found.url, "application_url_source": found.source,
+            "application_ats": found.ats}
 
 
 def application_packet(job: dict, user_id: str, *, link: Callable[..., dict] | None = None,
@@ -516,6 +544,8 @@ def application_packet(job: dict, user_id: str, *, link: Callable[..., dict] | N
 
     conn = conn or get_connection()
     expire_claims(conn)
+    if _linkedin_only(job):
+        job = _find_employer_link(job, conn) or job
     gates = evaluate(job, user_id, client_id=client_id, person_confirmed=person_confirmed, conn=conn)
     bank = answers_mod.load_answers()
     profile = _profile()
@@ -531,7 +561,11 @@ def application_packet(job: dict, user_id: str, *, link: Callable[..., dict] | N
         value = bank.get(spec.key)
         item = {"key": spec.key, "label": spec.label, "attestation": spec.attestation, "category": spec.category}
         if value is not None:
-            saved.append({**item, "value": value})
+            entry = {**item, "value": value}
+            structured = answers_mod.structured_value(spec.key, value)
+            if structured:
+                entry["structured"] = structured  # numbers / dates for numeric, date and range fields
+            saved.append(entry)
         elif spec.attestation or spec.required:
             missing.append({**item, "required": spec.required, "hint": spec.hint, "choices": list(spec.choices)})
     link = link or (lambda p, name=None: {"name": name or p.name, "path": p.name})

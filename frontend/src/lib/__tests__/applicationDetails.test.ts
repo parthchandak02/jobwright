@@ -25,6 +25,7 @@ describe('fieldsBySection', () => {
       ['contact', ['city']],
       ['education', []],
       ['eligibility', []],
+      ['experience', []],
       ['pay_start', ['salary_expectation']],
       ['diversity', []],
       ['other', ['mystery']],

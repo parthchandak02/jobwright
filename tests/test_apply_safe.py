@@ -28,7 +28,7 @@ from jobwright.database import close_connection, get_connection, init_db, job_id
 GROUP = "whatsapp:120363999999999901@g.us"
 FULL_ANSWERS = {
     "work_authorized": "Yes", "requires_sponsorship": "No", "criminal_record": None, "background_check": "Yes",
-    "age_18_plus": "Yes", "certify": "Yes", "salary_expectation": "Open to discussing",
+    "age_18_plus": "Yes", "certify": "Yes", "privacy_consent": "Yes", "salary_expectation": "Open to discussing",
     "start_date": "Two weeks after an offer", "relocation": "No", "onsite": "Yes", "previously_worked_here": "No",
     "eeo_gender": "Decline to self-identify", "eeo_race": "Decline to self-identify",
     "eeo_hispanic": "Decline to self-identify", "eeo_veteran": "I am not a protected veteran",

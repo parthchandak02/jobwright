@@ -643,6 +643,29 @@ class Resolver:
         return None
 
 
+def resolve_one(job: dict) -> Resolution | None:
+    """Look up one job's employer application page now (the connector, when Claude opens a LinkedIn-only
+    job). Same steps and caches as the daily run; a LinkedIn rate limit falls back to the ATS boards."""
+    from jobwright import config
+    from jobwright.discovery.jobspy import site_breaker
+    from jobwright.discovery.linkedin import RateLimited
+
+    if os.environ.get("JOBWRIGHT_APPLY_URLS", "on").strip().lower() in ("0", "off", "false", "no"):
+        return None
+    breaker = site_breaker()
+    http = Http()
+    boards = BoardIndex(http, config.LOG_DIR / BOARD_CACHE_FILE)
+    resolver = Resolver(http, boards, LinkedInOffsite(breaker=breaker))
+    try:
+        try:
+            return resolver.resolve(job)
+        except RateLimited:
+            return resolver.resolve(dict(job, url=None, application_url=None)) if job.get("company") else None
+    finally:
+        boards.save()
+        breaker.save()
+
+
 def _now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
