@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 import { EmptyState } from '@/components/EmptyState'
 import { Page } from '@/components/PageHeader'
 import { RunProgressDialog } from '@/components/RunProgressDialog'
+import { FieldHint } from '@/components/FieldHint'
 import { SectionHeader } from '@/components/SectionHeader'
 import { ConfirmDialog } from '@/components/admin/ConfirmDialog'
 import { Button } from '@/components/ui/button'
@@ -204,7 +205,10 @@ function AdminTools({
 
         {ev ? (
           <div className="space-y-2">
-            <h3 className="text-subheading">Last accuracy check</h3>
+            <div className="flex items-center gap-1.5">
+              <h3 className="text-subheading">Last accuracy check</h3>
+              <FieldHint text="Precision: of the jobs it would send, how many were wanted. Recall: of the wanted jobs, how many it would send." />
+            </div>
             <p className="text-caption text-muted-foreground tabular-nums">
               {new Date(ev.at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })} ·{' '}
               {String(ev.config?.n ?? '?')} jobs ({String(ev.config?.positives ?? '?')} wanted) · scorer{' '}
@@ -228,10 +232,6 @@ function AdminTools({
                 </tbody>
               </table>
             </div>
-            <p className="text-caption text-muted-foreground">
-              Precision: of the jobs it would send, how many were wanted. Recall: of the wanted jobs, how many it would
-              send.
-            </p>
           </div>
         ) : null}
 

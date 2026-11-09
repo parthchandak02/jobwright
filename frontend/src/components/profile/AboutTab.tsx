@@ -29,7 +29,7 @@ const CONTACT: Field[] = [
     type: 'tel',
     autoComplete: 'tel',
     inputMode: 'tel',
-    hint: 'Include your country code, like +1. We use it to find your WhatsApp chats.',
+    hint: 'With country code, like +1. We use it to find your WhatsApp chats.',
   },
 ]
 
@@ -71,7 +71,7 @@ export function AboutTab({ profile, onSaved, onOpenRules }: Props) {
 
   function field(f: Field) {
     return (
-      <FormField key={f.key} label={f.label} htmlFor={`about-${f.key}`} hint={f.hint}>
+      <FormField key={f.key} label={f.label} htmlFor={`about-${f.key}`} help={f.hint}>
         <Input
           id={`about-${f.key}`}
           type={f.type ?? 'text'}

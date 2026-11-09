@@ -51,6 +51,13 @@ apply), or fix a setting. Every screen should make its one job obvious.
 
 ## Lessons (newest first)
 
+- 2026-11-08: Parth said the site still read as a wall of text. Measure it: count visible words per
+  screen on a phone before and after (About you went 468 → 138, Claude 305 → 215). Application
+  details became short names ("Need visa sponsorship"; the full form wording sits behind ⓘ only
+  when there's a hint), Yes / No questions became one row each with the answer on the right, an
+  amber dot replaced nine "Needed" badges (the section title counts them), where an answer came
+  from is an icon, and empty optional fields wait behind "More (5)". A cleanup isn't done until the
+  live site shows it: say clearly when changes are only on a branch.
 - 2026-11-08: Applied Tandem's principles across the dashboard. Board header: Review is the one
   primary button; Auto Search, WhatsApp and Add job became icons with tooltips. Cards lost the
   repeated per-card link icon (the job panel has Open posting), the "Strong" word (colour + key
