@@ -345,7 +345,7 @@ def get_pending_inputs() -> dict:
         "answered": [{"id": r["id"], "question": r["prompt"], "answer": r.get("resolved_value"),
                       "company": r.get("company"), "job_id": r.get("job_id"), "answered_at": r.get("resolved_at")}
                      for r in answered],
-        "where_the_person_answers": _dashboard("/profile?tab=applying"),
+        "where_the_person_answers": _dashboard("/profile?tab=about#application-details"),
     }
 
 
@@ -462,7 +462,7 @@ def save_profile_facts(
     results = answers_mod.save_facts([f.model_dump() for f in facts], person_confirmed=person_confirmed)
     bank = answers_mod.load_answers()
     return {"results": results, "missing_attestations": [s.key for s in bank.missing_attestations()],
-            "review": _dashboard("/profile?tab=applying")}
+            "review": _dashboard("/profile?tab=about#application-details")}
 save_profile_facts.__doc__ = (save_profile_facts.__doc__ or "") + " " + _FACTS_RULES  # type: ignore[operator]
 
 
@@ -679,7 +679,7 @@ def ask_person(
         "job_id": job_id,
         "questions": results,
         "next": ("Pause this job: call record_submission(outcome=needs_human) with the questions in notes, then "
-                 "go on. The person answers at " + _dashboard("/profile?tab=applying") + "; get_pending_inputs "
+                 "go on. The person answers at " + _dashboard("/profile?tab=about#application-details") + "; get_pending_inputs "
                  "and get_application_packet show the answers once given."
                  if asked else "Everything was already answered: use the values above and carry on."),
     }

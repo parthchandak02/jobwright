@@ -76,7 +76,7 @@ function QuestionRow({ q, onAnswered }: { q: PendingInput; onAnswered: (id: stri
   )
 }
 
-/** Settings → Applications: questions the person's own Claude could not answer from their resume or saved answers. */
+/** Settings → About you → Application details: questions the person's own Claude could not answer from their resume or saved answers. */
 export function ClaudeQuestions({
   pending,
   onAnswered,

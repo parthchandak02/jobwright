@@ -1,29 +1,12 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
-import { FormField } from '@/components/FormField'
-import { SaveStatus } from '@/components/SaveStatus'
 import { SectionHeader } from '@/components/SectionHeader'
-import { ClaudeQuestions } from '@/components/profile/ClaudeQuestions'
-import { useAutosave } from '@/components/profile/useAutosave'
 import { Badge } from '@/components/ui/badge'
-import { Input } from '@/components/ui/input'
-import { Segmented } from '@/components/ui/segmented'
+import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import {
-  getAnswers,
-  getApplyStatus,
-  listPending,
-  putAnswers,
-  type AnswerFieldSpec,
-  type ApplicationAnswers,
-  type ApplyStatus,
-  type PendingInput,
-} from '@/lib/api'
+import { getAnswers, getApplyStatus, listPending, type ApplyStatus } from '@/lib/api'
 import { errorMessage } from '@/lib/utils'
-
-type Values = Record<string, string>
-
-const NOT_SET = '__not_set__'
 
 function statusLine(s: ApplyStatus): { text: string; tone: 'success' | 'warning' | 'secondary' } {
   if (s.kill_switch) return { text: 'Stopped for everyone by the operator', tone: 'warning' }
@@ -49,163 +32,61 @@ function statusLine(s: ApplyStatus): { text: string; tone: 'success' | 'warning'
   }
 }
 
-function AnswerControl({
-  spec,
-  value,
-  onChange,
-}: {
-  spec: AnswerFieldSpec
-  value: string
-  onChange: (v: string) => void
-}) {
-  if (spec.choices.length && spec.choices.length <= 3) {
-    return (
-      <Segmented
-        aria-label={spec.label}
-        value={value || NOT_SET}
-        onValueChange={(v) => onChange(v === NOT_SET ? '' : v)}
-        options={[
-          ...spec.choices.map((c) => ({ value: c, label: c })),
-          { value: NOT_SET, label: 'Not set' },
-        ]}
-      />
-    )
-  }
-  return (
-    <Input
-      id={`answer-${spec.key}`}
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      placeholder={spec.attestation ? 'Write it exactly as it should be given' : 'Add your answer'}
-    />
-  )
-}
-
-/** Settings → Applications: the answers jobwright may give on application forms. */
+/** Settings → Applications: how applying works for this profile. The answers live in About you. */
 export function ApplicationsTab() {
-  const [data, setData] = useState<ApplicationAnswers | null>(null)
+  const navigate = useNavigate()
   const [status, setStatus] = useState<ApplyStatus | null>(null)
-  const [values, setValues] = useState<Values>({})
-  const [pending, setPending] = useState<PendingInput[]>([])
-  const dirty = useRef<Set<string>>(new Set())
-
-  function showAnswers(a: ApplicationAnswers) {
-    setData(a)
-    setValues(Object.fromEntries(Object.entries(a.answers).map(([k, e]) => [k, e.value])))
-  }
+  const [missing, setMissing] = useState<number | null>(null)
+  const [questions, setQuestions] = useState(0)
 
   useEffect(() => {
     Promise.all([getAnswers(), getApplyStatus()])
       .then(([a, s]) => {
-        showAnswers(a)
+        setMissing(a.missing.length)
         setStatus(s)
       })
       .catch((e) => toast.error(errorMessage(e)))
     listPending('open')
-      .then((r) => setPending(r.pending))
-      .catch(() => setPending([]))
+      .then((r) => setQuestions(r.pending.filter((p) => p.kind === 'answer').length))
+      .catch(() => setQuestions(0))
   }, [])
 
-  function questionAnswered(id: string) {
-    setPending((list) => list.filter((p) => p.id !== id))
-    // The answer may have filled a standard answer too: show it (unless the person is mid-edit).
-    if (!dirty.current.size) getAnswers().then(showAnswers).catch(() => undefined)
-  }
-
-  const autosave = useAutosave(
-    (next: Values) => {
-      const changed: Record<string, string | null> = {}
-      for (const key of dirty.current) changed[key] = next[key]?.trim() ? next[key] : null
-      return putAnswers(changed)
-    },
-    {
-      onSaved: (res) => {
-        dirty.current.clear()
-        setData(res)
-      },
-      onError: (e) => toast.error(errorMessage(e)),
-    },
-  )
-
-  function patch(key: string, v: string) {
-    const next = { ...values, [key]: v }
-    dirty.current.add(key)
-    setValues(next)
-    autosave.schedule(next)
-  }
-
-  if (!data || !status) {
+  if (!status) {
     return (
-      <div className="space-y-field" aria-busy aria-label="Loading application answers">
+      <div className="space-y-field" aria-busy aria-label="Loading applications">
         <Skeleton className="h-5 w-56" />
-        <Skeleton className="h-11 w-full" />
         <Skeleton className="h-11 w-full" />
       </div>
     )
   }
 
   const line = statusLine(status)
-  const attestations = data.fields.filter((f) => f.attestation)
-  const common = data.fields.filter((f) => !f.attestation)
-  const missing = new Set(data.missing)
-  const customs = Object.values(data.custom)
-
-  function field(spec: AnswerFieldSpec) {
-    const isMissing = missing.has(spec.key) && !values[spec.key]?.trim()
-    const entry = data!.answers[spec.key]
-    return (
-      <FormField
-        key={spec.key}
-        label={spec.label}
-        htmlFor={`answer-${spec.key}`}
-        optional={!spec.required}
-        hint={spec.hint || (entry ? entry.source_label || `Saved from ${entry.source}` : undefined)}
-        labelAction={isMissing ? <Badge variant="warning">Needed</Badge> : undefined}
-      >
-        <AnswerControl spec={spec} value={values[spec.key] || ''} onChange={(v) => patch(spec.key, v)} />
-      </FormField>
-    )
-  }
+  const parts = [
+    questions ? `${questions} question${questions === 1 ? '' : 's'} from your Claude` : '',
+    missing ? `${missing} answer${missing === 1 ? '' : 's'} still needed` : '',
+  ].filter(Boolean)
 
   return (
     <div>
       <SectionHeader
         title="Automatic applications"
-        description="jobwright applies for you only with what you save here and your resume."
+        description="jobwright applies for you only with your application details and your resume."
       />
       <p className="flex flex-wrap items-center gap-2 text-body text-muted-foreground">
         <Badge variant={line.tone}>{line.tone === 'success' ? 'On' : 'Off'}</Badge>
         {line.text}
       </p>
 
-      <ClaudeQuestions pending={pending} onAnswered={questionAnswered} />
-
       <SectionHeader
         title="Application answers"
-        description="Questions about work authorization, sponsorship, background, demographics, salary and start date are answered only from here. If one is missing, the job is skipped and you get the question in WhatsApp."
-        actions={<SaveStatus state={autosave.state} savedAt={autosave.savedAt} onRetry={autosave.retry} />}
+        description="Your answers for forms (contact and address, education, work eligibility, pay and start date, diversity, other questions) are in About you, Application details."
       />
-      <div className="space-y-field">{attestations.map(field)}</div>
-
-      <SectionHeader title="Contact and background" description="Facts forms often ask for." />
-      <div className="space-y-field">{common.map(field)}</div>
-
-      {customs.length ? (
-        <>
-          <SectionHeader
-            title="Answers to specific questions"
-            description="Saved from your answers to questions from your Claude or in WhatsApp."
-          />
-          <ul className="divide-y divide-border rounded-lg border border-border">
-            {customs.map((c) => (
-              <li key={c.question} className="px-4 py-3">
-                <p className="text-label text-foreground">{c.question}</p>
-                <p className="mt-0.5 text-body text-muted-foreground">{c.value}</p>
-              </li>
-            ))}
-          </ul>
-        </>
-      ) : null}
+      <div className="flex flex-wrap items-center gap-3">
+        <Button type="button" variant="secondary" onClick={() => navigate('/profile?tab=about#application-details')}>
+          Open application details
+        </Button>
+        {parts.length ? <Badge variant="warning">{parts.join(' · ')}</Badge> : null}
+      </div>
     </div>
   )
 }

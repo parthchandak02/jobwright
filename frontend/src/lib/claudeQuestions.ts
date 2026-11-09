@@ -1,6 +1,6 @@
 import type { PendingInput } from '@/lib/api'
 
-/** Open questions grouped by the job they came from, newest job first (Settings → Applications). */
+/** Open questions grouped by the job they came from, newest job first (Settings → About you). */
 export type QuestionGroup = {
   key: string
   company: string

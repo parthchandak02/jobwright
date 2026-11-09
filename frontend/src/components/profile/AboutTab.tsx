@@ -3,6 +3,7 @@ import { toast } from 'sonner'
 import { FormField } from '@/components/FormField'
 import { SaveStatus } from '@/components/SaveStatus'
 import { SectionHeader } from '@/components/SectionHeader'
+import { ApplicationDetails } from '@/components/profile/ApplicationDetails'
 import { useAutosave } from '@/components/profile/useAutosave'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -32,19 +33,9 @@ const CONTACT: Field[] = [
   },
 ]
 
-const PLACE: Field[] = [
-  { key: 'city', label: 'City', autoComplete: 'address-level2' },
-  { key: 'province_state', label: 'State', autoComplete: 'address-level1' },
-]
-
-const LINKEDIN: Field = {
-  key: 'linkedin_url',
-  label: 'LinkedIn profile',
-  type: 'url',
-  inputMode: 'url',
-  autoComplete: 'url',
-  hint: 'The full link to your LinkedIn page.',
-}
+// City, state, address, ZIP, country and links are edited in Application details below (same saved
+// values, one place each). This form sends only its own fields, so it never overwrites those.
+const OWN_KEYS = CONTACT.map((f) => f.key)
 
 type Value = { personal: Record<string, string>; target: string }
 
@@ -64,7 +55,10 @@ export function AboutTab({ profile, onSaved, onOpenRules }: Props) {
     (value: Value) =>
       apiFetch('/settings/profile', {
         method: 'PUT',
-        body: JSON.stringify({ personal: value.personal, experience: { target_role: value.target } }),
+        body: JSON.stringify({
+          personal: Object.fromEntries(OWN_KEYS.map((k) => [k, value.personal[k] ?? ''])),
+          experience: { target_role: value.target },
+        }),
       }),
     { onSaved: () => onSaved(), onError: (e) => toast.error(errorMessage(e)) },
   )
@@ -99,8 +93,6 @@ export function AboutTab({ profile, onSaved, onOpenRules }: Props) {
       />
       <div className="space-y-field">
         {CONTACT.map(field)}
-        <div className="grid grid-cols-[1fr_7rem] gap-3 sm:grid-cols-2 sm:gap-4">{PLACE.map(field)}</div>
-        {field(LINKEDIN)}
       </div>
 
       <SectionHeader title="Your goal" />
@@ -126,6 +118,8 @@ export function AboutTab({ profile, onSaved, onOpenRules }: Props) {
           placeholder="Describe the roles you want"
         />
       </FormField>
+
+      <ApplicationDetails />
     </div>
   )
 }

@@ -17,7 +17,7 @@ Three kinds:
   the person can reply, which saves the answer for this question and makes the
   job eligible again. The person's own Claude raises these too
   (``ask_questions``, connector tool ``ask_person``, ``asked_by = 'connector'``)
-  with optional choices; the person answers them in Settings → Applications.
+  with optional choices; the person answers them in Settings → About you (Application details).
   An answer is always saved for that exact question (custom answer) and, when
   the question maps to a standard answer key, to that key as well (always when
   Claude named the key, otherwise only when the key is still empty), so the
@@ -397,8 +397,8 @@ def render_questions(rows: list[dict], *, title: str = "") -> str:
     for r in rows:
         choices = f" ({' / '.join(r.get('choices') or [])})" if r.get("choices") else ""
         lines.append(f"• “{r['prompt']}”{choices} (ref {r['id']})")
-    lines.append(f"Reply with the ref and your answer, or answer in Settings → Applications: {_dashboard_url()}"
-                 "/profile?tab=applying. I'll remember it for every application after this.")
+    lines.append(f"Reply with the ref and your answer, or answer in Settings → About you: {_dashboard_url()}"
+                 "/profile?tab=about#application-details. I'll remember it for every application after this.")
     return "\n".join(lines)
 
 

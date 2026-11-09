@@ -332,8 +332,8 @@ export function ClaudeTab() {
             ) : (
               <Badge variant="success">All saved</Badge>
             )}
-            <Button variant="secondary" size="sm" onClick={() => navigate('/profile?tab=applying')}>
-              Open Applications
+            <Button variant="secondary" size="sm" onClick={() => navigate('/profile?tab=about#application-details')}>
+              Open application details
             </Button>
           </div>
           <div className="space-y-2">

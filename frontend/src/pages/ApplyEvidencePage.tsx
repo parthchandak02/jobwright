@@ -130,7 +130,7 @@ export function ApplyEvidencePage() {
 
       {sub.needs.filter((n) => n.kind === 'answer').length ? (
         <>
-          <SectionHeader title="Questions only you can answer" description="Reply in WhatsApp or save them in Settings → Applications." />
+          <SectionHeader title="Questions only you can answer" description="Reply in WhatsApp or save them in Settings → About you." />
           <ul className="list-disc space-y-1 pl-5 text-body text-foreground">
             {sub.needs
               .filter((n) => n.kind === 'answer')
