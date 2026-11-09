@@ -39,9 +39,11 @@ INSTRUCTIONS = "\n\n".join([
     "answer_policy: contact{} and saved answers[] / custom_answers[]; questions the resume answers "
     "(education, years of experience, people managed, budgets, sectors) truthfully from the resume, source "
     "'resume'; open questions you write. (4) Files: run materials.resume[use].browser_upload.javascript with "
-    "javascript_tool on the form page (PDF by default); it fetches the file inside the page and sets the "
-    "file input. Your own code sandbox cannot reach jobwright, so never download files there. If it fails, "
-    "use its fallback. (5) Cover letter wanted but none exists: write one (request_tailoring for the brief), "
+    "javascript_tool on the form page (PDF by default), exactly as given (it starts with await). It "
+    "attaches the file itself, through a small jobwright window when the site blocks downloads; if it asks "
+    "for one click on its blue 'Attach … from jobwright' button, click it, then run browser_upload.check. "
+    "You attach the files, not the person. Your own code sandbox cannot reach jobwright, so never download "
+    "files there. (5) Cover letter wanted but none exists: write one (request_tailoring for the brief), "
     "save_tailored_materials(cover_letter_text=...), then get_application_packet again for its PDF link.",
     "(6) Attestations (work authorization, sponsorship, criminal record, background check, EEO and "
     "demographic questions, age, 'I certify', salary / desired pay, start date, relocation or on-site, "
@@ -692,14 +694,19 @@ def ask_person(
 @tool("jobs:write")
 def set_application_url(
     job_id: JobId,
-    url: Annotated[str, Field(min_length=10, max_length=2000, description="The employer's own application page "
-                                                                          "(http or https, not LinkedIn)")],
+    url: Annotated[Optional[str], Field(default=None, max_length=2000, description="The employer's own application "
+                                        "page (http or https, not LinkedIn). Omit to only fix title / company")] = None,
+    title: Annotated[Optional[str], Field(default=None, max_length=200, description="The job's real title, if "
+                                          "jobwright's is wrong")] = None,
+    company: Annotated[Optional[str], Field(default=None, max_length=200, description="The real employer, if "
+                                            "jobwright's is wrong")] = None,
 ) -> dict:
     """Save the employer's own application link you found for a job whose only link is LinkedIn (or a job
-    board). The posting link is kept; start_application then uses this one. Never LinkedIn Easy Apply."""
+    board), and/or correct its title and company from the employer's page. The posting link is kept;
+    start_application then uses the new link. Never LinkedIn Easy Apply."""
     from jobwright.apply.connector import set_application_url as save
 
-    return save(_job(job_id), url)
+    return save(_job(job_id), url, title=title, company=company)
 
 
 TOOLS = [

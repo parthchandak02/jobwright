@@ -1059,3 +1059,52 @@ async def test_mcp_sdk_client_in_process(world):
 @pytest.fixture
 def anyio_backend():
     return "asyncio"
+
+
+def test_upload_relay_page_hands_files_to_strict_csp_sites(world):
+    """Job sites' CSP blocks fetch() to jobwright; the snippet falls back to a jobwright popup."""
+    from jobwright.apply.connector import UPLOAD_CHECK_JS, browser_upload_js
+
+    with config.user_context("alex"):
+        tailored = Path(config.TAILORED_DIR)
+        tailored.mkdir(parents=True, exist_ok=True)
+        pdf = tailored / "relay_test.pdf"
+        pdf.write_bytes(b"%PDF-1.4 test")
+    token, _ = store.create_download("alex", pdf, filename="Alex Rivera - Resume.pdf")
+    page = world.get(f"/mcp/files/{token}/relay")
+    assert page.status_code == 200 and "postMessage" in page.text
+    assert "connect-src 'self'" in page.headers["content-security-policy"]
+    # Opening the relay doesn't use up the link: the download it makes does.
+    for _ in range(store.DOWNLOAD_MAX_USES):
+        assert world.get(f"/mcp/files/{token}").status_code == 200
+    assert world.get(f"/mcp/files/{token}").status_code == 404
+    assert world.get(f"/mcp/files/{token}/relay").status_code == 404
+    assert world.get("/mcp/files/jwd_nope/relay").status_code == 404
+    js = browser_upload_js(f"{BASE}/mcp/files/{token}", "Alex Rivera - Resume.pdf", "resume")
+    assert js.startswith("await (async () =>") and "/relay#o=" in js
+    assert "jobwright-attach-" in js and "__jobwrightUploads" in UPLOAD_CHECK_JS
+
+
+def test_pdf_falls_back_when_chromium_dies(tmp_path, monkeypatch):
+    from jobwright.scoring import pdf as P
+
+    def crash(_h, _o):
+        raise RuntimeError("TargetClosedError: browser has been closed")
+
+    monkeypatch.setattr(P, "_render_chromium", crash)
+    out = tmp_path / "letter.pdf"
+    P.render_pdf("<html><body><p>Dear team,</p><p>Hello.</p></body></html>", str(out))
+    assert out.read_bytes()[:4] == b"%PDF"
+
+
+def test_claude_can_fix_a_wrong_title_and_company_and_gets_site_tips(world):
+    jid = add_job("alex", "https://job-boards.greenhouse.io/omidyar/jobs/7001")
+    t = connect(world)["access_token"]
+    fixed = ok(world, t, "set_application_url", {"job_id": jid, "title": "Principal, Programs and Policy",
+                                                 "company": "Omidyar Network"})
+    assert fixed["title"] == "Principal, Programs and Policy" and fixed["company"] == "Omidyar Network"
+    row = job_row("alex", jid)
+    assert row["title"] == "Principal, Programs and Policy" and row["company"] == "Omidyar Network"
+    assert "Give the application link" in refused(world, t, "set_application_url", {"job_id": jid})
+    steps = " ".join(ok(world, t, "get_application_packet", {"job_id": jid})["next_steps"])
+    assert "react-select" in steps and "Attach the files yourself" in steps

@@ -102,21 +102,26 @@ ANSWER_POLICY = {
 
 UPLOAD_HOW = (
     "Use PDF unless the form refuses it (then the DOCX). On the application page, run the file's "
-    "browser_upload.javascript with Claude in Chrome's javascript_tool: it downloads the file from jobwright "
-    "inside the page and puts it in the form's file input (it picks the input that mentions resume / CV or "
-    "cover letter; set SELECTOR in the first lines if it picks the wrong one). It returns a short status: "
-    "check the page shows the file name. Links last 15 minutes and work a few times; call "
-    "get_application_packet again for fresh ones. Your own code sandbox cannot reach jobwright, so never "
-    "download the file there."
+    "browser_upload.javascript with Claude in Chrome's javascript_tool exactly as given (it starts with "
+    "`await`, so the result comes back). It picks the file input that mentions resume / CV or cover letter "
+    "(set SELECTOR in the first lines if it picks the wrong one) and attaches the file. Most job sites block "
+    "downloads from page scripts, so it then opens a small jobwright window that hands the file to the page "
+    "and closes itself. If Chrome blocks that window, the snippet adds a blue 'Attach resume from jobwright' "
+    "button at the top right of the page and says so: click that button once (a real click), then run "
+    "browser_upload.check to confirm it says attached. Then check the page shows the file name. Links last "
+    "15 minutes and work a few times; call get_application_packet again for fresh ones. Your own code "
+    "sandbox cannot reach jobwright, so never download the file there."
 )
 UPLOAD_FALLBACK = (
-    "If the snippet reports the download was blocked (the site's security policy) or the form ignores it: "
-    "open the link in a new tab so the browser downloads it, then ask the person to click Choose File and "
-    "pick it from Downloads. If the form sits in a frame from another site, open the frame's own address in "
-    "the tab and run the snippet there."
+    "Only if the snippet and the button both fail: open the link in a new tab so the browser downloads it, "
+    "then ask the person to click Choose File and pick it from Downloads. If the form sits in a frame from "
+    "another site, open the frame's own address in the tab and run the snippet there."
 )
 
-_UPLOAD_JS = """(async () => {
+# The page snippet. Job sites' Content-Security-Policy (connect-src, frame-src) blocks fetch() and iframes
+# to jobwright, but not a popup window or postMessage: the popup (/mcp/files/<token>/relay, our own origin)
+# downloads the file and posts the bytes to its opener, which builds the File and fills the input.
+_UPLOAD_JS = """await (async () => {
   const FILE_URL = %(url)s, FILE_NAME = %(name)s, KIND = %(kind)s;
   const SELECTOR = null; // or a CSS selector for the right file input, e.g. '#resume_upload'
   const want = KIND === 'cover' ? /cover/i : /r[eé]sum[eé]|\\bcv\\b|curriculum/i;
@@ -131,18 +136,58 @@ _UPLOAD_JS = """(async () => {
   let best = null, top = -99;
   for (const el of inputs) { const s = SELECTOR ? 1 : score(el); if (s > top) { top = s; best = el; } }
   if (!SELECTOR && top < 1 && !(KIND === 'resume' && inputs.length === 1)) return 'no file input looks like the ' + KIND + ' field; set SELECTOR and run again';
-  let res;
-  try { res = await fetch(FILE_URL, { credentials: 'omit', mode: 'cors' }); } catch (e) { return 'download blocked on this page (' + e.message + '): use the fallback'; }
-  if (!res.ok) return 'download failed: HTTP ' + res.status + ' (expired or used up: call get_application_packet for a fresh link)';
-  const blob = await res.blob();
-  const file = new File([blob], FILE_NAME, { type: blob.type || 'application/pdf', lastModified: Date.now() });
-  const dt = new DataTransfer();
-  dt.items.add(file);
-  best.files = dt.files;
-  best.dispatchEvent(new Event('input', { bubbles: true }));
-  best.dispatchEvent(new Event('change', { bubbles: true }));
-  return 'put ' + FILE_NAME + ' (' + file.size + ' bytes) in file input ' + (best.name || best.id || '#' + inputs.indexOf(best)) + '; check the page shows it';
+  const where = best.name || best.id || '#' + inputs.indexOf(best);
+  const state = (window.__jobwrightUploads = window.__jobwrightUploads || {});
+  const put = (bytes, type) => {
+    const mime = type || (/\\.docx$/i.test(FILE_NAME) ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' : 'application/pdf');
+    const file = new File([bytes], FILE_NAME, { type: mime, lastModified: Date.now() });
+    const dt = new DataTransfer();
+    dt.items.add(file);
+    best.files = dt.files;
+    best.dispatchEvent(new Event('input', { bubbles: true }));
+    best.dispatchEvent(new Event('change', { bubbles: true }));
+    state[KIND] = { status: 'attached', name: FILE_NAME, size: file.size, input: where };
+    document.getElementById('jobwright-attach-' + KIND)?.remove();
+    return 'attached ' + FILE_NAME + ' (' + file.size + ' bytes) to file input ' + where + '; check the page shows it';
+  };
+  try {
+    const ctl = new AbortController(); setTimeout(() => ctl.abort(), 8000);
+    const res = await fetch(FILE_URL, { credentials: 'omit', mode: 'cors', signal: ctl.signal });
+    if (res.ok) return put(await res.arrayBuffer(), res.headers.get('Content-Type'));
+    if (res.status === 404) return 'link expired or used up: call get_application_packet for a fresh one';
+  } catch (e) { /* the site's security policy blocks fetch: use the jobwright window below */ }
+  const ORIGIN = new URL(FILE_URL).origin, KEY = KIND + '-' + Date.now();
+  const got = new Promise((done) => {
+    const on = (ev) => {
+      if (ev.origin !== ORIGIN || !ev.data || ev.data.jw !== 'jobwright-file' || ev.data.key !== KEY) return;
+      window.removeEventListener('message', on);
+      done(ev.data.ok ? put(ev.data.bytes, ev.data.type) : 'jobwright could not send the file: ' + ev.data.error);
+    };
+    window.addEventListener('message', on);
+  });
+  const relay = FILE_URL + '/relay#o=' + encodeURIComponent(location.origin) + '&k=' + encodeURIComponent(KEY);
+  const open = () => window.open(relay, 'jobwright_' + KIND, 'popup,width=460,height=240');
+  state[KIND] = { status: 'waiting', name: FILE_NAME, input: where };
+  const wait = (ms) => Promise.race([got, new Promise((r) => setTimeout(() => r(null), ms))]);
+  if (open()) {
+    const r = await wait(20000);
+    return r || 'the jobwright window opened but nothing arrived in 20 s; run browser_upload.check, or run this again';
+  }
+  const id = 'jobwright-attach-' + KIND;
+  document.getElementById(id)?.remove();
+  const b = document.createElement('button');
+  b.id = id; b.type = 'button';
+  b.textContent = 'Attach ' + (KIND === 'cover' ? 'cover letter' : 'resume') + ' from jobwright';
+  b.style.cssText = 'position:fixed;right:16px;top:' + (KIND === 'cover' ? 72 : 16) + 'px;z-index:2147483647;padding:12px 18px;font:600 15px system-ui,sans-serif;background:#3b5bdb;color:#fff;border:0;border-radius:8px;box-shadow:0 2px 10px rgba(0,0,0,.3);cursor:pointer';
+  b.onclick = () => { if (open()) b.textContent = 'Attaching…'; };
+  document.body.appendChild(b);
+  state[KIND].status = 'click_button';
+  return 'The site needs one real click: click the button "' + b.textContent + '" at the top right of the page, then run browser_upload.check to confirm.';
 })()"""
+
+UPLOAD_CHECK_JS = (
+    "JSON.stringify(window.__jobwrightUploads || 'nothing started on this page: run browser_upload.javascript')"
+)
 
 
 def browser_upload_js(url: str, filename: str, kind: str) -> str:
@@ -375,7 +420,7 @@ def _materials(job: dict, full_name: str, link: Callable[..., dict]) -> dict:
                 entry = link(path, download_name(full_name, kind, path.suffix))
                 if entry.get("url"):
                     entry["browser_upload"] = {"javascript": browser_upload_js(entry["url"], entry["name"], kind),
-                                               "fallback": UPLOAD_FALLBACK}
+                                               "check": UPLOAD_CHECK_JS, "fallback": UPLOAD_FALLBACK}
                 out[fmt] = entry
         if not out:
             return None
@@ -409,6 +454,23 @@ def _materials(job: dict, full_name: str, link: Callable[..., dict]) -> dict:
     }
 
 
+# What live runs taught about each applicant tracking system (Claude in Chrome).
+ATS_TIPS: dict[str, str] = {
+    "greenhouse": "Greenhouse: dropdowns are react-select (click the box, type the answer, press Enter, check it "
+                  "stuck). Phone has its own Country select. The cover letter has an 'Enter manually' box: "
+                  "paste the letter text there if the upload fails. Required consent boxes (data transfer, "
+                  "privacy) need the person's saved yes.",
+    "bamboohr": "BambooHR: dropdowns are custom buttons (click, then pick the option). The file inputs are in "
+                "page order, usually cover letter first, then resume: set SELECTOR if the snippet picks wrong.",
+    "lever": "Lever: one page; the resume upload fills name and email itself, so attach it first and check "
+             "those fields after.",
+    "ashby": "Ashby: attach the resume first; it may auto-fill fields, then check each one.",
+    "workday": "Workday: needs an account per employer. Stop and use ask_person: never create accounts.",
+    "icims": "iCIMS: often needs an account. Stop and use ask_person: never create accounts.",
+    "taleo": "Taleo: needs an account. Stop and use ask_person: never create accounts.",
+}
+
+
 def _next_steps(job: dict, materials: dict, missing: list[dict], gates: dict) -> list[str]:
     steps: list[str] = []
     if _linkedin_only(job):
@@ -424,8 +486,16 @@ def _next_steps(job: dict, materials: dict, missing: list[dict], gates: dict) ->
         steps.append("If the form takes a cover letter and none exists, write one following the tailoring rules "
                      "(call request_tailoring for the brief), save it with save_tailored_materials(job_id, "
                      "cover_letter_text=...), then call get_application_packet again for the PDF link.")
-    steps.append("Upload files with materials.resume[use].browser_upload.javascript (and cover_letter's) on the "
-                 "form page; see materials.upload.")
+    steps.append("Attach the files yourself: run materials.resume[use].browser_upload.javascript (and "
+                 "cover_letter's) on the form page; if it asks for a click on its blue button, click it, then "
+                 "run browser_upload.check. See materials.upload. Don't leave attaching to the person.")
+    from jobwright.apply.ats import ats_family
+
+    tip = ATS_TIPS.get(ats_family(job.get("application_url") or job.get("url")) or "")
+    if tip:
+        steps.append(tip)
+    steps.append("If jobwright's title or company for this job is wrong, pass the right ones from the employer's "
+                 "page to set_application_url (title=..., company=...).")
     needed = [m["label"] for m in missing if m.get("attestation") or m.get("required")]
     if needed:
         steps.append("Not saved yet (" + ", ".join(needed[:12]) + "): only if the form asks one, and for any "
@@ -504,8 +574,20 @@ def _open_questions(job: dict, conn) -> list[dict]:
             if r.get("kind") == "answer" and r.get("job_url") == job.get("url")]
 
 
-def set_application_url(job: dict, url: str, *, conn=None) -> dict:
-    """Save the employer's own apply link Claude found for a job (never LinkedIn; ``url`` is kept)."""
+def set_application_url(job: dict, url: str | None, *, title: str | None = None, company: str | None = None,
+                        conn=None) -> dict:
+    """Save the employer's own apply link Claude found for a job (never LinkedIn; ``url`` is kept), and
+    correct a wrong title / company read from the posting."""
+    conn = conn or get_connection()
+    fixes = {k: " ".join(v.split())[:200] for k, v in (("title", title), ("company", company)) if v and v.strip()}
+    if fixes:
+        conn.execute(f"UPDATE jobs SET {', '.join(f'{k} = ?' for k in fixes)} WHERE url = ?",
+                     (*fixes.values(), job["url"]))
+        conn.commit()
+    if not (url or "").strip():
+        if not fixes:
+            raise ValueError("Give the application link, or a corrected title or company")
+        return {"job_id": job.get("job_id"), **fixes, "application_url": job.get("application_url")}
     from urllib.parse import urlsplit
 
     from jobwright.apply.ats import ats_family
@@ -521,12 +603,11 @@ def set_application_url(job: dict, url: str, *, conn=None) -> dict:
     if host == "linkedin.com" or host.endswith(".linkedin.com") or host in ("lnkd.in",):
         raise ValueError("That is a LinkedIn link. Find the role on the employer's own careers site instead; "
                          "never use LinkedIn Easy Apply.")
-    conn = conn or get_connection()
     ats = ats_family(value)
     conn.execute("UPDATE jobs SET application_url = ?, application_url_source = 'connector', application_ats = ?, "
                  "application_url_checked_at = ? WHERE url = ?", (value, ats, _iso(_now()), job["url"]))
     conn.commit()
-    return {"job_id": job.get("job_id"), "application_url": value, "ats": ats, "posting_url": job.get("url")}
+    return {"job_id": job.get("job_id"), "application_url": value, "ats": ats, "posting_url": job.get("url"), **fixes}
 
 
 # ---------------------------------------------------------------------------

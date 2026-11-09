@@ -28,7 +28,7 @@ from typing import AsyncIterator
 
 import anyio
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
 from jobwright import config
 from jobwright.connector import store
@@ -178,6 +178,54 @@ class FilesPreflight:
             await send({"type": "http.response.body", "body": b""})
             return
         await self.app(scope, receive, send)
+
+
+# The popup the page snippet opens when the job site's security policy blocks fetch() to jobwright. It runs
+# on jobwright's own origin, downloads the file (one use) and posts the bytes to the application page that
+# opened it (only to the origin named in the address), then closes itself.
+_RELAY_HTML = """<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="robots" content="noindex">
+<title>jobwright · attaching your file</title></head>
+<body style="font:15px/1.5 system-ui,sans-serif;margin:24px;color:#1f2328;background:#fafaf9">
+<p id="s">Attaching your file to the application…</p>
+<script>
+(async () => {
+  const s = document.getElementById('s');
+  const q = new URLSearchParams(location.hash.slice(1));
+  const target = q.get('o'), key = q.get('k');
+  const fileUrl = location.pathname.replace(/\\/relay$/, '');
+  if (!window.opener || !target || !/^https?:\\/\\//.test(target)) {
+    s.innerHTML = 'Open this from the application page. Or <a href="' + fileUrl + '">download the file</a>.';
+    return;
+  }
+  const send = (msg, transfer) => window.opener.postMessage(Object.assign({ jw: 'jobwright-file', key }, msg), target, transfer || []);
+  try {
+    const r = await fetch(fileUrl, { credentials: 'omit' });
+    if (!r.ok) throw new Error(r.status === 404 ? 'the link expired or was used up' : 'HTTP ' + r.status);
+    const bytes = await r.arrayBuffer();
+    send({ ok: true, type: r.headers.get('Content-Type'), bytes }, [bytes]);
+    s.textContent = 'Done. This window closes itself.';
+    setTimeout(() => window.close(), 700);
+  } catch (e) {
+    send({ ok: false, error: String(e.message || e) });
+    s.textContent = 'Could not attach the file: ' + (e.message || e) + '. Ask Claude for a fresh link.';
+  }
+})();
+</script></body></html>"""
+
+
+@files_router.get("/mcp/files/{token}/relay", response_model=None)
+def relay(token: str) -> HTMLResponse | JSONResponse:
+    """Popup page that hands a file to the application page (see ``_RELAY_HTML``). Does not use up the link."""
+    row = store.resolve_download(token, count=False)
+    if row is None or row["uses"] >= store.DOWNLOAD_MAX_USES:
+        return _not_found("This link has expired or was used up. Call get_application_packet for a fresh one.")
+    return HTMLResponse(_RELAY_HTML, headers={
+        "Cache-Control": "no-store",
+        "Referrer-Policy": "no-referrer",
+        "X-Content-Type-Options": "nosniff",
+        "Content-Security-Policy": "default-src 'none'; script-src 'unsafe-inline'; connect-src 'self'; "
+                                   "style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'",
+    })
 
 
 @files_router.get("/mcp/files/{token}", response_model=None)

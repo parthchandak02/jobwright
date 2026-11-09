@@ -334,26 +334,62 @@ li {{
 
 # ── PDF Renderer ─────────────────────────────────────────────────────────
 
-def render_pdf(html: str, output_path: str) -> None:
-    """Render HTML to PDF using Playwright's headless Chromium.
-
-    Args:
-        html: Complete HTML string.
-        output_path: Path to write the PDF file.
-    """
+def _render_chromium(html: str, output_path: str) -> None:
     from playwright.sync_api import sync_playwright
 
     with sync_playwright() as p:
-        browser = p.chromium.launch()
-        page = browser.new_page()
-        page.set_content(html, wait_until="networkidle")
-        page.pdf(
-            path=output_path,
-            format="Letter",
-            margin={"top": "0", "right": "0", "bottom": "0", "left": "0"},
-            print_background=True,
-        )
-        browser.close()
+        browser = p.chromium.launch(args=["--disable-dev-shm-usage"])
+        try:
+            page = browser.new_page()
+            page.set_content(html, wait_until="networkidle")
+            page.pdf(
+                path=output_path,
+                format="Letter",
+                margin={"top": "0", "right": "0", "bottom": "0", "left": "0"},
+                print_background=True,
+            )
+        finally:
+            browser.close()
+
+
+def _render_mupdf(html: str, output_path: str) -> None:
+    """No-browser fallback (PyMuPDF's HTML story): plainer styling, but always a real PDF."""
+    import fitz  # pymupdf
+
+    rect = fitz.paper_rect("letter")
+    where = rect + (54, 54, -54, -54)  # 0.75in margins
+    story = fitz.Story(html=html)
+    writer = fitz.DocumentWriter(output_path)
+    more = True
+    while more:
+        device = writer.begin_page(rect)
+        more, _ = story.place(where)
+        story.draw(device)
+        writer.end_page()
+    writer.close()
+
+
+def render_pdf(html: str, output_path: str) -> None:
+    """Render HTML to a Letter PDF.
+
+    Headless Chromium first (tried twice: on a busy machine a fresh browser can die mid-render with
+    TargetClosedError), then PyMuPDF so a PDF is always made.
+    """
+    last: Exception | None = None
+    for attempt in (1, 2):
+        try:
+            _render_chromium(html, output_path)
+            return
+        except Exception as exc:  # noqa: BLE001 - browser crash, missing Chromium, event loop
+            last = exc
+            log.warning("Chromium PDF attempt %d failed: %s: %s", attempt, type(exc).__name__, exc)
+    try:
+        _render_mupdf(html, output_path)
+        log.info("PDF made without Chromium (fallback) after %s", type(last).__name__)
+    except Exception:
+        if last is not None:
+            raise last
+        raise
 
 
 # ── Public API ───────────────────────────────────────────────────────────
