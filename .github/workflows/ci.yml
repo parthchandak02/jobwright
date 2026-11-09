@@ -28,6 +28,9 @@ jobs:
           enable-cache: true
       - name: Install
         run: uv sync --extra web --extra dev --extra connector
+      - name: Browser for PDF tests
+        # Resume / cover letter PDFs render with Playwright's Chromium; the runner has none.
+        run: uv run playwright install --with-deps chromium
       - name: Ruff
         run: uv run ruff check src/ tests/
       - name: Pytest (with coverage report)
