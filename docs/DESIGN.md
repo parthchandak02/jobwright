@@ -51,6 +51,9 @@ apply), or fix a setting. Every screen should make its one job obvious.
 
 ## Lessons (newest first)
 
+- 2026-11-09: Lane headers must stay visible while a lane scrolls (Parth). A sticky header only sticks to
+  its nearest scroll container, and the board row's own `overflow-x-auto` swallowed it. On desktop the
+  page (`main`) now scrolls both ways and the headers are `sticky` with a background.
 - 2026-11-08: Parth said the site still read as a wall of text. Measure it: count visible words per
   screen on a phone before and after (About you went 468 → 138, Claude 305 → 215). Application
   details became short names ("Need visa sponsorship"; the full form wording sits behind ⓘ only

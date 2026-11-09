@@ -300,7 +300,7 @@ export function KanbanBoard({
         className={
           phone
             ? 'flex min-h-[70vh] flex-col pb-2'
-            : '-mx-3 flex h-full min-h-[70vh] gap-3 overflow-x-auto px-3 pb-2 md:mx-0 md:px-0'
+            : '-mx-3 flex h-full min-h-[70vh] gap-3 overflow-x-auto px-3 pb-2 md:mx-0 md:w-max md:min-w-full md:overflow-visible md:px-0'
         }
         onTouchStart={phone ? onTouchStart : undefined}
         onTouchEnd={phone ? onTouchEnd : undefined}

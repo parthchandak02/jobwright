@@ -74,7 +74,12 @@ export const KanbanColumn = memo(function KanbanColumn({
       style={{ '--lane': lane, '--tone': lane } as CSSProperties}
       className={cn(fill ? 'flex w-full flex-col' : LANE_WIDTH, 'outline-none')}
     >
-      <header className={cn('flex h-8 items-center gap-2 px-1.5', fill && 'sr-only')}>
+      <header
+        className={cn(
+          'sticky -top-4 z-10 -mx-1 flex h-10 items-center gap-2 bg-background px-2.5',
+          fill && 'sr-only',
+        )}
+      >
         <span aria-hidden className="size-2 shrink-0 rounded-full bg-(--lane)" />
         <h2 className="lane-label min-w-0 truncate text-micro font-semibold tracking-wide uppercase">{label}</h2>
         <span className="text-micro font-medium text-muted-foreground tabular-nums">
