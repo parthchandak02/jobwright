@@ -26,9 +26,12 @@ person's own email, with every answer traceable. Design record: [ADR-008](../adr
 Stored in `profile.json` → `application_answers` (`{version, answers: {key: {value, source, updated_at}}, custom:
 {normalized question: {question, value, source, updated_at}}}`). Keys match the deterministic fillers
 (`apply/ats/forms.py`): `work_authorized, requires_sponsorship, criminal_record, background_check, age_18_plus,
-certify, salary_expectation, start_date, relocation, onsite, previously_worked_here, eeo_gender, eeo_race,
-eeo_hispanic, eeo_veteran, eeo_disability, eeo_lgbtq (optional)`, plus common facts (`phone, city, state,
-country, education_highest, how_heard, ...`). `custom` is sent to the fillers as `questions`.
+certify, salary_expectation, start_date, relocation, onsite, currently_in_country, willing_to_travel,
+previously_worked_here, eeo_gender, eeo_race, eeo_hispanic, eeo_veteran, eeo_disability, eeo_lgbtq (optional)`,
+plus common facts (`phone, address_line, city, state, postal_code, country, how_heard, education_highest
+(optional: the resume answers it), ...`). `custom` is sent to the fillers as `questions`. Questions the person
+answers in Settings → Applications ("Questions from your Claude") or by WhatsApp reply are saved as a custom
+answer for that exact question, plus the standard key when it maps to one (see `apply/hitl.py`).
 
 - Dashboard: Settings → **Applications** (`GET/PUT /api/answers`).
 - CLI: `jobwright --user <id> answers show|set <key> <value>|missing|import-profile`.

@@ -34,6 +34,8 @@ FULL_ANSWERS = {
     "eeo_hispanic": "Decline to self-identify", "eeo_veteran": "I am not a protected veteran",
     "eeo_disability": "I do not want to answer", "phone": "+1 415 555 0100", "city": "Oakland",
     "state": "CA", "country": "United States", "education_highest": "BA Economics, Example University, 2019",
+    "address_line": "1 Example Street", "postal_code": "94607", "currently_in_country": "Yes",
+    "willing_to_travel": "Up to 25%",
     "how_heard": "Company website",
 }
 

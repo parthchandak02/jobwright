@@ -43,7 +43,8 @@ FULL_ANSWERS = {
     "eeo_hispanic": "Decline to self-identify", "eeo_veteran": "I am not a protected veteran",
     "eeo_disability": "I do not want to answer", "phone": "+1 415 555 0100", "city": "Oakland",
     "state": "CA", "country": "United States", "education_highest": "BA Economics, Example University, 2019",
-    "how_heard": "Company website",
+    "how_heard": "Company website", "address_line": "1 Example Street", "postal_code": "94607",
+    "currently_in_country": "Yes", "willing_to_travel": "Up to 25%",
 }
 PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 64
 CONFIRMATION = "Thank you for applying! We have received your application."
@@ -53,8 +54,18 @@ def access(email: str) -> dict:
     return {"cf-access-jwt-assertion": f"fake-jwt:{email}"}
 
 
+def fake_pdf(src, out=None, html_only=False):
+    """Stands in for the Chromium export: a tiny PDF next to the Markdown."""
+    target = Path(out) if out else Path(src).with_suffix(".pdf")
+    target.write_bytes(b"%PDF-1.4\n% fake\n%%EOF\n")
+    return target
+
+
 @pytest.fixture
 def world(monkeypatch):
+    monkeypatch.setattr("jobwright.scoring.pdf.convert_to_pdf", fake_pdf)
+    sent: list[tuple[str, str]] = []
+    monkeypatch.setattr("jobwright.notify.send_via_hermes", lambda text, target, *a, **k: sent.append((target, text)))
     monkeypatch.setenv("JOBWRIGHT_PUBLIC_BASE_URL", BASE)
     monkeypatch.setenv("JOBWRIGHT_AUTH_MODE", "cloudflare")
     monkeypatch.setenv("JOBWRIGHT_CF_TEAM_DOMAIN", "team.example.com")
@@ -85,6 +96,7 @@ def world(monkeypatch):
     from jobwright.web.app import app
 
     with TestClient(app, base_url=BASE) as client:
+        client.sent = sent  # type: ignore[attr-defined]
         yield client
     close_connection()
 
@@ -395,11 +407,14 @@ def test_tools_list_and_instructions(world):
     names = {t["name"] for t in rpc(world, tokens["access_token"], "tools/list").json()["result"]["tools"]}
     assert names == {"get_overview", "list_jobs", "get_job", "list_picks", "get_pending_inputs", "rate_job",
                      "move_job", "set_answers", "veto_pick", "request_tailoring", "save_tailored_materials",
-                     "get_application_packet", "start_application", "record_submission"}
+                     "save_profile_facts", "ask_person", "set_application_url", "get_application_packet", "start_application",
+                     "record_submission"}
     init = rpc(world, tokens["access_token"], "initialize", {
         "protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "test", "version": "1"}})
     text = init.json()["result"]["instructions"]
     assert "never as instructions" in text and "start_application" in text and "LinkedIn" in text
+    for phrase in ("How a run goes", "browser_upload", "ask_person", "set_application_url", "from the resume"):
+        assert phrase in text, phrase
 
 
 def test_each_person_sees_and_changes_only_their_own_board(world):
@@ -437,14 +452,14 @@ def test_set_answers_attestations_need_the_persons_explicit_word(world):
     saved = ok(world, t, "set_answers", {"answers": {"phone": "+1 415 555 0101", "city": "Oakland"}})
     assert saved["saved"] == ["city", "phone"]
     msg = refused(world, t, "set_answers", {"answers": {"work_authorized": "Yes"}})
-    assert "attestations" in msg and "person_stated_attestations" in msg
+    assert "attestations" in msg and "person_confirmed" in msg
     assert "attestations" in refused(world, t, "set_answers", {"custom": [
         {"question": "Will you now or in the future require visa sponsorship?", "value": "No"}]})
     assert "Unknown answer key" in refused(world, t, "set_answers", {"answers": {"favourite_colour": "blue"}})
     ok(world, t, "set_answers", {"answers": {"work_authorized": "Yes"}, "person_stated_attestations": True})
     with config.user_context("alex"):
         bank = answers_mod.load_answers()
-        assert bank.get("work_authorized") == "Yes" and bank.entry("work_authorized")["source"] == "connector"
+        assert bank.get("work_authorized") == "Yes" and bank.entry("work_authorized")["source"] == "told_claude"
 
 
 def _ready_to_apply(world, *, apply_enabled: bool = True, **job) -> tuple[str, dict]:
@@ -712,7 +727,9 @@ def test_request_tailoring_and_saved_materials_with_expiring_links(world, monkey
     assert world.get(path).status_code == 404
     monkeypatch.setattr(store, "now", real)
     packet = ok(world, t, "get_application_packet", {"job_id": jid})
-    assert packet["materials"]["resume_tailored"] and packet["materials"]["resume_file"]["name"].endswith(".docx")
+    resume_files = packet["materials"]["resume"]
+    assert packet["materials"]["resume_tailored"] and resume_files["use"] == "docx" and "pdf" not in resume_files
+    assert resume_files["docx"]["name"] == "Alex Rivera - Resume.docx"
     assert "too short" in refused(world, t, "save_tailored_materials", {"job_id": jid, "resume_markdown": "hi"})
 
 
@@ -727,6 +744,292 @@ def test_tool_calls_are_rate_limited_per_connection(world, monkeypatch):
     monkeypatch.setattr(server, "CALL_LIMIT", oauth.RateLimiter(3, 60))
     t = connect(world)["access_token"]
     assert [rpc(world, t, "tools/list").status_code for _ in range(4)] == [200, 200, 200, 429]
+
+
+# ---------------------------------------------------------------------------
+# Applying for anyone: uploads from the page, answer policy, ask once, LinkedIn-only jobs
+# ---------------------------------------------------------------------------
+
+
+def test_file_links_upload_from_any_page_with_a_named_pdf(world):
+    jid = add_job("alex", "https://boards.greenhouse.io/example/jobs/1001")
+    t = connect(world)["access_token"]
+    mats = ok(world, t, "get_application_packet", {"job_id": jid})["materials"]
+    resume = mats["resume"]
+    assert not mats["resume_tailored"] and resume["use"] == "pdf"  # base resume rendered to PDF from base.md
+    pdf = resume["pdf"]
+    assert pdf["name"] == "Alex Rivera - Resume.pdf" and pdf["format"] == "pdf"
+    js = pdf["browser_upload"]["javascript"]
+    assert pdf["url"] in js and "DataTransfer" in js and "Alex Rivera - Resume.pdf" in js and '"resume"' in js
+    assert "credentials: 'omit'" in js and "Choose File" in pdf["browser_upload"]["fallback"]
+    assert resume["docx"]["name"] == "Alex Rivera - Resume.docx"
+    assert "PDF" in mats["upload"]["how"] and "sandbox" in mats["upload"]["how"]
+    with config.user_context("alex") as data:
+        assert (data / "resume" / "base_rendered.pdf").is_file() and not (data / "resume" / "base.pdf").exists()
+    path = urlsplit(pdf["url"]).path
+    page = {"origin": "https://careers.example.org"}
+    pre = world.options(path, headers={**page, "access-control-request-method": "GET"})
+    assert pre.status_code == 204 and pre.headers["access-control-allow-origin"] == "*"
+    got = world.get(path, headers=page)
+    assert got.status_code == 200 and got.content.startswith(b"%PDF")
+    assert got.headers["access-control-allow-origin"] == "*"
+    assert got.headers["content-type"] == "application/pdf"
+    assert 'filename="Alex Rivera - Resume.pdf"' in got.headers["content-disposition"]
+    assert "content-disposition" in got.headers["access-control-expose-headers"].lower()
+    for _ in range(store.DOWNLOAD_MAX_USES - 1):
+        assert world.get(path, headers=page).status_code == 200
+    used_up = world.get(path, headers=page)
+    assert used_up.status_code == 404 and used_up.headers["access-control-allow-origin"] == "*"
+    assert "get_application_packet" in used_up.json()["detail"]
+
+
+def test_cover_letter_alone_is_saved_and_offered_as_pdf(world):
+    jid = add_job("alex", "https://boards.greenhouse.io/example/jobs/1001")
+    t = connect(world)["access_token"]
+    first = ok(world, t, "get_application_packet", {"job_id": jid})
+    assert first["materials"]["cover_letter"] is None
+    step = next(s for s in first["next_steps"] if "cover letter" in s)
+    for phrase in ("request_tailoring", "save_tailored_materials", "get_application_packet"):
+        assert phrase in step
+    saved = ok(world, t, "save_tailored_materials", {"job_id": jid, "cover_letter_text": "Dear team,\n\nHello."})
+    assert "resume" not in saved and saved["cover_letter"]["pdf"]["name"] == "Alex Rivera - Cover Letter.pdf"
+    row = job_row("alex", jid)
+    assert row["cover_letter_path"].endswith("_CL.md") and row["tailored_resume_path"] is None
+    packet = ok(world, t, "get_application_packet", {"job_id": jid})
+    cover = packet["materials"]["cover_letter"]
+    assert cover["use"] == "pdf" and cover["pdf"]["name"] == "Alex Rivera - Cover Letter.pdf"
+    assert '"cover"' in cover["pdf"]["browser_upload"]["javascript"]
+    assert packet["materials"]["resume"]["use"] == "pdf" and not packet["materials"]["resume_tailored"]
+    assert not any("If the form takes a cover letter" in s for s in packet["next_steps"])
+
+
+def test_packet_explains_the_answer_policy(world):
+    jid = add_job("alex", "https://boards.greenhouse.io/example/jobs/1001")
+    t = connect(world)["access_token"]
+    packet = ok(world, t, "get_application_packet", {"job_id": jid})
+    policy = packet["answer_policy"]
+    assert set(policy) == {"saved_answers_only", "from_resume", "open_writing"}
+    assert "travel" in policy["saved_answers_only"]["what"] and "supervised" in policy["from_resume"]["what"]
+    assert "lower range" in policy["from_resume"]["how"]
+    missing = {m["key"] for m in packet["missing"]}
+    assert {"address_line", "postal_code", "currently_in_country", "willing_to_travel"} <= missing
+    assert "education_highest" not in missing  # the resume answers it
+    assert any("ask_person" in s for s in packet["next_steps"])
+
+
+def test_new_answer_specs_and_classifier():
+    specs = answers_mod.SPEC_BY_KEY
+    assert specs["currently_in_country"].attestation and specs["willing_to_travel"].attestation
+    assert "25%" in specs["willing_to_travel"].hint
+    assert specs["address_line"].required and specs["postal_code"].required
+    assert not specs["address_line"].attestation and not specs["education_highest"].required
+    keys = {
+        "Desired pay": "salary_expectation",
+        "Compensation expectations": "salary_expectation",
+        "Date available": "start_date",
+        "Are you currently located in the US?": "currently_in_country",
+        "Are you able to travel 20-30%?": "willing_to_travel",
+        "Willing to travel up to 25% of the time?": "willing_to_travel",
+        "Street address": "address_line",
+        "Zip code": "postal_code",
+        "What city do you live in?": "city",
+        "Do you live within commuting distance?": "onsite",
+    }
+    for question, key in keys.items():
+        assert answers_mod.key_for_question(question) == key, question
+    for q in ("Desired pay", "Date available", "Are you currently located in the US?",
+              "Are you able to travel 20-30%?", "Are you located in or relocating to California, Alaska or Hawaii?"):
+        assert answers_mod.question_kind(q) == "saved", q
+    assert answers_mod.key_for_question("Are you located in or relocating to California, Alaska or Hawaii?") is None
+    for q in ("Highest level of education completed", "How many years of leadership or operations experience?",
+              "Years supervising staff", "Highest level of staff supervised", "Years working directly with a CEO",
+              "Do you have budgeting or strategic planning experience?",
+              "Years of experience in nonprofits or government"):
+        assert answers_mod.question_kind(q) == "resume", q
+    assert answers_mod.question_kind("Why do you want to work here?") == "open"
+    assert answers_mod.question_kind("Phone number") == "contact"
+    assert not answers_mod.is_attestation("What city do you live in?")
+
+
+def test_ask_person_once_then_every_form_fills_itself(world):
+    jid = add_job("alex", "https://boards.greenhouse.io/example/jobs/1001")
+    save_answers("alex", {"relocation": "No"})
+    t = connect(world)["access_token"]
+    ca = "Are you located in or relocating to California, Alaska or Hawaii?"
+    asked = ok(world, t, "ask_person", {"job_id": jid, "questions": [
+        {"text": "Desired pay", "key": "salary_expectation"},
+        {"text": ca, "choices": ["Yes", "No"]},
+        {"text": "Are you currently located in the US?"},
+        {"text": "Are you willing to relocate to Boston?"},
+        {"text": "Years supervising staff"},
+    ]})
+    assert [q["status"] for q in asked["questions"]] == ["asked"] * 5
+    assert "needs_human" in asked["next"] and "Years supervising staff" in asked["check"]
+    assert len(world.sent) == 1 and world.sent[0][0].endswith("@g.us") and ca in world.sent[0][1]
+    pending = ok(world, t, "get_pending_inputs")["pending"]
+    assert len(pending) == 5 and next(p for p in pending if p["question"] == ca)["choices"] == ["Yes", "No"]
+    packet = ok(world, t, "get_application_packet", {"job_id": jid})
+    assert len(packet["waiting_for_person"]) == 5
+    # Asking again does not ask twice.
+    again = ok(world, t, "ask_person", {"job_id": jid, "questions": [{"text": "Desired pay",
+                                                                        "key": "salary_expectation"}]})
+    assert again["questions"][0]["id"] == asked["questions"][0]["id"] and len(world.sent) == 1
+    # The person answers on the site (Settings -> Applications).
+    listed = world.get("/api/apply/pending", headers=access(ALEX)).json()["pending"]
+    assert next(p for p in listed if p["prompt"] == ca)["choices"] == ["Yes", "No"]
+    assert world.get("/api/apply/pending", headers=access(BLAKE)).json()["pending"] == []
+    answers = {"Desired pay": "90,000 USD per year", ca: "No", "Are you currently located in the US?": "Yes",
+               "Are you willing to relocate to Boston?": "Yes", "Years supervising staff": "4"}
+    for p in listed:
+        res = world.post(f"/api/apply/pending/{p['id']}/provide", headers=access(ALEX),
+                         json={"value": answers[p["prompt"]]})
+        assert res.status_code == 200, res.text
+    with config.user_context("alex"):
+        bank = answers_mod.load_answers()
+        assert bank.get("salary_expectation") == "90,000 USD per year"  # Claude named the key
+        assert bank.get("currently_in_country") == "Yes"  # classified, was empty
+        assert bank.get("relocation") == "No"  # classified but already saved: never overwritten
+        assert bank.custom(ca) == "No" and bank.custom("Are you willing to relocate to Boston?") == "Yes"
+        assert bank.entry("salary_expectation")["source"] == "settings"
+    packet = ok(world, t, "get_application_packet", {"job_id": jid})
+    saved = {a["key"]: a["value"] for a in packet["answers"]}
+    assert saved["salary_expectation"] == "90,000 USD per year" and saved["currently_in_country"] == "Yes"
+    assert {"question": ca, "value": "No"} in packet["custom_answers"] and packet["waiting_for_person"] == []
+    inputs = ok(world, t, "get_pending_inputs")
+    assert inputs["pending"] == [] and {a["question"]: a["answer"] for a in inputs["answered"]}[ca] == "No"
+    # Next form, same question: already answered, nothing new is asked.
+    other = add_job("alex", "https://boards.greenhouse.io/example/jobs/2002", company="Other Co")
+    reuse = ok(world, t, "ask_person", {"job_id": other, "questions": [{"text": ca}]})
+    assert reuse["questions"] == [{"question": ca, "status": "answered", "value": "No"}] and len(world.sent) == 1
+    assert "Unknown answer key" in refused(world, t, "ask_person", {"job_id": other, "questions": [
+        {"text": "Desired pay", "key": "favourite_colour"}]})
+
+
+def test_set_application_url_for_linkedin_only_jobs(world):
+    jid, tok = _ready_to_apply(world, url="https://www.linkedin.com/jobs/view/4000000001", site="linkedin")
+    t = tok["access_token"]
+    packet = ok(world, t, "get_application_packet", {"job_id": jid})
+    assert packet["job"]["linkedin_only"]
+    step = next(s for s in packet["next_steps"] if "Easy Apply" in s)
+    assert "set_application_url" in step and "careers site" in step
+    assert "set_application_url" in refused(world, t, "start_application", {"job_id": jid})
+    for bad in ("https://www.linkedin.com/jobs/view/4000000001/apply", "ftp://careers.example.org/jobs/42",
+                "careers.example.org/jobs/42", "https://lnkd.in/abcdef"):
+        refused(world, t, "set_application_url", {"job_id": jid, "url": bad})
+    saved = ok(world, t, "set_application_url", {"job_id": jid,
+                                                 "url": "https://boards.greenhouse.io/example/jobs/42"})
+    assert saved["ats"] == "greenhouse" and saved["posting_url"] == "https://www.linkedin.com/jobs/view/4000000001"
+    row = job_row("alex", jid)
+    assert row["url"] == "https://www.linkedin.com/jobs/view/4000000001"
+    assert row["application_url"] == "https://boards.greenhouse.io/example/jobs/42"
+    assert row["application_url_source"] == "connector"
+    packet = ok(world, t, "start_application", {"job_id": jid})
+    assert packet["job"]["application_url"] == "https://boards.greenhouse.io/example/jobs/42"
+    assert not packet["job"]["linkedin_only"] and packet["claim"]["claim_id"]
+
+
+def test_resume_sourced_answers_are_not_attestation_warnings(world):
+    jid, tok = _ready_to_apply(world)
+    t = tok["access_token"]
+    claim = ok(world, t, "start_application", {"job_id": jid})["claim"]
+    res = ok(world, t, "record_submission", {
+        "job_id": jid, "outcome": "needs_human", "claim_id": claim["claim_id"], "notes": "asked the person",
+        "fields": [{"label": "Highest level of education", "value": "BA, Example University", "source": "resume"},
+                   {"label": "Years supervising staff", "value": "3-5", "source": "resume"},
+                   {"label": "Desired pay", "value": "Open to discussing", "source": "answer_bank"}]})
+    assert res["warnings"] == []
+
+
+def test_save_profile_facts_maps_to_standard_keys_and_needs_the_persons_word(world):
+    t = connect(world)["access_token"]
+    facts = [{"question": "Desired pay", "value": "90,000 USD per year", "source": "told_claude"},
+             {"question": "Date available", "value": "January 2027", "source": "told_claude"}]
+    msg = refused(world, t, "save_profile_facts", {"facts": facts})
+    assert "Ask the person" in msg and "person_confirmed" in msg and "Nothing was saved" in msg
+    with config.user_context("alex"):
+        assert answers_mod.load_answers().get("salary_expectation") is None
+    from_resume = refused(world, t, "save_profile_facts", {"person_confirmed": True, "facts": [
+        {"question": "Are you legally authorized to work in the US?", "value": "Yes", "source": "resume"}]})
+    assert "never come from the resume" in from_resume
+    res = ok(world, t, "save_profile_facts", {"facts": facts, "person_confirmed": True})["results"]
+    assert [(r["saved_to"], r["status"]) for r in res] == [("salary_expectation", "saved"), ("start_date", "saved")]
+    with config.user_context("alex"):
+        bank = answers_mod.load_answers()
+        assert bank.get("start_date") == "January 2027" and bank.entry("start_date")["source"] == "told_claude"
+
+
+def test_save_profile_facts_other_questions_dedupe_and_job_specific_refused(world):
+    t = connect(world)["access_token"]
+    res = ok(world, t, "save_profile_facts", {"facts": [
+        {"question": "Highest level of education", "value": "BA Economics, Example University, 2019",
+         "source": "resume"},
+        {"question": "Do you hold a CPA license?", "value": "No", "source": "told_claude"},
+        {"question": "Why do you want to work at Example Co?", "value": "Because...", "source": "told_claude"},
+    ]})["results"]
+    assert res[0]["saved_to"] == "education_highest" and res[1]["saved_to"] == "other question"
+    assert res[2]["status"] == "not_saved" and "one employer" in res[2]["reason"]
+    again = ok(world, t, "save_profile_facts", {"facts": [
+        {"question": "do you hold a CPA license", "value": "No", "source": "told_claude"}]})["results"]
+    assert again[0]["status"] == "unchanged"
+    with config.user_context("alex"):
+        bank = answers_mod.load_answers()
+        assert len(bank.data["custom"]) == 1 and bank.entry("education_highest")["source"] == "resume"
+    assert "one employer" in refused(world, t, "set_answers", {"custom": [
+        {"question": "Why do you want to join us?", "value": "x"}]})
+    got = world.get("/api/answers", headers=access(ALEX)).json()
+    assert got["answers"]["education_highest"]["source_label"] == "From your resume"
+    assert next(iter(got["custom"].values()))["source_label"] == "You told Claude"
+    assert {s["id"] for s in got["sections"]} == {"contact", "education", "eligibility", "pay_start",
+                                                   "diversity", "other"}
+    assert {f["key"]: f["section"] for f in got["fields"]}["salary_expectation"] == "pay_start"
+
+
+def test_contact_answers_and_about_you_are_one_source(world):
+    t = connect(world)["access_token"]
+    ok(world, t, "save_profile_facts", {"facts": [
+        {"question": "City", "value": "Berkeley", "source": "told_claude"},
+        {"question": "Zip code", "value": "94704", "source": "told_claude"}]})
+    with config.user_context("alex") as data:
+        profile = json.loads((data / "profile.json").read_text())
+        assert profile["personal"]["city"] == "Berkeley" and profile["personal"]["postal_code"] == "94704"
+        assert "value" not in profile["application_answers"]["answers"]["city"]  # provenance only, no copy
+        assert answers_mod.load_answers().get("city") == "Berkeley"
+    got = world.get("/api/answers", headers=access(ALEX)).json()
+    assert got["answers"]["city"]["value"] == "Berkeley" and got["answers"]["city"]["source_label"] == "You told Claude"
+    res = world.put("/api/settings/profile", headers=access(ALEX), json={"personal": {"city": "Oakland"}})
+    assert res.status_code == 200, res.text
+    got = world.get("/api/answers", headers=access(ALEX)).json()
+    assert got["answers"]["city"] == {**got["answers"]["city"], "value": "Oakland", "source": "settings",
+                                      "source_label": "You entered"}
+    packet_contact = ok(world, t, "get_application_packet", {"job_id": add_job(
+        "alex", "https://boards.greenhouse.io/example/jobs/1001")})["contact"]
+    assert packet_contact["city"] == "Oakland" and packet_contact["postal_code"] == "94704"
+
+
+def test_recently_added_by_claude_can_be_undone(world):
+    save_answers("alex", {"salary_expectation": "100,000 USD"})
+    t = connect(world)["access_token"]
+    ok(world, t, "save_profile_facts", {"person_confirmed": True, "facts": [
+        {"question": "Desired pay", "value": "120,000 USD", "source": "told_claude"},
+        {"question": "Do you hold a CPA license?", "value": "No", "source": "told_claude"},
+        {"question": "Street address", "value": "1 Example Street", "source": "resume"}]})
+    recent = world.get("/api/answers", headers=access(ALEX)).json()["recent"]
+    by = {r.get("key") or r.get("question"): r for r in recent}
+    assert by["salary_expectation"]["previous_value"] == "100,000 USD" and by["salary_expectation"]["value"] == "120,000 USD"
+    assert by["Do you hold a CPA license?"]["previous_value"] is None and "address_line" in by
+    res = world.post("/api/answers/undo", headers=access(ALEX), json={"key": "salary_expectation"})
+    assert res.status_code == 200, res.text
+    assert res.json()["answers"]["salary_expectation"]["value"] == "100,000 USD"
+    assert res.json()["answers"]["salary_expectation"]["source"] == "cli"
+    res = world.post("/api/answers/undo", headers=access(ALEX), json={"question": "Do you hold a CPA license?"})
+    assert res.json()["custom"] == {}
+    res = world.post("/api/answers/undo", headers=access(ALEX), json={"key": "address_line"})
+    assert "address_line" not in res.json()["answers"]
+    with config.user_context("alex") as data:
+        assert "address" not in json.loads((data / "profile.json").read_text())["personal"]
+    assert {r.get("key") or r.get("question") for r in res.json()["recent"]} == set()
+    assert world.post("/api/answers/undo", headers=access(ALEX), json={"key": "address_line"}).status_code == 404
+    assert world.post("/api/answers/undo", headers=access(BLAKE), json={"key": "salary_expectation"}).status_code == 404
 
 
 @pytest.mark.anyio

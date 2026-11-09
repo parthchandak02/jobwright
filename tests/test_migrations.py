@@ -341,7 +341,7 @@ def test_v4_apply_evidence_tables(db_path):
     conn.execute("DROP TABLE apply_picks")
     conn.execute("UPDATE schema_meta SET value = '3' WHERE key = 'schema_version'")
     conn.commit()
-    assert run_migrations(conn) == [4, 5]
+    assert run_migrations(conn) == [4, 5, 6]
     assert "apply_picks" in _tables(conn)
     assert run_migrations(conn) == []
 
@@ -353,6 +353,18 @@ def test_v5_connector_claims_column(db_path):
     assert "client_id" in cols
     conn.execute("UPDATE schema_meta SET value = '4' WHERE key = 'schema_version'")
     conn.commit()
-    assert run_migrations(conn) == [5]
+    assert run_migrations(conn) == [5, 6]
     db_mod._migrate_v5_connector_claims(conn)  # idempotent
+    assert run_migrations(conn) == []
+
+
+def test_v6_pending_questions_columns(db_path):
+    """Migration 6 adds pending_inputs.meta_json / asked_by (questions from the person's Claude)."""
+    conn = init_db(db_path)
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(pending_inputs)").fetchall()}
+    assert {"meta_json", "asked_by"} <= cols
+    conn.execute("UPDATE schema_meta SET value = '5' WHERE key = 'schema_version'")
+    conn.commit()
+    assert run_migrations(conn) == [6]
+    db_mod._migrate_v6_pending_questions(conn)  # idempotent
     assert run_migrations(conn) == []

@@ -20,6 +20,7 @@ from fastapi.responses import FileResponse
 from starlette.routing import Route
 
 from jobwright.connector.oauth import router as connector_oauth_router
+from jobwright.connector.server import FilesPreflight as ConnectorFilesPreflight
 from jobwright.connector.server import connector_lifespan, files_router as connector_files_router, mcp_endpoint
 from jobwright.web.bootstrap import bootstrap_dashboard
 from jobwright.web.routers import (
@@ -63,6 +64,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.add_middleware(DashboardUserMiddleware)
+# Outermost: CORS preflights for the connector's file links come from employers' application pages.
+app.add_middleware(ConnectorFilesPreflight)
 
 app.include_router(system_router)
 app.include_router(admin_router)

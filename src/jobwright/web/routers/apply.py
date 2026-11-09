@@ -29,6 +29,11 @@ class CustomAnswerBody(BaseModel):
     value: str = ""
 
 
+class UndoBody(BaseModel):
+    key: Optional[str] = None
+    question: Optional[str] = None
+
+
 class ProvideBody(BaseModel):
     value: str = ""
 
@@ -62,6 +67,19 @@ def put_custom_answer(body: CustomAnswerBody, request: Request) -> dict:
     current_user_id(request)
     try:
         bank = answers_mod.set_custom_answer(body.question, body.value, source="settings")
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return bank.as_public_dict()
+
+
+@router.post("/answers/undo")
+def undo_answer(body: UndoBody, request: Request) -> dict:
+    """Undo a value (typically one the person's Claude added): the previous value comes back."""
+    current_user_id(request)
+    try:
+        bank = answers_mod.undo_answer(key=body.key or None, question=body.question or None)
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     return bank.as_public_dict()
