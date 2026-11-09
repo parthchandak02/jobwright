@@ -189,7 +189,7 @@ export function ApplicationDetails() {
       <SectionHeader
         id="application-details-title"
         title="Application details"
-        description="What application forms ask. Your Claude fills forms only from these and your resume; work eligibility, pay and diversity answers come only from here."
+        help="What application forms ask. Your Claude fills forms only from these and your resume; work eligibility, pay and diversity answers come only from here."
         actions={<SaveStatus state={autosave.state} savedAt={autosave.savedAt} onRetry={autosave.retry} />}
       />
       <ClaudeQuestions pending={pending} onAnswered={questionAnswered} />

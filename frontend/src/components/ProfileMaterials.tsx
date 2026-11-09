@@ -83,7 +83,7 @@ export function ProfileMaterials({ resume, examples, uploading, onAddCovers, onD
     <div>
       <SectionHeader
         title="Resume"
-        description="We score every job against your resume and tailor it for strong matches."
+        help="We score every job against your resume and tailor it for strong matches."
       />
       {hasResume ? (
         <ul className="overflow-hidden rounded-lg border bg-surface">
@@ -126,7 +126,7 @@ export function ProfileMaterials({ resume, examples, uploading, onAddCovers, onD
 
       <SectionHeader
         title="Cover letter examples"
-        description="We follow the tone and structure of these when we write your cover letters. Two or three is plenty."
+        help="We follow the tone and structure of these when we write your cover letters. Two or three is plenty."
         actions={
           examples.length ? (
             <Button type="button" size="sm" variant="secondary" disabled={uploading} onClick={onAddCovers}>

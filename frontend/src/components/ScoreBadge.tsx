@@ -20,6 +20,7 @@ export function ScoreBadge({ score, className, label = 'short', userModified }: 
       title={`${score != null ? `${score}/10 · ` : ''}${SCORE_LABEL[level]}${userModified ? ' (set by you)' : ''}`}
       className={cn(
         'inline-flex h-6 shrink-0 items-center gap-1 rounded-full border px-2 text-micro whitespace-nowrap tabular-nums',
+        label === 'none' && 'min-w-7 justify-center px-1.5 text-caption',
         tone ? 'tone-tint' : 'border-border bg-surface-muted text-muted-foreground',
         className,
       )}
@@ -33,7 +34,10 @@ export function ScoreBadge({ score, className, label = 'short', userModified }: 
         </>
       ) : score == null ? (
         <span aria-label="Not scored">–</span>
-      ) : null}
+      ) : (
+        // Number only on cards and rows: the colour carries the level (key in the board's ⓘ).
+        <span className="sr-only">{SCORE_SHORT[level]}</span>
+      )}
       {userModified ? <Pencil className="size-3 opacity-80" aria-label="Set by you" /> : null}
     </span>
   )

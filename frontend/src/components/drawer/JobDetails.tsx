@@ -1,13 +1,14 @@
+import type { ReactNode } from 'react'
 import { DetailGrid, DetailRow } from '@/components/DetailRow'
 import { DrawerSection } from '@/components/DrawerSection'
-import { workModelLabel } from '@/components/WorkModelBadge'
+import { placeLine } from '@/components/JobSummary'
 import type { JobCard } from '@/lib/api'
+import { compactPay } from '@/lib/pay'
 import { fmtDay } from './format'
 
 const SPONSORSHIP: Record<string, string> = {
   required: 'Employer would need to sponsor',
   not_required: 'US citizens or green card holders only',
-  not_found: 'Not mentioned',
 }
 
 function foundText(job: JobCard): string {
@@ -16,18 +17,26 @@ function foundText(job: JobCard): string {
   return [day, job.site ? `on ${job.site}` : null].filter(Boolean).join(' ')
 }
 
-export function JobDetails({ job }: { job: JobCard }) {
+/** Facts about the job. Rows with nothing useful to say are left out. */
+export function JobDetails({ job, stage }: { job: JobCard; stage?: ReactNode }) {
+  const pay = compactPay(job.salary)
+  const sponsorship = SPONSORSHIP[job.sponsorship_status]
   return (
     <DrawerSection title="Details">
       <DetailGrid className="space-y-2">
-        <DetailRow label="Location" value={job.location || 'Not stated'} />
-        <DetailRow label="Work model" value={workModelLabel(job.work_model) || 'Not stated'} />
-        <DetailRow label="Pay" value={job.salary || 'Not stated'} />
-        <DetailRow label="Sponsorship" value={SPONSORSHIP[job.sponsorship_status] || SPONSORSHIP.not_found} />
+        {stage ? (
+          <div className="grid grid-cols-[6.5rem_1fr] items-center gap-x-3 text-body">
+            <dt className="text-muted-foreground">Stage</dt>
+            <dd className="min-w-0">{stage}</dd>
+          </div>
+        ) : null}
+        <DetailRow label="Where" value={placeLine(job)} />
+        {pay ? <DetailRow label="Pay" value={pay} /> : null}
+        {sponsorship ? <DetailRow label="Visa" value={sponsorship} /> : null}
         <DetailRow label="Found" value={foundText(job)} />
         {job.applied_at ? <DetailRow label="Applied" value={fmtDay(job.applied_at)} /> : null}
         {job.whatsapp_notified_at ? <DetailRow label="On WhatsApp" value={`Sent ${fmtDay(job.whatsapp_notified_at)}`} /> : null}
-        {job.is_dead ? <DetailRow label="Posting" value="No longer accepting applications" /> : null}
+        {job.is_dead ? <DetailRow label="Posting" value="Closed" /> : null}
       </DetailGrid>
     </DrawerSection>
   )

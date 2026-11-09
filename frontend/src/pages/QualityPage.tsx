@@ -190,7 +190,7 @@ function AdminTools({
       <SectionHeader
         id="admin-tools"
         title="Admin tools"
-        description="Only admins see this. Both actions make AI calls for this profile."
+        help="Only admins see this. Both actions make AI calls for this profile."
       />
       <div className="space-y-6">
         <div className="flex flex-wrap gap-2">
@@ -346,7 +346,7 @@ export function QualityPage() {
   return (
     <Page
       title="How well we match you"
-      description="Your ratings teach jobwright what fits you."
+      help="Your ratings teach jobwright what fits you."
       width="wide"
       bodyClassName="space-y-section"
       actions={
@@ -388,7 +388,7 @@ export function QualityPage() {
             <SectionHeader
               id="ratings-heading"
               title="Your ratings"
-              description="Tap the thumbs up or “Not for me” on any job. Each rating is kept and used as an example when similar jobs are scored."
+              help="Tap the thumbs up or “Not for me” on any job. Each rating is kept and used as an example when similar jobs are scored."
             />
             {needMore > 0 ? (
               <div className="surface space-y-3 rounded-lg px-4 py-4 md:px-5">
@@ -410,7 +410,7 @@ export function QualityPage() {
             <SectionHeader
               id="accuracy-heading"
               title="Match accuracy"
-              description="How often the jobs we send are ones you'd want, based on your ratings."
+              help="How often the jobs we send are ones you'd want, based on your ratings."
             />
             {ev && m && m.predicted_pos > 0 ? (
               <div className="space-y-5">

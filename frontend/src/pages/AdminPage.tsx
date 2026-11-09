@@ -290,7 +290,7 @@ export function AdminPage({ onActiveProfileChanged }: Props = {}) {
   return (
     <Page
       title="Admin"
-      description="People, their daily lists, and system health."
+      help="People, their daily lists, and system health."
       width="wide"
       bodyClassName="space-y-section"
       actions={
@@ -340,7 +340,7 @@ export function AdminPage({ onActiveProfileChanged }: Props = {}) {
               ) : null}
             </>
           }
-          description="Select a person to change their login, chat and daily list. Changes save as you go."
+          help="Select a person to change their login, chat and daily list. Changes save as you go."
         />
         <div className="surface overflow-hidden rounded-lg">
           {desktop && users?.length ? <PeopleHeader /> : null}

@@ -221,17 +221,12 @@ export function JobDrawer({ jobKey, onClose, onChanged, onOpenJob, preview }: Pr
           <DesktopActions actions={actions} />
         </DrawerSection>
       )
-      const stage = (
-        <DrawerSection title="Stage">
-          <StagePicker
-            stage={job.funnel_stage}
-            disabled={busy}
-            onMove={requestMove}
-            className={docked ? 'flex-wrap' : undefined}
-          />
-        </DrawerSection>
+      const details = (
+        <JobDetails
+          job={job}
+          stage={<StagePicker stage={job.funnel_stage} disabled={busy} onMove={requestMove} />}
+        />
       )
-      const details = <JobDetails job={job} />
       const descriptionSection = (first?: boolean) =>
         description ? (
           <DrawerSection first={first} title="Job description">
@@ -273,7 +268,6 @@ export function JobDrawer({ jobKey, onClose, onChanged, onOpenJob, preview }: Pr
           <div className="job-drawer-scroll border-r border-border">
             <div className="min-w-0 px-6 pb-10">
               {summary}
-              {stage}
               {details}
               {people}
               {extras}
@@ -290,7 +284,6 @@ export function JobDrawer({ jobKey, onClose, onChanged, onOpenJob, preview }: Pr
         <div className="job-drawer-scroll">
           <div className="mx-auto min-w-0 max-w-[46rem] px-4 pb-10 md:px-6">
             {summary}
-            {stage}
             {details}
             {descriptionSection()}
             {materialsSections()}

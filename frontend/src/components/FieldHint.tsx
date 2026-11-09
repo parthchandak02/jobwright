@@ -1,9 +1,9 @@
-import { HelpCircle } from 'lucide-react'
+import { Info } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
 
-/** "?" button that opens a longer explanation on click or tap. Prefer a visible FormField `hint` for short help. */
+/** ⓘ button that opens a longer explanation on click or tap. Prefer a visible FormField `hint` for short help. */
 export function FieldHint({
   text,
   label = 'More about this',
@@ -24,7 +24,7 @@ export function FieldHint({
           )}
           aria-label={label}
         >
-          <HelpCircle className="size-3.5" aria-hidden />
+          <Info className="size-4" aria-hidden />
         </button>
       </PopoverTrigger>
       <PopoverContent side="top" align="start" className="w-auto max-w-xs px-3 py-2 text-caption text-muted-foreground">

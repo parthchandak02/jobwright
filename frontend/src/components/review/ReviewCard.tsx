@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { JobCard } from '@/lib/api'
 import { swipeAnswer, type ReviewAnswer } from '@/lib/reviewQueue'
+import { compactPay } from '@/lib/pay'
 
 type Props = {
   job: JobCard
@@ -101,7 +102,7 @@ function useSwipe(onSwipe: (answer: ReviewAnswer) => void) {
 export function ReviewCard({ job, detail, onSwipe, onOpenFull, children }: Props) {
   const { ref, dx, dragging, leaving, threshold, handlers } = useSwipe(onSwipe)
   const href = listingHref(job)
-  const salary = job.salary?.trim()
+  const salary = compactPay(job.salary)
   const shown = detail ?? job
   const description = (detail?.full_description || '').trim()
 

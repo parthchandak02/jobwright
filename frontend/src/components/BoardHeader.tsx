@@ -1,14 +1,37 @@
 import { useState } from 'react'
 import { Layers, Plus, Search } from 'lucide-react'
 import { Link } from 'react-router-dom'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { APP_SHELL_HEADER } from '@/components/BrandLogo'
 import { AutoSearchControls } from '@/components/AutoSearchControls'
+import { FieldHint } from '@/components/FieldHint'
+import { ScoreBadge } from '@/components/ScoreBadge'
 import { ViewModeTabs, type ViewMode } from '@/components/ViewModeTabs'
 import { WhatsAppIcon } from '@/components/WhatsAppIcon'
 import { cn } from '@/lib/utils'
+
+/** The key for the board's signals: score colours. One meaning per colour, everywhere. */
+function BoardKey() {
+  const rows: [number, string][] = [
+    [8, '7 to 10: strong match'],
+    [6, '5 or 6: partial match'],
+    [3, 'Under 5: weak match'],
+  ]
+  return (
+    <div className="space-y-2 py-0.5">
+      <p className="font-medium text-foreground">Fit score</p>
+      <ul className="space-y-1.5">
+        {rows.map(([n, text]) => (
+          <li key={n} className="flex items-center gap-2">
+            <ScoreBadge score={n} label="none" /> {text}
+          </li>
+        ))}
+      </ul>
+      <p>Tap a score to correct it. Your corrections teach the scorer.</p>
+    </div>
+  )
+}
 
 function BoardSearch({
   value,
@@ -105,6 +128,7 @@ export function BoardHeader({
           {title}
           {count != null ? <span className="ml-2 font-normal text-muted-foreground tabular-nums">{count}</span> : null}
         </h1>
+        <FieldHint text={<BoardKey />} label="What the colours mean" className="-ml-1 max-md:-ml-0.5" />
         <div className="max-md:hidden">
           <ViewModeTabs value={view} onChange={onViewChange} />
         </div>
@@ -124,13 +148,14 @@ export function BoardHeader({
 
           {/* Phones reach Review from the tab bar (it carries the count), so only desktop shows it here. */}
           {reviewCount > 0 ? (
-            <Button asChild size="sm" variant="secondary" className="max-md:hidden" title="Go through Backlog jobs one at a time">
-              <Link to="/review" aria-label={`Review ${reviewCount} Backlog jobs`}>
-                <Layers /> <span className="board-head-label">Review</span> <Badge variant="secondary">{reviewCount}</Badge>
+            <Button asChild size="sm" variant="primary" className="max-md:hidden" title="Go through new jobs one at a time">
+              <Link to="/review" aria-label={`Review ${reviewCount} new jobs`}>
+                <Layers /> <span className="board-head-label">Review</span>
+                <span className="rounded-full bg-primary-foreground/20 px-1.5 text-micro tabular-nums">{reviewCount}</span>
               </Link>
             </Button>
           ) : null}
-          <AutoSearchControls onRunDone={onRunDone} />
+          <AutoSearchControls onRunDone={onRunDone} iconOnly />
 
           <Button
             type="button"
@@ -149,15 +174,19 @@ export function BoardHeader({
           </Button>
           <Button
             type="button"
-            size="sm"
-            variant="secondary"
-            className="max-md:hidden"
+            size="icon-sm"
+            variant="ghost"
+            className="relative max-md:hidden"
             onClick={onOpenWhatsApp}
             title="Daily WhatsApp list"
+            aria-label={`Daily WhatsApp list${pendingNotify ? `, ${pendingNotify} waiting` : ''}`}
           >
             <WhatsAppIcon className="text-whatsapp" />
-            <span className="board-head-label">WhatsApp</span>
-            {pendingNotify > 0 ? <Badge variant="secondary">{pendingNotify}</Badge> : null}
+            {pendingNotify > 0 ? (
+              <span className="absolute -top-1 -right-1 min-w-4 rounded-full bg-primary px-1 text-center text-micro leading-4 text-primary-foreground tabular-nums">
+                {pendingNotify}
+              </span>
+            ) : null}
           </Button>
 
           <Button
@@ -170,9 +199,15 @@ export function BoardHeader({
           >
             <Plus />
           </Button>
-          <Button size="sm" variant="secondary" className="max-md:hidden" onClick={onAddJob} title="Add a job by its link">
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            className="max-md:hidden"
+            onClick={onAddJob}
+            title="Add a job by its link"
+            aria-label="Add a job"
+          >
             <Plus />
-            <span className="board-head-label">Add job</span>
           </Button>
         </div>
       </div>

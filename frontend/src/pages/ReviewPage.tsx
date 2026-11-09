@@ -486,11 +486,8 @@ export function ReviewPage({ board, profile, failed, onChanged }: Props) {
         <div className="mt-4">
           <ReviewCard key={job.job_id} job={job} detail={details[job.job_id]} onSwipe={answer} onOpenFull={openFull}>
             <section aria-labelledby="review-reasons" className="mt-5">
-              <p id="review-reasons" className="text-label text-foreground">
-                Not for me because… <span className="font-normal text-muted-foreground">optional</span>
-              </p>
-              <p className="mb-3 text-caption text-muted-foreground">
-                Pick any before you answer<span className="max-md:hidden"> (keys 1–9)</span>. Similar jobs score lower next time.
+              <p id="review-reasons" className="mb-3 text-label text-foreground">
+                Why not? <span className="font-normal text-muted-foreground">(optional)</span>
               </p>
               <ReasonChips options={notAFit} selected={reasons} onChange={setReasons} />
             </section>
@@ -505,7 +502,17 @@ export function ReviewPage({ board, profile, failed, onChanged }: Props) {
       <main className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
         <PageHeader
           title="Quick review"
-          description="One Backlog job at a time, best match first. Every answer teaches the scorer."
+          help={
+            <>
+              One new job at a time, best match first. Each answer teaches the scorer, and reasons you
+              pick make similar jobs score lower. On a phone, swipe right if interested, left if not.
+              <span className="max-md:hidden">
+                {' '}
+                Keys: <Kbd>←</Kbd> not for me, <Kbd>↓</Kbd> skip, <Kbd>→</Kbd> interested, <Kbd>U</Kbd> undo,{' '}
+                <Kbd>O</Kbd> posting, <Kbd>F</Kbd> full job, <Kbd>1</Kbd> to <Kbd>9</Kbd> reasons.
+              </span>
+            </>
+          }
           actions={filterControl}
           mobileActions={undoButton}
         />
@@ -553,11 +560,6 @@ export function ReviewPage({ board, profile, failed, onChanged }: Props) {
                     </Button>
                   </div>
                 </div>
-                <p className="mt-2 text-center text-caption text-muted-foreground max-md:hidden">
-                  <Kbd>←</Kbd> or <Kbd>N</Kbd> not for me · <Kbd>↓</Kbd> or <Kbd>S</Kbd> skip · <Kbd>→</Kbd> or <Kbd>I</Kbd> interested ·{' '}
-                  <Kbd>U</Kbd> undo · <Kbd>O</Kbd> posting · <Kbd>F</Kbd> full job
-                </p>
-                <p className="mt-2 text-center text-caption text-muted-foreground md:hidden">Swipe right if interested, left if not</p>
               </div>
             </PageColumn>
           </div>

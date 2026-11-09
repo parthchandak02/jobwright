@@ -93,7 +93,7 @@ export function ProfilePage({ profile, onProfileChanged }: Props) {
     <Tabs value={tab} onValueChange={setTab} className="flex min-h-0 min-w-0 flex-1 flex-col gap-0">
       <Page
         title="Settings"
-        description="What we search for, how we judge fit, and your daily list."
+        help="What we search for, how we judge fit, and your daily list."
         actions={
           canSwitch ? (
             <div className="flex items-center gap-2 text-caption text-muted-foreground">

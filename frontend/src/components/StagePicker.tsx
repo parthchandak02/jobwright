@@ -1,4 +1,13 @@
 import type { CSSProperties } from 'react'
+import { ChevronDown } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { FUNNEL_STAGES, laneTone, STAGE_LABELS } from '@/lib/api'
 import { cn } from '@/lib/utils'
 
@@ -9,36 +18,44 @@ type Props = {
   className?: string
 }
 
+function Dot({ stage }: { stage: string }) {
+  return (
+    <span
+      aria-hidden
+      style={{ '--lane': laneTone(stage) } as CSSProperties}
+      className="size-2 shrink-0 rounded-full bg-(--lane)"
+    />
+  )
+}
+
+/** The job's stage as one compact menu: the current stage with its lane dot; the others one tap away. */
 export function StagePicker({ stage, disabled, onMove, className }: Props) {
   return (
-    <div
-      className={cn('scrollbar-none -mx-1 flex gap-1.5 overflow-x-auto px-1 py-0.5', className)}
-      role="radiogroup"
-      aria-label="Stage"
-    >
-      {FUNNEL_STAGES.map((s) => {
-        const active = s === stage
-        return (
-          <button
-            key={s}
-            type="button"
-            role="radio"
-            aria-checked={active}
-            disabled={disabled || active}
-            onClick={() => onMove(s)}
-            style={{ '--lane': laneTone(s), '--tone': laneTone(s) } as CSSProperties}
-            className={cn(
-              'inline-flex h-11 shrink-0 items-center gap-2 rounded-full border px-3.5 text-label whitespace-nowrap transition-colors duration-(--dur-1) ease-out disabled:cursor-default md:h-8 md:px-3',
-              active
-                ? 'tone-tint'
-                : 'border-border bg-surface text-muted-foreground hover:bg-surface-muted hover:text-foreground disabled:opacity-60',
-            )}
-          >
-            <span aria-hidden className="size-2 rounded-full bg-(--lane)" />
-            {STAGE_LABELS[s] || s}
-          </button>
-        )
-      })}
-    </div>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          type="button"
+          size="sm"
+          variant="secondary"
+          disabled={disabled}
+          className={cn('gap-2 pr-2', className)}
+          aria-label={`Stage: ${STAGE_LABELS[stage] || stage}. Change stage`}
+        >
+          <Dot stage={stage} />
+          {STAGE_LABELS[stage] || stage}
+          <ChevronDown className="text-muted-foreground" aria-hidden />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start">
+        <DropdownMenuRadioGroup value={stage} onValueChange={(s) => s !== stage && onMove(s)}>
+          {FUNNEL_STAGES.map((s) => (
+            <DropdownMenuRadioItem key={s} value={s} className="gap-2">
+              <Dot stage={s} />
+              {STAGE_LABELS[s] || s}
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }

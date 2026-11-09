@@ -198,13 +198,13 @@
   --jobs-table-head-gap: 0.125rem;
   --jobs-table-min-width: 68rem;
   --jobs-table-col-select: 2.75rem;
-  --jobs-table-col-score: 8rem;
+  --jobs-table-col-score: 7.5rem;
   --jobs-table-col-company: 11rem;
   --jobs-table-col-location: 10rem;
   --jobs-table-col-stage: 8.5rem;
   --jobs-table-col-work: 6.75rem;
   --jobs-table-col-source: 7rem;
-  --jobs-table-col-materials: 9.5rem;
+  --jobs-table-col-materials: 8rem;
   --linkedin: #0a66c2;
   --linkedin-muted: color-mix(in srgb, #0a66c2 10%, transparent);
   --linkedin-subtle: color-mix(in srgb, #0a66c2 18%, transparent);

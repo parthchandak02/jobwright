@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { FieldHint } from '@/components/FieldHint'
 import { cn } from '@/lib/utils'
 
 export type PageWidth = 'form' | 'wide' | 'full'
@@ -28,8 +29,10 @@ export function PageColumn({
 
 type PageHeaderProps = {
   title: ReactNode
-  /** One line under the title. */
+  /** One line under the title. Prefer `help`: explanations belong behind the ⓘ. */
   description?: ReactNode
+  /** How the page works, behind an ⓘ next to the title (phone and desktop). */
+  help?: ReactNode
   /** Right-aligned actions on desktop (max 2). Also shown in the phone bar unless `mobileActions` is set. */
   actions?: ReactNode
   /** Phone bar actions (at most one or two icon buttons). Pass `null` to hide actions on phone. */
@@ -47,6 +50,7 @@ type PageHeaderProps = {
 export function PageHeader({
   title,
   description,
+  help,
   actions,
   mobileActions,
   width = 'form',
@@ -54,21 +58,29 @@ export function PageHeader({
   className,
 }: PageHeaderProps) {
   const phoneActions = mobileActions === undefined ? actions : mobileActions
+  const info = help ? <FieldHint text={help} label="How this page works" /> : null
   return (
     <>
       <div
         data-slot="page-bar"
         className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-1 border-b bg-background px-2 md:hidden"
       >
-        <h1 className="min-w-0 flex-1 truncate px-2 text-heading text-foreground">{title}</h1>
+        <div className="flex min-w-0 flex-1 items-center gap-1 px-2">
+          <h1 className="min-w-0 truncate text-heading text-foreground">{title}</h1>
+          {info}
+        </div>
         {phoneActions ? <div className="flex shrink-0 items-center gap-1">{phoneActions}</div> : null}
       </div>
-      <header data-slot="page-header" className={cn('pt-page-top', className)}>
+      {/* On a phone the bar above carries the title, so with no description this block is only the children. */}
+      <header data-slot="page-header" className={cn(description ? 'pt-page-top' : 'pt-3 md:pt-page-top', className)}>
         <PageColumn width={width}>
           {description || actions ? (
             <div className="flex items-start gap-4">
               <div className="min-w-0 flex-1">
-                <h1 className="hidden text-title text-foreground md:block">{title}</h1>
+                <div className="hidden items-center gap-1.5 md:flex">
+                  <h1 className="text-title text-foreground">{title}</h1>
+                  {info}
+                </div>
                 {description ? (
                   <p className="text-caption text-muted-foreground md:mt-1.5 md:text-body">{description}</p>
                 ) : null}
@@ -76,9 +88,12 @@ export function PageHeader({
               {actions ? <div className="hidden shrink-0 items-center gap-2 md:flex">{actions}</div> : null}
             </div>
           ) : (
-            <h1 className="hidden text-title text-foreground md:block">{title}</h1>
+            <div className="hidden items-center gap-1.5 md:flex">
+              <h1 className="text-title text-foreground">{title}</h1>
+              {info}
+            </div>
           )}
-          {children ? <div className="mt-6">{children}</div> : null}
+          {children ? <div className={description ? 'mt-6' : 'md:mt-6'}>{children}</div> : null}
         </PageColumn>
       </header>
     </>

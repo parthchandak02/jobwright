@@ -70,7 +70,7 @@ export function ApplicationsTab() {
     <div>
       <SectionHeader
         title="Automatic applications"
-        description="jobwright applies for you only with your application details and your resume."
+        help="jobwright applies for you only with your application details and your resume."
       />
       <p className="flex flex-wrap items-center gap-2 text-body text-muted-foreground">
         <Badge variant={line.tone}>{line.tone === 'success' ? 'On' : 'Off'}</Badge>
@@ -79,7 +79,7 @@ export function ApplicationsTab() {
 
       <SectionHeader
         title="Application answers"
-        description="Your answers for forms (contact and address, education, work eligibility, pay and start date, diversity, other questions) are in About you, Application details."
+        help="Your answers for forms (contact and address, education, work eligibility, pay and start date, diversity, other questions) are in About you, Application details."
       />
       <div className="flex flex-wrap items-center gap-3">
         <Button type="button" variant="secondary" onClick={() => navigate('/profile?tab=about#application-details')}>

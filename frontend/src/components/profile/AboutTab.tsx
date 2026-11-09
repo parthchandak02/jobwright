@@ -88,7 +88,7 @@ export function AboutTab({ profile, onSaved, onOpenRules }: Props) {
     <div>
       <SectionHeader
         title="About you"
-        description="Used on your applications and when we write your materials. Changes save automatically."
+        help="Used on your applications and when we write your materials. Changes save automatically."
         actions={<SaveStatus state={autosave.state} savedAt={autosave.savedAt} onRetry={autosave.retry} />}
       />
       <div className="space-y-field">
@@ -99,7 +99,7 @@ export function AboutTab({ profile, onSaved, onOpenRules }: Props) {
       <FormField
         label="Roles you’re aiming for"
         htmlFor="about-target-role"
-        hint={
+        help={
           <>
             A sentence or two. We use it on applications and to pick which contacts to suggest. How jobs are scored is set
             in{' '}

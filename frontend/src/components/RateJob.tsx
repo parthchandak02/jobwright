@@ -73,7 +73,7 @@ export function RateJob({ job, onRated, className }: Props) {
   return (
     <div className={cn('space-y-3', className)}>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-        <span className="text-label text-foreground">Is this a good match?</span>
+        <span className="text-label text-foreground">Good match?</span>
         <div className="flex gap-2">
           <Button
             type="button"

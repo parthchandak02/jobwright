@@ -100,7 +100,7 @@ export function DailyListTab({ profile, onSaved }: Props) {
     <div>
       <SectionHeader
         title="Daily list"
-        description="Once a day we search, score, and send you one WhatsApp message with your best new matches."
+        help="Once a day we search, score, and send you one WhatsApp message with your best new matches."
         actions={<SaveStatus state={autosave.state} savedAt={autosave.savedAt} onRetry={autosave.retry} />}
       />
       <ul className="mb-field divide-y divide-border rounded-lg border bg-surface">
@@ -109,7 +109,7 @@ export function DailyListTab({ profile, onSaved }: Props) {
             <span className="block text-label text-foreground">Keep looking for new jobs</span>
             <span className="mt-0.5 block text-caption text-muted-foreground">
               {s.searching
-                ? 'Turn off to pause the daily search while you work through your list. Your jobs, ratings and reminders stay.'
+                ? 'Pause while you work through your list. Nothing is lost.'
                 : 'Paused. We won’t look for new jobs until you turn this back on. Follow-up reminders still arrive.'}
             </span>
           </label>
@@ -196,7 +196,7 @@ export function DailyListTab({ profile, onSaved }: Props) {
           <label htmlFor="daily-weekly" className="min-w-0 flex-1 cursor-pointer">
             <span className="block text-label text-foreground">Weekly summary</span>
             <span className="mt-0.5 block text-caption text-muted-foreground">
-              A short recap every Sunday evening, with the jobs still worth a look.
+              Sunday evening recap.
             </span>
           </label>
           <Switch id="daily-weekly" checked={s.weekly} onCheckedChange={(weekly) => patch({ weekly })} />
@@ -205,7 +205,7 @@ export function DailyListTab({ profile, onSaved }: Props) {
           <label htmlFor="daily-followup" className="min-w-0 flex-1 cursor-pointer">
             <span className="block text-label text-foreground">Follow-up reminders</span>
             <span className="mt-0.5 block text-caption text-muted-foreground">
-              We remind you to follow up when a company hasn’t replied after this many days.
+              When there’s no reply after this many days.
             </span>
           </label>
           <div className="relative shrink-0">

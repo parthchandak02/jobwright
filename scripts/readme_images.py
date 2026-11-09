@@ -506,6 +506,23 @@ def api_response(method: str, path: str, state: dict, body: dict | None = None):
                 "changes": ["Board: clean cards, colour only for fit", "Settings shows the version and what's new"]}
     if path == "/api/me":
         return me(state["admin"], state.get("setup_complete", True))
+    if path == "/api/answers":
+        from jobwright.apply.answers import AnswerBank
+
+        now = "2026-09-27T18:00:00-07:00"
+        bank = {"answers": {
+            "work_authorization_us": {"value": "Yes", "source": "settings", "updated_at": now},
+            "requires_sponsorship": {"value": "No", "source": "settings", "updated_at": now},
+            "highest_degree": {"value": "Bachelor's degree", "source": "resume", "updated_at": now},
+            "years_experience": {"value": "8", "source": "resume", "updated_at": now},
+            "willing_to_relocate": {"value": "No", "source": "told_claude", "updated_at": now},
+        }, "custom": []}
+        profile = {"personal": {"full_name": "Alex Rivera", "email": "alex@example.com", "city": "San Francisco"}}
+        return AnswerBank(bank, profile=profile).as_public_dict()
+    if path == "/api/apply/pending":
+        return {"pending": []}
+    if path == "/api/apply/picks":
+        return {"picks": []}
     if path == "/api/board":
         cols = {s: [j for j in JOBS if j["funnel_stage"] == s] for s in STAGES}
         return {"stages": STAGES, "columns": cols, "total": len(JOBS), "closed_total": 14}

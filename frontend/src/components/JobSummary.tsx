@@ -1,4 +1,5 @@
 import { Banknote, ExternalLink, MapPin } from 'lucide-react'
+import { compactPay } from '@/lib/pay'
 import type { ButtonHTMLAttributes, MouseEvent, PointerEvent, Ref } from 'react'
 import { JobKeyChips } from '@/components/JobMetaBadges'
 import { ScoreEditor } from '@/components/ScoreEditor'
@@ -18,6 +19,10 @@ type Props = {
   onLinkClick?: (e: MouseEvent | PointerEvent) => void
   /** Render the title as this button (the card's one "open" control), else plain text. */
   titleButton?: TitleButtonProps
+  /** Show the posting link icon (the table and lists). Board cards leave it to the job panel. */
+  showLink?: boolean
+  /** Board lane the card sits in; materials chips only show where they're the next step. */
+  stage?: string
 }
 
 export function listingHref(job: JobCard): string | null {
@@ -33,9 +38,9 @@ export function placeLine(job: Pick<JobCard, 'location' | 'work_model'>): string
   return loc || work || 'Location not stated'
 }
 
-export function JobSummary({ job, onScoreSaved, onLinkClick, titleButton }: Props) {
-  const href = listingHref(job)
-  const salary = job.salary?.trim()
+export function JobSummary({ job, onScoreSaved, onLinkClick, titleButton, showLink = true, stage }: Props) {
+  const href = showLink ? listingHref(job) : null
+  const salary = compactPay(job.salary)
 
   return (
     <div className="flex flex-col gap-2">
@@ -52,25 +57,25 @@ export function JobSummary({ job, onScoreSaved, onLinkClick, titleButton }: Prop
           )}
           <p className="mt-0.5 truncate text-caption text-muted-foreground">{job.company || job.site || 'Unknown company'}</p>
         </div>
-        <ScoreEditor job={job} onSaved={onScoreSaved} className="-mt-px" />
+        <ScoreEditor job={job} onSaved={onScoreSaved} className="-mt-px" label="none" />
       </div>
 
       <div className="flex items-end gap-2">
         <div className="flex min-w-0 flex-1 flex-col gap-2">
           <div className="space-y-0.5 text-caption text-muted-foreground">
             <p className="flex min-w-0 items-center gap-1.5">
-              <MapPin className="size-3.5 shrink-0" aria-hidden />
+              <MapPin className="size-3.5 shrink-0" aria-label="Where" />
               <span className="truncate">{placeLine(job)}</span>
             </p>
             {salary ? (
-              <p className="flex min-w-0 items-center gap-1.5">
-                <Banknote className="size-3.5 shrink-0" aria-hidden />
-                <span className="truncate">{salary}</span>
+              <p className="flex min-w-0 items-center gap-1.5" title={job.salary || undefined}>
+                <Banknote className="size-3.5 shrink-0" aria-label="Pay" />
+                <span className="truncate tabular-nums">{salary}</span>
               </p>
             ) : null}
           </div>
           <div className="flex min-w-0 flex-wrap gap-1.5 empty:hidden">
-            <JobKeyChips job={job} />
+            <JobKeyChips job={job} materials={stage == null || stage === 'prepare'} />
           </div>
         </div>
         {href ? (

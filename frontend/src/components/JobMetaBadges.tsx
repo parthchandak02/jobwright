@@ -98,9 +98,22 @@ function renderChip(c: JobChip) {
   )
 }
 
-export function JobKeyChips({ job, max = 2, kinds }: { job: JobCard; max?: number; kinds?: JobChip['kind'][] }) {
+export function JobKeyChips({
+  job,
+  max = 2,
+  kinds,
+  materials = true,
+}: {
+  job: JobCard
+  max?: number
+  kinds?: JobChip['kind'][]
+  /** Show "Resume + letter" chips. Off where they aren't the next step (Applied and later lanes). */
+  materials?: boolean
+}) {
   const labels = useDealbreakerLabels()
-  const chips = jobChips(job, labels).filter((c) => !kinds || kinds.includes(c.kind))
+  const chips = jobChips(job, labels).filter(
+    (c) => (!kinds || kinds.includes(c.kind)) && (materials || c.kind !== 'materials'),
+  )
   if (!chips.length) return null
   return <>{chips.slice(0, max).map(renderChip)}</>
 }

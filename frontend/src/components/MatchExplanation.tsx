@@ -1,3 +1,4 @@
+import { useLayoutEffect, useRef, useState } from 'react'
 import type { LucideIcon } from 'lucide-react'
 import { AlertTriangle, Ban, CircleCheck, MapPinOff, TrendingDown, TrendingUp } from 'lucide-react'
 import { prettyId } from '@/components/JobMetaBadges'
@@ -19,6 +20,39 @@ const POINT_TONE: Record<Point['tone'], string> = {
   bad: 'text-destructive',
   note: 'text-warning',
   ok: 'text-success',
+}
+
+/** The model's reason, folded to three lines with More / Less only when it doesn't fit. */
+function Reasoning({ text }: { text: string }) {
+  const ref = useRef<HTMLParagraphElement>(null)
+  const [open, setOpen] = useState(false)
+  const [overflows, setOverflows] = useState(false)
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const check = () => setOverflows(open || el.scrollHeight > el.clientHeight + 1)
+    check()
+    const ro = new ResizeObserver(check)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [text, open])
+  return (
+    <div>
+      <p ref={ref} className={cn('text-body text-foreground', !open && 'line-clamp-3')}>
+        {text}
+      </p>
+      {overflows ? (
+        <button
+          type="button"
+          className="touch-target relative mt-1 text-caption font-medium text-primary hover:underline"
+          aria-expanded={open}
+          onClick={() => setOpen(!open)}
+        >
+          {open ? 'Less' : 'More'}
+        </button>
+      ) : null}
+    </div>
+  )
 }
 
 export function MatchExplanation({ job }: { job: JobCard }) {
@@ -59,7 +93,7 @@ export function MatchExplanation({ job }: { job: JobCard }) {
         ) : null}
       </div>
 
-      {reasoning ? <p className="text-body text-foreground">{reasoning}</p> : null}
+      {reasoning ? <Reasoning key={job.url} text={reasoning} /> : null}
 
       {points.length ? (
         <ul className="space-y-1.5">

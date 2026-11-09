@@ -41,9 +41,10 @@ function CopyButton({ text, label, className, compact }: { text: string; label: 
   const [copied, setCopied] = useState(false)
   return (
     <Button
-      variant="secondary"
-      size="sm"
+      variant={compact ? 'ghost' : 'secondary'}
+      size={compact ? 'icon-sm' : 'sm'}
       aria-label={label}
+      title={compact ? (copied ? 'Copied' : 'Copy') : undefined}
       className={cn('shrink-0', className)}
       onClick={() => {
         void navigator.clipboard?.writeText(text)
@@ -52,8 +53,8 @@ function CopyButton({ text, label, className, compact }: { text: string; label: 
       }}
     >
       {copied ? <Check /> : <Copy />}
-      {/* compact: icon only on phones, so short prompts keep the row's width */}
-      <span aria-live="polite" className={compact ? 'max-sm:sr-only' : undefined}>
+      {/* compact: icon only (rows of prompts), the label stays for screen readers */}
+      <span aria-live="polite" className={compact ? 'sr-only' : undefined}>
         {copied ? 'Copied' : 'Copy'}
       </span>
     </Button>
@@ -324,7 +325,7 @@ export function ClaudeTab() {
       body: (
         <>
           <p>
-            Job forms ask things like whether you can work here. Claude only uses the answers you save, and never guesses.
+            Claude only uses answers you save. It never guesses.
           </p>
           <div className="flex flex-wrap items-center gap-3">
             {missing ? (
@@ -438,7 +439,7 @@ export function ClaudeTab() {
         title="Use jobwright from your Claude"
         description={
           current
-            ? 'Four steps, about five minutes. Then your own Claude can find, tailor and apply for you every day.'
+            ? 'About five minutes.'
             : picksAt && applyAt && data.apply_via === 'connector'
               ? `You’re all set. Picks arrive at ${picksAt}, and your Claude applies after ${applyAt}.`
               : 'You’re all set.'
@@ -467,12 +468,12 @@ export function ClaudeTab() {
         ))}
       </ol>
 
-      <SectionHeader title="Things to ask" description="Copy one, then paste it into a new chat in Claude." />
+      <SectionHeader title="Things to ask" help="Copy one, then paste it into a new chat in Claude." />
       <ul className="surface divide-y divide-border rounded-lg border">
         {THINGS_TO_ASK.map((p) => (
           <li key={p} className="flex items-center gap-3 py-2.5 pr-2.5 pl-4">
             <span className="min-w-0 flex-1 text-body text-foreground">{p}</span>
-            <CopyButton text={p} label={`Copy: ${p}`} compact className="max-sm:w-11 max-sm:px-0" />
+            <CopyButton text={p} label={`Copy: ${p}`} compact />
           </li>
         ))}
       </ul>
@@ -480,7 +481,7 @@ export function ClaudeTab() {
       <SectionHeader
         as="h3"
         title="Connected Claude apps"
-        description="Each one can act only on this profile. Disconnecting ends its access right away."
+        help="Each one can act only on this profile. Disconnecting ends its access right away."
       />
       {data.clients.length ? (
         <ul className="surface divide-y divide-border rounded-lg border">
@@ -502,7 +503,7 @@ export function ClaudeTab() {
         <p className="text-body text-muted-foreground">No Claude is connected yet.</p>
       )}
 
-      <SectionHeader as="h3" title="Who sends applications" description={via?.hint ?? ''} />
+      <SectionHeader as="h3" title="Who sends applications" help={via?.hint || undefined} />
       <Segmented
         aria-label="Who sends applications"
         value={data.apply_via}
@@ -518,8 +519,7 @@ export function ClaudeTab() {
         <p className="mt-3 text-caption text-muted-foreground">
           {data.apply_enabled
             ? 'Claude may press Submit on jobs that meet your minimum score. Everything else it fills, then you submit.'
-            : 'Claude fills each form and stops on the review page; you check it and press Submit yourself.'}{' '}
-          Your daily limit, saved answers and the “skip” replies to your picks still apply.
+            : 'Claude fills each form and stops on the review page; you check it and press Submit yourself.'}
         </p>
       ) : null}
 

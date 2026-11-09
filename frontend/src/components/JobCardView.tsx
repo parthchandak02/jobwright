@@ -76,9 +76,19 @@ export const JobCardView = memo(function JobCardView({
       {...(opens && !openButton ? { [JOB_KEY_ATTR]: job.job_id } : {})}
     >
       {showStage && stage ? (
-        <p className="lane-label mb-1.5 text-micro font-semibold tracking-wide uppercase">{STAGE_LABELS[stage] || stage}</p>
+        <p className="mb-1.5 flex items-center gap-1.5 text-micro font-medium text-muted-foreground">
+          <span aria-hidden className="size-1.5 rounded-full bg-(--lane)" />
+          {STAGE_LABELS[stage] || stage}
+        </p>
       ) : null}
-      <JobSummary job={job} onScoreSaved={scoreSaved} onLinkClick={stopCardOpen} titleButton={titleButton} />
+      <JobSummary
+        job={job}
+        onScoreSaved={scoreSaved}
+        onLinkClick={stopCardOpen}
+        titleButton={titleButton}
+        showLink={false}
+        stage={showStage ? undefined : stage}
+      />
     </div>
   )
 })

@@ -1,4 +1,5 @@
 import { memo } from 'react'
+import { FileText, Mail } from 'lucide-react'
 import { JobKeyChips } from '@/components/JobMetaBadges'
 import { placeLine } from '@/components/JobSummary'
 import { ScoreEditor } from '@/components/ScoreEditor'
@@ -61,7 +62,7 @@ export const JobsTableRow = memo(function JobsTableRow({ job, onOpen, onScoreSav
         </td>
       ) : null}
       <td onClick={(e) => e.stopPropagation()}>
-        <ScoreEditor job={job} onSaved={onScoreSaved} />
+        <ScoreEditor job={job} onSaved={onScoreSaved} label="none" />
       </td>
       <td>
         <button
@@ -97,8 +98,21 @@ export const JobsTableRow = memo(function JobsTableRow({ job, onOpen, onScoreSav
         <span className="block truncate capitalize">{job.source === 'manual' ? 'Added by you' : job.source}</span>
       </td>
       <td>
-        <div className="flex min-w-0 flex-wrap gap-1">
-          <JobKeyChips job={job} kinds={['materials']} />
+        {/* Icons, not words: a resume and a letter, each there or not (the column filter has the words). */}
+        <div className="flex items-center gap-2 text-muted-foreground">
+          {job.has_resume ? (
+            <span title="Tailored resume ready">
+              <FileText className="size-4" aria-hidden />
+              <span className="sr-only">Resume ready</span>
+            </span>
+          ) : null}
+          {job.has_cover ? (
+            <span title="Cover letter ready">
+              <Mail className="size-4" aria-hidden />
+              <span className="sr-only">Letter ready</span>
+            </span>
+          ) : null}
+          {!job.has_resume && !job.has_cover ? <span className="sr-only">None yet</span> : null}
         </div>
       </td>
     </tr>

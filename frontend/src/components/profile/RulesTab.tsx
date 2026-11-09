@@ -86,7 +86,7 @@ export function RulesTab() {
     <div>
       <SectionHeader
         title="How we judge fit"
-        description="Every new job is compared with these rules and the jobs you’ve rated."
+        help="Every new job is compared with these rules and the jobs you’ve rated."
         actions={<span className="hidden md:inline-flex">{suggestButton}</span>}
       />
       <div className="-mt-1 mb-6 md:hidden">{suggestButton}</div>

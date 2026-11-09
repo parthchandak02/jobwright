@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { MoreHorizontal, Plus, Trash2, X } from 'lucide-react'
 import { ChipInput } from '@/components/ChipInput'
+import { FieldHint } from '@/components/FieldHint'
 import { FormField } from '@/components/FormField'
 import { Button } from '@/components/ui/button'
 import {
@@ -39,8 +40,10 @@ function Group({ title, description, compact, children }: { title: string; descr
   if (compact) return <div className="space-y-field">{children}</div>
   return (
     <section className="mt-section first:mt-8">
-      <h3 className="text-subheading text-foreground">{title}</h3>
-      {description ? <p className="mt-1 text-caption text-muted-foreground">{description}</p> : null}
+      <div className="flex items-center gap-1.5">
+        <h3 className="text-subheading text-foreground">{title}</h3>
+        {description ? <FieldHint text={description} /> : null}
+      </div>
       <div className="mt-4 space-y-field">{children}</div>
     </section>
   )
@@ -63,7 +66,7 @@ export function CriteriaEditor({ value, onChange, compact }: Props) {
           />
         </FormField>
 
-        <FormField label="Good-fit roles" hint="Kinds of roles that should score high.">
+        <FormField label="Good-fit roles" help="Kinds of roles that should score high.">
           <ChipInput
             values={value.must_haves}
             onChange={(must_haves) => patch({ must_haves })}
@@ -72,7 +75,7 @@ export function CriteriaEditor({ value, onChange, compact }: Props) {
           />
         </FormField>
 
-        <FormField label="Seniority" hint="The level that fits your experience.">
+        <FormField label="Seniority" help="The level that fits your experience.">
           <Textarea
             value={value.seniority}
             rows={1}
@@ -82,7 +85,7 @@ export function CriteriaEditor({ value, onChange, compact }: Props) {
         </FormField>
 
         {!compact ? (
-          <FormField label="Pluses" optional hint="Things that make a job better, but aren’t required.">
+          <FormField label="Pluses" optional help="Things that make a job better, but aren’t required.">
             <PhraseList
               values={value.nice_to_haves}
               onChange={(nice_to_haves) => patch({ nice_to_haves })}
@@ -145,7 +148,7 @@ export function CriteriaEditor({ value, onChange, compact }: Props) {
               />
             </div>
           </FormField>
-          <FormField label="Send me jobs scored" htmlFor="criteria-threshold" hint="Your daily list only includes jobs at or above this score.">
+          <FormField label="Send me jobs scored" htmlFor="criteria-threshold" help="Your daily list only includes jobs at or above this score.">
             <Select value={String(threshold)} onValueChange={(v) => patch({ notify_threshold: Number(v) })}>
               <SelectTrigger id="criteria-threshold" className="w-full">
                 <SelectValue />

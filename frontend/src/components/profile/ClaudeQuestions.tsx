@@ -91,7 +91,7 @@ export function ClaudeQuestions({
       <SectionHeader
         id="claude-questions"
         title="Questions from your Claude"
-        description="Only you can answer these. Each answer is saved with your application answers, so the next form that asks fills itself."
+        help="Only you can answer these. Each answer is saved with your application answers, so the next form that asks fills itself."
       />
       <div className="space-y-4">
         {groups.map((g) => (

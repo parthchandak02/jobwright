@@ -82,23 +82,23 @@ export function SearchTab({ searches, onChange }: Props) {
     <div>
       <SectionHeader
         title="What to search for"
-        description="We look for these on job boards every morning. Changes save automatically."
+        help="We look for these on job boards every morning. Changes save automatically."
         actions={<SaveStatus state={autosave.state} savedAt={autosave.savedAt} onRetry={autosave.retry} />}
       />
       <div className="space-y-field">
         <FormField
           label="Job titles"
-          hint="Daily titles are searched every morning. Weekly titles get a deeper search once a week."
+          help="Daily titles are searched every morning. Weekly titles get a deeper search once a week."
         >
           <QueryChipInput queries={searches.queries} onChange={(queries) => patch({ queries })} />
         </FormField>
-        <FormField label="Where" hint="Cities to search, and whether remote jobs should be US-only or from any country.">
+        <FormField label="Where" help="Cities to search, and whether remote jobs should be US-only or from any country.">
           <LocationChipInput locations={searches.locations} onChange={(locations) => patch({ locations })} />
         </FormField>
       </div>
 
       <SectionHeader title="Skip these jobs" description="Jobs that match are dropped before we score them." />
-      <FormField label="Titles containing" hint="Any job whose title includes one of these words or phrases is skipped.">
+      <FormField label="Titles containing" help="Any job whose title includes one of these words or phrases is skipped.">
         <ChipInput
           values={searches.exclude_titles || []}
           onChange={(exclude_titles) => patch({ exclude_titles })}

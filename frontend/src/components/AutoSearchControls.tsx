@@ -8,9 +8,11 @@ import { useAutoSearch, RUN_STAGE_LABELS } from '@/lib/useAutoSearch'
 type Props = {
   onRunDone: () => void
   labelled?: boolean
+  /** Desktop shows a plain icon until a run starts, then the progress button (board header). */
+  iconOnly?: boolean
 }
 
-export function AutoSearchControls({ onRunDone, labelled }: Props) {
+export function AutoSearchControls({ onRunDone, labelled, iconOnly }: Props) {
   const [open, setOpen] = useState(false)
   const run = useAutoSearch(onRunDone)
 
@@ -26,13 +28,15 @@ export function AutoSearchControls({ onRunDone, labelled }: Props) {
           type="button"
           size="icon-sm"
           variant="ghost"
-          className="md:hidden"
+          className={iconOnly && !run.active ? undefined : 'md:hidden'}
           onClick={onClick}
+          title={run.active ? undefined : 'Search for new jobs now'}
           aria-label={run.active ? 'Auto Search running. View progress' : 'Run Auto Search'}
         >
           {run.active ? <Loader2 className="animate-spin" /> : <Sparkles />}
         </Button>
       )}
+      {iconOnly && !run.active ? null : (
       <RunProgressButton
         run={run}
         idleLabel="Auto Search"
@@ -43,6 +47,7 @@ export function AutoSearchControls({ onRunDone, labelled }: Props) {
         onClick={onClick}
         className={labelled ? undefined : 'max-md:hidden'}
       />
+      )}
       <AutoSearchDialog open={open} onClose={() => setOpen(false)} run={run} />
     </>
   )
