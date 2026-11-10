@@ -23,7 +23,8 @@ from ruamel.yaml.scalarstring import LiteralScalarString
 from jobwright.users import UserRecord, list_users
 
 MARKER = "# managed by jobwright (hermes_channels)"
-SKILLS = ["pp-job-apply", "hermes-cron-jobs", "graphify", "cursor-agent"]
+# No code-editing skills in groups other people can write to (prompt-injection risk); code fixes happen in Parth's own sessions.
+SKILLS = ["pp-job-apply", "hermes-cron-jobs", "graphify"]
 DEFAULT_CONFIG = "~/.hermes/config.yaml"
 PARTS = ("override", "prompt", "binding", "allow")
 
@@ -96,7 +97,7 @@ def render_system_prompt(user: UserRecord) -> str:
         f"When {name} says a job is or is not a fit, ask them to rate it or tap \"Not for me\" in the dashboard.",
         "Scoring model is configured in the repo .env; never choose or switch models here, and never use gpt-oss.",
         "Never send test messages to this group. Brief problems alert the operator (ops_target), not this chat.",
-        "Code/bugs: reproduce with doctor/status/logs; fix via cursor-agent; never commit users/ or .env.",
+        "Code/bugs: reproduce with doctor/status/logs and report to the operator (ops_target); never change code, run code agents or commit from this chat.",
         "Docs: docs/agents/whatsapp-group-jobwright.md, hermes-operator-guide.md, whatsapp-routing.md",
     ]
     return "\n".join(lines) + "\n"
