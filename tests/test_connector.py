@@ -1179,3 +1179,18 @@ def test_handoff_tells_the_person_on_whatsapp_and_flags_the_card(world, monkeypa
     board = world.get("/api/board", headers=access(ALEX)).json()
     card = next(j for col in board["columns"].values() for j in col if j["job_id"] == jid)
     assert card["needs_you"].startswith("Tick I Accept")
+
+
+def test_refresh_retry_after_a_lost_reply(world):
+    cid = register(world)
+    first = exchange(world, cid, get_code(world, cid)).json()
+    renew = lambda rt: world.post("/oauth/token", data={"grant_type": "refresh_token", "client_id": cid, "refresh_token": rt})
+    lost = renew(first["refresh_token"]).json()  # Claude never saw this reply
+    retry = renew(first["refresh_token"])
+    assert retry.status_code == 200
+    pair = retry.json()
+    assert rpc(world, pair["access_token"], "tools/list").status_code == 200
+    assert rpc(world, lost["access_token"], "tools/list").status_code == 401
+    # Once the new pair is in use, the old token is a replay again and ends the connection.
+    assert renew(first["refresh_token"]).json()["error"] == "invalid_grant"
+    assert rpc(world, pair["access_token"], "tools/list").status_code == 401

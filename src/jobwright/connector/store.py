@@ -32,6 +32,9 @@ DOWNLOAD_SECONDS = 15 * 60
 DOWNLOAD_MAX_USES = 5
 # A rotated refresh token is kept (hash only) this long so a replay is noticed.
 ROTATED_KEEP_SECONDS = REFRESH_SECONDS
+# A rotated refresh token sent again while nothing issued from it was used means Claude never got
+# the reply (a timeout or an outage): within this window it gets a fresh pair instead of a revoke.
+RETRY_SECONDS = 7 * 86_400
 
 SCOPES = ("jobs:read", "jobs:write", "apply")
 SCOPE_LABELS = {
@@ -120,6 +123,11 @@ def connect() -> Iterator[sqlite3.Connection]:
                     cols = {r[1] for r in conn.execute("PRAGMA table_info(downloads)").fetchall()}
                     if "uses" not in cols:
                         conn.execute("ALTER TABLE downloads ADD COLUMN uses INTEGER NOT NULL DEFAULT 0")
+                    cols = {r[1] for r in conn.execute("PRAGMA table_info(tokens)").fetchall()}
+                    if "parent" not in cols:
+                        conn.execute("ALTER TABLE tokens ADD COLUMN parent TEXT")
+                    if "used_at" not in cols:
+                        conn.execute("ALTER TABLE tokens ADD COLUMN used_at INTEGER")
                     conn.commit()
                 finally:
                     conn.close()
@@ -264,17 +272,17 @@ def create_grant(*, client_id: str, user_id: str, email: str, scope: str) -> str
     return grant_id
 
 
-def issue_tokens(grant_id: str) -> dict:
+def issue_tokens(grant_id: str, parent: str | None = None) -> dict:
     access = new_secret("jwa_")
     refresh = new_secret("jwr_")
     t = now()
     with connect() as conn:
         grant = conn.execute("SELECT scope FROM grants WHERE id = ?", (grant_id,)).fetchone()
         conn.execute("BEGIN IMMEDIATE")
-        conn.execute("INSERT INTO tokens (hash, kind, grant_id, created_at, expires_at) VALUES (?, 'access', ?, ?, ?)",
-                     (digest(access), grant_id, t, t + ACCESS_SECONDS))
-        conn.execute("INSERT INTO tokens (hash, kind, grant_id, created_at, expires_at) VALUES (?, 'refresh', ?, ?, ?)",
-                     (digest(refresh), grant_id, t, t + REFRESH_SECONDS))
+        conn.execute("INSERT INTO tokens (hash, kind, grant_id, created_at, expires_at, parent) VALUES (?, 'access', ?, ?, ?, ?)",
+                     (digest(access), grant_id, t, t + ACCESS_SECONDS, parent))
+        conn.execute("INSERT INTO tokens (hash, kind, grant_id, created_at, expires_at, parent) VALUES (?, 'refresh', ?, ?, ?, ?)",
+                     (digest(refresh), grant_id, t, t + REFRESH_SECONDS, parent))
         conn.execute("DELETE FROM tokens WHERE expires_at < ?", (t,))
         conn.execute("COMMIT")
     return {"access_token": access, "token_type": "Bearer", "expires_in": ACCESS_SECONDS,
@@ -300,7 +308,8 @@ def revoke_grant(grant_id: str, *, user_id: str | None = None, reason: str = "re
 
 
 def refresh_tokens(refresh_token: str, client_id: str | None) -> dict:
-    """Rotate a refresh token. A replayed (already rotated) one revokes its grant."""
+    """Rotate a refresh token. A replayed (already rotated) one revokes its grant, unless the pair it
+    was swapped for was never used: then the reply was lost, and that pair is replaced instead."""
     key = digest(refresh_token)
     t = now()
     with connect() as conn:
@@ -312,6 +321,13 @@ def refresh_tokens(refresh_token: str, client_id: str | None) -> dict:
             conn.execute("COMMIT")
             raise InvalidGrant("unknown or expired refresh token")
         if row["rotated_at"] is not None:
+            unused = conn.execute(
+                "SELECT 1 FROM tokens WHERE parent = ? AND (used_at IS NOT NULL OR rotated_at IS NOT NULL)",
+                (key,)).fetchone() is None
+            if unused and t - row["rotated_at"] <= RETRY_SECONDS:
+                conn.execute("DELETE FROM tokens WHERE parent = ?", (key,))
+                conn.execute("COMMIT")
+                return issue_tokens(row["grant_id"], parent=key)
             # Someone kept an old refresh token: assume it leaked, end the whole connection.
             _revoke_locked(conn, row["grant_id"], "refresh token was reused")
             conn.execute("COMMIT")
@@ -319,7 +335,7 @@ def refresh_tokens(refresh_token: str, client_id: str | None) -> dict:
         conn.execute("UPDATE tokens SET rotated_at = ?, expires_at = ? WHERE hash = ?",
                      (t, t + ROTATED_KEEP_SECONDS, key))
         conn.execute("COMMIT")
-    return issue_tokens(row["grant_id"])
+    return issue_tokens(row["grant_id"], parent=key)
 
 
 def revoke_token(token: str) -> None:
@@ -346,6 +362,7 @@ def verify_access(token: str) -> Principal | None:
             (digest(token), t)).fetchone()
         if row is None:
             return None
+        conn.execute("UPDATE tokens SET used_at = ? WHERE hash = ? AND used_at IS NULL", (t, digest(token)))
         if not row["last_used_at"] or t - row["last_used_at"] > _TOUCH_SECONDS:
             conn.execute("UPDATE grants SET last_used_at = ? WHERE id = ?", (t, row["id"]))
             conn.execute("UPDATE clients SET last_used_at = ? WHERE id = ?", (t, row["client_id"]))
