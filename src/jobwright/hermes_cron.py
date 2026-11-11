@@ -6,6 +6,8 @@ import os
 import re
 import subprocess
 
+from jobwright.hermes_broker import brokered, remote as _broker_remote, call as _broker_call
+
 _JOB_ID_RE = re.compile(r"^\s+([a-f0-9]{8,})\s+\[")
 _NAME_RE = re.compile(r"Name:\s+(\S.*?)\s*$")
 
@@ -85,6 +87,7 @@ def sync_brief_cron(user_id: str, schedule: str, deliver: str) -> dict:
     }
 
 
+@brokered("pause_legacy_crons")
 def pause_legacy_crons(user_id: str, listing: str | None = None) -> list[str]:
     """Pause/delete retired digest/send/check crons for ``user_id`` when present."""
     if listing is None:
@@ -112,6 +115,13 @@ def hermes_dry_run() -> bool:
 
 
 def _run_hermes(args: list[str]) -> dict:
+    if _broker_remote():
+        if args != ["cron", "list"]:
+            return {"error": "only `hermes cron list` is allowed over the Hermes broker"}
+        try:
+            return {"stdout": _broker_call("cron_list")}
+        except Exception as exc:  # noqa: BLE001
+            return {"error": str(exc)}
     if hermes_dry_run() and args[:2] != ["cron", "list"]:
         import logging
 
@@ -186,11 +196,13 @@ def write_brief_wrapper(user_id: str) -> str:
     return name
 
 
+@brokered("brief_cron_installed")
 def brief_cron_installed(user_id: str) -> bool:
     """Cheap check: the per-user wrapper exists (written whenever the brief cron is ensured)."""
     return (_hermes_scripts_dir() / f"wrap_{brief_cron_name(user_id)}.sh").exists()
 
 
+@brokered("ensure_brief_cron")
 def ensure_brief_cron(user_id: str, schedule: str) -> dict:
     """Create or update ``jobwright-brief-<user>`` (no-agent, silent delivery).
 
@@ -217,6 +229,7 @@ def ensure_brief_cron(user_id: str, schedule: str) -> dict:
     return {"ok": True, "name": name, "cron_id": cron_id, "created": cron_id is not None, "error": None}
 
 
+@brokered("remove_brief_cron")
 def remove_brief_cron(user_id: str) -> dict:
     name = brief_cron_name(user_id)
     listing = _run_hermes(["cron", "list"])
@@ -262,6 +275,7 @@ def _logged_run(py, command: str, log_name: str) -> str:
     )
 
 
+@brokered("ensure_backup_cron")
 def ensure_backup_cron(schedule: str = "30 2 * * *", dest: str = "") -> dict:
     """Nightly `jobwright ops backup` (alerts the operator on failure)."""
     from jobwright.users import USERS_ROOT
@@ -282,6 +296,7 @@ def ensure_backup_cron(schedule: str = "30 2 * * *", dest: str = "") -> dict:
     return _ensure_script_cron(BACKUP_CRON_NAME, "jobwright_backup.sh", body, schedule)
 
 
+@brokered("ensure_watchdog_cron")
 def ensure_watchdog_cron(schedule: str = "30 * * * *") -> dict:
     """Hourly missed-run watchdog (so briefs at any hour are checked); alerts go out once per day via hermes send."""
     script_name = "jobwright_ops_watchdog.sh"
@@ -321,6 +336,7 @@ WEEKLY_SUMMARY_CRON_NAME = "jobwright-weekly-summary"
 WEEKLY_EVAL_CRON_NAME = "jobwright-weekly-eval"
 
 
+@brokered("ensure_weekly_eval_cron")
 def ensure_weekly_eval_cron(schedule: str = "0 17 * * 0") -> dict:
     """Sunday 17:00 accuracy check for every profile with enough ratings (before the 18:00 summary)."""
     from jobwright.users import USERS_ROOT
@@ -340,6 +356,7 @@ def ensure_weekly_eval_cron(schedule: str = "0 17 * * 0") -> dict:
     return _ensure_script_cron(WEEKLY_EVAL_CRON_NAME, "jobwright_weekly_eval.sh", body, schedule)
 
 
+@brokered("ensure_weekly_summary_cron")
 def ensure_weekly_summary_cron(schedule: str = "0 18 * * 0") -> dict:
     """Sunday 18:00 `jobwright summary` for every profile (each may opt out in users.yaml)."""
     from jobwright.users import USERS_ROOT
@@ -420,6 +437,7 @@ def _next_cron_run(expr: str, now) -> object | None:
     return None
 
 
+@brokered("apply_pick_schedule")
 def apply_pick_schedule(user_id: str, veto_minutes: int, now=None) -> dict:
     """When this profile's daily picks are posted, from the Hermes wrapper script and its cron entry.
 

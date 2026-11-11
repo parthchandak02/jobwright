@@ -22,6 +22,8 @@ from ruamel.yaml.scalarstring import LiteralScalarString
 
 from jobwright.users import UserRecord, list_users
 
+from jobwright.hermes_broker import brokered
+
 MARKER = "# managed by jobwright (hermes_channels)"
 # No code-editing skills in groups other people can write to (prompt-injection risk); code fixes happen in Parth's own sessions.
 SKILLS = ["pp-job-apply", "hermes-cron-jobs", "graphify"]
@@ -216,6 +218,7 @@ def _prune(wa: CommentedMap, jid: str) -> None:
                 del seq[i]
 
 
+@brokered("channels_plan")
 def plan(config_path: str | Path | None = None, prune: bool = False) -> Plan:
     path = Path(config_path).expanduser() if config_path else default_config_path()
     old_text = path.read_text(encoding="utf-8")
@@ -282,6 +285,7 @@ def _atomic_write(path: Path, text: str) -> None:
         raise
 
 
+@brokered("channels_apply")
 def apply(config_path: str | Path | None = None, prune: bool = False) -> dict:
     from jobwright.hermes_cron import hermes_dry_run
 

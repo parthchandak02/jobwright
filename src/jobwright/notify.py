@@ -48,6 +48,8 @@ from jobwright.followups import format_followups
 from jobwright.users import get_brief_top_n, get_human_gate, get_user, is_search_enabled
 from jobwright.whatsapp import bold, italic
 
+from jobwright.hermes_broker import brokered
+
 
 def _notify_threshold() -> int:
     """Per-user notify threshold from match_criteria (default 7)."""
@@ -375,6 +377,7 @@ def release_uncertain(conn: sqlite3.Connection | None = None) -> int:
     return n
 
 
+@brokered("send")
 def send_via_hermes(message: str, target: str) -> None:
     """Deliver a message to a WhatsApp target via the hermes CLI (bounded)."""
     from jobwright.hermes_cron import hermes_dry_run

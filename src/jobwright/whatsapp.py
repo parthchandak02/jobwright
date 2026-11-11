@@ -21,6 +21,8 @@ from pathlib import Path
 
 import httpx
 
+from jobwright.hermes_broker import brokered
+
 log = logging.getLogger(__name__)
 
 BRIDGE_URL = os.environ.get("JOBWRIGHT_WHATSAPP_BRIDGE", "http://127.0.0.1:3000")
@@ -70,6 +72,7 @@ def _hermes_targets() -> list[dict]:
     return targets
 
 
+@brokered("hermes_targets")
 def _load_hermes_targets() -> list[dict]:
     try:
         proc = subprocess.run(
@@ -86,6 +89,7 @@ def _load_hermes_targets() -> list[dict]:
     return list((data.get("platforms") or {}).get("whatsapp") or [])
 
 
+@brokered("group_names")
 def _cached_group_names() -> dict[str, str]:
     names: dict[str, str] = {}
     for path in (_HERMES_HOME / "whatsapp" / "all_groups.json",):
@@ -98,6 +102,7 @@ def _cached_group_names() -> dict[str, str]:
     return names
 
 
+@brokered("bridge_status")
 def bridge_status() -> str:
     try:
         return str(httpx.get(f"{BRIDGE_URL}/health", timeout=3).json().get("status") or "unknown")
@@ -123,6 +128,7 @@ def _known_name(jid: str) -> str:
     return hit[1] if hit and _time.monotonic() - hit[0] < _NAME_TTL else ""
 
 
+@brokered("bridge_chat")
 def _bridge_chat(jid: str) -> dict | None:
     try:
         resp = httpx.get(f"{BRIDGE_URL}/chat/{jid}", timeout=4)
