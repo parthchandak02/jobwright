@@ -51,6 +51,9 @@ apply), or fix a setting. Every screen should make its one job obvious.
 
 ## Lessons (newest first)
 
+- 2026-11-12: ⌘F / Ctrl+F opens a global search (jobs incl. closed, pages, settings tabs) instead of the
+  browser's find; pressing it again hands over to the browser. Single-letter matches are not highlighted
+  (they marked half of every row).
 - 2026-11-09: Lane headers must stay visible while a lane scrolls (Parth). A sticky header only sticks to
   its nearest scroll container, and the board row's own `overflow-x-auto` swallowed it. On desktop the
   page (`main`) now scrolls both ways and the headers are `sticky` with a background.

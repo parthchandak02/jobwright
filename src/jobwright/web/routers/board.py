@@ -246,6 +246,95 @@ def get_board() -> dict:
     }
 
 
+# Global search (Cmd/Ctrl+F): every job, closed ones included, across the text people remember.
+# Weight = where a word was found; a job must contain every word somewhere.
+_SEARCH_FIELDS = (("title", 8), ("company", 6), ("location", 2), ("notes", 2), ("close_reason", 1))
+_SEARCH_LONG = ("full_description", "description")
+SEARCH_LIMIT = 30
+
+
+def _snippet(text: str, term: str, width: int = 60) -> str:
+    """A short window of ``text`` around the first ``term`` (single spaces, ellipses at cut ends)."""
+    flat = " ".join(text.split())
+    i = flat.lower().find(term)
+    if i < 0:
+        return ""
+    start = max(0, i - width)
+    end = min(len(flat), i + len(term) + width)
+    return ("…" if start else "") + flat[start:end].strip() + ("…" if end < len(flat) else "")
+
+
+def _like(term: str) -> str:
+    return "%" + term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+
+
+@router.get("/search")
+def search_jobs(q: str = "", limit: int = SEARCH_LIMIT) -> dict:
+    """Jobs matching every word of ``q`` in title, company, place, notes or description."""
+    terms = [t for t in q.lower().split() if t][:8]
+    if not terms:
+        return {"query": q, "results": [], "total": 0}
+    limit = max(1, min(limit, 100))
+    fields = [f for f, _ in _SEARCH_FIELDS] + list(_SEARCH_LONG)
+    any_field = " OR ".join(f"LOWER(COALESCE({f}, '')) LIKE ? ESCAPE '\\'" for f in fields)
+    where = " AND ".join(f"({any_field})" for _ in terms)
+    params = [_like(t) for t in terms for _ in fields]
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT url, job_id, title, company, location, notes, close_reason, full_description, description, "
+        "funnel_stage, outcome, fit_score, user_fit_score, board_updated_at, discovered_at "
+        f"FROM jobs WHERE {where}",
+        params,
+    ).fetchall()
+    hits = []
+    for row in rows:
+        d = dict(row)
+        weight = 0.0
+        snippet = ""
+        for term in terms:
+            best = 0.0
+            for field, w in _SEARCH_FIELDS:
+                value = (d.get(field) or "").lower()
+                if term in value:
+                    # A word that starts the field or a word in it counts more than a fragment.
+                    bonus = 1.5 if value.startswith(term) or f" {term}" in value else 1.0
+                    best = max(best, w * bonus)
+            if best == 0.0:
+                best = 0.5
+                if not snippet:
+                    long_text = d.get("full_description") or d.get("description") or ""
+                    snippet = _snippet(long_text, term)
+            if not snippet and best <= 2 and term in (d.get("notes") or "").lower():
+                snippet = _snippet(d["notes"], term)
+            weight += best
+        stage = d.get("funnel_stage") or "backlog"
+        hits.append(
+            {
+                "job_id": d.get("job_id") or job_id_for_url(d["url"]),
+                "url": d["url"],
+                "title": d.get("title"),
+                "company": d.get("company"),
+                "location": d.get("location"),
+                "funnel_stage": stage,
+                "outcome": d.get("outcome"),
+                "fit_score": _effective_fit_score(d),
+                "snippet": snippet or None,
+                "_rank": (
+                    -weight,
+                    stage == "closed",
+                    -(_effective_fit_score(d) or 0),
+                ),
+                "_touched": d.get("board_updated_at") or d.get("discovered_at") or "",
+            }
+        )
+    # Newest activity first among equals: sort by time, then (stably) by rank.
+    hits.sort(key=lambda h: h["_touched"], reverse=True)
+    hits.sort(key=lambda h: h["_rank"])
+    for h in hits:
+        del h["_rank"], h["_touched"]
+    return {"query": q, "results": hits[:limit], "total": len(hits)}
+
+
 class ReorderBody(BaseModel):
     stage: str
     job_ids: list[str]

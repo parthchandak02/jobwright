@@ -315,3 +315,33 @@ def test_dismiss_with_reason_records_label_and_undo_applied(api_client):
     assert card["close_reason"] == "Too senior, Wrong location" and card["user_fit_score"] == 2
     labels = api_client.get(f"/api/jobs/{card['job_id']}/labels").json()["labels"]
     assert labels[0]["source"] == "dismiss" and labels[0]["reasons"] == ["Too senior", "Wrong location"]
+
+
+def test_search_finds_jobs_by_any_field_and_ranks_title_first(api_client) -> None:
+    from jobwright.database import get_connection
+
+    insert_manual_job("https://example.com/s1", title="Data Analyst", company="Acme", funnel_stage="backlog")
+    insert_manual_job("https://example.com/s2", title="Designer", company="Data Corp", funnel_stage="closed")
+    insert_manual_job("https://example.com/s3", title="Engineer", company="Zed", funnel_stage="prepare")
+    conn = get_connection()
+    conn.execute(
+        "UPDATE jobs SET full_description = ? WHERE url = ?",
+        ("We build tools. You will work with data pipelines every day.", "https://example.com/s3"),
+    )
+    conn.commit()
+
+    body = api_client.get("/api/search", params={"q": "data"}).json()
+    urls = [r["url"] for r in body["results"]]
+    assert urls[0] == "https://example.com/s1"  # title beats company beats description
+    assert set(urls) == {"https://example.com/s1", "https://example.com/s2", "https://example.com/s3"}
+    s3 = next(r for r in body["results"] if r["url"] == "https://example.com/s3")
+    assert "data pipelines" in s3["snippet"]
+    assert len(s3["job_id"]) == 12
+
+    # Every word must match somewhere.
+    both = api_client.get("/api/search", params={"q": "data acme"}).json()
+    assert [r["url"] for r in both["results"]] == ["https://example.com/s1"]
+
+    # LIKE wildcards are literal.
+    assert api_client.get("/api/search", params={"q": "%"}).json()["results"] == []
+    assert api_client.get("/api/search", params={"q": "  "}).json()["results"] == []

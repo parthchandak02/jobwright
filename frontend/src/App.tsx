@@ -16,6 +16,7 @@ import { DailyBriefDialog } from '@/components/DailyBriefDialog'
 import { DismissDialog, type DismissResult } from '@/components/DismissDialog'
 import { EmptyState } from '@/components/EmptyState'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
+import { GlobalSearch } from '@/components/GlobalSearch'
 import { JobDrawer } from '@/components/JobDrawer'
 import { JobsTable } from '@/components/JobsTable'
 import { BoardSkeleton, KanbanBoard } from '@/components/KanbanBoard'
@@ -503,6 +504,7 @@ export default function App() {
           onSaved={() => void refresh({ notify: true })}
         />
 
+        <GlobalSearch />
         {showTabBar ? <PhoneTabBar badges={{ '/review': reviewCount(board) }} /> : null}
       </div>
     </>
