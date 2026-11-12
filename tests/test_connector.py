@@ -1184,7 +1184,9 @@ def test_handoff_tells_the_person_on_whatsapp_and_flags_the_card(world, monkeypa
 def test_refresh_retry_after_a_lost_reply(world):
     cid = register(world)
     first = exchange(world, cid, get_code(world, cid)).json()
-    renew = lambda rt: world.post("/oauth/token", data={"grant_type": "refresh_token", "client_id": cid, "refresh_token": rt})
+    def renew(rt):
+        return world.post("/oauth/token", data={"grant_type": "refresh_token", "client_id": cid, "refresh_token": rt})
+
     lost = renew(first["refresh_token"]).json()  # Claude never saw this reply
     retry = renew(first["refresh_token"])
     assert retry.status_code == 200
