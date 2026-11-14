@@ -115,6 +115,23 @@ def test_briefstats_filters_old_briefs_and_empty(db: sqlite3.Connection):
     assert briefstats.ensure_brief_items(db) is None
 
 
+def test_briefstats_counts_offer_and_prepare_as_advanced(db: sqlite3.Connection):
+    """An offer is the best outcome a brief can have; it must not lower precision."""
+    today = datetime.now().strftime("%Y-%m-%d")
+    urls = [f"https://example.com/offer-{c}" for c in "abcd"]
+    record_brief_items([_candidate(u, 8) for u in urls], urls, brief_date=today, conn=db)
+    _insert_job(db, urls[0], funnel_stage="offer")
+    _insert_job(db, urls[1], funnel_stage="applied")
+    _insert_job(db, urls[2], funnel_stage="prepare")
+    _insert_job(db, urls[3], funnel_stage="backlog")
+
+    b = compute_briefstats(user="richa", days=14, conn=db)[0]
+    assert b["shown"] == 4
+    assert b["offer"] == 1
+    assert b["advanced"] == 3  # offer + applied + prepare
+    assert b["precision"] == pytest.approx(0.75)
+
+
 def test_briefstats_untouched_when_job_row_missing(db: sqlite3.Connection):
     today = datetime.now().strftime("%Y-%m-%d")
     # Recorded in brief_items but no matching jobs row (e.g. job pruned).
