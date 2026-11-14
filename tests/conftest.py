@@ -42,6 +42,26 @@ _SECRET_ENV = (
 )
 
 
+def pytest_configure(config):
+    """Never let a test reach the real Cloudflare API.
+
+    The admin overview gathers ``cf_access.status()`` in a detached pool thread
+    that can outlive the test that started it, so the guard is installed for the
+    whole session instead of per test. Tests drive the client through an
+    injected httpx transport.
+    """
+    from jobwright import cf_access
+
+    real_init = cf_access.CFAccessClient.__init__
+
+    def guarded_init(self, *args, transport=None, **kwargs):
+        if transport is None:
+            raise AssertionError("tests must not call the Cloudflare API; pass transport= or stub cf_access")
+        real_init(self, *args, transport=transport, **kwargs)
+
+    cf_access.CFAccessClient.__init__ = guarded_init
+
+
 @pytest.fixture(autouse=True)
 def _hermetic(tmp_path_factory, monkeypatch):
     for key in _SECRET_ENV:

@@ -169,6 +169,38 @@ def test_invalidate_connections_reaches_other_threads(tmp_path):
     assert got[0] is not got[1]
 
 
+def test_a_finished_thread_closes_its_connections(tmp_path, monkeypatch):
+    """A worker thread must not leave its SQLite file open after it ends."""
+    import gc
+    import sqlite3
+    import threading
+    import time
+
+    from jobwright import database as db_mod
+
+    closed_in: list[int] = []
+
+    class Recording(sqlite3.Connection):
+        def close(self):
+            closed_in.append(threading.get_ident())
+            super().close()
+
+    connect = sqlite3.connect
+    monkeypatch.setattr(db_mod.sqlite3, "connect", lambda path, **kw: connect(path, factory=Recording, **kw))
+
+    t = threading.Thread(target=lambda: db_mod.get_connection(tmp_path / "y.db"))
+    t.start()
+    worker_id = t.ident
+    t.join(5)
+    for _ in range(50):
+        if closed_in:
+            break
+        gc.collect()
+        time.sleep(0.02)
+    # Closed by the worker itself as it ended, not left for the collector.
+    assert closed_in == [worker_id]
+
+
 def test_deleted_profile_data_not_served_to_recreated_profile(api_env):
     client, h, root = api_env
     boss = h("boss@example.com")

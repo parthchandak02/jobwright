@@ -218,6 +218,8 @@ def test_login_changes_trigger_best_effort_sync(api_env, monkeypatch):
     assert res.status_code == 200 and res.json()["access_sync"] is None
 
     monkeypatch.setenv("CLOUDFLARE_API_TOKEN", "tok")
+    # The admin rows these routes return gather cf_access.status() in a pool thread.
+    monkeypatch.setattr(cf_access, "plan_sync", lambda client=None: {"configured": True, "in_sync": True})
 
     def boom(client=None):
         raise CFAccessError("HTTP 403")

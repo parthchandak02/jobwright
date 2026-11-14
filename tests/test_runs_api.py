@@ -124,6 +124,7 @@ def test_registry_persists_across_memory_clear(api_client):
         proc = info.get("proc")
         if proc is not None and proc.poll() is None:
             proc.kill()
+            proc.wait(timeout=5)  # reap it, or the handle warns when it is collected
     runs_mod._runs.clear()
 
     res = api_client.get("/api/runs")
@@ -150,6 +151,8 @@ def test_stop_after_memory_clear_kills_process(api_client):
     os.kill(pid, 0)  # still alive
 
     # Simulate reload: forget Popen, do not kill the child (it outlives the worker).
+    # The handles stay here only so the test can reap what Stop kills.
+    spawned = [info["proc"] for info in runs_mod._runs.values() if info.get("proc") is not None]
     runs_mod._runs.clear()
 
     res = api_client.post(f"/api/runs/{run_id}/stop")
@@ -169,6 +172,8 @@ def test_stop_after_memory_clear_kills_process(api_client):
             break
         time.sleep(0.05)
     assert still_alive is False
+    for proc in spawned:
+        proc.wait(timeout=5)
 
 
 def test_stop_kills_spawned_children(api_client, tmp_path, monkeypatch):
