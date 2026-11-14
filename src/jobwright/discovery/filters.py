@@ -32,6 +32,10 @@ def _to_annual(amount: float, raw: str) -> float:
     lower = raw.lower()
     if "hour" in lower or "/hr" in lower or "/h" in lower:
         return amount * 2080
+    if "week" in lower or "/wk" in lower:
+        return amount * 52
+    if "daily" in lower or "/day" in lower or "per day" in lower:
+        return amount * 260
     if "month" in lower or "/mo" in lower:
         return amount * 12
     if amount < 1000:
