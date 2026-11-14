@@ -21,6 +21,8 @@ from typing import Any
 
 import yaml
 
+from jobwright.config import secure_dir
+
 
 def _default_users_root() -> Path:
     override = os.environ.get("JOBWRIGHT_USERS_ROOT")
@@ -195,13 +197,12 @@ def registry_lock() -> Iterator[None]:
                 fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
 
 
+
+
 def save_registry(data: dict[str, Any]) -> None:
     """Atomically rewrite users.yaml (temp file + rename, owner-only)."""
     USERS_ROOT.mkdir(parents=True, exist_ok=True)
-    try:
-        USERS_ROOT.chmod(0o700)
-    except OSError:
-        pass
+    secure_dir(USERS_ROOT)
     text = yaml.safe_dump(data, default_flow_style=False, sort_keys=False)
     fd, tmp = tempfile.mkstemp(prefix=".users.", suffix=".yaml", dir=str(USERS_ROOT))
     try:
@@ -434,10 +435,7 @@ def _add_user_locked(
     )
     data_dir = user.resolve_data_dir()
     data_dir.mkdir(parents=True, exist_ok=True)
-    try:
-        data_dir.chmod(0o700)
-    except OSError:
-        pass
+    secure_dir(data_dir)
 
     for sub in ("tailored_resumes", "cover_letters", "logs", "chrome-workers", "apply-workers",
                 "resume", "cover-letter", "cover-letter/examples", "references", "references/inbox"):

@@ -22,6 +22,7 @@ import json
 import logging
 import os
 import sqlite3
+import stat
 import subprocess
 import sys
 from contextlib import closing
@@ -823,7 +824,9 @@ def backup_users(dest_root: Path | None = None, keep_days: int = 14) -> dict:
             continue
         out = snap / user.user_id
         out.mkdir()
-        cmd = ["rsync", "-a", "--exclude", "*.db", "--exclude", "*.db-wal", "--exclude", "*.db-shm",
+        # No setgid bits in the copy: the backup runs under Hermes' sandbox (RestrictSUIDSGID=yes),
+        # which refuses to set them, and a snapshot doesn't need them (restore re-adds them).
+        cmd = ["rsync", "-a", "--chmod=Dg-s,Fg-s", "--exclude", "*.db", "--exclude", "*.db-wal", "--exclude", "*.db-shm",
                "--exclude", "chrome-workers/", "--exclude", "apply-workers/", "--exclude", "logs/*.log",
                "--exclude", ".pipeline.lock", "--exclude", ".notify.lock"]
         for pat in _CLUTTER:
@@ -929,6 +932,10 @@ def restore_snapshot(
         target.rmdir()  # empty
     target.parent.mkdir(parents=True, exist_ok=True)
     shutil.copytree(src, target, symlinks=True)
+    if target.parent.stat().st_mode & stat.S_ISGID:
+        # Snapshots carry no setgid bits; restore the shared-group layout of the live tree.
+        for d in [target, *(p for p in target.rglob("*") if p.is_dir() and not p.is_symlink())]:
+            d.chmod(d.stat().st_mode | stat.S_ISGID)
     checks = {db.name: _integrity(db) for db in sorted(target.glob("*.db"))}
     return {"snapshot": snap.name, "user": user_id, "restored_to": str(target),
             "moved_aside": str(moved_aside) if moved_aside else None, "integrity": checks,

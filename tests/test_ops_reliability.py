@@ -495,3 +495,54 @@ def test_cleanup_old_brief_files(tmp_path):
     assert len(removed) == 3
     assert sorted(p.name for p in data.iterdir() if p.is_file()) == ["BRIEF_PID", f"BRIEF_STATUS_{new}"]
     assert [p.name for p in (data / "logs").iterdir()] == [f"brief_{new}.log"]
+
+
+def test_profile_dirs_keep_a_shared_setgid_layout(tmp_path):
+    """0700 zeroes the ACL mask and locks Hermes out; a setgid (shared-group) dir stays 2770."""
+    import stat as st
+
+
+    private = tmp_path / "private"
+    private.mkdir(mode=0o755)
+    cfg.secure_dir(private)
+    assert st.S_IMODE(private.stat().st_mode) == 0o700
+
+    shared = tmp_path / "shared"
+    shared.mkdir()
+    shared.chmod(0o2750)
+    cfg.secure_dir(shared)
+    assert st.S_IMODE(shared.stat().st_mode) == 0o2770
+
+
+def test_backup_drops_setgid_and_restore_puts_it_back(tmp_path):
+    import stat as st
+
+    data = _profile_with_db("sg")
+    data.chmod(0o2770)
+    (data / "logs").mkdir(exist_ok=True)
+    (data / "logs").chmod(0o2770)
+    dest = tmp_path / "bk"
+    rep = ops.backup_users(dest)
+    assert not rep["errors"], rep["errors"]
+    snap = Path(rep["snapshot"]) / "sg"
+    for d in (snap, snap / "logs"):
+        assert not d.stat().st_mode & st.S_ISGID, d
+
+    parent = tmp_path / "live"
+    parent.mkdir()
+    parent.chmod(0o2770)
+    target = parent / "sg"
+    ops.restore_snapshot("latest", "sg", target, backup_root=dest)
+    for d in (target, target / "logs"):
+        assert d.stat().st_mode & st.S_ISGID, d
+
+
+def test_ensure_dirs_keeps_a_shared_profile_dir_group_writable(tmp_path):
+    import stat as st
+
+    shared = tmp_path / "users" / "p1"
+    shared.mkdir(parents=True)
+    shared.chmod(0o2770)
+    cfg.set_app_dir(shared)
+    cfg.ensure_dirs()
+    assert st.S_IMODE(shared.stat().st_mode) == 0o2770

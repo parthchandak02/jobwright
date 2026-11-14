@@ -3,6 +3,7 @@
 import os
 import platform
 import shutil
+import stat
 import sys
 import types
 from collections.abc import Iterator
@@ -314,6 +315,20 @@ def get_chrome_path() -> str:
     )
 
 
+
+def secure_dir(path: Path) -> None:
+    """Keep a profile directory private without breaking a shared-group layout.
+
+    Default: owner only (0700). A directory with the setgid bit (the VPS layout: the API user and
+    Hermes share group ``jwdata``, with ACLs) keeps 2770 instead, because 0700 also zeroes the
+    ACL mask and locks the other service out of logs and state.
+    """
+    try:
+        mode = path.stat().st_mode
+        path.chmod(0o2770 if mode & stat.S_ISGID else 0o700)
+    except OSError:
+        pass
+
 def ensure_dirs():
     """Create all required directories."""
     s = _state()
@@ -323,10 +338,7 @@ def ensure_dirs():
         s.CHROME_WORKER_DIR, s.APPLY_WORKER_DIR, s.REFERENCES_DIR, s.REFERENCES_INBOX_DIR,
     ]:
         d.mkdir(parents=True, exist_ok=True)
-    try:
-        s.APP_DIR.chmod(0o700)
-    except OSError:
-        pass
+    secure_dir(s.APP_DIR)
 
 
 def write_private_text(path: Path, content: str) -> None:
