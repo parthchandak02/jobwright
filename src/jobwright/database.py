@@ -21,6 +21,39 @@ log = logging.getLogger(__name__)
 # (required for SQLite thread safety with parallel workers)
 _local = threading.local()
 
+
+class _ConnectionCache:
+    """One thread's open connections, closed when that thread ends.
+
+    Short-lived threads (the dashboard's request pool, pipeline workers) drop
+    their thread-local values on exit; closing the connections here keeps a
+    finished thread from leaving the SQLite file open until the collector
+    happens to run.
+    """
+
+    def __init__(self) -> None:
+        self.connections: dict[str, tuple[sqlite3.Connection, int]] = {}
+
+    def __del__(self) -> None:
+        # Runs as the thread goes away: there is nothing to do with a failure here.
+        for conn, _generation in list(self.connections.values()):
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+def _thread_connections(create: bool = True) -> dict[str, tuple[sqlite3.Connection, int]]:
+    """This thread's cached connections by path."""
+    cache = getattr(_local, "cache", None)
+    if cache is None:
+        if not create:
+            return {}
+        cache = _ConnectionCache()
+        _local.cache = cache
+    return cache.connections
+
+
 # Bumped by invalidate_connections() when a DB file is deleted or replaced
 # (e.g. an admin deletes a profile). Every thread compares its cached
 # connection's generation on the next get_connection() and reopens, so no
@@ -64,11 +97,9 @@ def get_connection(db_path: Path | str | None = None) -> sqlite3.Connection:
     """
     path = str(db_path or config.DB_PATH)
 
-    if not hasattr(_local, 'connections'):
-        _local.connections = {}
-
+    connections = _thread_connections()
     generation = _path_generation.get(path, 0)
-    entry = _local.connections.get(path)
+    entry = connections.get(path)
     if entry is not None:
         conn, conn_generation = entry
         if conn_generation == generation:
@@ -82,13 +113,13 @@ def get_connection(db_path: Path | str | None = None) -> sqlite3.Connection:
                 conn.close()
             except sqlite3.Error:
                 pass
-        _local.connections.pop(path, None)
+        connections.pop(path, None)
 
     conn = sqlite3.connect(path, timeout=30)
     conn.execute("PRAGMA busy_timeout=10000")
     _enable_wal(conn)
     conn.row_factory = sqlite3.Row
-    _local.connections[path] = (conn, generation)
+    connections[path] = (conn, generation)
     return conn
 
 
@@ -112,7 +143,7 @@ def rollback_open_transactions() -> int:
     handler), so an error path that did DML and then raised can never leave a
     reused connection holding the write lock. Returns how many were rolled back.
     """
-    conns = getattr(_local, "connections", None) or {}
+    conns = _thread_connections(create=False)
     rolled = 0
     for path, entry in list(conns.items()):
         conn = entry[0]
@@ -129,10 +160,9 @@ def rollback_open_transactions() -> int:
 def close_connection(db_path: Path | str | None = None) -> None:
     """Close the cached connection for the current thread."""
     path = str(db_path or config.DB_PATH)
-    if hasattr(_local, 'connections'):
-        entry = _local.connections.pop(path, None)
-        if entry is not None:
-            entry[0].close()
+    entry = _thread_connections(create=False).pop(path, None)
+    if entry is not None:
+        entry[0].close()
 
 
 def init_db(db_path: Path | str | None = None) -> sqlite3.Connection:
