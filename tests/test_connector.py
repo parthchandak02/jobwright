@@ -1120,6 +1120,11 @@ def test_answers_carry_numbers_dates_and_match_other_wordings():
                                                        "period": "year", "number": 100000}
     assert a.structured_salary("$150K-$170K")["number"] == 160000
     assert a.structured_salary("Open to discussing") is None
+    # An hourly range: the number to type is the midpoint rate, never a figure rounded away to 0.
+    assert a.structured_salary("$60 - $70 per hour") == {"min": 60, "max": 70, "currency": "USD",
+                                                        "period": "hour", "number": 65}
+    assert a.structured_salary("55 to 65 /hr")["number"] == 60
+    assert a.structured_salary("$65 per hour")["number"] == 65
     day = datetime(2026, 11, 9, tzinfo=timezone.utc)
     assert a.structured_start("Two weeks after an offer", day)["date"] == "2026-11-23"
     assert a.structured_start("2027-01-15", day) == {"date": "2027-01-15", "rule": "fixed date"}
