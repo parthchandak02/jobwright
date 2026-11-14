@@ -21,6 +21,16 @@ def test_parse_salary_range():
     assert parse_salary_to_annual("$55/hour") == 55 * 2080
 
 
+def test_parse_salary_weekly_and_daily_intervals():
+    # JobSpy intervals are yearly / monthly / weekly / daily / hourly.
+    assert parse_salary_to_annual("USD1,500-USD2,000/weekly") == 2000 * 52
+    assert parse_salary_to_annual("$2,000/week") == 2000 * 52
+    assert parse_salary_to_annual("USD400-USD600/daily") == 600 * 260
+    assert parse_salary_to_annual("$600 per day") == 600 * 260
+    # A $2,000/week job is about $104k a year: not below a $100k floor.
+    assert not salary_below_floor("USD1,500-USD2,000/weekly", 100000)
+
+
 def test_title_excluded_word_boundary():
     assert title_excluded("Senior Software Engineer", ["software engineer"])
     assert not title_excluded("Chief of Staff", ["software engineer"])
