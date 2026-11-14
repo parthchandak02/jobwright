@@ -113,7 +113,10 @@ def test_user_sees_only_own_profile(cf_client, rsa_keys):
     me = cf_client.get("/api/me", headers=_h(private, "alice@example.com")).json()
     assert [p["user_id"] for p in me["profiles"]] == ["alice"] and not me["is_admin"]
     # Cookie for someone else's profile is ignored, and switching is refused.
-    res = cf_client.get("/api/board", headers=_h(private, "alice@example.com"), cookies={"jobwright_user": "bob"})
+    # Set on the client: per-request cookies= is deprecated in Starlette's TestClient.
+    cf_client.cookies.set("jobwright_user", "bob")
+    res = cf_client.get("/api/board", headers=_h(private, "alice@example.com"))
+    cf_client.cookies.clear()
     assert _board_titles(res) == {"alice role"}
     res = cf_client.post("/api/session", json={"user_id": "bob"}, headers=_h(private, "alice@example.com"))
     assert res.status_code == 403
@@ -132,7 +135,9 @@ def test_admin_can_switch(cf_client, rsa_keys):
     hdr = _h(private, "boss@example.com")
     me = cf_client.get("/api/me", headers=hdr).json()
     assert me["is_admin"] and {p["user_id"] for p in me["profiles"]} == {"alice", "bob"}
-    res = cf_client.get("/api/board", headers=hdr, cookies={"jobwright_user": "bob"})
+    cf_client.cookies.set("jobwright_user", "bob")
+    res = cf_client.get("/api/board", headers=hdr)
+    cf_client.cookies.clear()
     assert _board_titles(res) == {"bob role"}
 
 
