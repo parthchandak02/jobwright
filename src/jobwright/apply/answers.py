@@ -611,7 +611,13 @@ def structured_salary(text: str) -> dict | None:
     lo, hi = min(nums), max(nums)
     above = re.search(r"\b(above|over|at least|minimum|min|from|\+)", t, re.I) and len(nums) == 1
     out = {"min": int(lo), "max": None if above else int(hi), "currency": currency or "USD", "period": period}
-    out["number"] = int(lo) if above or lo == hi else int(round((lo + hi) / 2, -3))
+    if above or lo == hi:
+        out["number"] = int(lo)
+    else:
+        # Annual midpoints read better rounded to the nearest 1000; an hourly rate rounded that way
+        # would collapse to 0, so keep it to the dollar.
+        midpoint = (lo + hi) / 2
+        out["number"] = int(round(midpoint, -3)) if period == "year" else int(round(midpoint))
     return out
 
 
