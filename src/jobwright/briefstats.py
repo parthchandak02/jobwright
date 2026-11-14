@@ -123,6 +123,11 @@ def record_brief_items(
 # Scoreboard
 # ---------------------------------------------------------------------------
 
+# States that count as "the brief worked": every stage past backlog. "advanced"
+# is the bucket prepare lands in (it has no column of its own).
+ADVANCED_STATES = ("applied", "in_progress", "offer")
+
+
 def _funnel_state(row: dict) -> str:
     stage = (row.get("funnel_stage") or "backlog").strip().lower()
     if stage in ("applied", "in_progress", "offer"):
@@ -146,9 +151,12 @@ def briefstats(
     Categories per brief (from each shown item's *current* funnel stage):
       applied / in_progress / offer — moved forward (advanced)
       closed                          — no longer active
-      untouched                       — still backlog/prepare
+      untouched                       — still backlog
 
-    Precision proxy = advanced / shown, where advanced = applied + in_progress.
+    Precision proxy = advanced / shown, where advanced counts every stage past
+    backlog (prepare, applied, in_progress, offer), the same way the dashboard
+    counts ``notified_advanced_30d``. An offer is the best outcome a brief can
+    have, so it must never lower the number.
 
     ``user`` is stored on the returned rows for convenience but is not used to
     scope the query (this runs against the active user's database). Returns a
@@ -192,7 +200,7 @@ def briefstats(
         if r["shown"]:
             b["shown"] += 1
             b[state] += 1
-            if state in ("applied", "in_progress"):
+            if state in ADVANCED_STATES:
                 b["advanced"] += 1
 
     out: list[dict] = []

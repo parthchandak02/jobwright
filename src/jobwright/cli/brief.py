@@ -139,7 +139,8 @@ def briefstats_cmd(
             f"{r['precision']:.3f}" if r["precision"] is not None else "-",
         )
     console.print(table)
-    console.print("\n[dim]precision@K = (applied + in_progress) / shown, per brief[/dim]")
+    console.print("\n[dim]precision@K = moved forward (prepare + applied + in_progress + offer) / shown, "
+                  "per brief[/dim]")
 
 
 def dedupe(
