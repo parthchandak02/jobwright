@@ -16,4 +16,4 @@ if [[ -f "${HOOKS}/pre-commit" ]] && grep -q '^git secrets --pre_commit_hook -- 
   sed -i.bak 's/^git secrets --pre_commit_hook -- "\$@"$/git secrets --pre_commit_hook -- "$@" || exit 1/' "${HOOKS}/pre-commit" && rm -f "${HOOKS}/pre-commit.bak"
 fi
 add_hook pre-commit "${PY} \"\$PY\" \"\$(git rev-parse --show-toplevel)/scripts/check_private_data.py\" --staged || exit 1"
-add_hook pre-push "${PY}"' while read -r _l lsha _r rsha; do case "$lsha" in *[!0]*) ;; *) continue ;; esac; case "$rsha" in *[!0]*) range="$rsha..$lsha" ;; *) range="$lsha" ;; esac; "$PY" "$(git rev-parse --show-toplevel)/scripts/check_private_data.py" --push "$range" || exit 1; done'
+add_hook pre-push "${PY}"' while read -r _l lsha _r rsha; do case "$lsha" in *[!0]*) ;; *) continue ;; esac; case "$rsha" in *[!0]*) range="$rsha..$lsha" ;; *) range="$lsha"; for b in refs/remotes/origin/HEAD refs/remotes/origin/main; do mb=$(git merge-base "$lsha" "$b" 2>/dev/null) && { range="$mb..$lsha"; break; }; done ;; esac; "$PY" "$(git rev-parse --show-toplevel)/scripts/check_private_data.py" --push "$range" || exit 1; done'
