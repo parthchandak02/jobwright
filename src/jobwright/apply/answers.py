@@ -599,7 +599,34 @@ _K_RANGE = re.compile(
     r"(?P<bk>\s*(?:k|thousand)\b)?",
     re.IGNORECASE,
 )
-_HOURLY = re.compile(r"hour|/hr|\bhr\b", re.I)
+# A pay unit. "40 hours a week" is a schedule, and "HR" is a team, not an hourly rate.
+_RATE_UNIT = re.compile(
+    r"/hr\b|/hour\b|\bper\s+hour\b|\ban\s+hour\b|\ba\s+hour\b|\bper\s+hr\b|\ban\s+hr\b|"
+    r"(?<!\d)\d{1,3}(?:\.\d+)?\s*hr\b",
+    re.I,
+)
+_HOURLY_WORD = re.compile(r"\bhourly\b", re.I)
+_NEGATED_HOURLY = re.compile(
+    r"\b(?:not|no)\b(?:\s+\w+){0,3}\s+hourly\b|\bnon[- ]hourly\b|isn['’]?t\s+hourly\b",
+    re.I,
+)
+
+
+def _is_hourly_pay(text: str) -> bool:
+    """True when the answer states an hourly rate.
+
+    A work week ("40 hours a week"), the word HR, and "not hourly" leave a
+    yearly figure yearly. "not hourly" still yields to a real rate unit
+    ("$65/hr, not hourly").
+    """
+    if _NEGATED_HOURLY.search(text) and not _RATE_UNIT.search(text):
+        return False
+    return _RATE_UNIT.search(text) is not None or _HOURLY_WORD.search(text) is not None
+
+
+def _is_schedule_hours(text: str, end: int) -> bool:
+    """True when the amount just parsed is a week length ("20 hours", "40-hour")."""
+    return re.match(r"(?:\s+|-)\s*hours?\b", text[end:], re.I) is not None
 
 
 def _shared_thousand_range(text: str) -> tuple[float, float] | None:
@@ -623,16 +650,20 @@ def structured_salary(text: str) -> dict | None:
     """Numbers forms need from a pay answer: {"min", "max", "number", "currency", "period"} (None = no number).
     "number" is what to type in a single numeric box: the range midpoint, or the floor for "above X"."""
     t = (text or "").strip()
-    hourly = _HOURLY.search(t)
+    hourly = _is_hourly_pay(t)
     shared = None if hourly else _shared_thousand_range(t)
     nums: list[float] = []
     currency = None
-    for sym, num, k in _MONEY.findall(t):
+    for m in _MONEY.finditer(t):
+        sym, num, k = m.group(1), m.group(2), m.group(3)
         if sym:
             currency = currency or _CURRENCY.get(sym.lower())
         value = float(num.replace(",", ""))
         if k:
             value *= 1000
+        # end(2) is the number itself. The pattern's trailing space would hide "20 hours".
+        if _is_schedule_hours(t, m.end(2)):
+            continue
         if value < 1000 and not hourly:
             continue
         nums.append(value)
