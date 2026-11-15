@@ -8,6 +8,7 @@ import os
 import sqlite3
 import sys
 import time
+from contextlib import closing
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -375,7 +376,8 @@ def test_enrich_stops_at_its_soft_budget_without_starting_a_browser(monkeypatch)
 
     monkeypatch.setattr(detail, "sync_playwright", _no_browser)
     try:
-        stats = detail.scrape_site_batch(sqlite3.connect(":memory:"), "Indeed", [("u1", "t"), ("u2", "t")])
+        with closing(sqlite3.connect(":memory:")) as conn:
+            stats = detail.scrape_site_batch(conn, "Indeed", [("u1", "t"), ("u2", "t")])
     finally:
         stage_budget.clear()
     assert stats["budget_skipped"] == 2 and stats["processed"] == 0

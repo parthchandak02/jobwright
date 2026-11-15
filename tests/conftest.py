@@ -122,6 +122,14 @@ def _hermetic(tmp_path_factory, monkeypatch):
     llm_mod._instance = None
     llm_mod._usage.clear()
     yield
+    from jobwright import database as db_mod
+
+    for conn, _gen in list(db_mod._thread_connections(create=False).values()):
+        try:
+            conn.close()
+        except Exception:
+            pass
+    db_mod._thread_connections(create=False).clear()
     llm_mod._instance = None
     llm_mod._usage.clear()
     for name, value in snapshot.items():

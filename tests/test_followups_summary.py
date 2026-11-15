@@ -232,15 +232,16 @@ def test_board_followup_api(tmp_path, monkeypatch):
 
 
 def test_summary_ignores_stage_moves_that_were_undone(tmp_path):
+    from contextlib import closing
     import sqlite3
 
     from jobwright.summary import _moved
 
-    conn = sqlite3.connect(":memory:")
-    conn.execute("CREATE TABLE jobs (url TEXT, funnel_stage TEXT)")
-    conn.execute("CREATE TABLE stage_history (job_url TEXT, to_stage TEXT, actor TEXT, at TEXT)")
-    conn.executemany("INSERT INTO jobs VALUES (?, ?)", [("a", "closed"), ("b", "offer"), ("c", "in_progress")])
-    conn.executemany("INSERT INTO stage_history VALUES (?, ?, 'human', '2026-09-22')",
-                     [("a", "offer"), ("b", "offer"), ("c", "applied")])
-    assert _moved(conn, ("offer",), "2026-09-20") == 1
-    assert _moved(conn, ("applied",), "2026-09-20") == 1
+    with closing(sqlite3.connect(":memory:")) as conn:
+        conn.execute("CREATE TABLE jobs (url TEXT, funnel_stage TEXT)")
+        conn.execute("CREATE TABLE stage_history (job_url TEXT, to_stage TEXT, actor TEXT, at TEXT)")
+        conn.executemany("INSERT INTO jobs VALUES (?, ?)", [("a", "closed"), ("b", "offer"), ("c", "in_progress")])
+        conn.executemany("INSERT INTO stage_history VALUES (?, ?, 'human', '2026-09-22')",
+                         [("a", "offer"), ("b", "offer"), ("c", "applied")])
+        assert _moved(conn, ("offer",), "2026-09-20") == 1
+        assert _moved(conn, ("applied",), "2026-09-20") == 1
