@@ -71,7 +71,8 @@ target-version = "py311"
 line-length = 120
 
 [tool.ruff.lint]
-select = ["E4", "E7", "E9", "F"]
+# W is pycodestyle's warning class (final newlines and the like), beside the error codes.
+select = ["E4", "E7", "E9", "F", "W"]
 
 [tool.pytest.ini_options]
 # Starlette's TestClient deprecates per-request cookies=; set them on the client instead.
