@@ -26,7 +26,7 @@ export const SCORE_SHORT: Record<ScoreLevel, string> = {
 const SCORE_TONE: Record<ScoreLevel, string | null> = {
   strong: '--success',
   partial: '--warning',
-  weak: null,
+  weak: '--tone-neutral',
   none: null,
 }
 

@@ -21,6 +21,11 @@ logs/
 # graphify knowledge graph (regenerate: graphify update .)
 graphify-out/
 
+# Cook loop (third-party reference stills stay local)
+cook/refs/
+cook/stills/
+cook/compare/
+
 # Python
 __pycache__/
 *.py[cod]

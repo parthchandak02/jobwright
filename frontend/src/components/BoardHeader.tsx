@@ -103,7 +103,7 @@ export function BoardHeader({
   return (
     <header
       className={cn(
-        'board-head sticky top-0 z-20',
+        'board-head sticky top-0 z-20 border-b border-border shadow-e1',
         APP_SHELL_HEADER,
         'max-md:h-14 max-md:flex-nowrap max-md:gap-1 max-md:px-2 max-md:py-0',
       )}
@@ -161,7 +161,7 @@ export function BoardHeader({
             type="button"
             size="icon-sm"
             variant="ghost"
-            className="md:hidden"
+            className="relative md:hidden"
             onClick={onOpenWhatsApp}
             aria-label={`Daily WhatsApp list${pendingNotify ? `, ${pendingNotify} waiting` : ''}`}
           >

@@ -32,8 +32,8 @@ describe('scoreToneStyle', () => {
     expect(scoreToneStyle(5)).toEqual({ '--tone': 'var(--warning)' })
   })
 
-  it('has no tone for weak or unscored jobs', () => {
-    expect(scoreToneStyle(2)).toBeUndefined()
+  it('uses neutral for weak and no tone when unscored', () => {
+    expect(scoreToneStyle(2)).toEqual({ '--tone': 'var(--tone-neutral)' })
     expect(scoreToneStyle(null)).toBeUndefined()
   })
 })

@@ -329,6 +329,28 @@
     }
   }
 
+  /* Sticky board and lane chrome: hairline + light lift so cards do not melt under headers. */
+  .lane-sticky-head {
+    background-color: var(--background);
+    border-bottom: 1px solid var(--border);
+  }
+  @media (min-width: 768px) {
+    .lane-sticky-head {
+      background-color: color-mix(in oklch, var(--background) 92%, transparent);
+      box-shadow: var(--elev-1);
+      -webkit-backdrop-filter: blur(10px);
+      backdrop-filter: blur(10px);
+    }
+  }
+
+  .board-beside-panel {
+    background-color: color-mix(in oklch, var(--surface-muted) 35%, var(--background));
+  }
+
+  .job-panel-dock {
+    box-shadow: inset 1px 0 0 var(--border), -4px 0 24px -12px color-mix(in oklch, var(--foreground) 12%, transparent);
+  }
+
   .scroll-fade-x {
     --fade-start: 0px;
     --fade-end: 0px;
@@ -702,10 +724,18 @@
 }
 .job-card-selected {
   border-color: var(--primary);
+  background-color: color-mix(in oklch, var(--primary) 7%, var(--surface));
   box-shadow: 0 0 0 1px var(--primary);
 }
 .job-card-selected:hover {
+  background-color: color-mix(in oklch, var(--primary) 9%, var(--surface));
   box-shadow: 0 0 0 1px var(--primary), var(--elev-1);
+}
+.dark .job-card-selected {
+  background-color: color-mix(in oklch, var(--primary) 14%, var(--surface));
+}
+.dark .job-card-selected:hover {
+  background-color: color-mix(in oklch, var(--primary) 18%, var(--surface));
 }
 .jobs-table-row-selected {
   background-color: var(--accent);

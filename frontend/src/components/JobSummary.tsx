@@ -43,7 +43,7 @@ export function JobSummary({ job, onScoreSaved, onLinkClick, titleButton, showLi
   const salary = compactPay(job.salary)
 
   return (
-    <div className="flex flex-col gap-2">
+    <div className="job-card-stack">
       <div className="flex items-start gap-3">
         <div className="min-w-0 flex-1">
           {titleButton ? (

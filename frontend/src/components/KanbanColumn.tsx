@@ -76,7 +76,7 @@ export const KanbanColumn = memo(function KanbanColumn({
     >
       <header
         className={cn(
-          'sticky -top-4 z-10 -mx-1 flex h-10 items-center gap-2 bg-background px-2.5',
+          'lane-sticky-head sticky -top-4 z-10 -mx-1 flex h-10 items-center gap-2 px-2.5',
           fill && 'sr-only',
         )}
       >
@@ -120,8 +120,8 @@ export const KanbanColumn = memo(function KanbanColumn({
         {jobs.length === 0 ? (
           <div
             className={cn(
-              'flex flex-col items-center rounded-lg border border-dashed px-4 py-8 text-center transition-colors duration-(--dur-2) ease-out',
-              isDragging ? 'border-(--lane)' : 'border-border-strong',
+              'flex flex-col items-center rounded-lg border border-dashed bg-surface-muted/40 px-4 py-8 text-center transition-colors duration-(--dur-2) ease-out',
+              isDragging ? 'border-(--lane) bg-transparent' : 'border-border',
             )}
           >
             <Icon className="mb-2.5 size-5 text-subtle-foreground" strokeWidth={1.75} aria-hidden />

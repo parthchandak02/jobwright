@@ -67,7 +67,7 @@ export const JobCardView = memo(function JobCardView({
     <div
       style={lane ? ({ '--lane': lane } as CSSProperties) : undefined}
       className={cn(
-        'relative overflow-hidden rounded-lg border border-border bg-surface p-3 text-foreground transition-[border-color,box-shadow] duration-(--dur-1) ease-out hover:border-border-strong hover:shadow-e1',
+        'job-card-pad relative overflow-hidden rounded-lg border border-border bg-surface text-foreground transition-[border-color,box-shadow,background-color] duration-(--dur-1) ease-out hover:border-border-strong hover:shadow-e1',
         opens && 'cursor-pointer',
         dragging && 'cursor-grabbing rotate-1 border-border-strong shadow-e1',
         selected && 'job-card-selected',
