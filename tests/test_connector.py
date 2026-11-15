@@ -1125,6 +1125,16 @@ def test_answers_carry_numbers_dates_and_match_other_wordings():
                                                         "period": "hour", "number": 65}
     assert a.structured_salary("55 to 65 /hr")["number"] == 60
     assert a.structured_salary("$65 per hour")["number"] == 65
+    # A single trailing or leading "k" covers the whole range. "150-170k" is
+    # 150k to 170k, and the number typed in a box is the midpoint, not one end.
+    assert a.structured_salary("150-170k") == {
+        "min": 150000, "max": 170000, "currency": "USD", "period": "year", "number": 160000,
+    }
+    assert a.structured_salary("$80-$100k") == {
+        "min": 80000, "max": 100000, "currency": "USD", "period": "year", "number": 90000,
+    }
+    assert a.structured_salary("150k-170")["number"] == 160000
+    assert a.structured_salary("80 to 100k")["min"] == 80000
     day = datetime(2026, 11, 9, tzinfo=timezone.utc)
     assert a.structured_start("Two weeks after an offer", day)["date"] == "2026-11-23"
     assert a.structured_start("2027-01-15", day) == {"date": "2027-01-15", "rule": "fixed date"}

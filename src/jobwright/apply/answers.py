@@ -589,25 +589,59 @@ class AnswerBank:
 
 _MONEY = re.compile(r"([$£€₹]|usd|eur|gbp|inr)?\s*(\d[\d,]*(?:\.\d+)?)\s*(k|K|thousand)?", re.I)
 _CURRENCY = {"$": "USD", "usd": "USD", "£": "GBP", "gbp": "GBP", "€": "EUR", "eur": "EUR", "₹": "INR", "inr": "INR"}
+# "150-170k" / "150k-170" / "80 to 100k": one k stands for both ends.
+_K_RANGE = re.compile(
+    r"(?P<a>\d[\d,]*(?:\.\d+)?)"
+    r"(?P<ak>\s*(?:k|thousand)\b)?"
+    r"\s*(?:-|\u2013|\u2014|\bto\b)\s*"
+    r"(?:[$£€₹]|usd|eur|gbp|inr)?\s*"
+    r"(?P<b>\d[\d,]*(?:\.\d+)?)"
+    r"(?P<bk>\s*(?:k|thousand)\b)?",
+    re.IGNORECASE,
+)
+_HOURLY = re.compile(r"hour|/hr|\bhr\b", re.I)
+
+
+def _shared_thousand_range(text: str) -> tuple[float, float] | None:
+    """Both ends of '150-170k' or '150k-170', in dollars, or None.
+
+    A bare end under 1000 is thousands when the other end carries the k.
+    Both ends already marked, neither marked, or an end that is already a
+    full amount stay on the normal parser.
+    """
+    m = _K_RANGE.search(text)
+    if not m or bool(m.group("ak")) == bool(m.group("bk")):
+        return None
+    a = float(m.group("a").replace(",", ""))
+    b = float(m.group("b").replace(",", ""))
+    if a >= 1000 or b >= 1000:
+        return None
+    return (a * 1000, b * 1000)
 
 
 def structured_salary(text: str) -> dict | None:
     """Numbers forms need from a pay answer: {"min", "max", "number", "currency", "period"} (None = no number).
     "number" is what to type in a single numeric box: the range midpoint, or the floor for "above X"."""
     t = (text or "").strip()
+    hourly = _HOURLY.search(t)
+    shared = None if hourly else _shared_thousand_range(t)
     nums: list[float] = []
     currency = None
     for sym, num, k in _MONEY.findall(t):
+        if sym:
+            currency = currency or _CURRENCY.get(sym.lower())
         value = float(num.replace(",", ""))
         if k:
             value *= 1000
-        if value < 1000 and not re.search(r"hour|/hr|\bhr\b", t, re.I):
+        if value < 1000 and not hourly:
             continue
         nums.append(value)
-        currency = currency or _CURRENCY.get(sym.lower()) if sym else currency
+    if shared is not None:
+        extra = [n for n in nums if n != shared[0] and n != shared[1]]
+        nums = [shared[0], shared[1], *extra]
     if not nums:
         return None
-    period = "hour" if re.search(r"hour|/hr|\bhr\b", t, re.I) else "year"
+    period = "hour" if hourly else "year"
     lo, hi = min(nums), max(nums)
     above = re.search(r"\b(above|over|at least|minimum|min|from|\+)", t, re.I) and len(nums) == 1
     out = {"min": int(lo), "max": None if above else int(hi), "currency": currency or "USD", "period": period}
