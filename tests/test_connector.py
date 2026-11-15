@@ -1135,6 +1135,23 @@ def test_answers_carry_numbers_dates_and_match_other_wordings():
     }
     assert a.structured_salary("150k-170")["number"] == 160000
     assert a.structured_salary("80 to 100k")["min"] == 80000
+    # "hours" in a work week, the letters HR, and "not hourly" are not an hourly rate.
+    # The number typed into a pay box must stay the yearly figure.
+    assert a.structured_salary("$180,000 a year for 40 hours a week") == {
+        "min": 180000, "max": 180000, "currency": "USD", "period": "year", "number": 180000,
+    }
+    assert a.structured_salary("$150,000, send questions to HR") == {
+        "min": 150000, "max": 150000, "currency": "USD", "period": "year", "number": 150000,
+    }
+    assert a.structured_salary("$150,000, not hourly")["period"] == "year"
+    assert a.structured_salary("$150,000, not hourly")["number"] == 150000
+    # The week length next to a real hourly rate is a schedule, not a second rate.
+    assert a.structured_salary("$65 per hour, 20 hours a week") == {
+        "min": 65, "max": 65, "currency": "USD", "period": "hour", "number": 65,
+    }
+    assert a.structured_salary("$40 an hour for a 40-hour week") == {
+        "min": 40, "max": 40, "currency": "USD", "period": "hour", "number": 40,
+    }
     day = datetime(2026, 11, 9, tzinfo=timezone.utc)
     assert a.structured_start("Two weeks after an offer", day)["date"] == "2026-11-23"
     assert a.structured_start("2027-01-15", day) == {"date": "2027-01-15", "rule": "fixed date"}
