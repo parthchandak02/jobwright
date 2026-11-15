@@ -71,6 +71,31 @@ def _ctx(**kw):
     return matcher.MatchContext(resume_text="resume", criteria=parse_criteria(CRITERIA), index=None, **kw)
 
 
+def test_salary_floor_reads_pay_stated_only_in_the_description():
+    """A posting with no salary column still states pay in the description.
+
+    Discovery drops those before insert. Scoring is the backstop: manual adds,
+    a higher criteria floor than the search floor, and a description filled in
+    later. The model's fit must not stand when that stated pay is under the floor.
+    """
+    ctx = _ctx()
+    job = {
+        "url": "u",
+        "title": "Program Manager",
+        "salary": None,
+        "location": "Remote",
+        "full_description": "The salary range for this role is $65,000 to $80,000.",
+    }
+    score, _, caps = matcher.apply_gates(_reply(fit=9), job, ctx)
+    assert score == 4 and "salary below floor" in caps
+    job["full_description"] = "The base pay range is $150,000 - $180,000 per year."
+    score, _, caps = matcher.apply_gates(_reply(fit=9), job, ctx)
+    assert score == 9 and "salary below floor" not in caps
+    job["full_description"] = "Great team. Competitive pay, no figure given."
+    score, _, caps = matcher.apply_gates(_reply(fit=9), job, ctx)
+    assert score == 9 and "salary below floor" not in caps
+
+
 def test_gates_cap_dealbreakers_location_salary_and_ignore_unknown_ids():
     ctx = _ctx()
     job = {"url": "u", "title": "Program Manager", "salary": "$60,000", "company": "Acme Foundation", "location": "Remote"}
