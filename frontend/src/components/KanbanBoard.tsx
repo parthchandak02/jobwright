@@ -284,7 +284,7 @@ export function KanbanBoard({
       onDragCancel={onDragCancel}
     >
       {phone ? (
-        <div className="sticky -top-3 z-10 -mx-3 -mt-3 mb-1 flex items-center gap-2 bg-background px-3 py-2">
+        <div className="lane-sticky-head sticky -top-3 z-10 -mx-3 -mt-3 mb-1 flex items-center gap-2 px-3 py-2">
           {phone.leading}
           <StageTabs
             className="flex-1"

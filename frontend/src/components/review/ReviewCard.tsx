@@ -121,7 +121,7 @@ export function ReviewCard({ job, detail, onSwipe, onOpenFull, children }: Props
       ref={ref}
       aria-labelledby="review-job-title"
       data-slot="review-card"
-      className="surface relative animate-in rounded-lg p-4 duration-(--dur-2) fade-in-0 slide-in-from-bottom-1 select-text md:p-6"
+      className="surface relative animate-in rounded-lg p-4 shadow-e1 duration-(--dur-2) fade-in-0 slide-in-from-bottom-1 select-text md:p-6"
       style={style}
       {...handlers}
     >

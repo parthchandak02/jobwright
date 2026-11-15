@@ -43,7 +43,7 @@ function Segmented<T extends string>({
       }}
       className={cn(
         'inline-flex w-fit items-center rounded-md bg-surface-muted p-[3px]',
-        size === 'sm' ? 'h-9 md:h-7' : 'h-10 md:h-9',
+        size === 'sm' ? 'h-11 md:h-7' : 'h-10 md:h-9',
         className,
       )}
       {...aria}

@@ -199,7 +199,7 @@ export function JobSidePanel({ jobKey, title, subtitle, onClose, onOpenJob, chil
       ref={panelRef}
       aria-labelledby={titleId}
       style={{ width }}
-      className="relative z-20 flex h-full min-h-0 shrink-0 animate-in flex-col border-l border-border bg-background duration-(--dur-2) ease-out fade-in-0 slide-in-from-right-4"
+      className="job-panel-dock relative z-20 flex h-full min-h-0 shrink-0 animate-in flex-col border-l border-border bg-background duration-(--dur-2) ease-out fade-in-0 slide-in-from-right-4"
     >
       {/* Window-splitter pattern: a focusable separator with a value (WAI-ARIA APG). */}
       {/* eslint-disable jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/no-noninteractive-tabindex */}
