@@ -1155,6 +1155,36 @@ def test_answers_carry_numbers_dates_and_match_other_wordings():
         assert a.key_for_question(question) == key, question
 
 
+def test_match_option_and_value_agrees_reject_opposites_and_substrings():
+    from jobwright.apply import answers as a
+
+    # Substring / prefix without word boundaries must never match opposite or unrelated words.
+    assert a.match_option("Male", ["Female", "Decline to self-identify"]) is None
+    assert not a.value_agrees("Male", "Female")
+    assert a.match_option("No", ["Yes", "Not sure"]) is None
+    assert not a.value_agrees("No", "Not authorized")
+    assert not a.value_agrees("Yes", "Yesterday")
+    assert a.clean_value("work_authorized", "Not yet") == "Not yet"
+    assert a.clean_value("work_authorized", "Yesterday") == "Yesterday"
+
+    # Negated options must never match an affirmative saved answer (and vice versa).
+    assert a.match_option("Hispanic or Latino", ["Not Hispanic or Latino", "Decline to self-identify"]) is None
+    assert not a.value_agrees("Hispanic or Latino", "Not Hispanic or Latino")
+    assert a.match_option("Protected veteran", ["I am not a protected veteran", "Decline to self-identify"]) is None
+    assert not a.value_agrees("Protected veteran", "I am not a protected veteran")
+    assert not a.value_agrees("Have a disability", "No, I do not have a disability")
+    assert not a.value_agrees("Have a disability", "I don't have a disability")
+    assert not a.value_agrees("I do not have a disability", "I do")
+    assert not a.value_agrees("Citizen", "Non-citizen")
+
+    # Valid matches continue to work.
+    assert a.match_option("Asian", ["Asian (Not Hispanic or Latino)", "White", "Decline"]) == "Asian (Not Hispanic or Latino)"
+    assert a.match_option("Male", ["Male (cisgender)", "Female"]) == "Male (cisgender)"
+    assert a.match_option("Hispanic or Latino", ["Yes, Hispanic or Latino", "No, not Hispanic or Latino"]) == "Yes, Hispanic or Latino"
+    assert a.value_agrees("Yes", "Yes, I am legally authorized")
+    assert a.value_agrees("No (never worked at SAF)", "No")
+
+
 def test_linkedin_only_job_gets_employer_link_found_on_the_spot(world, monkeypatch):
     from jobwright.enrichment import apply_url
 

@@ -903,11 +903,45 @@ def same_meaning(text: str) -> str | None:
     return None
 
 
+_NEGATION_WORDS = frozenset({
+    "no", "not", "non", "never", "dont", "cannot", "cant", "neither", "none",
+    "without", "decline", "refuse", "unwilling",
+})
+_CONTRACTED_NEGATION = re.compile(
+    r"\b(?:don|doesn|didn|isn|aren|wasn|weren|haven|hasn|hadn|won|wouldn|couldn|shouldn|can) t\b"
+)
+_YES_NO_WORDS = {"yes": "yes", "y": "yes", "true": "yes", "no": "no", "n": "no", "false": "no"}
+
+
+def _has_negation(text: str) -> bool:
+    return bool(_NEGATION_WORDS.intersection(text.split()) or _CONTRACTED_NEGATION.search(text))
+
+
+def _word_phrase_match(haystack: str, needle: str) -> bool:
+    """True when ``needle`` appears as whole words in ``haystack`` without a negation flipping it."""
+    m = re.search(rf"(?:^|\s)({re.escape(needle)})(?:\s|$)", haystack)
+    if not m:
+        return False
+    prefix = haystack[:m.start(1)].strip()
+    if prefix and _has_negation(prefix):
+        return False
+    rest = haystack[m.end(1):].strip()
+    if rest and not _has_negation(needle):
+        first_rest = rest.split(None, 2)
+        if first_rest[0] in _NEGATION_WORDS and first_rest[:2] != ["not", "hispanic"]:
+            return False
+        if _CONTRACTED_NEGATION.match(rest):
+            return False
+    return True
+
+
 def match_option(answer: str, options: list[str]) -> str | None:
     """The option that says the same thing as ``answer`` (None = no safe match)."""
     if not answer:
         return None
     a = normalize_question(answer)
+    if not a:
+        return None
     norm = [(o, normalize_question(o)) for o in options if o and normalize_question(o)]
     for o, n in norm:
         if n == a:
@@ -917,18 +951,30 @@ def match_option(answer: str, options: list[str]) -> str | None:
         hits = [o for o, _n in norm if same_meaning(o) == meaning]
         if len(hits) == 1:
             return hits[0]
-    yes_no = {"yes": "yes", "y": "yes", "true": "yes", "no": "no", "n": "no", "false": "no"}
-    if a in yes_no:
-        want = yes_no[a]
+        if len(hits) > 1:
+            return None
+    if a in _YES_NO_WORDS:
+        want = _YES_NO_WORDS[a]
         hits = [o for o, n in norm if n.split()[:1] == [want]]
+        return hits[0] if len(hits) == 1 else None
+    candidates = [
+        (o, n) for o, n in norm
+        if not (meaning and (om := same_meaning(o)) is not None and om != meaning)
+    ]
+    hits = [o for o, n in candidates if n in ("yes", "no") and a.split()[:1] == [n]]
+    if len(hits) == 1:
+        return hits[0]
+    hits = [
+        o for o, n in candidates
+        if (n.startswith(a + " ") and _word_phrase_match(n, a))
+        or (len(n) > 3 and a.startswith(n + " ") and _word_phrase_match(a, n))
+    ]
+    if len(hits) == 1:
+        return hits[0]
+    if len(a) > 3:
+        hits = [o for o, n in candidates if _word_phrase_match(n, a)]
         if len(hits) == 1:
             return hits[0]
-    hits = [o for o, n in norm if a and (n.startswith(a) or a.startswith(n))]
-    if len(hits) == 1:
-        return hits[0]
-    hits = [o for o, n in norm if len(a) > 3 and a in n]
-    if len(hits) == 1:
-        return hits[0]
     return None
 
 
