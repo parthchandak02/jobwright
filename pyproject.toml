@@ -75,4 +75,8 @@ select = ["E4", "E7", "E9", "F"]
 
 [tool.pytest.ini_options]
 # Starlette's TestClient deprecates per-request cookies=; set them on the client instead.
-filterwarnings = ["error:Setting per-request cookies:DeprecationWarning"]
+# Unclosed SQLite connections, files, and subprocesses fail the suite immediately.
+filterwarnings = [
+    "error:Setting per-request cookies:DeprecationWarning",
+    "error::ResourceWarning",
+]

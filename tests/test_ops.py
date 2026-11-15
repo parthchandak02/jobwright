@@ -153,6 +153,7 @@ def test_preflight_reports_missing_inputs(tmp_path, monkeypatch):
 
 
 def test_backup_snapshots_db_and_files_and_prunes(tmp_path):
+    from contextlib import closing
     import sqlite3
 
     from jobwright import users as users_mod
@@ -161,7 +162,7 @@ def test_backup_snapshots_db_and_files_and_prunes(tmp_path):
     data = users_mod.get_user("bk").resolve_data_dir()
     (data / "profile.json").write_text("{}")
     db = data / "jobwright.db"
-    with sqlite3.connect(db) as c:
+    with closing(sqlite3.connect(db)) as c, c:
         c.execute("CREATE TABLE t (x)")
         c.execute("INSERT INTO t VALUES (42)")
     dest = tmp_path / "bk"
@@ -169,7 +170,7 @@ def test_backup_snapshots_db_and_files_and_prunes(tmp_path):
     rep = ops.backup_users(dest, keep_days=14)
     snap = dest / rep["snapshot"].rsplit("/", 1)[-1]
     assert not rep["errors"] and (snap / "bk" / "profile.json").exists()
-    with sqlite3.connect(snap / "bk" / "jobwright.db") as c:
+    with closing(sqlite3.connect(snap / "bk" / "jobwright.db")) as c:
         assert c.execute("SELECT x FROM t").fetchone()[0] == 42
     assert not (dest / "2000-01-01_0000").exists()
     rep2 = ops.backup_users(dest, keep_days=14)

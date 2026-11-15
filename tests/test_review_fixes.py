@@ -29,20 +29,22 @@ def test_jev_verdict_none_jev_defaults_low():
 
 def test_gated_notify_pulls_backlog_jobs(tmp_path, monkeypatch):
     """With human_gate on, notify selects scored>=7 backlog jobs, not just prepare."""
+    from contextlib import closing
+
     from jobwright import notify as notify_mod
 
     db = tmp_path / "t.db"
-    conn = sqlite3.connect(db)
-    conn.execute(
-        "CREATE TABLE jobs (url TEXT PRIMARY KEY, title TEXT, company TEXT, location TEXT,"
-        " fit_score INTEGER, funnel_stage TEXT, whatsapp_notified_at REAL, user_fit_score INTEGER,"
-        " discovered_at TEXT, job_id TEXT, full_description TEXT, score_confidence REAL)"
-    )
-    conn.execute(
-        "INSERT INTO jobs VALUES ('u1','T1','C','SF',8,'backlog',NULL,NULL,datetime('now'),'j1','d',0.9)"
-    )
-    conn.commit()
-    rows = notify_mod.get_unnotified_gated_jobs(conn, threshold=7)
+    with closing(sqlite3.connect(db)) as conn:
+        conn.execute(
+            "CREATE TABLE jobs (url TEXT PRIMARY KEY, title TEXT, company TEXT, location TEXT,"
+            " fit_score INTEGER, funnel_stage TEXT, whatsapp_notified_at REAL, user_fit_score INTEGER,"
+            " discovered_at TEXT, job_id TEXT, full_description TEXT, score_confidence REAL)"
+        )
+        conn.execute(
+            "INSERT INTO jobs VALUES ('u1','T1','C','SF',8,'backlog',NULL,NULL,datetime('now'),'j1','d',0.9)"
+        )
+        conn.commit()
+        rows = notify_mod.get_unnotified_gated_jobs(conn, threshold=7)
     assert [r["url"] for r in rows] == ["u1"]
 
 

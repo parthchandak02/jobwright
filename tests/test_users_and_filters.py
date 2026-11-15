@@ -393,6 +393,7 @@ def test_prune_after_score_skips_human_and_drops_low_backlog(tmp_path):
     }
     stats = prune_after_score(conn, cfg, dry_run=False)
     urls = {r[0] for r in conn.execute("SELECT url FROM jobs")}
+    conn.close()
     assert "https://a.example/human" in urls
     assert "https://a.example/impact" in urls
     assert "https://a.example/low" not in urls

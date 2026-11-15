@@ -45,10 +45,12 @@ def two_users(monkeypatch):
         close_connection(db)
 
 
-def _open(db: Path):
+def _db_usage(db: Path) -> list[tuple]:
+    from contextlib import closing
     import sqlite3
 
-    return sqlite3.connect(db)
+    with closing(sqlite3.connect(db)) as conn:
+        return _usage(conn)
 
 
 def test_ledger_is_keyed_by_active_user(two_users):
@@ -68,9 +70,8 @@ def test_ledger_is_keyed_by_active_user(two_users):
     with config.user_context("bob"):
         assert llm.flush_active_usage("r2") == 1
 
-    a, b = _open(two_users["alice"]), _open(two_users["bob"])
-    assert _usage(a) == [("tailor", "r1", 10, 1)]
-    assert _usage(b) == [("cover", "r2", 20, 2)]
+    assert _db_usage(two_users["alice"]) == [("tailor", "r1", 10, 1)]
+    assert _db_usage(two_users["bob"]) == [("cover", "r2", 20, 2)]
 
 
 def test_concurrent_users_flush_to_their_own_db(two_users):
@@ -89,8 +90,8 @@ def test_concurrent_users_flush_to_their_own_db(two_users):
         t.start()
     for t in threads:
         t.join()
-    assert _usage(_open(two_users["alice"])) == [("onboarding", None, 50, 0)]
-    assert _usage(_open(two_users["bob"])) == [("onboarding", None, 150, 0)]
+    assert _db_usage(two_users["alice"]) == [("onboarding", None, 50, 0)]
+    assert _db_usage(two_users["bob"]) == [("onboarding", None, 150, 0)]
 
 
 def test_failed_flush_keeps_rows(two_users):
@@ -183,8 +184,8 @@ def test_criteria_suggest_api_flushes_to_request_user(two_users, monkeypatch):
     with TestClient(app) as client:
         res = client.post("/api/criteria/suggest")
     assert res.status_code == 200, res.text
-    assert _usage(_open(two_users["alice"])) == [("criteria", None, 11, 5)]
-    assert _usage(_open(two_users["bob"])) == []
+    assert _db_usage(two_users["alice"]) == [("criteria", None, 11, 5)]
+    assert _db_usage(two_users["bob"]) == []
     assert llm.usage_snapshot(user_id=None) == []
 
 
@@ -217,5 +218,5 @@ def test_onboarding_draft_api_flushes_to_request_user(two_users, monkeypatch):
     with TestClient(app) as client:
         res = client.post("/api/onboarding/draft", data={"target_roles": "x"})
     assert res.status_code == 200, res.text
-    assert _usage(_open(two_users["bob"])) == [("onboarding", None, 9, 4)]
-    assert _usage(_open(two_users["alice"])) == []
+    assert _db_usage(two_users["bob"]) == [("onboarding", None, 9, 4)]
+    assert _db_usage(two_users["alice"]) == []

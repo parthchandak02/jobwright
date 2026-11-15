@@ -125,6 +125,7 @@ def test_calibration_needs_profile(api_env):
 
 
 def test_calibration_direct_skips_closed(tmp_path):
+    from contextlib import closing
     import sqlite3
 
     from jobwright.database import close_connection, init_db
@@ -132,9 +133,9 @@ def test_calibration_direct_skips_closed(tmp_path):
     db = tmp_path / "jobwright.db"
     init_db(db)
     close_connection(db)
-    conn = sqlite3.connect(db)
-    conn.execute("INSERT INTO jobs (url, title, company, fit_score, funnel_stage) VALUES "
-                 "('u1', 'A', 'X', 7, 'closed'), ('u2', 'B', 'Y', 7, 'backlog')")
-    conn.commit()
-    body = calibration(conn)
+    with closing(sqlite3.connect(db)) as conn:
+        conn.execute("INSERT INTO jobs (url, title, company, fit_score, funnel_stage) VALUES "
+                     "('u1', 'A', 'X', 7, 'closed'), ('u2', 'B', 'Y', 7, 'backlog')")
+        conn.commit()
+        body = calibration(conn)
     assert [j["url"] for j in body["jobs"]] == ["u2"] and body["scored_count"] == 1
