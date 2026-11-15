@@ -1211,3 +1211,21 @@ def test_refresh_retry_after_a_lost_reply(world):
     # Once the new pair is in use, the old token is a replay again and ends the connection.
     assert renew(first["refresh_token"]).json()["error"] == "invalid_grant"
     assert rpc(world, pair["access_token"], "tools/list").status_code == 401
+
+
+def test_connector_db_is_group_shared_only_in_a_setgid_users_root(tmp_path, monkeypatch):
+    """0600 in the shared VPS layout let a backup's -wal/-shm lock the API out (Nov 14)."""
+    import stat as st
+
+    from jobwright.connector import store
+
+    for setgid, want in ((False, 0o600), (True, 0o660)):
+        root = tmp_path / f"root{int(setgid)}"
+        root.mkdir()
+        if setgid:
+            root.chmod(0o2770)
+        db = root / "connector.sqlite"
+        monkeypatch.setenv("JOBWRIGHT_CONNECTOR_DB", str(db))
+        with store.connect() as conn:
+            conn.execute("SELECT 1")
+        assert st.S_IMODE(db.stat().st_mode) == want

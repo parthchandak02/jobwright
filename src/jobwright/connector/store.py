@@ -1,7 +1,7 @@
 """Connector sign-in state: one small SQLite file shared by every profile.
 
 ``<users root>/connector.sqlite`` (``JOBWRIGHT_CONNECTOR_DB`` overrides), mode
-0600. Only SHA-256 hashes of codes, tokens, consent nonces and download links
+0600 (0660 in a shared setgid users root, see connect()). Only SHA-256 hashes of codes, tokens, consent nonces and download links
 are stored, never the values. A *grant* is one person's approval of one Claude
 client for one profile; tokens hang off a grant, so revoking a grant (from the
 dashboard, ``/oauth/revoke`` or refresh-token reuse) ends every token at once.
@@ -15,6 +15,7 @@ import json
 import os
 import secrets
 import sqlite3
+import stat
 import threading
 import time
 from contextlib import contextmanager
@@ -132,7 +133,12 @@ def connect() -> Iterator[sqlite3.Connection]:
                 finally:
                     conn.close()
                 try:
-                    path.chmod(0o600)
+                    # Owner only, unless the users root is a shared setgid dir (API user + Hermes in one
+                    # group). There 0600 means any other reader (the nightly host backup) creates -wal/-shm
+                    # owned by itself that the API then cannot open, and every sign-in fails. 0660 makes
+                    # those files group-shared too.
+                    shared = path.parent.stat().st_mode & stat.S_ISGID
+                    path.chmod(0o660 if shared else 0o600)
                 except OSError:
                     pass
                 _ready.add(key)
