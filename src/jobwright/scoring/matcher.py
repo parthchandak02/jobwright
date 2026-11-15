@@ -238,7 +238,12 @@ def apply_gates(raw: dict[str, Any], job: dict, ctx: MatchContext) -> tuple[int,
         if not _text_places_job_ok(job, ctx.search_cfg):
             score = UNKNOWN_LOCATION_CAP
             caps.append("location not stated")
-    if ctx.criteria.min_salary and salary_below_floor(job.get("salary"), ctx.criteria.min_salary):
+    # The salary column is often empty. Pay stated only in the posting
+    # (full description, else the short one) still has to hit the floor.
+    posting = job.get("full_description") or job.get("description")
+    if ctx.criteria.min_salary and salary_below_floor(
+        job.get("salary"), ctx.criteria.min_salary, posting
+    ):
         score = min(score, SALARY_CAP)
         caps.append("salary below floor")
     guarded = apply_fit_score_guards(job, {"score": score, "reasoning": ""}, ctx.search_cfg)
