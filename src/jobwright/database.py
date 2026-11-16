@@ -1010,6 +1010,9 @@ def insert_manual_job(
     from jobwright.enrichment.sponsorship import classify_sponsorship
 
     sponsorship_status = classify_sponsorship(full_description)
+    applied_at = now if funnel_stage == "applied" else None
+    applied_manually = 1 if funnel_stage == "applied" else 0
+    apply_status = "applied" if funnel_stage == "applied" else None
     untombstone(conn, url)
     try:
         conn.execute(
@@ -1018,8 +1021,9 @@ def insert_manual_job(
                 url, title, company, location, description, application_url,
                 site, strategy, source, discovered_at, funnel_stage,
                 board_updated_by, board_updated_at, notes, full_description,
-                sponsorship_status, job_id
-            ) VALUES (?, ?, ?, ?, ?, ?, 'manual', 'manual', 'manual', ?, ?, 'human', ?, ?, ?, ?, ?)
+                sponsorship_status, job_id, applied_at, applied_manually,
+                apply_status
+            ) VALUES (?, ?, ?, ?, ?, ?, 'manual', 'manual', 'manual', ?, ?, 'human', ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 url,
@@ -1035,6 +1039,9 @@ def insert_manual_job(
                 description,
                 sponsorship_status,
                 job_id_for_url(url),
+                applied_at,
+                applied_manually,
+                apply_status,
             ),
         )
         conn.execute(
