@@ -8,6 +8,8 @@ that decision table.
 
 from __future__ import annotations
 
+import logging
+
 import pytest
 
 from jobwright.apply.verify import SUCCESS_SELECTORS, Verification, verify_confirmation, verify_page
@@ -333,12 +335,24 @@ def test_verify_page_reports_a_navigation_with_no_confirmation():
     assert "without confirmation text" in found.evidence
 
 
-def test_verify_page_survives_a_page_that_throws():
+def test_verify_page_survives_a_page_that_throws(caplog):
     slow = verify_page(_Page("https://jobs.example.com/apply", "We've received your application.", fail="wait"))
     assert slow.verified is True and slow.confidence == "medium"
 
-    unreadable = verify_page(_Page("https://jobs.example.com/apply", "Thank you for applying", fail="text"))
-    assert unreadable == Verification(False, "none", "no confirmation found")
+    with caplog.at_level(logging.WARNING, logger="jobwright.apply.verify"):
+        unreadable = verify_page(_Page("https://jobs.example.com/apply", "Thank you for applying", fail="text"))
+    assert unreadable.verified is False and unreadable.confidence == "none"
+    assert unreadable.evidence == "could not read the page: RuntimeError: body detached"
+    assert "could not read the page at https://jobs.example.com/apply" in caplog.text
+    assert "RuntimeError: body detached" in caplog.text
+
+    # A confirmation URL still counts when the body cannot be read. The decision stays high.
+    caplog.clear()
+    with caplog.at_level(logging.WARNING, logger="jobwright.apply.verify"):
+        trusted = verify_page(_Page("https://jobs.lever.co/example/thanks", "Thank you for applying", fail="text"))
+    assert trusted.verified is True and trusted.confidence == "high"
+    assert "jobs.lever.co/example/thanks" in trusted.evidence
+    assert "could not read the page" in caplog.text
 
     blind = verify_page(_Page("https://jobs.example.com/apply", "We've received your application.", fail="locator"))
     assert blind.verified is True and blind.confidence == "medium"

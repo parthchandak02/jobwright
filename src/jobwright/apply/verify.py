@@ -17,8 +17,11 @@ Only ``high`` and ``medium`` mark a job Applied.
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass
+
+log = logging.getLogger(__name__)
 
 CONFIRM_TEXT = re.compile(
     r"thank(s| you) for (applying|your application|your interest|submitting)|"
@@ -92,10 +95,13 @@ def verify_page(page, *, url_before: str = "", submit_selector: str | None = Non
         page.wait_for_load_state("domcontentloaded", timeout=10_000)
     except Exception:  # noqa: BLE001
         pass
+    unread: str | None = None
     try:
         text = page.inner_text("body", timeout=5_000)
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001 - a dead page must not crash the apply
         text = ""
+        unread = f"{type(exc).__name__}: {exc}"[:240]
+        log.warning("apply verify could not read the page at %s: %s", getattr(page, "url", ""), unread)
     success = False
     for sel in SUCCESS_SELECTORS:
         try:
@@ -110,5 +116,8 @@ def verify_page(page, *, url_before: str = "", submit_selector: str | None = Non
         form_present = page.locator(sel).count() > 0 and page.locator("form").count() > 0
     except Exception:  # noqa: BLE001
         pass
-    return verify_confirmation(url=page.url, text=text, success_element=success,
-                               form_still_present=form_present, url_before=url_before)
+    found = verify_confirmation(url=page.url, text=text, success_element=success,
+                                form_still_present=form_present, url_before=url_before)
+    if unread and found.evidence == "no confirmation found":
+        return Verification(False, "none", f"could not read the page: {unread}")
+    return found
