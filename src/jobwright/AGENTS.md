@@ -104,6 +104,7 @@ Single-user doctor: `jobwright doctor`. Multi-profile: `jobwright --user <id> do
 | `tests/test_llm_hardening.py` | LLM retries, structured-output fallback, usage + cost |
 | `tests/test_pipeline_integrity.py` | Tombstones, dedupe, run lock, run summary / stage failures |
 | `tests/test_discovery_cleanup.py` | Discovery & post-score pruning (`cleanup.py`): protection of human/rated/manual/later-stage cards, noise rules, `prune_noise_jobs`, score-guard recapping, `prune_after_score`, tombstoning |
+| `tests/test_discovery_smartextract.py` | Smart extract discovery (`discovery/smartextract/`): HTML cleaning, Playwright signal/API collection, JSON extraction, API judging, strategy briefing, JSON-LD / API / CSS executors, headful retry vs CAPTCHA suppression, target expansion, filtered storage, sequential/parallel run orchestration |
 | `tests/test_dedupe_backlog.py` | Duplicate open cards: grouping, keeper choice, close + tombstone, CLI, drawer link |
 | `tests/test_ops.py` | Brief report, watchdog, preflight, backups |
 | `tests/test_ops_reliability.py` | Fresh-summary / pipeline_rc / locked / timeout reports, per-source discovery health, alert fallback, notify retry, watchdog still-running / timed-out / day-of-week, stage budgets, backup integrity + clutter + restore, old brief file cleanup |
