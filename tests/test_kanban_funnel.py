@@ -132,6 +132,9 @@ def test_insert_manual_job_isolated(db: sqlite3.Connection):
     assert job["site"] == "manual"
     assert job["funnel_stage"] == "applied"
     assert job["board_updated_by"] == "human"
+    assert job["applied_at"] is not None
+    assert job["applied_manually"] == 1
+    assert job["apply_status"] == "applied"
 
     # Manual jobs must not appear in pending_apply
     _insert_discovered(
@@ -146,6 +149,33 @@ def test_insert_manual_job_isolated(db: sqlite3.Connection):
     urls = {j["url"] for j in pending}
     assert "https://example.com/ready" in urls
     assert "https://example.com/manual" not in urls
+
+
+def test_insert_manual_job_applied_stamps_vs_non_applied(db: sqlite3.Connection):
+    applied_job = insert_manual_job(
+        "https://example.com/manual-applied",
+        title="Engineer",
+        company="Acme",
+        funnel_stage="applied",
+        conn=db,
+    )
+    assert applied_job["applied_at"] is not None
+    assert applied_job["applied_at"] == applied_job["board_updated_at"]
+    assert applied_job["applied_manually"] == 1
+    assert applied_job["apply_status"] == "applied"
+
+    for stage in ("backlog", "prepare", "in_progress", "offer", "closed"):
+        other_job = insert_manual_job(
+            f"https://example.com/manual-{stage}",
+            title="Engineer",
+            company="Acme",
+            funnel_stage=stage,
+            conn=db,
+        )
+        assert other_job["funnel_stage"] == stage
+        assert other_job["applied_at"] is None
+        assert other_job["applied_manually"] == 0
+        assert other_job["apply_status"] is None
 
 
 def test_maybe_agent_advance_to_prepare(db: sqlite3.Connection):
