@@ -56,8 +56,27 @@ def test_intl_remote_junk_rejected():
     assert location_ok("Remote - US", ACCEPT, REJECT) is True
 
 
+def test_us_remote_rejects_foreign_city_and_country():
+    """US remote_scope must not keep foreign city/country remotes that miss the junk list."""
+    assert location_ok("London (Remote)", ACCEPT, REJECT) is False
+    assert location_ok("Remote, United Kingdom", ACCEPT, REJECT) is False
+    assert location_ok("Remote - Berlin, Germany", ACCEPT, REJECT) is False
+    assert location_ok("UK Remote", ACCEPT, REJECT) is False
+    assert location_ok("Work from home - Manchester, UK", ACCEPT, REJECT) is False
+    assert location_ok("Remote - Mexico City", ACCEPT, REJECT) is False
+    assert location_ok("Paris, France (Remote)", ACCEPT, REJECT) is False
+    assert location_ok("Remote (EU)", ACCEPT, REJECT) is False
+    # Bare or US-tagged remote still passes.
+    assert location_ok("Remote", ACCEPT, REJECT) is True
+    assert location_ok("Remote - US", ACCEPT, REJECT) is True
+    assert location_ok("Remote - New York", ACCEPT, REJECT) is True
+    # New Mexico is a US state, not the country.
+    assert location_ok("Remote - New Mexico", ACCEPT, REJECT) is True
+
+
 def test_remote_any_country_keeps_intl_remote():
     assert location_ok("Remote - EMEA", ACCEPT, REJECT, remote_any=True) is True
+    assert location_ok("London (Remote)", ACCEPT, REJECT, remote_any=True) is True
     # User reject patterns still win.
     assert location_ok("Remote (India only)", ACCEPT, REJECT, remote_any=True) is False
 
