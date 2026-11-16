@@ -14,6 +14,7 @@ import json
 import logging
 import os
 import random
+import re
 import threading
 import time
 from datetime import datetime, timezone
@@ -275,13 +276,16 @@ def shared_client(proxy: str | None = None) -> GuestClient:
 
 # -- Parsing -----------------------------------------------------------------
 
+# Thousands only when k sits on the number ("$120K"). A later "wk" is a week.
+_AMOUNT = re.compile(r"(\d[\d,]*(?:\.\d+)?)\s*([kK])?")
+
+
 def _money(text: str) -> float | None:
-    digits = "".join(ch for ch in text if ch.isdigit() or ch == ".")
-    try:
-        amount = float(digits) if digits else None
-    except ValueError:
+    match = _AMOUNT.search(text or "")
+    if not match:
         return None
-    if amount is not None and "k" in text.lower():
+    amount = float(match.group(1).replace(",", ""))
+    if match.group(2):
         amount *= 1000
     return amount
 
@@ -290,6 +294,10 @@ def _interval(text: str) -> str:
     lower = text.lower()
     if "/hr" in lower or "hour" in lower:
         return "hourly"
+    if "/wk" in lower or "week" in lower:
+        return "weekly"
+    if "/day" in lower or "daily" in lower or "per day" in lower:
+        return "daily"
     if "/mo" in lower or "month" in lower:
         return "monthly"
     return "yearly"

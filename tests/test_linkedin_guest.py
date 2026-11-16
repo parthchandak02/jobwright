@@ -86,6 +86,27 @@ def test_parse_cards_fields_and_salary():
     assert (cards[1]["min_amount"], cards[1]["interval"]) == (40.0, "hourly")
 
 
+def test_weekly_salary_keeps_the_week_and_the_salary_floor():
+    """LinkedIn writes a week as /wk and a day as /day. The k in wk is not thousands,
+    and neither rate is yearly.
+
+    $400/wk is about $21k a year and $200/day is about $52k, so a $100k floor
+    must drop both. $2,000/wk is about $104k, so the same floor must keep it.
+    """
+    from jobwright.discovery.filters import salary_below_floor
+    from jobwright.discovery.jobspy import _card_salary
+
+    low = linkedin.parse_cards(_card(789, salary="$400/wk"))[0]
+    high = linkedin.parse_cards(_card(790, salary="$1,500/wk - $2,000/wk"))[0]
+    day = linkedin.parse_cards(_card(791, salary="$200/day"))[0]
+    assert (low["min_amount"], low["max_amount"], low["interval"]) == (400, None, "weekly")
+    assert (high["min_amount"], high["max_amount"], high["interval"]) == (1500, 2000, "weekly")
+    assert (day["min_amount"], day["interval"]) == (200, "daily")
+    assert salary_below_floor(_card_salary(low), 100000) is True
+    assert salary_below_floor(_card_salary(high), 100000) is False
+    assert salary_below_floor(_card_salary(day), 100000) is True
+
+
 def test_parse_detail_markdown_without_attributes():
     text = linkedin.parse_detail(_DETAIL)
     assert "**operations**" in text
