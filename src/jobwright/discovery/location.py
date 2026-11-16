@@ -7,21 +7,28 @@ import re
 # Remote markers accepted after reject patterns pass.
 _REMOTE_MARKERS = ("remote", "anywhere", "work from home", "wfh", "distributed")
 
-# Non-US remote junk that often slips past bare "remote" acceptance.
-# Matched as substrings on the lowercased location (conservative, minimal).
-_INTL_REMOTE_JUNK = (
-    "emea",
-    "apac",
-    "latam",
-    "europe only",
-    "uk only",
-    "india only",
-    "canada only",
-    "worldwide except",
-    "outside the us",
-    "outside the united states",
-    "non-us",
-    "non us",
+# Non-US places that often ride along with a Remote marker. Word-boundary matched
+# so "uk" does not hit "Ukraine"; "(?<!new )" keeps "New Mexico" (US state).
+# Used only when remote_scope is US (remote_any=False).
+_INTL_REMOTE_PLACE = re.compile(
+    r"(?<!new )"
+    r"\b(?:"
+    r"emea|apac|latam|europe(?:\s+only)?|european\s+union|eu|"
+    r"united\s+kingdom|u\.k\.?|uk|britain|england|scotland|wales|"
+    r"india(?:\s+only)?|canada(?:\s+only)?|"
+    r"germany|france|spain|italy|netherlands|ireland|portugal|belgium|"
+    r"sweden|norway|denmark|finland|switzerland|austria|poland|"
+    r"australia|new\s+zealand|singapore|japan|china|brazil|"
+    r"mexico(?:\s+city)?|philippines|indonesia|malaysia|thailand|vietnam|taiwan|"
+    r"korea|pakistan|bangladesh|nigeria|kenya|egypt|turkey|"
+    r"argentina|chile|colombia|peru|israel|uae|dubai|"
+    r"london|berlin|munich|frankfurt|amsterdam|dublin|"
+    r"manchester|sydney|melbourne|toronto|vancouver|montreal|calgary|"
+    r"bangalore|bengaluru|hyderabad|mumbai|delhi|manila|"
+    r"worldwide\s+except|outside\s+the\s+(?:us|usa|united\s+states)|"
+    r"non[\s-]?us"
+    r")\b",
+    re.I,
 )
 
 
@@ -58,9 +65,10 @@ def location_ok(
     """Check if a job location passes the user's location filter.
 
     Remote jobs are accepted after reject patterns pass (avoids "Calgary Remote").
-    Known international-remote junk is rejected even when marked remote, unless
-    the user takes remote jobs from any country (``remote_any``).
-    Non-remote jobs must match an accept pattern.
+    Foreign city/country remotes (London, UK, Berlin, EMEA, ...) are rejected
+    even when marked remote, unless the user takes remote jobs from any country
+    (``remote_any``). Bare or US-tagged remotes stay. Non-remote jobs must match
+    an accept pattern.
     """
     if not location:
         return True  # unknown location -- keep it, let scorer decide
@@ -72,7 +80,7 @@ def location_ok(
             return False
 
     if any(marker in loc for marker in _REMOTE_MARKERS):
-        if not remote_any and any(junk in loc for junk in _INTL_REMOTE_JUNK):
+        if not remote_any and _INTL_REMOTE_PLACE.search(loc):
             return False
         return True
 
