@@ -59,6 +59,15 @@ def test_stale_snooze_ignored_after_reapplying():
     assert state["followup_due"] is False
 
 
+def test_followup_state_skips_recorded_reply():
+    applied = (NOW - timedelta(days=12)).isoformat()
+    replied = {"funnel_stage": "applied", "first_response_at": (NOW - timedelta(days=1)).isoformat()}
+    assert followups.followup_state(replied, applied, 10, NOW) is None
+    cleared = {"funnel_stage": "applied", "first_response_at": None}
+    state = followups.followup_state(cleared, applied, 10, NOW)
+    assert state["followup_due"] is True and state["applied_days_ago"] == 12
+
+
 def test_due_list_actions_and_per_user_days(profile):
     conn = profile
     _add(conn, "https://x.com/old", "applied", _ago(20), title="Old")
@@ -82,6 +91,17 @@ def test_due_list_actions_and_per_user_days(profile):
     row = conn.execute("SELECT funnel_stage, outcome, close_reason FROM jobs WHERE url = 'https://x.com/mid'").fetchone()
     assert (row["funnel_stage"], row["outcome"], row["close_reason"]) == ("closed", "ghosted", "no_response")
     assert followups.due_followups(conn) == []
+
+
+def test_due_followups_skip_recorded_reply(profile):
+    conn = profile
+    _add(conn, "https://x.com/replied", "applied", _ago(20), title="Replied", first_response_at=_ago(2))
+    _add(conn, "https://x.com/silent", "applied", _ago(15), title="Silent")
+    assert [j["title"] for j in followups.due_followups(conn)] == ["Silent"]
+
+    conn.execute("UPDATE jobs SET first_response_at = NULL WHERE url = ?", ("https://x.com/replied",))
+    conn.commit()
+    assert [j["title"] for j in followups.due_followups(conn)] == ["Replied", "Silent"]
 
 
 def test_notify_appends_at_most_three_followups(profile, monkeypatch):
@@ -227,6 +247,35 @@ def test_board_followup_api(tmp_path, monkeypatch):
         prof = client.put("/api/profile", json={"weekly_summary": False, "followup_days": 14}).json()
         assert prof["weekly_summary"] is False and prof["followup_days"] == 14
         assert client.put("/api/profile", json={"followup_days": 0}).status_code == 400
+    with config.user_context("ann"):
+        close_connection(config.DB_PATH)
+
+
+def test_board_response_clears_and_restores_followup_due(tmp_path, monkeypatch):
+    pytest.importorskip("fastapi")
+    from fastapi.testclient import TestClient
+
+    monkeypatch.setenv("JOBWRIGHT_DASHBOARD_USER", "ann")
+    users_mod.add_user("ann", name="Ann")
+    from jobwright.web.app import app
+
+    with config.user_context("ann"):
+        conn = init_db()
+        _add(conn, "https://x.com/due", "applied", _ago(12))
+        jid = job_id_for_url("https://x.com/due")
+    with TestClient(app) as client:
+        card = client.get("/api/board").json()["columns"]["applied"][0]
+        assert card["followup_due"] is True and card["first_response_at"] is None
+
+        card = client.post(f"/api/jobs/{jid}/response").json()
+        assert card["first_response_at"] and card["followup_due"] is False
+        card = client.get("/api/board").json()["columns"]["applied"][0]
+        assert card["first_response_at"] and card["followup_due"] is False
+
+        card = client.delete(f"/api/jobs/{jid}/response").json()
+        assert card["first_response_at"] is None and card["followup_due"] is True
+        card = client.get("/api/board").json()["columns"]["applied"][0]
+        assert card["first_response_at"] is None and card["followup_due"] is True
     with config.user_context("ann"):
         close_connection(config.DB_PATH)
 

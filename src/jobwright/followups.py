@@ -1,9 +1,10 @@
 """Follow-up reminders: applied jobs with no stage change for N days.
 
 A job is due when it has sat in Applied for ``followup_days`` (users.yaml,
-default 10) since it last changed stage or was last followed up. "Followed up"
-stamps ``followed_up_at`` and snoozes via ``follow_up_at``; "No response"
-closes the job with close_reason ``no_response``.
+default 10) since it last changed stage or was last followed up, and the user
+has not recorded a reply (``first_response_at``). "Followed up" stamps
+``followed_up_at`` and snoozes via ``follow_up_at``; "No response" closes the
+job with close_reason ``no_response``.
 """
 
 from __future__ import annotations
@@ -44,8 +45,10 @@ def last_stage_change(conn: sqlite3.Connection, url: str) -> str | None:
 
 
 def followup_state(job: dict, last_change: str | None, days: int, now: datetime | None = None) -> dict | None:
-    """Follow-up fields for one job, or None when it is not in Applied."""
+    """Follow-up fields for one job, or None when it is not in Applied or a reply was recorded."""
     if (job.get("funnel_stage") or "backlog") != "applied":
+        return None
+    if job.get("first_response_at"):
         return None
     now = now or datetime.now(UTC)
     applied = _parse(last_change) or _parse(job.get("applied_at"))
