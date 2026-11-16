@@ -183,6 +183,12 @@ def test_description_numbers_that_are_not_pay_keep_the_job():
         ("Stipend of $2,500/month", 30000),
         ("$25.00-$35.00 hourly", 35 * 2080),
         ("Pay is $5,000 monthly", 60000),
+        ("Compensation is $1,500 per week.", 1500 * 52),
+        ("Pay is $1,200 - $1,800/week", 1800 * 52),
+        ("USD1,500-USD2,000/weekly", 2000 * 52),
+        ("Day rate of $250 a day", 250 * 260),
+        ("USD400-USD600/daily", 600 * 260),
+        ("$150,000 a year, paid weekly", 150000),
         ("$50,000 sign-on bonus and a $75,000 in equity grant", None),
         ("$40,000 annual bonus", None),
         ("$25K referral bonus", None),
@@ -201,6 +207,15 @@ def test_description_salary_below_floor_still_rejects():
     jd = "Great team. The salary range for this role is $65,000 to $80,000."
     assert salary_below_floor(None, 120000, jd)
     assert not salary_below_floor(None, 70000, jd)
+
+
+def test_description_weekly_and_daily_pay_hits_the_salary_floor():
+    # $1,500/week is $78,000 a year, under a $100k floor. $2,000/week is about $104k.
+    assert salary_below_floor(None, 100000, "Compensation is $1,500 per week.")
+    assert not salary_below_floor(None, 100000, "Pay is $2,000/week.")
+    # $250/day is $65,000 a year. $600/day is about $156k.
+    assert salary_below_floor(None, 100000, "Day rate of $250 a day")
+    assert not salary_below_floor(None, 100000, "USD400-USD600/daily")
 
 
 def test_passes_discovery_filters():

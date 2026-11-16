@@ -92,8 +92,9 @@ _NOT_PAY_BEFORE = re.compile(
 def parse_salary_from_text(text: str | None) -> float | None:
     """Highest plausible annual pay figure in free text, or None.
 
-    Needs a $ / USD marker; the words right after the amount decide hourly or
-    monthly. Amounts under 1000 without a unit or K are ignored as ambiguous.
+    Needs a $ / USD marker; the words right after the amount decide hourly,
+    weekly, daily, or monthly. Amounts under 1000 without a unit or K are
+    ignored as ambiguous.
     """
     if not text:
         return None
@@ -106,6 +107,8 @@ def parse_salary_from_text(text: str | None) -> float | None:
         if _NOT_PAY_AFTER.match(tail) or _NOT_PAY_BEFORE.search(head):
             continue
         hourly = re.match(r"\s*(?:/|per\s+|an\s+|a\s+)?\s*(?:hour(?:ly)?|hr|h)\b", tail) is not None
+        weekly = re.match(r"\s*(?:/|per\s+|a\s+)?\s*(?:week(?:ly)?|wk)\b", tail) is not None
+        daily = re.match(r"\s*(?:/|per\s+|a\s+)?\s*(?:day|daily)\b", tail) is not None
         monthly = re.match(r"\s*(?:/|per\s+|a\s+)?\s*(?:month(?:ly)?|mo)\b", tail) is not None
         for num, k in ((m.group("a"), m.group("ak")), (m.group("b"), m.group("bk"))):
             if not num:
@@ -115,6 +118,10 @@ def parse_salary_from_text(text: str | None) -> float | None:
                 amount *= 1000
             if hourly:
                 amount *= 2080
+            elif weekly:
+                amount *= 52
+            elif daily:
+                amount *= 260
             elif monthly:
                 amount *= 12
             elif amount < 1000:
