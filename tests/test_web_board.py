@@ -152,6 +152,76 @@ def test_put_searches_keeps_remote_scope_and_accepts_new_cities(api_client):
     assert saved["location"]["reject_patterns"] == ["India"]
 
 
+def test_put_searches_sets_preserves_and_clears_defaults(api_client):
+    import jobwright.config as cfg
+
+    cfg.SEARCH_CONFIG_PATH.write_text("defaults:\n  country_indeed: usa\n", encoding="utf-8")
+
+    # Set both defaults
+    res = api_client.put(
+        "/api/settings/searches",
+        json={"hours_old": 48, "results_per_site": 25},
+    )
+    assert res.status_code == 200
+    searches = api_client.get("/api/settings").json()["searches"]
+    assert searches["hours_old"] == 48
+    assert searches["results_per_site"] == 25
+
+    # Omitting results_per_site leaves it unchanged
+    res = api_client.put("/api/settings/searches", json={"hours_old": 96})
+    assert res.status_code == 200
+    searches = api_client.get("/api/settings").json()["searches"]
+    assert searches["hours_old"] == 96
+    assert searches["results_per_site"] == 25
+
+    # Clearing hours_old removes it from defaults while preserving results_per_site
+    res = api_client.put("/api/settings/searches", json={"hours_old": None})
+    assert res.status_code == 200
+    searches = api_client.get("/api/settings").json()["searches"]
+    assert searches["hours_old"] is None
+    assert searches["results_per_site"] == 25
+    saved = yaml.safe_load(cfg.SEARCH_CONFIG_PATH.read_text(encoding="utf-8"))
+    assert "hours_old" not in saved["defaults"]
+    assert saved["defaults"]["results_per_site"] == 25
+
+    # Clearing results_per_site removes it from defaults while preserving other keys
+    res = api_client.put("/api/settings/searches", json={"results_per_site": None})
+    assert res.status_code == 200
+    searches = api_client.get("/api/settings").json()["searches"]
+    assert searches["hours_old"] is None
+    assert searches["results_per_site"] is None
+    saved = yaml.safe_load(cfg.SEARCH_CONFIG_PATH.read_text(encoding="utf-8"))
+    assert "results_per_site" not in saved["defaults"]
+    assert saved["defaults"]["country_indeed"] == "usa"
+
+
+def test_put_searches_rejects_invalid_numeric_bounds(api_client):
+    for bad_payload in (
+        {"hours_old": 0},
+        {"hours_old": -12},
+        {"results_per_site": 0},
+        {"results_per_site": -5},
+        {"min_salary": -1},
+    ):
+        res = api_client.put("/api/settings/searches", json=bad_payload)
+        assert res.status_code in (400, 422), (bad_payload, res.status_code, res.text)
+
+    # Valid boundary values still succeed
+    res = api_client.put(
+        "/api/settings/searches",
+        json={"min_salary": 0, "hours_old": 1, "results_per_site": 1},
+    )
+    assert res.status_code == 200
+    searches = api_client.get("/api/settings").json()["searches"]
+    assert searches["min_salary"] == 0
+    assert searches["hours_old"] == 1
+    assert searches["results_per_site"] == 1
+
+    res = api_client.put("/api/settings/searches", json={"min_salary": None})
+    assert res.status_code == 200
+    assert api_client.get("/api/settings").json()["searches"]["min_salary"] is None
+
+
 def test_board_lists_job(api_client):
     res = api_client.get("/api/board")
     assert res.status_code == 200

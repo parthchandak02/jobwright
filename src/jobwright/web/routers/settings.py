@@ -17,7 +17,7 @@ from typing import Annotated, Any
 import yaml
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from jobwright import config
 from jobwright.onboarding import PROFILE_SECTIONS, accept_patterns, allowed_profile_fields
@@ -175,9 +175,9 @@ class SearchSettings(BaseModel):
     locations: list[dict[str, Any]] | None = None
     boards: list[str] | None = None
     exclude_titles: list[str] | None = None
-    min_salary: int | None = None
-    hours_old: int | None = None
-    results_per_site: int | None = None
+    min_salary: int | None = Field(default=None, ge=0)
+    hours_old: int | None = Field(default=None, gt=0)
+    results_per_site: int | None = Field(default=None, gt=0)
 
 
 @router.put("/searches")
@@ -198,10 +198,16 @@ def put_searches(body: SearchSettings) -> dict:
         accept = list(location_cfg.get("accept_patterns") or [])
         accept += [p for p in accept_patterns(incoming["locations"]) if p not in accept]
         searches["location"] = {**location_cfg, "accept_patterns": accept}
-    defaults = searches.setdefault("defaults", {})
+    defaults = searches.get("defaults")
+    if not isinstance(defaults, dict):
+        defaults = {}
+        searches["defaults"] = defaults
     for key in ("hours_old", "results_per_site"):
-        if incoming.get(key) is not None:
-            defaults[key] = incoming[key]
+        if key in incoming:
+            if incoming[key] is None:
+                defaults.pop(key, None)
+            else:
+                defaults[key] = incoming[key]
     _write_searches(searches)
     return {"ok": True}
 
