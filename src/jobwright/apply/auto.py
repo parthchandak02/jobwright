@@ -262,17 +262,47 @@ def veto(target: str | int, *, by: str = "cli", number: bool = False, now: datet
 # ---------------------------------------------------------------------------
 
 
-def ensure_materials(job: dict, tailor_fn: Callable[[str], int] | None = None) -> dict | None:
-    """Tailored resume + cover letter for the job (generated if missing)."""
+def _job_label(job: dict) -> str:
+    """Short 'Title at Company' (or URL) for logs and pick notes."""
+    title = (job.get("title") or "").strip()
+    company = (job.get("company") or "").strip()
+    if title and company:
+        return f"{title} at {company}"
+    return title or company or (job.get("url") or "job")[:80]
+
+
+def ensure_materials(
+    job: dict, tailor_fn: Callable[[str], int] | None = None
+) -> tuple[dict | None, str | None]:
+    """Tailored resume + cover letter for the job (generated if missing).
+
+    Returns ``(job, None)`` when materials are ready, or ``(None, reason)`` with a
+    human-readable reason (and a warning log) when they are not.
+    """
     if job.get("tailored_resume_path") and job.get("cover_letter_path"):
-        return job
+        return job, None
+    url = job.get("url") or ""
+    label = _job_label(job)
     if tailor_fn is None:
         from jobwright.scoring.tailor import run_single_job_materials as tailor_fn  # noqa: N806
-    rc = tailor_fn(job["url"])
-    row = get_connection().execute("SELECT * FROM jobs WHERE url = ?", (job["url"],)).fetchone()
-    if rc != 0 or row is None or not row["tailored_resume_path"]:
-        return None
-    return dict(row)
+    rc = tailor_fn(url)
+    row = get_connection().execute("SELECT * FROM jobs WHERE url = ?", (url,)).fetchone()
+    if row is None:
+        reason = f"could not prepare resume/cover for {label}: job missing after tailor (rc={rc})"
+        log.warning("%s", reason)
+        return None, reason
+    if rc != 0:
+        reason = f"could not prepare resume/cover for {label}: tailor exited with code {rc}"
+        log.warning("%s (%s)", reason, url[:80])
+        return None, reason
+    if not row["tailored_resume_path"]:
+        reason = (
+            f"could not prepare resume/cover for {label}: "
+            "tailor reported success but resume path is empty"
+        )
+        log.warning("%s (%s)", reason, url[:80])
+        return None, reason
+    return dict(row), None
 
 
 def due(
@@ -314,9 +344,9 @@ def due(
             if job_row is None:
                 note = "job no longer on the board"
             else:
-                job = ensure_materials(dict(job_row), tailor_fn)
+                job, materials_err = ensure_materials(dict(job_row), tailor_fn)
                 if job is None:
-                    note = "could not prepare the resume and cover letter"
+                    note = (materials_err or "could not prepare the resume and cover letter")[:300]
                 else:
                     res = apply_fn(job, dry_run=False, user_id=user_id)
                     outcome = getattr(res, "outcome", "failed")
@@ -353,7 +383,7 @@ def dry_run_auto(user_id: str | None, *, limit: int | None = None, apply_fn=None
     cap = limit if limit is not None else (user.apply_daily_cap if user else 1)
     out = []
     for job in candidates(user_id, cap):
-        job = ensure_materials(job, tailor_fn)
+        job, _materials_err = ensure_materials(job, tailor_fn)
         if job is None:
             continue
         res = (apply_fn or apply_job)(job, dry_run=True, user_id=user_id)
