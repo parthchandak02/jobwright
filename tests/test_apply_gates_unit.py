@@ -1,0 +1,143 @@
+"""Unit coverage for apply gates that decide whether Claude may claim a job.
+
+Locks down score preference, already-applied checks, employer-cap counting of
+hand-marked applications, material file stems, and answer-bank fact rules that
+keep place-specific / invalid writes out of the shared bank. No browser, no MCP.
+"""
+
+from __future__ import annotations
+
+import json
+from datetime import datetime, timezone
+
+import pytest
+
+from jobwright import config
+from jobwright import users as users_mod
+from jobwright.apply import answers as answers_mod
+from jobwright.apply import safety
+from jobwright.database import close_connection, get_connection, init_db, job_id_for_url
+from jobwright.job_identity import material_prefix, resolve_company
+
+
+@pytest.fixture
+def env():
+    users_mod.add_user("alex", name="Alex Rivera", apply_enabled=True)
+    users_mod.update_user("alex", apply_via="server")
+    data = config.set_active_user("alex")
+    close_connection()
+    init_db()
+    (data / "profile.json").write_text(json.dumps({"personal": {
+        "full_name": "Alex Rivera", "email": "user1@example.com", "phone": "+1 415 555 0100",
+        "city": "Oakland"}}), encoding="utf-8")
+    yield data
+    close_connection()
+
+
+def _job(**kw) -> dict:
+    base = {
+        "url": "https://jobs.example.com/j/1", "company": "Example Co", "title": "Analyst",
+        "site": "greenhouse", "fit_score": 9, "dedupe_key": "example co|analyst|sf",
+    }
+    base.update(kw)
+    return base
+
+
+def test_effective_score_prefers_the_persons_rating():
+    assert safety.effective_score({"fit_score": 9, "user_fit_score": 4}) == 4
+    assert safety.effective_score({"fit_score": 9}) == 9
+    assert safety.effective_score({}) is None
+
+
+def test_check_job_uses_user_rating_and_rejects_already_applied(env):
+    low = _job(fit_score=9, user_fit_score=5)
+    assert any("below 8" in r for r in safety.check_job(low, "alex", live=False).reasons)
+    marked = _job(url="https://jobs.example.com/j/2", applied_at="2026-11-01T00:00:00+00:00")
+    assert any("already marked applied" in r for r in safety.check_job(marked, "alex", live=False).reasons)
+
+
+def test_employer_cap_counts_hand_marked_jobs_without_submission(env):
+    assert safety.employer_applications("") == 0
+    assert safety.employer_applications(None) == 0
+    conn = get_connection()
+    url = "https://jobs.example.com/hand/1"
+    when = datetime.now(timezone.utc).isoformat()
+    conn.execute(
+        "INSERT INTO jobs (url, title, company, site, fit_score, job_id, funnel_stage, applied_at, "
+        "discovered_at) VALUES (?, 'Analyst', 'Example Co, Inc.', 'greenhouse', 9, ?, 'applied', ?, ?)",
+        (url, job_id_for_url(url), when, when),
+    )
+    conn.commit()
+    assert safety.employer_applications("Example Co") == 1
+    other = _job(url="https://jobs.example.com/hand/2", company="Example Co", title="Engineer",
+                 dedupe_key="example co|eng|sf")
+    assert any("last 30 days" in r for r in safety.check_job(other, "alex", live=True).reasons)
+
+
+def test_maybe_auto_pause_is_a_no_op_when_already_paused_or_under_limit(env):
+    assert safety.maybe_auto_pause(None) is False
+    assert safety.maybe_auto_pause("alex") is False
+    users_mod.update_user("alex", apply_paused=True, apply_paused_reason="already")
+    assert safety.maybe_auto_pause("alex") is False
+
+
+def test_check_profile_unknown_user_and_paused_reason(env):
+    assert "unknown profile" in safety.check_profile("nobody", live=True).reasons
+    users_mod.update_user("alex", apply_paused=True, apply_paused_reason="2 failures")
+    assert any("2 failures" in r for r in safety.check_profile("alex", live=True).reasons)
+
+
+def test_resolve_company_never_returns_a_job_board_name():
+    assert resolve_company({"company": "Acme", "site": "linkedin"}) == "Acme"
+    assert resolve_company({"company": "", "site": "WorkdayTenant"}) == "WorkdayTenant"
+    assert resolve_company({"company": "", "site": "linkedin", "title": "Analyst at Bright Labs"}) == "Bright Labs"
+    assert resolve_company({"company": "", "site": "indeed", "title": "Analyst"}) == ""
+
+
+def test_material_prefix_is_stable_and_unique_per_url():
+    a = {"url": "https://jobs.example.com/a", "company": "Example Co!", "title": "Sr. Analyst"}
+    b = {"url": "https://jobs.example.com/b", "company": "Example Co!", "title": "Sr. Analyst"}
+    assert material_prefix(a).startswith("Example_Co_Sr_Analyst_")
+    assert material_prefix(a) != material_prefix(b)
+    assert material_prefix({"url": "https://jobs.example.com/c", "company": "", "title": ""}) \
+        .startswith("company_untitled_")
+
+
+def test_fact_key_blocks_place_specific_attestations_and_unknown_keys():
+    assert answers_mod.fact_key(None, "salary_expectation") == "salary_expectation"
+    with pytest.raises(ValueError, match="Unknown"):
+        answers_mod.fact_key(None, "not_a_real_key")
+    assert answers_mod.fact_key("Are you willing to relocate to Boston?") is None
+    assert answers_mod.fact_key("Are you willing to relocate?") == "relocation"
+
+
+def test_save_facts_validates_before_writing(env):
+    with pytest.raises(ValueError, match="source must be"):
+        answers_mod.save_facts([{"question": "Desired pay", "value": "100k", "source": "settings"}],
+                               person_confirmed=True)
+    with pytest.raises(ValueError, match="needs a value"):
+        answers_mod.save_facts([{"question": "Desired pay", "value": "  ", "source": "told_claude"}],
+                               person_confirmed=True)
+    with pytest.raises(ValueError, match="2000"):
+        answers_mod.save_facts([{"question": "Notes", "value": "x" * 2001, "source": "told_claude"}],
+                               person_confirmed=False)
+    with pytest.raises(ValueError, match="form's question"):
+        answers_mod.save_facts([{"question": "ab", "value": "yes", "source": "told_claude"}],
+                               person_confirmed=False)
+    assert answers_mod.load_answers().get("salary_expectation") is None
+
+
+def test_seed_from_profile_moves_legacy_contact_answers(env):
+    path = env / "profile.json"
+    profile = json.loads(path.read_text())
+    profile["application_answers"] = {
+        "version": 1,
+        "answers": {"city": {"value": "Berkeley", "source": "cli", "updated_at": "2026-01-01T00:00:00+00:00"}},
+        "custom": {},
+    }
+    profile["personal"].pop("city", None)
+    path.write_text(json.dumps(profile), encoding="utf-8")
+    moved = answers_mod.seed_from_profile()
+    assert moved == {"city": "Berkeley"}
+    assert answers_mod.load_answers().get("city") == "Berkeley"
+    assert json.loads(path.read_text())["personal"]["city"] == "Berkeley"

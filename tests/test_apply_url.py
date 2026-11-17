@@ -332,3 +332,57 @@ def test_jobspy_direct_url_treats_none_strings_as_missing():
                  "https://www.linkedin.com/signup/cold-join?session_redirect=x"):
         assert _direct_url(junk) is None, junk
     assert _direct_url("https://jobs.lever.co/exampleorg/1") == "https://jobs.lever.co/exampleorg/1"
+
+
+# -- resolve_one (connector: find the employer form for one LinkedIn-only job) ------
+
+def _stub_resolve_one(monkeypatch, tmp_path, *, linkedin: FakeLinkedIn, handler=None):
+    """Wire resolve_one to the same fakes the stage runner tests use (no network)."""
+    import jobwright.config as config
+    from jobwright.discovery.site_breaker import SiteBreaker
+
+    monkeypatch.setattr(config, "LOG_DIR", tmp_path)
+    monkeypatch.delenv("JOBWRIGHT_APPLY_URLS", raising=False)
+    http = _http(handler or _board_handler([]))
+    breaker = SiteBreaker(tmp_path / "site_cooldown.json", threshold=3)
+    monkeypatch.setattr(au, "Http", lambda: http)
+    monkeypatch.setattr(au, "LinkedInOffsite", lambda breaker=None: linkedin)
+    monkeypatch.setattr("jobwright.discovery.jobspy.site_breaker", lambda: breaker)
+    return breaker
+
+
+def test_resolve_one_off_env_skips(monkeypatch):
+    monkeypatch.setenv("JOBWRIGHT_APPLY_URLS", "off")
+    assert au.resolve_one({"url": "https://www.linkedin.com/jobs/view/1", "company": "X"}) is None
+
+
+def test_resolve_one_linkedin_offsite_and_persists_caches(tmp_path, monkeypatch):
+    breaker = _stub_resolve_one(monkeypatch, tmp_path, linkedin=FakeLinkedIn({"3900000001": GH_URL}))
+    saved = []
+    monkeypatch.setattr(breaker, "save", lambda: saved.append("breaker") or None)
+    got = au.resolve_one({
+        "url": "https://www.linkedin.com/jobs/view/3900000001",
+        "company": "Example Org", "title": "Planner", "location": "Remote",
+    })
+    assert got and got.url == GH_URL and got.source == "linkedin_offsite" and got.ats == "greenhouse"
+    assert (tmp_path / au.BOARD_CACHE_FILE).is_file()
+    assert saved == ["breaker"]
+
+
+def test_resolve_one_rate_limit_falls_back_to_ats_board(tmp_path, monkeypatch):
+    _stub_resolve_one(monkeypatch, tmp_path,
+                      linkedin=FakeLinkedIn({}, rate_limited={"3900000001"}))
+    got = au.resolve_one({
+        "url": "https://www.linkedin.com/jobs/view/3900000001",
+        "company": "Example Org, Inc.", "title": "Product Designer", "location": "Remote",
+    })
+    assert got and got.source == "ats_board" and got.url.endswith("/aaa-3/apply")
+
+
+def test_resolve_one_rate_limit_without_company_gives_up(tmp_path, monkeypatch):
+    _stub_resolve_one(monkeypatch, tmp_path,
+                      linkedin=FakeLinkedIn({}, rate_limited={"3900000001"}))
+    assert au.resolve_one({
+        "url": "https://www.linkedin.com/jobs/view/3900000001",
+        "company": "", "title": "Analyst",
+    }) is None
