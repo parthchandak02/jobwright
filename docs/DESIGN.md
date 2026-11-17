@@ -51,6 +51,9 @@ apply), or fix a setting. Every screen should make its one job obvious.
 
 ## Lessons (newest first)
 
+- 2026-11-16: Job materials toolbar needs one-tap Copy for tailored resume/cover markdown. ATS paste
+  fields want plain text; Download alone forced a file detour. Mirror the Claude tab Copy pattern
+  (button flips to Copied + toast) and disable Copy when the active view has no markdown.
 - 2026-11-15: Cook polish pass: sticky lane and board chrome use a shared hairline + `shadow-e1` (and light blur on md+), selected cards get a primary wash, weak scores tint with `--tone-neutral`, empty lanes soften, docked job panel and `board-beside-panel` add depth without new colours.
 - 2026-11-12: ⌘F / Ctrl+F opens a global search (jobs incl. closed, pages, settings tabs) instead of the
   browser's find; pressing it again hands over to the browser. Single-letter matches are not highlighted
