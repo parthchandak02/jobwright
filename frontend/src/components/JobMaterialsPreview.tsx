@@ -13,7 +13,11 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Segmented } from '@/components/ui/segmented'
-import { hasCopyableMarkdown, writeClipboardText } from '@/lib/clipboard'
+import {
+  hasCopyableMarkdown,
+  materialsCopyPlainText,
+  writeClipboardText,
+} from '@/lib/clipboard'
 import { cn } from '@/lib/utils'
 
 export type MaterialViewOption = {
@@ -49,7 +53,7 @@ function download(path: string) {
 
 function MaterialsCopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false)
-  const enabled = hasCopyableMarkdown(text)
+  const plain = materialsCopyPlainText(text)
 
   return (
     <Button
@@ -57,11 +61,12 @@ function MaterialsCopyButton({ text }: { text: string }) {
       variant="secondary"
       size="sm"
       className="h-9 shrink-0 gap-1.5 px-2.5"
-      disabled={!enabled}
-      aria-label="Copy markdown text"
+      disabled={!plain}
+      aria-label="Copy text"
       onClick={() => {
+        if (!plain) return
         void (async () => {
-          const ok = await writeClipboardText(text)
+          const ok = await writeClipboardText(plain)
           if (!ok) {
             toast.error('Copy failed')
             return
@@ -74,7 +79,7 @@ function MaterialsCopyButton({ text }: { text: string }) {
     >
       {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
       <span aria-live="polite" className="hidden @min-[22rem]/preview:inline">
-        {copied ? 'Copied' : 'Copy'}
+        {copied ? 'Copied' : 'Copy text'}
       </span>
     </Button>
   )
