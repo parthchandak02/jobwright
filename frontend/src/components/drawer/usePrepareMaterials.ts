@@ -8,11 +8,21 @@ import { errorMessage } from '@/lib/utils'
  * "Prepare resume + letter" for one job: starts the combined tailor run, or
  * picks up one that is already going, and follows it on the run stream (no
  * polling). `onDone` fires once when it ends.
+ *
+ * When `autoStart` is true (drawer open on backlog/prepare with no materials),
+ * starts the same run as the Prepare button after checking for a live one.
  */
-export function usePrepareMaterials(jobKey: string | null, onDone: () => void) {
+export function usePrepareMaterials(
+  jobKey: string | null,
+  onDone: () => void,
+  options?: { autoStart?: boolean },
+) {
+  const autoStart = Boolean(options?.autoStart)
   const [starting, setStarting] = useState(false)
   const onDoneRef = useRef(onDone)
   onDoneRef.current = onDone
+  // One auto-start attempt per jobKey while this drawer instance is open.
+  const autoStartedKeyRef = useRef<string | null>(null)
 
   const run = useRunTracker({
     fallbackStages: ['tailor', 'cover', 'docx'],
@@ -24,21 +34,43 @@ export function usePrepareMaterials(jobKey: string | null, onDone: () => void) {
   })
   const { attach, reset, state } = run
 
-  // Pick up a prepare run for this job that is still going (drawer reopened, page reloaded).
+  // Pick up a prepare run for this job that is still going (drawer reopened, page reloaded),
+  // or auto-start when the drawer opened a job that still needs materials.
   useEffect(() => {
     reset()
-    if (!jobKey) return
+    if (!jobKey) {
+      autoStartedKeyRef.current = null
+      return
+    }
     let cancelled = false
     listRuns()
-      .then((runs) => {
+      .then(async (runs) => {
+        if (cancelled) return
         const live = runs.find((r) => r.running && r.job_id === jobKey && r.kind === 'tailor')
-        if (!cancelled && live) attach(live, Date.parse(live.started_at) || Date.now())
+        if (live) {
+          attach(live, Date.parse(live.started_at) || Date.now())
+          autoStartedKeyRef.current = jobKey
+          return
+        }
+        if (!autoStart || autoStartedKeyRef.current === jobKey) return
+        autoStartedKeyRef.current = jobKey
+        setStarting(true)
+        try {
+          if (cancelled) return
+          attach(await startJobTailor(jobKey), Date.now())
+          toast.success('Preparing your resume and cover letter. This takes a few minutes.')
+        } catch (e) {
+          autoStartedKeyRef.current = null
+          if (!cancelled) toast.error(errorMessage(e))
+        } finally {
+          if (!cancelled) setStarting(false)
+        }
       })
       .catch(() => undefined)
     return () => {
       cancelled = true
     }
-  }, [jobKey, attach, reset])
+  }, [jobKey, attach, reset, autoStart])
 
   // Lost the stream (API restart): stop showing "Preparing…" and refresh what is there.
   useEffect(() => {
@@ -52,6 +84,7 @@ export function usePrepareMaterials(jobKey: string | null, onDone: () => void) {
     setStarting(true)
     try {
       attach(await startJobTailor(jobKey), Date.now())
+      autoStartedKeyRef.current = jobKey
       toast.success('Preparing your resume and cover letter. This takes a few minutes.')
     } catch (e) {
       toast.error(errorMessage(e))

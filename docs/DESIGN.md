@@ -51,6 +51,8 @@ apply), or fix a setting. Every screen should make its one job obvious.
 
 ## Lessons (newest first)
 
+- 2026-11-17: Opening a backlog/prepare job with no materials starts Prepare by itself (same run as
+  the button). The daily-list deep link was leaving her stuck between Prepare and Open posting.
 - 2026-11-15: Cook polish pass: sticky lane and board chrome use a shared hairline + `shadow-e1` (and light blur on md+), selected cards get a primary wash, weak scores tint with `--tone-neutral`, empty lanes soften, docked job panel and `board-beside-panel` add depth without new colours.
 - 2026-11-12: ⌘F / Ctrl+F opens a global search (jobs incl. closed, pages, settings tabs) instead of the
   browser's find; pressing it again hands over to the browser. Single-letter matches are not highlighted
