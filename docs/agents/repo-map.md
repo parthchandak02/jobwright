@@ -12,6 +12,7 @@ Detailed paths for agents. Summary: [../../AGENTS.md](../../AGENTS.md).
 | `src/jobwright/resume.py` | PDF source of truth → cached `resume/base.md` |
 | `src/jobwright/notify.py` | Daily WhatsApp job list + deep links |
 | `src/jobwright/hermes_cron.py` | Create/edit/remove `jobwright-brief-<user>`, `jobwright-ops-watchdog`, `jobwright-backup`, `jobwright-weekly-summary` (`--no-agent --deliver local`); pause legacy send/check crons; `JOBWRIGHT_HERMES_DRY_RUN` |
+| `src/jobwright/hermes_broker.py` | Unix-socket broker so the dashboard (non-Hermes OS user) can send WhatsApp and manage Hermes crons: set `JOBWRIGHT_HERMES_BROKER` to forward `@brokered` calls; unset = local. Serve: `python -m jobwright.hermes_broker serve`. Tests: `pytest tests/test_hermes_broker.py` |
 | `src/jobwright/ops.py` | Brief report, watchdog, alerts to `ops_target`, backups |
 | `src/jobwright/preflight.py` | Pre-run checks; `--fix` installs Playwright Chromium |
 | `src/jobwright/onboarding.py` | New profile + LLM draft from resume; `onboarding_status`, `is_set_up` (gates brief crons, `install-crons`, welcome) |
