@@ -1,13 +1,15 @@
 """Unit coverage for apply gates that decide whether Claude may claim a job.
 
 Locks down score preference, already-applied checks, employer-cap counting of
-hand-marked applications, material file stems, and answer-bank fact rules that
-keep place-specific / invalid writes out of the shared bank. No browser, no MCP.
+hand-marked applications, material file stems, answer-bank fact rules that
+keep place-specific / invalid writes out of the shared bank, and open-question
+callback logging when the model fails mid-form. No browser, no MCP.
 """
 
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime, timezone
 
 import pytest
@@ -16,6 +18,7 @@ from jobwright import config
 from jobwright import users as users_mod
 from jobwright.apply import answers as answers_mod
 from jobwright.apply import safety
+from jobwright.apply.runner import make_open_answer
 from jobwright.database import close_connection, get_connection, init_db, job_id_for_url
 from jobwright.job_identity import material_prefix, resolve_company
 
@@ -141,3 +144,40 @@ def test_seed_from_profile_moves_legacy_contact_answers(env):
     assert moved == {"city": "Berkeley"}
     assert answers_mod.load_answers().get("city") == "Berkeley"
     assert json.loads(path.read_text())["personal"]["city"] == "Berkeley"
+
+
+def test_make_open_answer_logs_question_and_job_on_failure(caplog):
+    """A model/API failure still returns ''; the warning names question, job, and error type."""
+
+    class Boom:
+        def answer_open_question(self, question, job, resume_text, cover_text=""):
+            raise RuntimeError("provider down")
+
+    answer = make_open_answer(Boom(), "resume text")
+    job = {
+        "url": "https://jobs.example.com/j/1",
+        "title": "Analyst",
+        "company": "Example Co",
+    }
+    with caplog.at_level(logging.WARNING, logger="jobwright.apply.runner"):
+        assert answer("How many years of Python experience?", job) == ""
+    text = caplog.text
+    assert "How many years of Python experience?" in text
+    assert "https://jobs.example.com/j/1" in text
+    assert "Analyst" in text
+    assert "Example Co" in text
+    assert "RuntimeError" in text
+    assert "provider down" in text
+
+
+def test_make_open_answer_success_and_attestation_skip():
+    class Ok:
+        def answer_open_question(self, question, job, resume_text, cover_text=""):
+            return f"ans:{question}:{resume_text[:4]}"
+
+    answer = make_open_answer(Ok(), "long resume")
+    job = {"url": "https://jobs.example.com/j/2", "title": "Eng", "company": "Acme"}
+    assert answer("Favorite stack?", job) == "ans:Favorite stack?:long"
+    # Attestations must stay empty so the filler records a Need, never a guessed answer.
+    assert answer("Are you authorized to work in the US?", job) == ""
+    assert make_open_answer(None, "resume")("Anything?", job) == ""

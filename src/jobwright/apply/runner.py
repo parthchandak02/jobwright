@@ -230,7 +230,17 @@ def make_open_answer(agent: Any, resume_text: str, cover_text: str = "") -> Call
         try:
             return agent.answer_open_question(question, job, resume_text, cover_text)
         except Exception as exc:  # noqa: BLE001
-            log.warning("open question failed: %s", exc)
+            # Empty string still means "no answer" to the filler; name the question
+            # and job so a model/API failure is not mistaken for a blank form field.
+            log.warning(
+                "open question failed for %r on %s (%s @ %s): %s: %s",
+                (question or "")[:160],
+                job.get("url") or "",
+                job.get("title") or "",
+                job.get("company") or "",
+                type(exc).__name__,
+                exc,
+            )
             return ""
 
     return answer
