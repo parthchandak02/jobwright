@@ -65,6 +65,8 @@ Nested agent notes for the Python package. Root context: [../../AGENTS.md](../..
 - `3 application_url_source`: `jobs.application_url_source`, `application_ats`, `application_url_checked_at` (written by `enrichment/apply_url.py`; discovery and the detail scraper tag theirs too); also NULLs junk `application_url` values (`'None'`/`'nan'`, LinkedIn signup/cold-join walls). Apply eligibility is judged by the apply URL (`config.is_apply_blocked_job(site, url, application_url)`, `config.apply_blocked_sql()`; `sites.yaml` `apply_blocked.hosts`).
 - `4 apply_evidence`: `pending_inputs` (human-in-the-loop requests; codes never stored, `value_hash` only), `submissions` (one row per apply attempt with fields / screenshots / verification / cost), `apply_picks` (daily picks with a veto window).
 - `5 connector_claims`: `submissions.client_id` (which connector client claimed / recorded an application) + index on `(job_url, outcome)`.
+- `6 pending_questions`: `pending_inputs.meta_json` / `asked_by` for connector `ask_person`.
+- `7 prepare_auto_started`: `jobs.prepare_auto_started_at` (drawer auto-Prepare once per UTC day; `POST .../tailor` with `auto: true` claims via `claim_prepare_auto_start`).
 - Not migrations: `backfill_job_ids`, `backfill_sponsorship_status`, `backfill_funnel_stages` still run on every `init_db`, because some writers (e.g. discovery inserts) leave those fields empty.
 
 To add one:

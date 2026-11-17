@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 
 from jobwright.web.jobkeys import resolve_job_key
 from jobwright import config
-from jobwright.database import get_connection, job_id_for_url
+from jobwright.database import claim_prepare_auto_start, get_connection, job_id_for_url
 from jobwright.scoring.materials_format import (
     MaterialKind,
     format_material_preview,
@@ -35,6 +35,8 @@ _PREVIEW_MAX_CHARS = 8000
 class TailorJobBody(BaseModel):
     resume_instructions: str | None = Field(default=None, max_length=20_000)
     cover_instructions: str | None = Field(default=None, max_length=20_000)
+    # Drawer auto-Prepare: claim once per UTC day server-side before spawning.
+    auto: bool = False
 
 
 class TailorResumeBody(BaseModel):
@@ -249,6 +251,18 @@ def _spawn_tailor_run(
         raise HTTPException(400, str(e)) from e
 
     body = body or TailorJobBody()
+    if body.auto:
+        # Full-scope auto-Prepare only; resume/cover-only routes never set auto.
+        if scope != "full":
+            raise HTTPException(400, "auto Prepare is only for the full resume + letter run")
+        if not claim_prepare_auto_start(url, conn):
+            raise HTTPException(
+                409,
+                detail={
+                    "code": "prepare_auto_already",
+                    "detail": "Prepare already auto-started for this job today",
+                },
+            )
     log_dir = Path(config.LOG_DIR)
     log_dir.mkdir(parents=True, exist_ok=True)
     token = uuid.uuid4().hex[:8]

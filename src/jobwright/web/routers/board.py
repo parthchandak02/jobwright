@@ -91,6 +91,7 @@ def _row_to_card(row, followup_days: int | None = None) -> dict:
         "url": url,
         "job_id": job_id_for_url(url) if url else None,
         "whatsapp_notified_at": d.get("whatsapp_notified_at"),
+        "prepare_auto_started_at": d.get("prepare_auto_started_at"),
         "title": d.get("title"),
         "company": d.get("company") or d.get("site"),
         "site": d.get("site"),
