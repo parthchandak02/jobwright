@@ -31,6 +31,24 @@ def test_parse_salary_weekly_and_daily_intervals():
     assert not salary_below_floor("USD1,500-USD2,000/weekly", 100000)
 
 
+def test_parse_salary_mixed_hourly_and_annual():
+    """Period words apply to the nearby amount, not every number in the string.
+
+    Boards often list both an hourly rate and a yearly figure (or yearly pay
+    plus a work-week length). Using the whole string for period detection
+    used to multiply the annual figure by 2080 and clear the salary floor.
+    """
+    assert parse_salary_to_annual("$30/hour, $62,400 annually") == 62_400
+    assert salary_below_floor("$30/hour, $62,400 annually", 115_000)
+    assert parse_salary_to_annual("$100,000/year (40 hours/week)") == 100_000
+    assert salary_below_floor("$100,000/year (40 hours/week)", 115_000)
+    assert parse_salary_to_annual("$50/hr base salary $120,000") == 120_000
+    assert not salary_below_floor("$50/hr base salary $120,000", 115_000)
+    # Pure hourly and weekly strings still annualize.
+    assert parse_salary_to_annual("$55/hour") == 55 * 2080
+    assert parse_salary_to_annual("$55/h") == 55 * 2080
+
+
 def test_title_excluded_word_boundary():
     assert title_excluded("Senior Software Engineer", ["software engineer"])
     assert not title_excluded("Chief of Staff", ["software engineer"])
