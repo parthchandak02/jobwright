@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import uuid
 from pathlib import Path
 
@@ -26,7 +27,14 @@ from jobwright.web.routers.runs import spawn_logged_run
 from jobwright.web.session import current_user_id
 from jobwright.web.txguard import TxGuardRoute
 
+log = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/api", tags=["materials"], route_class=TxGuardRoute)
+
+# Shown in the job drawer when Prepare / Custom Tailor is tapped too early.
+_NO_DESCRIPTION = (
+    "No job description yet. Wait for enrichment to finish, then try Prepare again."
+)
 
 # Cap preview text so the drawer stays scannable (~6–8 KB).
 _PREVIEW_MAX_CHARS = 8000
@@ -234,14 +242,21 @@ def _spawn_tailor_run(
     url = resolve_job_key(url)
     conn = get_connection()
     row = conn.execute(
-        "SELECT url, full_description, description FROM jobs WHERE url = ?",
+        "SELECT url, title, company, full_description, description FROM jobs WHERE url = ?",
         (url,),
     ).fetchone()
     if not row:
         raise HTTPException(404, "Job not found")
     description = (row["full_description"] or row["description"] or "").strip()
     if not description:
-        raise HTTPException(400, "Job description required")
+        log.warning(
+            "Prepare refused: no description yet for %s @ %s (%s) scope=%s",
+            row["title"] or "?",
+            row["company"] or "?",
+            url,
+            scope,
+        )
+        raise HTTPException(400, _NO_DESCRIPTION)
 
     try:
         from jobwright.resume import load_resume_text

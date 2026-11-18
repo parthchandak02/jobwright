@@ -382,8 +382,9 @@ def test_tailor_one_job_errors_and_failed_status(user_files, monkeypatch):
     with pytest.raises(ValueError, match="job not found"):
         tailor.tailor_one_job("https://jobs.example.com/missing")
     url = _add_job(url="https://jobs.example.com/nodesc", description=None)
-    with pytest.raises(ValueError, match="description required"):
+    with pytest.raises(ValueError, match=r"no job description yet.*nodesc") as exc:
         tailor.tailor_one_job(url)
+    assert "enrich" in str(exc.value)
 
     url = _add_job(url="https://jobs.example.com/bad")
     bad = _resume_reply(skills={"Languages": "Golang"})
@@ -507,6 +508,11 @@ def test_cover_one_job_persists_and_records_errors(user_files, monkeypatch):
 
     with pytest.raises(ValueError, match="job not found"):
         cl.cover_one_job("https://jobs.example.com/missing")
+
+    empty = _add_job(url="https://jobs.example.com/nodesc-cl", description=None)
+    with pytest.raises(ValueError, match=r"no job description yet.*nodesc-cl") as exc:
+        cl.cover_one_job(empty)
+    assert "enrich" in str(exc.value)
 
 
 def test_run_cover_letters_only_tailored_jobs_and_none_title(user_files, monkeypatch):
