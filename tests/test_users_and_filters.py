@@ -227,6 +227,15 @@ def test_description_salary_below_floor_still_rejects():
     assert not salary_below_floor(None, 70000, jd)
 
 
+def test_salary_below_floor_uses_posting_when_column_overstates_pay():
+    jd = "Compensation range is $70,000 to $85,000 per year."
+    # Column alone would clear a $115k floor; the posting is below it.
+    assert not salary_below_floor("$150,000", 115000)
+    assert salary_below_floor("$150,000", 115000, jd)
+    # Posting above the floor still clears even if the column is lower.
+    assert not salary_below_floor("$90,000", 115000, "Base pay $150,000 - $180,000 per year.")
+
+
 def test_description_weekly_and_daily_pay_hits_the_salary_floor():
     # $1,500/week is $78,000 a year, under a $100k floor. $2,000/week is about $104k.
     assert salary_below_floor(None, 100000, "Compensation is $1,500 per week.")

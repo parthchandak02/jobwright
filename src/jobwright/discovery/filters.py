@@ -255,13 +255,14 @@ def salary_below_floor(
 
     Unknown / unparseable salaries are NOT below floor (keep for scorer).
     For ranges, compare the max so overlapping bands are kept.
+    When the posting text states pay, prefer that over the salary column:
+    boards often fill the column with a high estimate that hides a lower band.
     """
     if not min_salary:
         return False
     floor = float(min_salary)
-    annual = parse_salary_to_annual(salary)
-    if annual is None and description:
-        annual = parse_salary_from_text(description)
+    from_text = parse_salary_from_text(description) if description else None
+    annual = from_text if from_text is not None else parse_salary_to_annual(salary)
     if annual is None:
         return False
     return annual < floor

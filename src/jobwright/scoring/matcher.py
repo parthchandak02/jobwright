@@ -238,8 +238,8 @@ def apply_gates(raw: dict[str, Any], job: dict, ctx: MatchContext) -> tuple[int,
         if not _text_places_job_ok(job, ctx.search_cfg):
             score = UNKNOWN_LOCATION_CAP
             caps.append("location not stated")
-    # The salary column is often empty. Pay stated only in the posting
-    # (full description, else the short one) still has to hit the floor.
+    # Prefer pay stated in the posting (full description, else short one)
+    # over the salary column, which boards often fill with a high estimate.
     posting = job.get("full_description") or job.get("description")
     if ctx.criteria.min_salary and salary_below_floor(
         job.get("salary"), ctx.criteria.min_salary, posting
