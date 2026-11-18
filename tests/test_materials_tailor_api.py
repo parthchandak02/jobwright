@@ -90,13 +90,21 @@ def test_tailor_missing_job_404(api_client):
     assert res.json()["detail"] == "Job not found"
 
 
-def test_tailor_missing_description_400(api_client):
+def test_tailor_missing_description_400(api_client, caplog):
     client, _ = api_client
     url = "https://example.com/no-desc"
     insert_manual_job(url, title="No Desc", company="TestCo", funnel_stage="prepare")
-    res = client.post(f"/api/jobs/{_enc(url)}/tailor")
+    with caplog.at_level("WARNING", logger="jobwright.web.routers.materials"):
+        res = client.post(f"/api/jobs/{_enc(url)}/tailor")
     assert res.status_code == 400
-    assert res.json()["detail"] == "Job description required"
+    detail = res.json()["detail"]
+    assert "No job description yet" in detail
+    assert "enrichment" in detail.lower()
+    assert "Prepare" in detail
+    assert any(
+        "no description yet" in r.message and "No Desc" in r.message and "TestCo" in r.message
+        for r in caplog.records
+    )
 
 
 def test_tailor_starts_logged_run(api_client):

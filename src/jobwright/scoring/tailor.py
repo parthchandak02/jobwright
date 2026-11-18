@@ -498,7 +498,10 @@ def tailor_one_job(
 
     description = (job.get("full_description") or job.get("description") or "").strip()
     if not description:
-        raise ValueError("job description required")
+        raise ValueError(
+            "no job description yet; enrich this job before tailoring "
+            f"({job.get('title') or '?'} @ {job.get('company') or '?'}, {url})"
+        )
     if not job.get("full_description"):
         job["full_description"] = description
 
