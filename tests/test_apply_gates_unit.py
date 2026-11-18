@@ -59,6 +59,69 @@ def test_check_job_uses_user_rating_and_rejects_already_applied(env):
     assert any("already marked applied" in r for r in safety.check_job(marked, "alex", live=False).reasons)
 
 
+def test_already_applied_same_posting_via_hand_mark_and_submission(env):
+    """Same company|title|place must block a second apply even without a submissions row."""
+    conn = get_connection()
+    when = datetime.now(timezone.utc).isoformat()
+    key = "example co|analyst|sf"
+    first = "https://jobs.example.com/post/1"
+    second = "https://jobs.example.com/post/2"
+    conn.execute(
+        "INSERT INTO jobs (url, title, company, site, fit_score, job_id, funnel_stage, applied_at, "
+        "discovered_at, dedupe_key) VALUES (?, 'Analyst', 'Example Co', 'greenhouse', 9, ?, 'applied', ?, ?, ?)",
+        (first, job_id_for_url(first), when, when, key),
+    )
+    conn.commit()
+    sibling = _job(url=second, dedupe_key=key)
+    assert safety.already_applied_same_posting(sibling) is True
+    assert any("same company and title" in r for r in safety.check_job(sibling, "alex", live=False).reasons)
+
+    other = _job(url="https://jobs.example.com/post/3", dedupe_key="other|eng|sf")
+    assert safety.already_applied_same_posting(other) is False
+    conn.execute(
+        "INSERT INTO submissions (run_id, job_url, company, title, dry_run, outcome, started_at, dedupe_key) "
+        "VALUES ('run-test', ?, 'Other Co', 'Eng', 0, 'applied', ?, 'other|eng|sf')",
+        (other["url"], when),
+    )
+    conn.commit()
+    assert safety.already_applied_same_posting(other) is True
+
+
+def test_answer_bank_lookup_custom_wins_and_is_job_specific(env):
+    answers_mod.set_answers({"work_authorized": "Yes", "requires_sponsorship": "No"}, source="settings")
+    answers_mod.set_custom_answer("Do you hold a CPA license?", "No", source="whatsapp")
+    bank = answers_mod.load_answers()
+
+    key, value = bank.lookup("Are you legally authorized to work in the United States?")
+    assert key == "work_authorized" and value == "Yes"
+    key, value = bank.lookup("Do you hold a CPA license?")
+    assert key and key.startswith("custom:") and value == "No"
+    assert bank.lookup("Favorite ice cream?") == (None, None)
+
+    assert answers_mod.is_job_specific("Why do you want to work at Example Co?")
+    assert answers_mod.is_job_specific("Tell us about a time you led a project")
+    assert not answers_mod.is_job_specific("Are you authorized to work in the US?")
+    refused = answers_mod.save_facts(
+        [{"question": "Why are you interested in this role?", "value": "Mission fit", "source": "told_claude"}],
+        person_confirmed=False,
+    )
+    assert refused[0]["status"] == "not_saved" and "one employer" in refused[0]["reason"]
+
+
+def test_undo_answer_restores_previous_or_clears(env):
+    answers_mod.set_answers({"salary_expectation": "120k"}, source="settings")
+    answers_mod.set_answers({"salary_expectation": "150k"}, source="told_claude")
+    bank = answers_mod.undo_answer(key="salary_expectation")
+    assert bank.get("salary_expectation") == "120k"
+    answers_mod.set_answers({"relocation": "Yes"}, source="settings")
+    bank = answers_mod.undo_answer(key="relocation")
+    assert bank.get("relocation") is None
+    with pytest.raises(ValueError, match="key or question"):
+        answers_mod.undo_answer()
+    with pytest.raises(LookupError):
+        answers_mod.undo_answer(key="relocation")
+
+
 def test_employer_cap_counts_hand_marked_jobs_without_submission(env):
     assert safety.employer_applications("") == 0
     assert safety.employer_applications(None) == 0
