@@ -51,6 +51,10 @@ apply), or fix a setting. Every screen should make its one job obvious.
 
 ## Lessons (newest first)
 
+- 2026-11-17: Opening today's daily-list job (WhatsApp notified today) with no materials starts
+  Prepare by itself once per day. Other opens keep the Prepare button. Derive auto-start only after
+  the loaded job id matches the drawer key and materials have settled, or a board switch can tailor
+  the wrong card.
 - 2026-11-16: Job materials toolbar needs one-tap Copy text for tailored resume/cover. Strip Markdown
   to plain text before the clipboard (ATS paste fields); fall back to a hidden textarea + execCommand
   when Clipboard API is missing. Mirror the Claude tab Copied + toast pattern; disable when empty.

@@ -120,6 +120,32 @@ def test_tailor_starts_logged_run(api_client):
     assert Path(body["log_path"]).exists()
 
 
+def test_tailor_auto_claims_once_per_day(api_client):
+    client, _ = api_client
+    url = "https://example.com/tailor-auto"
+    insert_manual_job(
+        url,
+        title="Chief of Staff",
+        company="TestCo",
+        description="Chief of Staff role. Python, SQL, stakeholder management.",
+        funnel_stage="prepare",
+    )
+    first = client.post(f"/api/jobs/{_enc(url)}/tailor", json={"auto": True})
+    assert first.status_code == 200
+    from jobwright.database import get_connection
+
+    stamp = get_connection().execute(
+        "SELECT prepare_auto_started_at FROM jobs WHERE url = ?", (url,)
+    ).fetchone()[0]
+    assert stamp
+    second = client.post(f"/api/jobs/{_enc(url)}/tailor", json={"auto": True})
+    assert second.status_code == 409
+    assert second.json()["detail"]["code"] == "prepare_auto_already"
+    # Manual Prepare still works after an auto claim.
+    manual = client.post(f"/api/jobs/{_enc(url)}/tailor")
+    assert manual.status_code == 200
+
+
 def test_tailor_defaults_match_instruction_module(api_client):
     from jobwright.scoring.tailor_instructions import (
         DEFAULT_COVER_INSTRUCTIONS,

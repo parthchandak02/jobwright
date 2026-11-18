@@ -1,6 +1,6 @@
 import { ApplyPlanCallout } from '@/components/drawer/ApplyPlanCallout'
 import { useState, type ReactNode } from 'react'
-import { ArrowLeft, BellRing, CheckCircle2, ExternalLink, Loader2, Sparkles, XCircle } from 'lucide-react'
+import { AlertCircle, ArrowLeft, BellRing, CheckCircle2, ExternalLink, Loader2, Sparkles, XCircle } from 'lucide-react'
 import { toast } from 'sonner'
 import { ConnectionsPanel } from '@/components/ConnectionsPanel'
 import { DismissDialog, type DismissResult } from '@/components/DismissDialog'
@@ -20,6 +20,7 @@ import { JobNotes } from '@/components/drawer/JobNotes'
 import { MatchCard } from '@/components/drawer/MatchCard'
 import { useJobDrawerData } from '@/components/drawer/useJobDrawerData'
 import { useJobNotes } from '@/components/drawer/useJobNotes'
+import { shouldAutoStartPrepare } from '@/components/drawer/prepareAutoStart'
 import { usePrepareMaterials } from '@/components/drawer/usePrepareMaterials'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
@@ -51,7 +52,7 @@ export function JobDrawer({ jobKey, onClose, onChanged, onOpenJob, preview }: Pr
   const open = !!jobKey
   const docked = useMediaQuery(DOCK_QUERY)
   const wideScreen = useMediaQuery(WIDE_QUERY)
-  const { job, setJob, materials, base, connections, reload } = useJobDrawerData(jobKey)
+  const { job, setJob, materials, base, connections, ready, reload } = useJobDrawerData(jobKey)
   const notes = useJobNotes(job)
   const [busy, setBusy] = useState(false)
   const [dismissOpen, setDismissOpen] = useState(false)
@@ -60,7 +61,22 @@ export function JobDrawer({ jobKey, onClose, onChanged, onOpenJob, preview }: Pr
     onChanged()
     reload()
   }
-  const prepare = usePrepareMaterials(jobKey, materialsChanged)
+  const hasMaterials = Boolean(job?.has_resume || job?.has_cover || materials?.resume_md || materials?.cover_md)
+  const beforeApplying = job ? job.funnel_stage === 'backlog' || job.funnel_stage === 'prepare' : false
+  const prepare = usePrepareMaterials(jobKey, materialsChanged, {
+    autoStart: shouldAutoStartPrepare({
+      jobId: job?.job_id,
+      jobKey,
+      materialsReady: ready,
+      funnelStage: job?.funnel_stage,
+      hasResume: Boolean(job?.has_resume),
+      hasCover: Boolean(job?.has_cover),
+      hasResumeMd: Boolean(materials?.resume_md),
+      hasCoverMd: Boolean(materials?.cover_md),
+      whatsappNotifiedAt: job?.whatsapp_notified_at,
+      prepareAutoStartedAt: job?.prepare_auto_started_at,
+    }),
+  })
 
   async function doMove(toStage: string, opts?: { outcome?: string; reasons?: string[]; close_reason?: string }) {
     if (!job) return
@@ -118,8 +134,6 @@ export function JobDrawer({ jobKey, onClose, onChanged, onOpenJob, preview }: Pr
   }
 
   const href = job ? listingHref(job) : null
-  const hasMaterials = Boolean(job?.has_resume || job?.has_cover || materials?.resume_md || materials?.cover_md)
-  const beforeApplying = job ? job.funnel_stage === 'backlog' || job.funnel_stage === 'prepare' : false
   const closed = job?.funnel_stage === 'closed'
   const showMaterials = !!job && (hasMaterials || job.funnel_stage !== 'backlog' || prepare.running)
   const description = job?.full_description?.trim() || ''
@@ -218,6 +232,11 @@ export function JobDrawer({ jobKey, onClose, onChanged, onOpenJob, preview }: Pr
             </Callout>
           ) : null}
           {job.job_id ? <ApplyPlanCallout jobId={job.job_id} /> : null}
+          {prepare.error && beforeApplying && !hasMaterials ? (
+            <Callout icon={AlertCircle} tone="--destructive">
+              {prepare.error}
+            </Callout>
+          ) : null}
           <DesktopActions actions={actions} />
         </DrawerSection>
       )

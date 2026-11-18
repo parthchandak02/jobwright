@@ -403,6 +403,11 @@ def _migrate_v6_pending_questions(conn: sqlite3.Connection) -> None:
     _add_column(conn, "pending_inputs", "asked_by", "TEXT")
 
 
+def _migrate_v7_prepare_auto_started(conn: sqlite3.Connection) -> None:
+    """jobs.prepare_auto_started_at: drawer auto-Prepare once per job per UTC day."""
+    _add_column(conn, "jobs", "prepare_auto_started_at", "TEXT")
+
+
 # (version, name, fn). Append only: never renumber, edit or remove a shipped step.
 MIGRATIONS: list[tuple[int, str, object]] = [
     (1, "baseline", _migrate_v1_baseline),
@@ -411,6 +416,7 @@ MIGRATIONS: list[tuple[int, str, object]] = [
     (4, "apply_evidence", _migrate_v4_apply_evidence),
     (5, "connector_claims", _migrate_v5_connector_claims),
     (6, "pending_questions", _migrate_v6_pending_questions),
+    (7, "prepare_auto_started", _migrate_v7_prepare_auto_started),
 ]
 LATEST_SCHEMA_VERSION = MIGRATIONS[-1][0]
 
@@ -750,6 +756,8 @@ _ALL_COLUMNS: dict[str, str] = {
     "board_position": "INTEGER",
     # WhatsApp daily notify
     "whatsapp_notified_at": "TEXT",
+    # Drawer auto-Prepare claim (once per job per UTC day; see materials tailor auto=true)
+    "prepare_auto_started_at": "TEXT",
     # Identity / dedupe (indexed; see backfill_job_ids and discovery.dedupe)
     "job_id": "TEXT",
     "dedupe_key": "TEXT",
@@ -1391,6 +1399,47 @@ def mark_whatsapp_notified(urls: list[str], conn: sqlite3.Connection | None = No
     if owns_conn:
         conn.commit()
     return max(updated, 0)
+
+
+def claim_prepare_auto_start(url: str, conn: sqlite3.Connection | None = None) -> bool:
+    """Stamp prepare_auto_started_at once per UTC day for this job.
+
+    Returns True when this call claimed the day (caller may start auto-Prepare).
+    False when already stamped today, so a refresh or StrictMode remount does not
+    start a second LLM run.
+    """
+    owns_conn = conn is None
+    if owns_conn:
+        conn = get_connection()
+    assert conn is not None
+
+    now = datetime.now(timezone.utc)
+    stamp = now.isoformat()
+    today = now.date().isoformat()  # YYYY-MM-DD
+    if conn.in_transaction:
+        conn.commit()
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        row = conn.execute(
+            "SELECT prepare_auto_started_at FROM jobs WHERE url = ?",
+            (url,),
+        ).fetchone()
+        if row is None:
+            conn.commit()
+            return False
+        prior = (row[0] or "")[:10]
+        if prior == today:
+            conn.commit()
+            return False
+        conn.execute(
+            "UPDATE jobs SET prepare_auto_started_at = ? WHERE url = ?",
+            (stamp, url),
+        )
+        conn.commit()
+        return True
+    except Exception:
+        conn.rollback()
+        raise
 
 
 def get_job_by_id(job_id: str, conn: sqlite3.Connection | None = None) -> dict | None:

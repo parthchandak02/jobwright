@@ -341,7 +341,7 @@ def test_v4_apply_evidence_tables(db_path):
     conn.execute("DROP TABLE apply_picks")
     conn.execute("UPDATE schema_meta SET value = '3' WHERE key = 'schema_version'")
     conn.commit()
-    assert run_migrations(conn) == [4, 5, 6]
+    assert run_migrations(conn) == [4, 5, 6, 7]
     assert "apply_picks" in _tables(conn)
     assert run_migrations(conn) == []
 
@@ -353,7 +353,7 @@ def test_v5_connector_claims_column(db_path):
     assert "client_id" in cols
     conn.execute("UPDATE schema_meta SET value = '4' WHERE key = 'schema_version'")
     conn.commit()
-    assert run_migrations(conn) == [5, 6]
+    assert run_migrations(conn) == [5, 6, 7]
     db_mod._migrate_v5_connector_claims(conn)  # idempotent
     assert run_migrations(conn) == []
 
@@ -365,6 +365,20 @@ def test_v6_pending_questions_columns(db_path):
     assert {"meta_json", "asked_by"} <= cols
     conn.execute("UPDATE schema_meta SET value = '5' WHERE key = 'schema_version'")
     conn.commit()
-    assert run_migrations(conn) == [6]
+    assert run_migrations(conn) == [6, 7]
     db_mod._migrate_v6_pending_questions(conn)  # idempotent
     assert run_migrations(conn) == []
+
+
+def test_v7_prepare_auto_started_column(db_path):
+    """Migration 7 adds jobs.prepare_auto_started_at; rerun is a no-op."""
+    conn = init_db(db_path)
+    assert "prepare_auto_started_at" in _columns(conn)
+    conn.execute("UPDATE schema_meta SET value = '6' WHERE key = 'schema_version'")
+    conn.commit()
+    # Drop the column so the step has work to do (SQLite cannot DROP COLUMN on all builds;
+    # re-apply on a DB that already has it must still be a no-op via _add_column).
+    assert run_migrations(conn) == [7]
+    db_mod._migrate_v7_prepare_auto_started(conn)
+    assert run_migrations(conn) == []
+    assert "prepare_auto_started_at" in _columns(conn)

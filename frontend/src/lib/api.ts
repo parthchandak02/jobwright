@@ -85,6 +85,8 @@ export function jobPath(job: { job_id?: string | null; url: string } | string): 
 export type JobCard = {
   job_id: string
   whatsapp_notified_at: string | null
+  /** UTC stamp when drawer auto-Prepare claimed this job for the day. */
+  prepare_auto_started_at?: string | null
   url: string
   title: string | null
   company: string | null
@@ -347,12 +349,17 @@ export function tailorDefaults(): Promise<TailorInstructions> {
 }
 
 /** Start a verbose per-job tailor + cover + docx run (``key`` = job_id or url). */
-export function startJobTailor(key: string, instructions?: Partial<TailorInstructions>): Promise<RunHandle> {
+export function startJobTailor(
+  key: string,
+  instructions?: Partial<TailorInstructions>,
+  opts?: { auto?: boolean },
+): Promise<RunHandle> {
   return apiFetch<RunHandle>(`${jobPath(key)}/tailor`, {
     method: 'POST',
     body: JSON.stringify({
       resume_instructions: instructions?.resume_instructions,
       cover_instructions: instructions?.cover_instructions,
+      ...(opts?.auto ? { auto: true } : {}),
     }),
   })
 }
