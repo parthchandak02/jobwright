@@ -648,6 +648,68 @@ def test_due_tailors_missing_materials(env):
     assert tailored == [job["url"]] and done[0]["status"] == "skipped"
 
 
+def test_due_materials_failure_names_job_and_reason(env, caplog):
+    """When tailor fails before apply, the pick note and log name the job and why."""
+    import logging
+
+    add_job(
+        "https://jobs.example.com/t/fail",
+        company="Alpha",
+        title="Staff Engineer",
+        materials=False,
+    )
+    now = datetime.now(timezone.utc)
+    users_mod.update_user("alex", apply_veto_minutes=0)
+    auto.pick("alex", now=now)
+
+    with caplog.at_level(logging.WARNING, logger="jobwright.apply.auto"):
+        done = auto.due(
+            "alex",
+            now=now + timedelta(seconds=1),
+            apply_fn=lambda *a, **k: _Res("applied"),
+            tailor_fn=lambda url: 1,
+            report=False,
+        )
+
+    assert len(done) == 1
+    assert done[0]["status"] == "skipped"
+    note = done[0]["note"] or ""
+    assert "Staff Engineer at Alpha" in note
+    assert "tailor exited with code 1" in note
+    assert any(
+        "Staff Engineer at Alpha" in r.message and "tailor exited with code 1" in r.message
+        for r in caplog.records
+    )
+
+
+def test_ensure_materials_empty_resume_path_is_named(env, caplog):
+    """Tailor rc=0 with no resume path must not look like a quiet blank skip."""
+    import logging
+
+    job = add_job(
+        "https://jobs.example.com/t/empty",
+        company="Beta",
+        title="PM",
+        materials=False,
+    )
+
+    def tailor(url):
+        # Pretend success but leave the resume path empty (cover alone is not enough).
+        conn = get_connection()
+        conn.execute("UPDATE jobs SET cover_letter_path = 'c.md' WHERE url = ?", (url,))
+        conn.commit()
+        return 0
+
+    with caplog.at_level(logging.WARNING, logger="jobwright.apply.auto"):
+        out, reason = auto.ensure_materials(job, tailor_fn=tailor)
+
+    assert out is None
+    assert reason is not None
+    assert "PM at Beta" in reason
+    assert "resume path is empty" in reason
+    assert any("resume path is empty" in r.message for r in caplog.records)
+
+
 def test_veto_cli_and_provide_cli(env, monkeypatch):
     from typer.testing import CliRunner
 

@@ -10,7 +10,8 @@ _SALARY_NUM = re.compile(
     re.IGNORECASE,
 )
 _RANGE = re.compile(
-    r"(?P<a>\d[\d,]*(?:\.\d+)?)\s*(?P<ak>[kK])?\s*[-–to]+\s*(?P<b>\d[\d,]*(?:\.\d+)?)\s*(?P<bk>[kK])?",
+    r"(?P<a>\d[\d,]*(?:\.\d+)?)\s*(?P<ak>[kK])?\s*[-–to]+\s*"
+    r"(?:\$|USD|CAD|EUR|GBP)?\s*(?P<b>\d[\d,]*(?:\.\d+)?)\s*(?P<bk>[kK])?",
     re.IGNORECASE,
 )
 
@@ -26,21 +27,39 @@ _TEXT_MONEY = re.compile(
 )
 _PLAUSIBLE_ANNUAL = (20_000, 2_000_000)
 
+# Words immediately after an amount decide the period. Whole-string checks
+# mis-read "$30/hour, $62,400 annually" and "$100,000/year (40 hours/week)".
+_PERIOD_HOUR = re.compile(
+    r"\s*(?:(?:/|per\s+|an\s+|a\s+)?\s*(?:hour(?:ly)?|hr)\b|/h\b)",
+    re.IGNORECASE,
+)
+_PERIOD_WEEK = re.compile(
+    r"\s*(?:/|per\s+|a\s+)?\s*(?:week(?:ly)?|wk)\b",
+    re.IGNORECASE,
+)
+_PERIOD_DAY = re.compile(
+    r"\s*(?:/|per\s+|a\s+)?\s*(?:day|daily)\b",
+    re.IGNORECASE,
+)
+_PERIOD_MONTH = re.compile(
+    r"\s*(?:/|per\s+|a\s+)?\s*(?:month(?:ly)?|mo)\b",
+    re.IGNORECASE,
+)
 
-def _to_annual(amount: float, raw: str) -> float:
-    """Normalize a parsed amount to approximate annual USD."""
-    lower = raw.lower()
-    if "hour" in lower or "/hr" in lower or "/h" in lower:
+
+def _to_annual(amount: float, tail: str, *, full: str) -> float:
+    """Normalize a parsed amount using the period words right after it."""
+    if _PERIOD_HOUR.match(tail):
         return amount * 2080
-    if "week" in lower or "/wk" in lower:
+    if _PERIOD_WEEK.match(tail):
         return amount * 52
-    if "daily" in lower or "/day" in lower or "per day" in lower:
+    if _PERIOD_DAY.match(tail):
         return amount * 260
-    if "month" in lower or "/mo" in lower:
+    if _PERIOD_MONTH.match(tail):
         return amount * 12
     if amount < 1000:
         # Likely thousands shorthand already expanded, or hourly without label
-        if "k" in lower:
+        if "k" in full.lower():
             return amount  # already scaled
         return amount * 2080
     return amount
@@ -55,21 +74,23 @@ def parse_salary_to_annual(salary: str | None) -> float | None:
     if not salary or not str(salary).strip():
         return None
     text = str(salary).strip()
+    compact = text.replace(",", "")
     # Prefer explicit range
-    m = _RANGE.search(text.replace(",", ""))
+    m = _RANGE.search(compact)
     if m:
         a = float(m.group("a").replace(",", ""))
         b = float(m.group("b").replace(",", ""))
-        if (m.group("ak") or m.group("bk") or "k" in text.lower()) and a < 1000 and b < 1000:
+        if (m.group("ak") or m.group("bk") or "k" in compact.lower()) and a < 1000 and b < 1000:
             a, b = a * 1000, b * 1000
-        return _to_annual(max(a, b), text)
+        top = max(a, b)
+        return _to_annual(top, compact[m.end():], full=compact)
 
     amounts: list[float] = []
-    for m in _SALARY_NUM.finditer(text.replace(",", "")):
+    for m in _SALARY_NUM.finditer(compact):
         amt = float(m.group("amount").replace(",", ""))
         if m.group("k"):
             amt *= 1000
-        amounts.append(_to_annual(amt, text))
+        amounts.append(_to_annual(amt, compact[m.end():], full=compact))
     if not amounts:
         return None
     return max(amounts)
@@ -234,13 +255,14 @@ def salary_below_floor(
 
     Unknown / unparseable salaries are NOT below floor (keep for scorer).
     For ranges, compare the max so overlapping bands are kept.
+    When the posting text states pay, prefer that over the salary column:
+    boards often fill the column with a high estimate that hides a lower band.
     """
     if not min_salary:
         return False
     floor = float(min_salary)
-    annual = parse_salary_to_annual(salary)
-    if annual is None and description:
-        annual = parse_salary_from_text(description)
+    from_text = parse_salary_from_text(description) if description else None
+    annual = from_text if from_text is not None else parse_salary_to_annual(salary)
     if annual is None:
         return False
     return annual < floor

@@ -96,6 +96,24 @@ def test_salary_floor_reads_pay_stated_only_in_the_description():
     assert score == 9 and "salary below floor" not in caps
 
 
+def test_salary_floor_prefers_posting_when_salary_column_overstates_pay():
+    """Board salary estimates must not hide a lower band stated in the JD.
+
+    Aggregators often fill jobs.salary with a high estimate while the posting
+    itself lists a lower range. Scoring should trust the posting and cap fit.
+    """
+    ctx = _ctx()
+    job = {
+        "url": "u",
+        "title": "Program Manager",
+        "salary": "$150,000",
+        "location": "Remote",
+        "full_description": "Compensation range is $70,000 to $85,000 per year.",
+    }
+    score, _, caps = matcher.apply_gates(_reply(fit=9), job, ctx)
+    assert score == 4 and "salary below floor" in caps
+
+
 def test_gates_cap_dealbreakers_location_salary_and_ignore_unknown_ids():
     ctx = _ctx()
     job = {"url": "u", "title": "Program Manager", "salary": "$60,000", "company": "Acme Foundation", "location": "Remote"}

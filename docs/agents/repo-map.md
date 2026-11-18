@@ -12,6 +12,7 @@ Detailed paths for agents. Summary: [../../AGENTS.md](../../AGENTS.md).
 | `src/jobwright/resume.py` | PDF source of truth → cached `resume/base.md` |
 | `src/jobwright/notify.py` | Daily WhatsApp job list + deep links |
 | `src/jobwright/hermes_cron.py` | Create/edit/remove `jobwright-brief-<user>`, `jobwright-ops-watchdog`, `jobwright-backup`, `jobwright-weekly-summary` (`--no-agent --deliver local`); pause legacy send/check crons; `JOBWRIGHT_HERMES_DRY_RUN` |
+| `src/jobwright/hermes_broker.py` | Unix-socket broker so the dashboard (non-Hermes OS user) can send WhatsApp and manage Hermes crons: set `JOBWRIGHT_HERMES_BROKER` to forward `@brokered` calls; unset = local. Serve: `python -m jobwright.hermes_broker serve`. Tests: `pytest tests/test_hermes_broker.py` |
 | `src/jobwright/ops.py` | Brief report, watchdog, alerts to `ops_target`, backups |
 | `src/jobwright/preflight.py` | Pre-run checks; `--fix` installs Playwright Chromium |
 | `src/jobwright/onboarding.py` | New profile + LLM draft from resume; `onboarding_status`, `is_set_up` (gates brief crons, `install-crons`, welcome) |
@@ -69,6 +70,7 @@ WhatsApp resolve: `scripts/resolve_user_from_whatsapp.sh 'whatsapp:…'`.
 | `resolve_user_from_whatsapp.sh` | JID → `user_id` |
 | `validate_pipeline.sh` | Doctor + unit checks |
 | `jobwright_smoke.sh` | Narrow E2E brief (WhatsApp dry-run unless `SMOKE_LIVE=1`) |
+| `stale_check.py` | Weekly stale-posting recheck for the backlog. Re-fetches enriched backlog jobs older than `--max-age-days` (default 14) with Playwright; on permanent failure (HTTP 404/410/451, or "no longer accepting" / "no longer exists" text) soft-closes via `advance_funnel` (`actor=system`, `outcome=cancelled`). Skips human-held cards and non-backlog stages. Timeouts are treated as alive (retry next week). **Entrypoint:** `python scripts/stale_check.py [--dry-run] [--limit N] [--max-age-days 14]` from the repo root (needs Playwright Chromium; `jobwright preflight --fix`). **Profile pin:** `main()` calls `config.set_app_dir(.../users/richa)` and does not honor `JOBWRIGHT_USER` yet. No Hermes cron is installed by code; schedule manually after the morning brief if you want it weekly. **Tests:** `pytest tests/test_stale_check.py -q` (candidate filter + `--help`; no live browser). |
 | `restart.sh` | **Primary:** PM2/tmux restart (`--backend-only`, `--frontend-only`, `--prod-ui`, `--tmux`; tmux = dev auth + Hermes dry-run) |
 | `ops_pm2.sh` | Alias → `restart.sh` |
 | `dashboard_deploy.sh` | Alias → `restart.sh --prod-ui` |

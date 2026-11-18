@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { Download, SlidersHorizontal } from 'lucide-react'
+import { Check, Copy, Download, SlidersHorizontal } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkBreaks from 'remark-breaks'
 import remarkGfm from 'remark-gfm'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import {
   Select,
@@ -12,6 +13,11 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Segmented } from '@/components/ui/segmented'
+import {
+  hasCopyableMarkdown,
+  materialsCopyPlainText,
+  writeClipboardText,
+} from '@/lib/clipboard'
 import { cn } from '@/lib/utils'
 
 export type MaterialViewOption = {
@@ -45,6 +51,40 @@ function download(path: string) {
   window.open(`/api/download?path=${encodeURIComponent(path)}`, '_blank')
 }
 
+function MaterialsCopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false)
+  const plain = materialsCopyPlainText(text)
+
+  return (
+    <Button
+      type="button"
+      variant="secondary"
+      size="sm"
+      className="h-9 shrink-0 gap-1.5 px-2.5"
+      disabled={!plain}
+      aria-label="Copy text"
+      onClick={() => {
+        if (!plain) return
+        void (async () => {
+          const ok = await writeClipboardText(plain)
+          if (!ok) {
+            toast.error('Copy failed')
+            return
+          }
+          setCopied(true)
+          toast.success('Copied')
+          window.setTimeout(() => setCopied(false), 1500)
+        })()
+      }}
+    >
+      {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+      <span aria-live="polite" className="hidden @min-[22rem]/preview:inline">
+        {copied ? 'Copied' : 'Copy text'}
+      </span>
+    </Button>
+  )
+}
+
 export function JobMaterialsPreview({
   views,
   viewKey,
@@ -74,7 +114,7 @@ export function JobMaterialsPreview({
     )
   }
 
-  const hasMarkdown = active.markdown.trim().length > 0
+  const hasMarkdown = hasCopyableMarkdown(active.markdown)
   const showDownload = viewKey === 'tailored' && (tailoredDocx || tailoredPdf)
 
   return (
@@ -108,6 +148,8 @@ export function JobMaterialsPreview({
               { value: 'markdown', label: 'Markdown' },
             ]}
           />
+
+          <MaterialsCopyButton text={active.markdown} />
 
           {showDownload ? (
             <Select

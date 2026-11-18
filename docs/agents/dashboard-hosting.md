@@ -154,6 +154,14 @@ jobwright owns one allow policy on the Access app, named **`jobwright users`**, 
 - Dashboard: Admin → Cloudflare Access card (`GET /api/admin/access`, `POST /api/admin/access/sync`). Changing a profile's emails, the admin list, or creating a profile (admin or `/welcome`) triggers a best-effort sync when the token is set; the response carries `access_sync` and the request never fails because of it.
 - Removing an email from `jobwright users` does not revoke access if another allow policy still includes it (see `other_policies_emails`).
 
+### Hermes broker (production)
+
+On the production host the API process cannot talk to Hermes or the WhatsApp bridge directly (different OS user and nft rules). The API sets `JOBWRIGHT_HERMES_BROKER=/run/jobwright-hermes.sock`; each `@brokered` call (notify send, WhatsApp chat list / bridge status, brief cron ensure/remove, Hermes channels plan/apply, and related ops) becomes one JSON request on that socket. systemd socket-activates `python -m jobwright.hermes_broker serve` as user `hermes`, which runs the real local function and replies JSON. Local `./scripts/restart.sh --tmux` leaves the env unset so everything stays in-process under `JOBWRIGHT_HERMES_DRY_RUN=1`.
+
+- Module and allowlist: `src/jobwright/hermes_broker.py` (`OPS`, validators, `SendUncertain` as `kind=uncertain`)
+- Package notes: [../../src/jobwright/AGENTS.md](../../src/jobwright/AGENTS.md)
+- Tests (no socket required): `pytest tests/test_hermes_broker.py -q`
+
 ### 5. Verify
 
 ```bash

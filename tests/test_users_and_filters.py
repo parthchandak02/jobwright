@@ -31,6 +31,24 @@ def test_parse_salary_weekly_and_daily_intervals():
     assert not salary_below_floor("USD1,500-USD2,000/weekly", 100000)
 
 
+def test_parse_salary_mixed_hourly_and_annual():
+    """Period words apply to the nearby amount, not every number in the string.
+
+    Boards often list both an hourly rate and a yearly figure (or yearly pay
+    plus a work-week length). Using the whole string for period detection
+    used to multiply the annual figure by 2080 and clear the salary floor.
+    """
+    assert parse_salary_to_annual("$30/hour, $62,400 annually") == 62_400
+    assert salary_below_floor("$30/hour, $62,400 annually", 115_000)
+    assert parse_salary_to_annual("$100,000/year (40 hours/week)") == 100_000
+    assert salary_below_floor("$100,000/year (40 hours/week)", 115_000)
+    assert parse_salary_to_annual("$50/hr base salary $120,000") == 120_000
+    assert not salary_below_floor("$50/hr base salary $120,000", 115_000)
+    # Pure hourly and weekly strings still annualize.
+    assert parse_salary_to_annual("$55/hour") == 55 * 2080
+    assert parse_salary_to_annual("$55/h") == 55 * 2080
+
+
 def test_title_excluded_word_boundary():
     assert title_excluded("Senior Software Engineer", ["software engineer"])
     assert not title_excluded("Chief of Staff", ["software engineer"])
@@ -207,6 +225,15 @@ def test_description_salary_below_floor_still_rejects():
     jd = "Great team. The salary range for this role is $65,000 to $80,000."
     assert salary_below_floor(None, 120000, jd)
     assert not salary_below_floor(None, 70000, jd)
+
+
+def test_salary_below_floor_uses_posting_when_column_overstates_pay():
+    jd = "Compensation range is $70,000 to $85,000 per year."
+    # Column alone would clear a $115k floor; the posting is below it.
+    assert not salary_below_floor("$150,000", 115000)
+    assert salary_below_floor("$150,000", 115000, jd)
+    # Posting above the floor still clears even if the column is lower.
+    assert not salary_below_floor("$90,000", 115000, "Base pay $150,000 - $180,000 per year.")
 
 
 def test_description_weekly_and_daily_pay_hits_the_salary_floor():

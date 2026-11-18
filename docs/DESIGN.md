@@ -55,6 +55,9 @@ apply), or fix a setting. Every screen should make its one job obvious.
   Prepare by itself once per day. Other opens keep the Prepare button. Derive auto-start only after
   the loaded job id matches the drawer key and materials have settled, or a board switch can tailor
   the wrong card.
+- 2026-11-16: Job materials toolbar needs one-tap Copy text for tailored resume/cover. Strip Markdown
+  to plain text before the clipboard (ATS paste fields); fall back to a hidden textarea + execCommand
+  when Clipboard API is missing. Mirror the Claude tab Copied + toast pattern; disable when empty.
 - 2026-11-15: Cook polish pass: sticky lane and board chrome use a shared hairline + `shadow-e1` (and light blur on md+), selected cards get a primary wash, weak scores tint with `--tone-neutral`, empty lanes soften, docked job panel and `board-beside-panel` add depth without new colours.
 - 2026-11-12: ⌘F / Ctrl+F opens a global search (jobs incl. closed, pages, settings tabs) instead of the
   browser's find; pressing it again hands over to the browser. Single-letter matches are not highlighted
