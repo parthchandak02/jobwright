@@ -51,6 +51,9 @@ apply), or fix a setting. Every screen should make its one job obvious.
 
 ## Lessons (newest first)
 
+- 2026-11-20: When Open posting only reaches LinkedIn (apply is blocked there), the job panel shows a
+  neutral callout with one paste field + Save for the employer's apply link; it goes away once saved.
+  No colour: it is a next step, not a problem. The API refuses LinkedIn links for this field.
 - 2026-11-17: Opening today's daily-list job (WhatsApp notified today) with no materials starts
   Prepare by itself once per day. Other opens keep the Prepare button. Derive auto-start only after
   the loaded job id matches the drawer key and materials have settled, or a board switch can tailor

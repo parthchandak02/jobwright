@@ -641,6 +641,8 @@ class PatchBody(BaseModel):
     user_score_reasons: list[str] | None = None
     clear_user_score: bool = False
     close_reason: str | None = None
+    # Employer apply link that Open posting uses; "" clears it back to the listing URL.
+    application_url: str | None = None
 
 
 @router.patch("/jobs/{url:path}")
@@ -673,6 +675,18 @@ def patch_job(url: str, body: PatchBody, request: Request = None) -> dict:  # ty
     if body.close_reason is not None:
         sets.append("close_reason = ?")
         params.append(body.close_reason.strip() or None)
+    if body.application_url is not None:
+        from urllib.parse import urlsplit
+
+        from jobwright.apply.ats import ats_family
+        from jobwright.web.routers.jobs import _http_url
+
+        value = _http_url(body.application_url, "application_url")
+        host = (urlsplit(value).hostname or "").lower() if value else ""
+        if host in ("linkedin.com", "lnkd.in") or host.endswith(".linkedin.com"):
+            raise HTTPException(400, "That is a LinkedIn link. Paste the employer's own application page.")
+        sets.append("application_url = ?, application_url_source = ?, application_ats = ?")
+        params.extend([value, "dashboard" if value else None, ats_family(value) if value else None])
     label_change = None
     if body.clear_user_score:
         label_change = ("clear", None, "", [])

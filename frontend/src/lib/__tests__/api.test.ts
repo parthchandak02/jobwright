@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { ApiError, apiFetch, checkUploadSize, MAX_UPLOAD_BYTES } from '@/lib/api'
+import { ApiError, apiFetch, checkUploadSize, MAX_UPLOAD_BYTES, saveApplicationUrl } from '@/lib/api'
 
 function stubFetch(response: Response) {
   const fetchMock = vi.fn(async () => response)
@@ -73,5 +73,20 @@ describe('checkUploadSize', () => {
     const big = { size: MAX_UPLOAD_BYTES + 1 } as File
     expect(() => checkUploadSize(big)).toThrow(/too big/)
     expect(() => checkUploadSize({ size: 1024 } as File)).not.toThrow()
+  })
+})
+
+describe('saveApplicationUrl', () => {
+  it('PATCHes the job with the employer link, and an empty string to clear it', async () => {
+    const fetchMock = stubFetch(Response.json({ url: 'https://www.linkedin.com/jobs/view/1' }))
+    await saveApplicationUrl({ url: 'https://www.linkedin.com/jobs/view/1', job_id: 'j1' }, 'https://jobs.example.com/1')
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(init.method).toBe('PATCH')
+    expect(JSON.parse(String(init.body))).toEqual({ application_url: 'https://jobs.example.com/1' })
+
+    fetchMock.mockResolvedValueOnce(Response.json({}))
+    await saveApplicationUrl({ url: 'https://www.linkedin.com/jobs/view/1', job_id: 'j1' }, '')
+    const [, clearInit] = fetchMock.mock.calls[1] as unknown as [string, RequestInit]
+    expect(JSON.parse(String(clearInit.body))).toEqual({ application_url: '' })
   })
 })

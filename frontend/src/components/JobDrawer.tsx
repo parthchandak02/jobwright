@@ -6,11 +6,12 @@ import { ConnectionsPanel } from '@/components/ConnectionsPanel'
 import { DismissDialog, type DismissResult } from '@/components/DismissDialog'
 import { DrawerSection } from '@/components/DrawerSection'
 import { followUpLabel } from '@/components/JobMetaBadges'
-import { listingHref } from '@/components/JobSummary'
+import { isLinkedInHref, listingHref } from '@/components/JobSummary'
 import { LinkedInLogo } from '@/components/LinkedInLogo'
 import { JobCoverMaterials, JobResumeMaterials } from '@/components/MaterialsPanel'
 import { StagePicker } from '@/components/StagePicker'
 import { Callout } from '@/components/drawer/Callout'
+import { EmployerLinkCallout } from '@/components/drawer/EmployerLinkCallout'
 import { DesktopActions, PhoneActionBar, type DrawerAction } from '@/components/drawer/DrawerActions'
 import { JobDescriptionPane } from '@/components/drawer/JobDescriptionPane'
 import { JobDetails } from '@/components/drawer/JobDetails'
@@ -232,6 +233,15 @@ export function JobDrawer({ jobKey, onClose, onChanged, onOpenJob, preview }: Pr
             </Callout>
           ) : null}
           {job.job_id ? <ApplyPlanCallout jobId={job.job_id} /> : null}
+          {beforeApplying && isLinkedInHref(href) ? (
+            <EmployerLinkCallout
+              job={job}
+              onSaved={(updated) => {
+                setJob({ ...job, ...updated })
+                onChanged()
+              }}
+            />
+          ) : null}
           {prepare.error && beforeApplying && !hasMaterials ? (
             <Callout icon={AlertCircle} tone="--destructive">
               {prepare.error}
