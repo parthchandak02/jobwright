@@ -15,7 +15,9 @@ from __future__ import annotations
 import json
 import os
 import socket
+import tempfile
 import threading
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -50,13 +52,28 @@ OP_TARGETS = {
 
 
 @pytest.fixture()
-def broker(tmp_path, monkeypatch):
+def sock_dir(tmp_path):
+    """A directory whose AF_UNIX socket paths stay under the kernel sun_path limit (104/108 bytes)."""
+    if len(str(tmp_path / "hermes.sock").encode()) <= 96:
+        yield tmp_path
+        return
+    base = "/tmp" if Path("/tmp").is_dir() else None
+    with tempfile.TemporaryDirectory(prefix="jw-", dir=base) as raw:
+        yield Path(raw)
+
+
+@pytest.fixture()
+def broker(sock_dir, monkeypatch):
     """A listening broker socket, plus the requests it saw."""
-    path = tmp_path / "hermes.sock"
+    path = sock_dir / "hermes.sock"
     server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    server.bind(str(path))
-    server.listen(8)
-    server.settimeout(0.1)
+    try:
+        server.bind(str(path))
+        server.listen(8)
+        server.settimeout(0.1)
+    except BaseException:
+        server.close()
+        raise
     requests: list = []
     stop = threading.Event()
 
@@ -96,16 +113,22 @@ def broker(tmp_path, monkeypatch):
 def _reply_once(path, raw: bytes) -> threading.Thread:
     """A one-shot server that answers with ``raw`` whatever it is asked."""
     server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    server.bind(str(path))
-    server.listen(1)
+    try:
+        server.bind(str(path))
+        server.listen(1)
+    except BaseException:
+        server.close()
+        raise
 
     def once():
-        conn, _ = server.accept()
-        with conn:
-            while conn.recv(65536):
-                pass
-            conn.sendall(raw)
-        server.close()
+        try:
+            conn, _ = server.accept()
+            with conn:
+                while conn.recv(65536):
+                    pass
+                conn.sendall(raw)
+        finally:
+            server.close()
 
     thread = threading.Thread(target=once, daemon=True)
     thread.start()
@@ -204,18 +227,34 @@ def test_a_server_side_failure_becomes_a_broker_error(broker, monkeypatch):
         client_send("one new job", TARGET)
 
 
-def test_an_unreachable_socket_raises_a_broker_error(tmp_path, monkeypatch):
-    monkeypatch.setenv(hermes_broker.ENV_SOCK, str(tmp_path / "missing.sock"))
+def test_an_unreachable_socket_raises_a_broker_error(sock_dir, monkeypatch):
+    monkeypatch.setenv(hermes_broker.ENV_SOCK, str(sock_dir / "missing.sock"))
     with pytest.raises(BrokerError, match="unreachable"):
         hermes_broker.call("cron_list")
 
 
-def test_a_garbled_reply_raises_a_broker_error(tmp_path, monkeypatch):
-    monkeypatch.setenv(hermes_broker.ENV_SOCK, str(tmp_path / "noise.sock"))
-    thread = _reply_once(tmp_path / "noise.sock", b"not json")
+def test_a_garbled_reply_raises_a_broker_error(sock_dir, monkeypatch):
+    monkeypatch.setenv(hermes_broker.ENV_SOCK, str(sock_dir / "noise.sock"))
+    thread = _reply_once(sock_dir / "noise.sock", b"not json")
     with pytest.raises(BrokerError, match="invalid reply"):
         hermes_broker.call("cron_list")
     thread.join(timeout=5)
+
+
+def test_sock_dir_falls_back_when_tmp_path_exceeds_sun_path_limit(tmp_path):
+    long_dir = tmp_path / ("nested_" * 20)
+    long_dir.mkdir(parents=True)
+    assert len(str(long_dir / "hermes.sock").encode()) > 108
+    gen = sock_dir.__wrapped__(long_dir)
+    chosen = next(gen)
+    try:
+        sock_path = chosen / "hermes.sock"
+        assert len(str(sock_path).encode()) <= 96
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
+            s.bind(str(sock_path))
+    finally:
+        with pytest.raises(StopIteration):
+            next(gen)
 
 
 def test_an_oversized_request_never_reaches_the_socket(broker):
