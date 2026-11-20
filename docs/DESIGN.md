@@ -51,6 +51,9 @@ apply), or fix a setting. Every screen should make its one job obvious.
 
 ## Lessons (newest first)
 
+- 2026-11-20: After Open posting on a Backlog / Prepare job, coming back to the tab after 30s or more
+  asks "Did you apply?" inline in the job panel (Yes, I applied / Not yet / Not for me), once per
+  visit. While it shows, Yes is the one primary button and Open posting drops to secondary.
 - 2026-11-20: Contact details in the job drawer stay folded under "Your details" only for jobs before Applied, render only an explicit safe allowlist (never passwords or unknown keys), and use compact per-row icon Copy buttons (with Check + toast) instead of repeated Copy pills.
 - 2026-11-20: When Open posting only reaches LinkedIn (apply is blocked there), the job panel shows a
   neutral callout with one paste field + Save for the employer's apply link; it goes away once saved.

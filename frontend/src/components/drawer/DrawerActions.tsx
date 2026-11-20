@@ -33,7 +33,7 @@ export function ActionButton({ action, className, compact }: { action: DrawerAct
   if (action.href) {
     return (
       <Button asChild variant={action.variant} className={cls}>
-        <a href={action.href} target="_blank" rel="noreferrer" aria-label={compact ? action.label : undefined}>
+        <a href={action.href} target="_blank" rel="noreferrer" onClick={action.onClick} aria-label={compact ? action.label : undefined}>
           {content}
         </a>
       </Button>

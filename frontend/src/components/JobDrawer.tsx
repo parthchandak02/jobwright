@@ -1,6 +1,6 @@
 import { ApplyPlanCallout } from '@/components/drawer/ApplyPlanCallout'
 import { useState, type ReactNode } from 'react'
-import { AlertCircle, ArrowLeft, BellRing, CheckCircle2, ExternalLink, Loader2, Sparkles, XCircle } from 'lucide-react'
+import { AlertCircle, ArrowLeft, BellRing, CheckCircle2, CircleHelp, ExternalLink, Loader2, Sparkles, XCircle } from 'lucide-react'
 import { toast } from 'sonner'
 import { ConnectionsPanel } from '@/components/ConnectionsPanel'
 import { DismissDialog, type DismissResult } from '@/components/DismissDialog'
@@ -23,6 +23,7 @@ import { JobNotes } from '@/components/drawer/JobNotes'
 import { MatchCard } from '@/components/drawer/MatchCard'
 import { useJobDrawerData } from '@/components/drawer/useJobDrawerData'
 import { useJobNotes } from '@/components/drawer/useJobNotes'
+import { useAppliedPrompt } from '@/components/drawer/useAppliedPrompt'
 import { shouldAutoStartPrepare } from '@/components/drawer/prepareAutoStart'
 import { usePrepareMaterials } from '@/components/drawer/usePrepareMaterials'
 import { Button } from '@/components/ui/button'
@@ -59,6 +60,7 @@ export function JobDrawer({ jobKey, onClose, onChanged, onOpenJob, preview }: Pr
   const notes = useJobNotes(job)
   const [busy, setBusy] = useState(false)
   const [dismissOpen, setDismissOpen] = useState(false)
+  const appliedPrompt = useAppliedPrompt(job?.job_id, job?.funnel_stage)
 
   const materialsChanged = () => {
     onChanged()
@@ -161,8 +163,10 @@ export function JobDrawer({ jobKey, onClose, onChanged, onOpenJob, preview }: Pr
         label: 'Open posting',
         short: 'Posting',
         icon: ExternalLink,
-        variant: beforeApplying && hasMaterials ? 'primary' : 'secondary',
+        // While "Did you apply?" shows, its Yes is the one primary button.
+        variant: beforeApplying && hasMaterials && !appliedPrompt.asking ? 'primary' : 'secondary',
         href,
+        onClick: appliedPrompt.onOpenPosting,
       })
     }
     if (beforeApplying) {
@@ -232,6 +236,41 @@ export function JobDrawer({ jobKey, onClose, onChanged, onOpenJob, preview }: Pr
               }
             >
               {followUpLabel(job.applied_days_ago)}. No reply yet, so a short note can help.
+            </Callout>
+          ) : null}
+          {appliedPrompt.asking ? (
+            <Callout
+              icon={CircleHelp}
+              actions={
+                <>
+                  <Button
+                    size="sm"
+                    disabled={busy}
+                    onClick={() => {
+                      appliedPrompt.hide()
+                      void doMove('applied')
+                    }}
+                  >
+                    Yes, I applied
+                  </Button>
+                  <Button size="sm" variant="ghost" disabled={busy} onClick={appliedPrompt.hide}>
+                    Not yet
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={busy}
+                    onClick={() => {
+                      appliedPrompt.hide()
+                      setDismissOpen(true)
+                    }}
+                  >
+                    Not for me
+                  </Button>
+                </>
+              }
+            >
+              Did you apply?
             </Callout>
           ) : null}
           {job.job_id ? <ApplyPlanCallout jobId={job.job_id} /> : null}
