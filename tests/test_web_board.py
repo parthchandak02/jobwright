@@ -440,3 +440,64 @@ def test_patch_application_url_save_clear_and_reject(api_client):
         "SELECT application_url, application_url_source FROM jobs WHERE url = ?", ("https://example.com/web-smoke",)
     ).fetchone()
     assert row["application_url"] is None and row["application_url_source"] is None
+
+
+def test_stage_history_tracks_lane_transitions(api_client):
+    from urllib.parse import quote
+
+    url = "https://example.com/web-smoke"
+    enc = quote(url, safe="")
+    assert api_client.post(f"/api/jobs/{enc}/move", json={"to_stage": "prepare"}).status_code == 200
+    assert api_client.post(f"/api/jobs/{enc}/move", json={"to_stage": "applied"}).status_code == 200
+
+    res = api_client.get(f"/api/jobs/{enc}/history")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["url"] == url
+    transitions = [(h["from_stage"], h["to_stage"]) for h in body["history"]]
+    assert ("backlog", "prepare") in transitions
+    assert ("prepare", "applied") in transitions
+
+
+def test_custom_answers_and_undo_api(api_client):
+    assert api_client.put("/api/answers/custom", json={"question": "   ", "value": "Yes"}).status_code == 400
+
+    first = api_client.put(
+        "/api/answers/custom",
+        json={"question": "Do you hold a PMP certification?", "value": "No"},
+    )
+    assert first.status_code == 200
+    assert list(first.json()["custom"].values())[0]["value"] == "No"
+
+    updated = api_client.put(
+        "/api/answers/custom",
+        json={"question": "Do you hold a PMP certification?", "value": "Yes"},
+    )
+    assert updated.status_code == 200
+    assert list(updated.json()["custom"].values())[0]["value"] == "Yes"
+
+    undone = api_client.post(
+        "/api/answers/undo",
+        json={"question": "Do you hold a PMP certification?"},
+    )
+    assert undone.status_code == 200
+    assert list(undone.json()["custom"].values())[0]["value"] == "No"
+
+    # Second undo removes the entry since it had no prior value; third returns 404.
+    cleared = api_client.post(
+        "/api/answers/undo",
+        json={"question": "Do you hold a PMP certification?"},
+    )
+    assert cleared.status_code == 200
+    assert cleared.json()["custom"] == {}
+    assert (
+        api_client.post(
+            "/api/answers/undo",
+            json={"question": "Do you hold a PMP certification?"},
+        ).status_code
+        == 404
+    )
+    assert api_client.post("/api/answers/undo", json={}).status_code == 400
+    assert api_client.post("/api/answers/undo", json={"key": "not_a_key"}).status_code == 400
+
+
