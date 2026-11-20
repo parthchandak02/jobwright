@@ -628,6 +628,14 @@ export function saveJobNotes(job: JobRef, notes: string, opts?: { keepalive?: bo
   })
 }
 
+/** Save the employer's own apply link (Open posting uses it); an empty string goes back to the listing URL. */
+export function saveApplicationUrl(job: JobRef, applicationUrl: string) {
+  return apiFetch<JobCard>(jobPath(job), {
+    method: 'PATCH',
+    body: JSON.stringify({ application_url: applicationUrl }),
+  })
+}
+
 export function moveJob(
   job: JobCard,
   toStage: string,

@@ -31,6 +31,17 @@ export function listingHref(job: JobCard): string | null {
   return raw
 }
 
+/** True when a link goes to LinkedIn, where apply is blocked: Open posting should go to the employer instead. */
+export function isLinkedInHref(href: string | null | undefined): boolean {
+  let host = ''
+  try {
+    host = new URL((href || '').trim()).hostname.toLowerCase()
+  } catch {
+    return false
+  }
+  return host === 'linkedin.com' || host.endsWith('.linkedin.com') || host === 'lnkd.in'
+}
+
 export function placeLine(job: Pick<JobCard, 'location' | 'work_model'>): string {
   const work = workModelLabel(job.work_model)
   const loc = job.location?.trim()

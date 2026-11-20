@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from jobwright.database import close_connection, init_db, insert_manual_job
+from jobwright.database import close_connection, get_connection, init_db, insert_manual_job
 
 
 @pytest.fixture()
@@ -415,3 +415,28 @@ def test_search_finds_jobs_by_any_field_and_ranks_title_first(api_client) -> Non
     # LIKE wildcards are literal.
     assert api_client.get("/api/search", params={"q": "%"}).json()["results"] == []
     assert api_client.get("/api/search", params={"q": "  "}).json()["results"] == []
+
+
+def test_patch_application_url_save_clear_and_reject(api_client):
+    from urllib.parse import quote
+
+    enc = quote("https://example.com/web-smoke", safe="")
+    res = api_client.patch(f"/api/jobs/{enc}", json={"application_url": " https://boards.greenhouse.io/co/jobs/1 "})
+    assert res.status_code == 200
+    assert res.json()["application_url"] == "https://boards.greenhouse.io/co/jobs/1"
+    row = get_connection().execute(
+        "SELECT application_url_source, application_ats FROM jobs WHERE url = ?", ("https://example.com/web-smoke",)
+    ).fetchone()
+    assert row["application_url_source"] == "dashboard"
+    assert row["application_ats"] == "greenhouse"
+
+    for bad in ("ftp://example.com/x", "not a link", "https://www.linkedin.com/jobs/view/1"):
+        assert api_client.patch(f"/api/jobs/{enc}", json={"application_url": bad}).status_code == 400
+
+    res = api_client.patch(f"/api/jobs/{enc}", json={"application_url": ""})
+    assert res.status_code == 200
+    assert res.json()["application_url"] == "https://example.com/web-smoke"
+    row = get_connection().execute(
+        "SELECT application_url, application_url_source FROM jobs WHERE url = ?", ("https://example.com/web-smoke",)
+    ).fetchone()
+    assert row["application_url"] is None and row["application_url_source"] is None

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { listingHref, placeLine } from '@/components/JobSummary'
+import { isLinkedInHref, listingHref, placeLine } from '@/components/JobSummary'
 import { job } from '@/lib/__tests__/fixtures'
 
 describe('listingHref', () => {
@@ -20,6 +20,24 @@ describe('listingHref', () => {
     expect(listingHref(job({ url: '', application_url: 'None' }))).toBeNull()
     expect(listingHref(job({ url: 'null', application_url: null }))).toBeNull()
     expect(listingHref(job({ url: '  ', application_url: '' }))).toBeNull()
+  })
+})
+
+describe('isLinkedInHref', () => {
+  it('spots LinkedIn-only Open posting links', () => {
+    expect(isLinkedInHref(listingHref(job({ url: 'https://www.linkedin.com/jobs/view/1', application_url: null })))).toBe(true)
+    expect(isLinkedInHref('https://linkedin.com/jobs/view/2')).toBe(true)
+    expect(isLinkedInHref('https://lnkd.in/abc')).toBe(true)
+  })
+
+  it('is false once an employer link is saved, and for junk', () => {
+    expect(isLinkedInHref(listingHref(job({
+      url: 'https://www.linkedin.com/jobs/view/1',
+      application_url: 'https://boards.greenhouse.io/co/jobs/1',
+    })))).toBe(false)
+    expect(isLinkedInHref('https://notlinkedin.com/x')).toBe(false)
+    expect(isLinkedInHref(null)).toBe(false)
+    expect(isLinkedInHref('not a link')).toBe(false)
   })
 })
 
