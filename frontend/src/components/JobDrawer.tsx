@@ -11,6 +11,8 @@ import { LinkedInLogo } from '@/components/LinkedInLogo'
 import { JobCoverMaterials, JobResumeMaterials } from '@/components/MaterialsPanel'
 import { StagePicker } from '@/components/StagePicker'
 import { Callout } from '@/components/drawer/Callout'
+import { ContactDetails } from '@/components/drawer/ContactDetails'
+import { shouldShowContactDetails } from '@/components/drawer/contactDetails'
 import { EmployerLinkCallout } from '@/components/drawer/EmployerLinkCallout'
 import { DesktopActions, PhoneActionBar, type DrawerAction } from '@/components/drawer/DrawerActions'
 import { JobDescriptionPane } from '@/components/drawer/JobDescriptionPane'
@@ -54,7 +56,7 @@ export function JobDrawer({ jobKey, onClose, onChanged, onOpenJob, preview }: Pr
   const open = !!jobKey
   const docked = useMediaQuery(DOCK_QUERY)
   const wideScreen = useMediaQuery(WIDE_QUERY)
-  const { job, setJob, materials, base, connections, ready, reload } = useJobDrawerData(jobKey)
+  const { job, setJob, materials, base, connections, personal, ready, reload } = useJobDrawerData(jobKey)
   const notes = useJobNotes(job)
   const [busy, setBusy] = useState(false)
   const [dismissOpen, setDismissOpen] = useState(false)
@@ -65,7 +67,7 @@ export function JobDrawer({ jobKey, onClose, onChanged, onOpenJob, preview }: Pr
     reload()
   }
   const hasMaterials = Boolean(job?.has_resume || job?.has_cover || materials?.resume_md || materials?.cover_md)
-  const beforeApplying = job ? job.funnel_stage === 'backlog' || job.funnel_stage === 'prepare' : false
+  const beforeApplying = shouldShowContactDetails(job?.funnel_stage)
   const prepare = usePrepareMaterials(jobKey, materialsChanged, {
     autoStart: shouldAutoStartPrepare({
       jobId: job?.job_id,
@@ -295,6 +297,7 @@ export function JobDrawer({ jobKey, onClose, onChanged, onOpenJob, preview }: Pr
           stage={<StagePicker stage={job.funnel_stage} disabled={busy} onMove={requestMove} />}
         />
       )
+      const contactDetails = beforeApplying ? <ContactDetails jobKey={job.job_id} personal={personal} /> : null
       const descriptionSection = (first?: boolean) =>
         description ? (
           <DrawerSection first={first} title="Job description">
@@ -337,6 +340,7 @@ export function JobDrawer({ jobKey, onClose, onChanged, onOpenJob, preview }: Pr
             <div className="min-w-0 px-6 pb-10">
               {summary}
               {details}
+              {contactDetails}
               {people}
               {extras}
             </div>
@@ -353,6 +357,7 @@ export function JobDrawer({ jobKey, onClose, onChanged, onOpenJob, preview }: Pr
           <div className="mx-auto min-w-0 max-w-[46rem] px-4 pb-10 md:px-6">
             {summary}
             {details}
+            {contactDetails}
             {descriptionSection()}
             {materialsSections()}
             {people}

@@ -33,9 +33,12 @@ async function toApiError(res: Response): Promise<ApiError> {
 
 /** Writes to these change the base resume / cover samples (or whose they are). */
 const BASE_MATERIALS_WRITES = /^\/(settings|session|onboarding)(\/|$|\?)/
+const PERSONAL_DETAILS_WRITES = /^\/(settings|session|onboarding|answers)(\/|$|\?)/
 
 function noteWrite(path: string, method: string | undefined) {
-  if (method && method.toUpperCase() !== 'GET' && BASE_MATERIALS_WRITES.test(path)) invalidateBaseMaterials()
+  if (!method || method.toUpperCase() === 'GET') return
+  if (BASE_MATERIALS_WRITES.test(path)) invalidateBaseMaterials()
+  if (PERSONAL_DETAILS_WRITES.test(path)) invalidatePersonalDetails()
 }
 
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
@@ -250,6 +253,25 @@ export function getBaseMaterials(): Promise<BaseMaterials> {
 
 export function invalidateBaseMaterials() {
   baseMaterialsCache = null
+}
+
+let personalCache: { at: number; promise: Promise<Record<string, string>> } | null = null
+
+/** Personal contact fields from GET /api/settings, cached in memory for the session. */
+export function getPersonalDetails(): Promise<Record<string, string>> {
+  const now = Date.now()
+  if (personalCache && now - personalCache.at < BASE_MATERIALS_TTL_MS) return personalCache.promise
+  const promise = apiFetch<SettingsData>('/settings').then((s) => s.profile?.personal ?? {})
+  const entry = { at: now, promise }
+  personalCache = entry
+  promise.catch(() => {
+    if (personalCache === entry) personalCache = null
+  })
+  return promise
+}
+
+export function invalidatePersonalDetails() {
+  personalCache = null
 }
 
 export const STAGE_LABELS: Record<string, string> = {
