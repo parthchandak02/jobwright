@@ -83,13 +83,16 @@ def _render(md_path: Path) -> tuple[Path | None, Path | None, list[str]]:
     try:
         docx = material_to_docx(md_path)
     except Exception as exc:  # noqa: BLE001
-        notes.append(f"DOCX failed: {exc}")
+        log.warning("DOCX not made for %s: %s: %s", md_path.name, type(exc).__name__, exc)
+        notes.append(f"DOCX failed ({type(exc).__name__}: {exc})")
     try:
         from jobwright.scoring.pdf import convert_to_pdf
 
         pdf = convert_to_pdf(md_path)
     except Exception as exc:  # noqa: BLE001 - Chromium missing etc.
-        notes.append(f"PDF not made ({type(exc).__name__}); the DOCX is ready")
+        log.warning("PDF not made for %s: %s: %s", md_path.name, type(exc).__name__, exc)
+        suffix = "; the DOCX is ready" if docx else ""
+        notes.append(f"PDF not made ({type(exc).__name__}: {exc}){suffix}")
     return docx, pdf, notes
 
 
@@ -113,7 +116,7 @@ def ensure_pdf(md_path: Path | None, out: Path | None = None) -> Path | None:
 
         return convert_to_pdf(md_path, target)
     except Exception as exc:  # noqa: BLE001 - Chromium missing etc.
-        log.info("PDF not made for %s: %s", md_path.name, exc)
+        log.warning("PDF not made for %s: %s: %s", md_path.name, type(exc).__name__, exc)
         return None
 
 
@@ -128,7 +131,7 @@ def ensure_docx(md_path: Path | None, out: Path | None = None) -> Path | None:
 
         return material_to_docx(md_path, target)
     except Exception as exc:  # noqa: BLE001
-        log.info("DOCX not made for %s: %s", md_path.name, exc)
+        log.warning("DOCX not made for %s: %s: %s", md_path.name, type(exc).__name__, exc)
         return None
 
 
