@@ -260,3 +260,133 @@ def test_tailor_cover_only_starts_logged_run(api_client):
     body = res.json()
     assert body["stages"] == ["cover", "docx"]
     assert body["kind"] == "tailor_cover"
+
+
+def test_tailor_missing_base_resume_returns_400(api_client):
+    client, data_dir = api_client
+    for name in ("base.pdf", "base.md"):
+        (data_dir / "resume" / name).unlink(missing_ok=True)
+    url = "https://example.com/no-base-resume"
+    insert_manual_job(
+        url,
+        title="Analyst",
+        company="TestCo",
+        description="Analyze operations metrics.",
+        funnel_stage="prepare",
+    )
+    res = client.post(f"/api/jobs/{_enc(url)}/tailor")
+    assert res.status_code == 400
+    assert "resume" in res.json()["detail"].lower()
+
+
+def test_job_materials_populates_previews_manifest_and_cover_pdf(api_client):
+    import json
+
+    from jobwright.database import get_connection
+
+    client, data_dir = api_client
+    assert client.get(f"/api/jobs/{_enc('https://example.com/nope')}/materials").status_code == 404
+    assert client.get(f"/api/jobs/{_enc('https://example.com/nope')}/materials/cover.pdf").status_code == 404
+
+    url = "https://example.com/full-materials"
+    tailored_dir = data_dir / "tailored_resumes"
+    cover_dir = data_dir / "cover_letters"
+    tailored_dir.mkdir(parents=True, exist_ok=True)
+    cover_dir.mkdir(parents=True, exist_ok=True)
+
+    resume_md = tailored_dir / "role_resume.md"
+    resume_docx = tailored_dir / "role_resume.docx"
+    long_resume = "# Alex Rivera\n\n## Experience\n" + ("- Built analytics pipelines for operations teams.\n" * 200)
+    resume_md.write_text(long_resume, encoding="utf-8")
+    resume_docx.write_bytes(b"PK\x03\x04fake-docx")
+
+    cover_md = cover_dir / "role_cover.md"
+    cover_docx = cover_dir / "role_cover_export.docx"
+    cover_pdf = cover_dir / "role_cover_export.pdf"
+    cover_md.write_text("Dear Hiring Team,\n\nI would love to join TestCo.\n", encoding="utf-8")
+    cover_docx.write_bytes(b"PK\x03\x04fake-cover-docx")
+    cover_pdf.write_bytes(b"%PDF-1.4 cover")
+
+    manifest_path = data_dir / "MATERIALS_MANIFEST_latest.json"
+    manifest_path.write_text(
+        json.dumps({"jobs": [{"url": "https://example.com/other"}, {"url": url, "status": "ready"}]}),
+        encoding="utf-8",
+    )
+
+    insert_manual_job(url, title="Ops Lead", company="TestCo", description="Desc", funnel_stage="prepare")
+    conn = get_connection()
+    conn.execute(
+        "UPDATE jobs SET tailored_resume_path = ?, tailored_resume_docx_path = ?, "
+        "cover_letter_path = ?, cover_letter_docx_path = ?, fit_score = 9 WHERE url = ?",
+        (str(resume_md), str(resume_docx), str(cover_md), str(cover_docx), url),
+    )
+    conn.commit()
+
+    enc = _enc(url)
+    res = client.get(f"/api/jobs/{enc}/materials")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["resume_md"] == str(resume_md)
+    assert body["resume_docx"] == str(resume_docx)
+    assert body["cover_md"] == str(cover_md)
+    assert body["cover_docx"] == str(cover_docx)
+    assert body["resume_pdf"] is None
+    assert body["cover_pdf"] == str(cover_pdf)
+    assert body["resume_preview"].startswith("# Alex Rivera")
+    assert body["resume_preview"].endswith("\n\u2026")
+    assert len(body["resume_preview"]) <= 8002
+    assert "Dear Hiring Team" in body["cover_preview"]
+    assert body["manifest"] == {"url": url, "status": "ready"}
+
+    pdf_res = client.get(f"/api/jobs/{enc}/materials/cover.pdf")
+    assert pdf_res.status_code == 200
+    assert pdf_res.headers["content-type"].startswith("application/pdf")
+    assert "cover_letter.pdf" in pdf_res.headers.get("content-disposition", "")
+    assert pdf_res.content == b"%PDF-1.4 cover"
+
+    # Malformed manifest file is ignored instead of breaking the drawer.
+    manifest_path.write_text("{not valid json", encoding="utf-8")
+    res_bad_manifest = client.get(f"/api/jobs/{enc}/materials")
+    assert res_bad_manifest.status_code == 200
+    assert res_bad_manifest.json()["manifest"] is None
+
+
+def test_download_serves_generated_materials_and_blocks_outside_paths(api_client, tmp_path: Path):
+    client, data_dir = api_client
+    tailored_dir = data_dir / "tailored_resumes"
+    cover_dir = data_dir / "cover_letters"
+    tailored_dir.mkdir(parents=True, exist_ok=True)
+    cover_dir.mkdir(parents=True, exist_ok=True)
+
+    docx_file = tailored_dir / "Alex_Rivera_Resume.docx"
+    docx_file.write_bytes(b"PK\x03\x04resume-bytes")
+    pdf_file = cover_dir / "Alex_Rivera_Cover.pdf"
+    pdf_file.write_bytes(b"%PDF-1.4 cover-bytes")
+
+    res = client.get("/api/download", params={"path": str(docx_file)})
+    assert res.status_code == 200
+    assert res.content == b"PK\x03\x04resume-bytes"
+    assert "Alex_Rivera_Resume.docx" in res.headers.get("content-disposition", "")
+
+    res_pdf = client.get("/api/download", params={"path": str(pdf_file)})
+    assert res_pdf.status_code == 200
+    assert res_pdf.content == b"%PDF-1.4 cover-bytes"
+
+    # Missing file inside an allowed directory returns 404.
+    missing = tailored_dir / "missing.pdf"
+    assert client.get("/api/download", params={"path": str(missing)}).status_code == 404
+
+    # Disallowed extension inside an allowed directory returns 403.
+    json_in_tailored = tailored_dir / "secret.json"
+    json_in_tailored.write_text("{}", encoding="utf-8")
+    assert client.get("/api/download", params={"path": str(json_in_tailored)}).status_code == 403
+
+    # Files outside tailored_resumes and cover_letters are always blocked with 403.
+    profile_json = data_dir / "profile.json"
+    profile_json.write_text("{}", encoding="utf-8")
+    outside_pdf = tmp_path / "outside.pdf"
+    outside_pdf.write_bytes(b"%PDF-1.4 outside")
+    traversal = tailored_dir / ".." / "resume" / "base.pdf"
+    for forbidden in (profile_json, data_dir / "jobwright.db", outside_pdf, traversal):
+        assert client.get("/api/download", params={"path": str(forbidden)}).status_code == 403
+
