@@ -37,6 +37,17 @@ def _write_structured_docx(text: str, output_path: Path) -> Path:
     resume = parse_resume(normalize_for_structured_parse(text))
     doc = Document()
 
+    sections = resume.get("sections") or {}
+    if not sections:
+        # Plain cover letter / unstructured text
+        for para in text.strip().split("\n\n"):
+            para = para.strip()
+            if para:
+                doc.add_paragraph(para)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        doc.save(str(output_path))
+        return output_path
+
     if resume.get("name"):
         p = doc.add_paragraph()
         run = p.add_run(resume["name"])
@@ -53,17 +64,6 @@ def _write_structured_docx(text: str, output_path: Path) -> Path:
         p = doc.add_paragraph(loc_contact)
         for run in p.runs:
             run.font.size = Pt(9)
-
-    sections = resume.get("sections") or {}
-    if not sections:
-        # Plain cover letter / unstructured text
-        for para in text.strip().split("\n\n"):
-            para = para.strip()
-            if para:
-                doc.add_paragraph(para)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        doc.save(str(output_path))
-        return output_path
 
     for heading, body in sections.items():
         doc.add_heading(heading.title(), level=2)
