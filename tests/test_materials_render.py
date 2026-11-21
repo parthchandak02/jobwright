@@ -209,19 +209,53 @@ def test_docx_resume_contains_the_same_facts(tmp_path: Path):
 
 
 def test_docx_cover_letter_keeps_every_paragraph(tmp_path: Path):
+    from docx import Document
+
     src = tmp_path / "letter.md"
     src.write_text(
         "Dear Hiring Manager,\n\n"
         "I led the grant program at Example Org.\n\n"
+        "At Other Org, I built the quarterly board pack.\n\n"
+        "I would welcome the chance to discuss the role.\n\n"
         "Best,\n"
         "Alex Rivera\n",
         encoding="utf-8",
     )
-    text = _docx_text(material_to_docx(src))
-    assert "Dear Hiring Manager," in text
-    assert "I led the grant program at Example Org." in text
-    assert "Best," in text
-    assert "Alex Rivera" in text
+    doc = Document(str(material_to_docx(src)))
+    paragraphs = [p.text for p in doc.paragraphs]
+    assert paragraphs == [
+        "Dear Hiring Manager,",
+        "I led the grant program at Example Org.",
+        "At Other Org, I built the quarterly board pack.",
+        "I would welcome the chance to discuss the role.",
+        "Best,\nAlex Rivera",
+    ]
+
+
+def test_convert_to_pdf_cover_letter_renders_paragraphs_not_resume_header(tmp_path: Path):
+    src = tmp_path / "letter_CL.md"
+    src.write_text(
+        "Dear Hiring Manager,\n\n"
+        "I led the grant program at Example Org.\n\n"
+        "At Other Org, I built the quarterly board pack.\n\n"
+        "I would welcome the chance to discuss the role.\n\n"
+        "Best,\n"
+        "Alex Rivera\n",
+        encoding="utf-8",
+    )
+    out = pdf_mod.convert_to_pdf(src, html_only=True)
+    html = out.read_text(encoding="utf-8")
+    assert '<div class="header">' not in html
+    assert '<div class="name">' not in html
+    for piece in (
+        "Dear Hiring Manager,",
+        "I led the grant program at Example Org.",
+        "At Other Org, I built the quarterly board pack.",
+        "I would welcome the chance to discuss the role.",
+        "Best,<br>Alex Rivera",
+    ):
+        assert piece in html, piece
+
 
 
 def test_batch_convert_skips_covers_sidecars_and_existing_pdfs(monkeypatch, tmp_path: Path):

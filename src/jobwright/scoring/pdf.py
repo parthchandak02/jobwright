@@ -394,6 +394,50 @@ def render_pdf(html: str, output_path: str) -> None:
 
 # ── Public API ───────────────────────────────────────────────────────────
 
+def build_cover_letter_html(text: str) -> str:
+    """Build clean paragraph HTML for an unstructured cover letter."""
+    from html import escape
+
+    paragraphs: list[str] = []
+    for raw_para in text.strip().split("\n\n"):
+        cleaned = raw_para.strip()
+        if not cleaned:
+            continue
+        lines = [escape(line.strip()) for line in cleaned.splitlines() if line.strip()]
+        if lines:
+            paragraphs.append(f'<p class="para">{"<br>".join(lines)}</p>')
+    body_html = "\n".join(paragraphs)
+    return f"""<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+@page {{
+    size: letter;
+    margin: 0.75in;
+}}
+* {{
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}}
+body {{
+    font-family: 'Calibri', 'Segoe UI', Arial, sans-serif;
+    font-size: 10.5pt;
+    line-height: 1.5;
+    color: #1a1a1a;
+}}
+.para {{
+    margin-bottom: 12px;
+}}
+</style>
+</head>
+<body>
+{body_html}
+</body>
+</html>"""
+
+
 def convert_to_pdf(
     text_path: Path, output_path: Path | None = None, html_only: bool = False
 ) -> Path:
@@ -412,8 +456,9 @@ def convert_to_pdf(
     if not resolved:
         raise FileNotFoundError(f"Material file not found: {text_path}")
     text = resolved.read_text(encoding="utf-8")
-    resume = parse_resume(normalize_for_structured_parse(text))
-    html = build_html(resume)
+    normalized = normalize_for_structured_parse(text)
+    resume = parse_resume(normalized)
+    html = build_html(resume) if resume.get("sections") else build_cover_letter_html(normalized)
 
     if html_only:
         out = output_path or resolved.with_suffix(".html")
