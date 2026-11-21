@@ -244,3 +244,113 @@ def test_make_open_answer_success_and_attestation_skip():
     # Attestations must stay empty so the filler records a Need, never a guessed answer.
     assert answer("Are you authorized to work in the US?", job) == ""
     assert make_open_answer(None, "resume")("Anything?", job) == ""
+
+
+def test_connector_settings_and_revoke_api(env, monkeypatch):
+    pytest.importorskip("fastapi")
+    from fastapi.testclient import TestClient
+
+    from jobwright.connector import store
+    from jobwright.web import session as session_mod
+    from jobwright.web.app import app
+
+    monkeypatch.setenv("JOBWRIGHT_DASHBOARD_USER", "alex")
+    session_mod.forget_initialized()
+    with TestClient(app) as client:
+        client.cookies.set("jobwright_user", "alex")
+        config.set_active_user("alex")
+        close_connection()
+
+        state = client.get("/api/connector")
+        assert state.status_code == 200
+        sbody = state.json()
+        assert sbody["apply_via"] == "server"
+        assert sbody["apply_enabled"] is True
+        assert sbody["missing_answers"] > 0
+
+        assert client.put("/api/connector/settings", json={}).status_code == 400
+        res = client.put("/api/connector/settings", json={"apply_via": "connector", "apply_enabled": False})
+        assert res.status_code == 200
+        assert res.json()["apply_via"] == "connector"
+        assert res.json()["apply_enabled"] is False
+
+        # Non-admin user cannot hand applications to the server runner.
+        monkeypatch.setattr(
+            "jobwright.web.routers.connector.get_identity",
+            lambda _req: type("Ident", (), {"is_admin": False, "email": "user1@example.com"})(),
+        )
+        assert client.put("/api/connector/settings", json={"apply_via": "server"}).status_code == 403
+
+        assert client.delete("/api/connector/clients/jwg_missing").status_code == 404
+        monkeypatch.setattr(store, "revoke_grant", lambda gid, user_id, reason: gid == "jwg_ok" and user_id == "alex")
+        assert client.delete("/api/connector/clients/jwg_ok").status_code == 200
+
+
+def test_auto_render_picks_connector_and_due_missing_job_and_exception(env, monkeypatch):
+    from datetime import timedelta
+
+    from jobwright.apply import auto, evidence
+
+    sent: list[tuple[str, str]] = []
+    monkeypatch.setattr("jobwright.notify.send_via_hermes", lambda text, target: sent.append((target, text)))
+    users_mod.update_user("alex", whatsapp_target="whatsapp:120363999999999901@g.us", apply_via="connector")
+
+    conn = get_connection()
+    now = datetime.now(timezone.utc)
+    for i, (co, title) in enumerate([("Alpha", "Ops Lead"), ("Beta", "Analyst")], start=1):
+        url = f"https://jobs.example.com/auto/{i}"
+        conn.execute(
+            "INSERT INTO jobs (url, title, company, site, application_url, fit_score, tailored_resume_path, "
+            "cover_letter_path, dedupe_key, job_id, funnel_stage, discovered_at) "
+            "VALUES (?, ?, ?, 'greenhouse', ?, 9, 'r.md', 'c.md', ?, ?, 'prepare', ?)",
+            (url, title, co, url, f"{co}|{title}|sf", job_id_for_url(url), now.isoformat()),
+        )
+    conn.commit()
+
+    picked = auto.pick("alex", now=now, conn=conn)
+    assert len(picked["picks"]) == 2
+    assert "Picked for your Claude today" in sent[-1][1]
+
+    # Switch back to server runner for due(); delete the first job from board and make the second raise.
+    users_mod.update_user("alex", apply_via="server")
+    conn.execute("DELETE FROM jobs WHERE url = 'https://jobs.example.com/auto/1'")
+    conn.commit()
+
+    def _boom(_job, **_kw):
+        raise RuntimeError("browser crashed")
+
+    done = auto.due("alex", now=now + timedelta(hours=4), apply_fn=_boom, report=True, conn=conn)
+    assert len(done) == 2
+    by_num = {p["number"]: p for p in done}
+    assert by_num[1]["status"] == "skipped" and by_num[1]["note"] == "job no longer on the board"
+    assert by_num[2]["status"] == "failed" and by_num[2]["outcome"] == "error"
+    assert "browser crashed" in (by_num[2]["note"] or "")
+    report_msg = sent[-1][1]
+    assert "job no longer on the board" in report_msg
+    assert "browser crashed" in report_msg
+
+    # Verify send_report posts text and screenshot media for applied submissions, and render_report formats needs.
+    sid = evidence.start_submission(
+        {"url": "https://jobs.example.com/auto/2", "company": "Beta", "title": "Analyst"},
+        rid := evidence.new_run_id(),
+        ats="greenhouse",
+        provider="test",
+        model=None,
+        dry_run=False,
+    )
+    (evidence.run_dir(rid) / "confirmation.png").write_bytes(b"\x89PNG fake")
+    evidence.finish_submission(
+        sid,
+        outcome="applied",
+        fields=[],
+        needs=[],
+        screenshots={"confirmation": "confirmation.png"},
+        transcript_path=None,
+    )
+    assert auto.send_report(
+        "alex",
+        [{"number": 1, "title": "Analyst", "company": "Beta", "outcome": "applied", "submission_id": sid}],
+        conn=conn,
+    )
+    assert f"/apply/submissions/{sid}" in sent[-2][1]
+    assert "MEDIA:" in sent[-1][1] and "confirmation.png" in sent[-1][1]
