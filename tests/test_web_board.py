@@ -501,3 +501,139 @@ def test_custom_answers_and_undo_api(api_client):
     assert api_client.post("/api/answers/undo", json={"key": "not_a_key"}).status_code == 400
 
 
+def test_notify_preview_and_send_api(api_client, monkeypatch: pytest.MonkeyPatch):
+    from jobwright import notify
+    from jobwright.database import get_connection, job_id_for_url
+
+    url = "https://example.com/web-smoke"
+    conn = get_connection()
+    conn.execute(
+        "UPDATE jobs SET funnel_stage = 'prepare', fit_score = 9, discovered_at = datetime('now') WHERE url = ?",
+        (url,),
+    )
+    conn.commit()
+
+    preview = api_client.get("/api/notify/preview")
+    assert preview.status_code == 200
+    body = preview.json()
+    assert body["dry_run"] is True
+    assert body["jobs"][0]["job_id"] == job_id_for_url(url)
+    assert conn.execute("SELECT whatsapp_notified_at FROM jobs WHERE url = ?", (url,)).fetchone()[0] is None
+
+    # Missing whatsapp_target maps ValueError to HTTP 400.
+    res = api_client.post("/api/notify")
+    assert res.status_code == 400
+
+    # Configure target and verify Hermes failure maps RuntimeError to HTTP 502.
+    monkeypatch.setattr(
+        notify, "get_user", lambda _uid: type("U", (), {"whatsapp_target": "whatsapp:120363999999999901@g.us"})()
+    )
+
+    def _fail(*_a, **_k):
+        raise RuntimeError("hermes bridge unavailable")
+
+    monkeypatch.setattr(notify, "send_via_hermes", _fail)
+    assert api_client.post("/api/notify").status_code == 502
+
+    # Successful send stamps whatsapp_notified_at.
+    sent: list[tuple[str, str]] = []
+    monkeypatch.setattr(notify, "send_via_hermes", lambda msg, target: sent.append((msg, target)))
+    ok = api_client.post("/api/notify")
+    assert ok.status_code == 200
+    assert ok.json()["sent"] == 1
+    assert len(sent) == 1
+    assert conn.execute("SELECT whatsapp_notified_at FROM jobs WHERE url = ?", (url,)).fetchone()[0] is not None
+
+
+def test_job_by_short_id_detail_and_patch_fields(api_client):
+    from urllib.parse import quote
+
+    from jobwright.database import get_connection, job_id_for_url
+
+    url = "https://example.com/web-smoke"
+    enc = quote(url, safe="")
+    jid = job_id_for_url(url)
+
+    conn = get_connection()
+    conn.execute(
+        "UPDATE jobs SET location = 'Austin, TX', full_description = 'Work from home role', "
+        "score_reasoning = 'Strong SQL fit', apply_error = 'needs you: Verify email code' WHERE url = ?",
+        (url,),
+    )
+    conn.commit()
+
+    by_id = api_client.get(f"/api/jobs/by-id/{jid}")
+    assert by_id.status_code == 200
+    assert by_id.json()["url"] == url
+    assert by_id.json()["needs_you"] == "Verify email code"
+    assert api_client.get("/api/jobs/by-id/000000000000").status_code == 404
+
+    detail = api_client.get(f"/api/jobs/{enc}")
+    assert detail.status_code == 200
+    dbody = detail.json()
+    assert dbody["full_description"] == "Work from home role"
+    assert dbody["work_model"] == "remote"
+    assert dbody["score_reasoning"] == "Strong SQL fit"
+    assert dbody["apply_error"] == "needs you: Verify email code"
+
+    assert api_client.patch(f"/api/jobs/{enc}", json={"outcome": "invalid_outcome"}).status_code == 400
+    assert api_client.patch(f"/api/jobs/{enc}", json={"user_fit_score": 11, "user_score_rationale": "x"}).status_code == 400
+    assert api_client.patch(f"/api/jobs/{enc}", json={"user_fit_score": 8}).status_code == 400
+
+    patched = api_client.patch(
+        f"/api/jobs/{enc}",
+        json={
+            "title": "Senior Analyst",
+            "company": "Example Org",
+            "notes": "Referral pending",
+            "follow_up_at": "2026-12-01",
+            "close_reason": "  Role paused  ",
+            "user_fit_score": 9,
+            "user_score_rationale": "Exact domain match",
+        },
+    )
+    assert patched.status_code == 200
+    pbody = patched.json()
+    assert pbody["title"] == "Senior Analyst"
+    assert pbody["company"] == "Example Org"
+    assert pbody["notes"] == "Referral pending"
+    assert pbody["follow_up_at"] == "2026-12-01"
+    assert pbody["close_reason"] == "Role paused"
+    assert pbody["user_fit_score"] == 9
+    assert pbody["fit_score"] == 9
+
+    cleared = api_client.patch(f"/api/jobs/{enc}", json={"clear_user_score": True, "follow_up_at": ""})
+    assert cleared.status_code == 200
+    assert cleared.json()["user_fit_score"] is None
+    assert cleared.json()["follow_up_at"] is None
+
+
+def test_undo_applied_move_restores_original_applied_stamps(api_client):
+    from urllib.parse import quote
+
+    from jobwright.database import get_connection
+
+    url = "https://example.com/web-smoke"
+    enc = quote(url, safe="")
+    conn = get_connection()
+
+    assert api_client.post(f"/api/jobs/{enc}/move", json={"to_stage": "applied"}).status_code == 200
+    early_stamp = "2026-10-01T12:00:00+00:00"
+    conn.execute("UPDATE jobs SET applied_at = ?, applied_manually = 1 WHERE url = ?", (early_stamp, url))
+    conn.commit()
+
+    # Accidental move back to prepare stashes applied_at in undone_applied_at.
+    assert api_client.post(f"/api/jobs/{enc}/move", json={"to_stage": "prepare"}).status_code == 200
+    stashed = conn.execute(
+        "SELECT applied_at, undone_applied_at, undone_applied_manually FROM jobs WHERE url = ?", (url,)
+    ).fetchone()
+    assert stashed["applied_at"] is None
+    assert stashed["undone_applied_at"] == early_stamp
+    assert stashed["undone_applied_manually"] == 1
+
+    # Moving straight back to applied restores the original timestamp and manual flag.
+    restored = api_client.post(f"/api/jobs/{enc}/move", json={"to_stage": "applied"})
+    assert restored.status_code == 200
+    card = restored.json()["job"]
+    assert card["applied_at"] == early_stamp
+    assert card["applied_manually"] is True
