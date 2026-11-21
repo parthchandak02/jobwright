@@ -693,7 +693,7 @@ def test_move_job_outcomes_match_the_board(world):
     assert set(enum) == set(CLOSED_OUTCOMES)
 
 
-def test_request_tailoring_and_saved_materials_with_expiring_links(world, monkeypatch):
+def test_request_tailoring_and_saved_materials_with_expiring_links(world, monkeypatch, caplog):
     def no_llm(*_a, **_k):
         raise AssertionError("the connector must not call a model")
 
@@ -709,10 +709,18 @@ def test_request_tailoring_and_saved_materials_with_expiring_links(world, monkey
     assert brief["base_resume"].startswith("# Alex Rivera") and "Analyse data" in brief["job_posting"]["text"]
     assert brief["resume_instructions"] and brief["rules"]
     resume = "# Alex Rivera\n\n## Experience\n- Data analyst at Example Co\n- SQL and Python\n\n## Education\n- BA"
-    saved = ok(world, t, "save_tailored_materials", {"job_id": jid, "resume_markdown": resume,
-                                                     "cover_letter_text": "Dear team,\n\nI would like to join."})
+    with caplog.at_level("WARNING", logger="jobwright.connector.materials"):
+        saved = ok(world, t, "save_tailored_materials", {"job_id": jid, "resume_markdown": resume,
+                                                         "cover_letter_text": "Dear team,\n\nI would like to join."})
     assert "docx" in saved["resume"] and "pdf" not in saved["resume"]
-    assert any("PDF not made" in n for n in saved["notes"])
+    assert any(
+        "PDF not made (RuntimeError: no chromium in tests); the DOCX is ready" in n
+        for n in saved["notes"]
+    )
+    assert any(
+        "PDF not made for" in r.message and "RuntimeError: no chromium in tests" in r.message
+        for r in caplog.records
+    )
     row = job_row("alex", jid)
     assert row["tailored_resume_path"].endswith(".md") and row["tailored_resume_docx_path"].endswith(".docx")
     assert row["cover_letter_path"].endswith("_CL.md")
@@ -731,6 +739,37 @@ def test_request_tailoring_and_saved_materials_with_expiring_links(world, monkey
     assert packet["materials"]["resume_tailored"] and resume_files["use"] == "docx" and "pdf" not in resume_files
     assert resume_files["docx"]["name"] == "Alex Rivera - Resume.docx"
     assert "too short" in refused(world, t, "save_tailored_materials", {"job_id": jid, "resume_markdown": "hi"})
+
+
+def test_render_materials_logs_warnings_and_omits_docx_ready_when_docx_fails(tmp_path, monkeypatch, caplog):
+    from jobwright.connector import materials as M
+
+    md = tmp_path / "sample.md"
+    md.write_text("# Alex Rivera\n\n## Experience\n- Analyst\n", encoding="utf-8")
+
+    def fail_docx(*_a, **_k):
+        raise OSError("disk full")
+
+    def fail_pdf(*_a, **_k):
+        raise RuntimeError("browser crashed")
+
+    monkeypatch.setattr("jobwright.scoring.docx_export.material_to_docx", fail_docx)
+    monkeypatch.setattr("jobwright.scoring.pdf.convert_to_pdf", fail_pdf)
+
+    with caplog.at_level("WARNING", logger="jobwright.connector.materials"):
+        docx, pdf, notes = M._render(md)
+        assert M.ensure_pdf(md) is None
+        assert M.ensure_docx(md) is None
+
+    assert docx is None and pdf is None
+    assert notes == [
+        "DOCX failed (OSError: disk full)",
+        "PDF not made (RuntimeError: browser crashed)",
+    ]
+    assert not any("the DOCX is ready" in n for n in notes)
+    messages = [r.message for r in caplog.records]
+    assert any("DOCX not made for sample.md: OSError: disk full" in m for m in messages)
+    assert any("PDF not made for sample.md: RuntimeError: browser crashed" in m for m in messages)
 
 
 def test_download_links_only_reach_generated_files(world):
