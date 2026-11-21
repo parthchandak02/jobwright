@@ -325,7 +325,7 @@ class BaseFiller:
         if key:
             value = (answers or {}).get(key)
             if not _as_text(value) and not isinstance(value, list):
-                return None, (Need("answer", f"{key}: {label}") if spec.required else None)
+                return None, (Need("answer", f"{key}: {label}", key=key) if spec.required else None)
             return self._choice_or_need(spec, value, "answer_bank", key)
 
         if spec.kind in TEXT_KINDS:

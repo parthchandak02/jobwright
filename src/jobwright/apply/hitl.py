@@ -242,7 +242,7 @@ def _save_answer(row: dict, value: str, by: str) -> None:
     source = "whatsapp" if by in ("cli", "whatsapp") else ("settings" if by.startswith("dashboard") else "api")
     answers_mod.set_custom_answer(row["prompt"], value, source=source)
     key = row.get("question_key")
-    if row.get("asked_by") != "connector" or key not in answers_mod.SPEC_BY_KEY:
+    if key not in answers_mod.SPEC_BY_KEY:
         return
     if _meta(row).get("key_explicit") or answers_mod.load_answers().get(key) is None:
         answers_mod.set_answers({key: value}, source=source)

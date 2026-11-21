@@ -403,9 +403,13 @@ def apply_job(
     duration_ms = int((time.monotonic() - started) * 1000)
     questions = [n.question for n in needs if n.kind == "answer"]
     if outcome == "needs_answer":
+        from jobwright.apply.answers import SPEC_BY_KEY, key_for_question
+
         error = "needs answer: " + "; ".join(questions)[:250]
         for q, n in zip(questions, [n for n in needs if n.kind == "answer"]):
-            row = hitl.create_pending("answer", q, job=job, run_id=run_id, question_key=n.key)
+            head = _need_head(n)
+            qkey = n.key or (head if head in SPEC_BY_KEY else key_for_question(q))
+            row = hitl.create_pending("answer", q, job=job, run_id=run_id, question_key=qkey)
             if not row.get("notified_at"):
                 hitl.notify(row, user_id, title=job.get("title") or "")
     evidence.finish_submission(
