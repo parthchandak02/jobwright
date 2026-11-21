@@ -4,7 +4,7 @@ version = "0.6.0"
 description = "AI-powered job application pipeline with Cursor/Hermes agent support"
 readme = "README.md"
 license = "AGPL-3.0-only"
-requires-python = ">=3.11"
+requires-python = ">=3.11.5"
 authors = [{name = "Pickle-Pixel"}, {name = "parthchandak"}]
 keywords = ["job-search", "automation", "ai", "resume", "apply", "job-application"]
 classifiers = [
