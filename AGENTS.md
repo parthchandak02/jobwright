@@ -41,6 +41,7 @@ Version: `pyproject.toml` / `jobwright --version`.
 - Export `JOBWRIGHT_HERMES_DRY_RUN=1` in any sandbox, worktree or test run that could touch Hermes (cron create/edit and `hermes send` become log lines). `restart.sh --tmux` sets it by default.
 - Run `jobwright --user <id> eval` before and after any scoring prompt/model/criteria change; report the precision/recall delta
 - Run quality gate before commit: `pytest tests/ -v` and `ruff check src/`
+- New dependency versions must be at least 7 days old (`exclude-newer = "7 days"` in `pyproject.toml` `[tool.uv]`); for a security fix that needs a newer release, add that package to `exclude-newer-package` with a later date and pin the exact version
 - Sync [AGENTS.md](AGENTS.md) before commit/push if you changed CLI, stages, paths, scripts, or safety gates (see [.cursor/rules/agents-doc-sync.mdc](.cursor/rules/agents-doc-sync.mdc))
 - Hermes ops: set `JOBWRIGHT_REPO` to your clone; install thin skill via `./scripts/install_skills.sh` ([docs/agents/install-hermes-skill.md](docs/agents/install-hermes-skill.md))
 
