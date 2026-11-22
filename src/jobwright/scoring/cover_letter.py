@@ -330,6 +330,14 @@ def cover_one_job(
         )
         return _persist_cover_result(conn, job, letter)
     except Exception as e:
+        log.warning(
+            "Cover letter generation failed for %s @ %s (%s): %s: %s",
+            job.get("title") or "?",
+            job.get("company") or "?",
+            url,
+            type(e).__name__,
+            e,
+        )
         conn.execute(
             "UPDATE jobs SET cover_attempts=COALESCE(cover_attempts,0)+1 WHERE url=?",
             (url,),

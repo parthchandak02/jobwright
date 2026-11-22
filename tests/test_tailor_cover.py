@@ -378,7 +378,7 @@ def test_material_prefix_slugging_is_unique_per_url():
         "company_untitled_")
 
 
-def test_tailor_one_job_errors_and_failed_status(user_files, monkeypatch):
+def test_tailor_one_job_errors_and_failed_status(user_files, monkeypatch, caplog):
     with pytest.raises(ValueError, match="job not found"):
         tailor.tailor_one_job("https://jobs.example.com/missing")
     url = _add_job(url="https://jobs.example.com/nodesc", description=None)
@@ -389,9 +389,17 @@ def test_tailor_one_job_errors_and_failed_status(user_files, monkeypatch):
     url = _add_job(url="https://jobs.example.com/bad")
     bad = _resume_reply(skills={"Languages": "Golang"})
     monkeypatch.setattr(tailor, "get_client", lambda: FakeLLM([bad] * 4))
-    result = tailor.tailor_one_job(url)
+    with caplog.at_level("WARNING", logger="jobwright.scoring.tailor"):
+        result = tailor.tailor_one_job(url)
     assert result["status"] == "failed_validation" and result["path"] is None
     assert _row(url)["tailor_attempts"] == 1 and _row(url)["tailored_resume_path"] is None
+    assert any(
+        "Resume tailoring failed" in r.message
+        and "Program Manager" in r.message
+        and "Example Org" in r.message
+        and "failed_validation" in r.message
+        for r in caplog.records
+    )
 
     # subtle (dashboard) mode saves the last attempt anyway
     monkeypatch.setattr(tailor, "get_client", lambda: FakeLLM([bad] * 4))
@@ -489,7 +497,7 @@ def test_generate_cover_letter_dashboard_instructions(user_files, monkeypatch):
     assert "Keep it short." in llm.calls[0][0]["content"]
 
 
-def test_cover_one_job_persists_and_records_errors(user_files, monkeypatch):
+def test_cover_one_job_persists_and_records_errors(user_files, monkeypatch, caplog):
     from jobwright.database import job_id_for_url
 
     url = _add_job()
@@ -502,9 +510,17 @@ def test_cover_one_job_persists_and_records_errors(user_files, monkeypatch):
     assert row["cover_letter_path"] == str(expected) and row["cover_attempts"] == 1
 
     monkeypatch.setattr(cl, "get_client", lambda: FakeLLM([RuntimeError("provider down")]))
-    failed = cl.cover_one_job(url)
+    with caplog.at_level("WARNING", logger="jobwright.scoring.cover_letter"):
+        failed = cl.cover_one_job(url)
     assert failed["path"] is None and failed["error"] == "provider down"
     assert _row(url)["cover_attempts"] == 2
+    assert any(
+        "Cover letter generation failed" in r.message
+        and "Program Manager" in r.message
+        and "Example Org" in r.message
+        and "RuntimeError: provider down" in r.message
+        for r in caplog.records
+    )
 
     with pytest.raises(ValueError, match="job not found"):
         cl.cover_one_job("https://jobs.example.com/missing")
@@ -560,7 +576,7 @@ def test_run_single_job_materials_end_to_end(user_files, monkeypatch):
     assert "Ran quarterly planning" in llm.calls[1][1]["content"]
 
 
-def test_run_single_job_resume_and_cover(user_files, monkeypatch):
+def test_run_single_job_resume_and_cover(user_files, monkeypatch, caplog):
     url = _add_job(fit_score=9)
     monkeypatch.setattr(tailor, "get_client", lambda: FakeLLM([_resume_reply()]))
     assert tailor.run_single_job_resume(url) == 0
@@ -572,6 +588,38 @@ def test_run_single_job_resume_and_cover(user_files, monkeypatch):
     assert Path(_row(url)["cover_letter_docx_path"]).is_file()
     assert "## SUMMARY" in llm.calls[0][1]["content"]  # tailored resume fed to the cover
     assert "Name the company." in llm.calls[0][0]["content"]
+
+    monkeypatch.setattr("jobwright.resume.load_resume_text", lambda: BASE_RESUME)
+    missing_job = {**_row(url), "tailored_resume_path": str(Path(config.TAILORED_DIR) / "missing.md")}
+    with caplog.at_level("WARNING", logger="jobwright.scoring.tailor"):
+        missing_fallback = tailor._resume_text_for_cover(missing_job)
+    assert missing_fallback == BASE_RESUME
+    assert any(
+        "Tailored resume" in r.message
+        and "missing for" in r.message
+        and "Program Manager" in r.message
+        and "Example Org" in r.message
+        and "falling back to base resume" in r.message
+        for r in caplog.records
+    )
+
+    caplog.clear()
+
+    # If the tailored resume file cannot be read, log a warning with job context and fall back to base resume.
+    def _unreadable_read_text(self, *args, **kwargs):
+        raise OSError("permission denied")
+
+    monkeypatch.setattr(Path, "read_text", _unreadable_read_text)
+    with caplog.at_level("WARNING", logger="jobwright.scoring.tailor"):
+        fallback_text = tailor._resume_text_for_cover(_row(url))
+    assert fallback_text == BASE_RESUME
+    assert any(
+        "Could not read tailored resume" in r.message
+        and "Program Manager" in r.message
+        and "Example Org" in r.message
+        and "falling back to base resume" in r.message
+        for r in caplog.records
+    )
 
 
 def test_run_single_job_failures_return_rc1(user_files, monkeypatch):

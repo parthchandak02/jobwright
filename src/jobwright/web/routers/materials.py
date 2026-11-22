@@ -35,6 +35,12 @@ router = APIRouter(prefix="/api", tags=["materials"], route_class=TxGuardRoute)
 _NO_DESCRIPTION = (
     "No job description yet. Wait for enrichment to finish, then try Prepare again."
 )
+_NO_BASE_RESUME = (
+    "No base resume uploaded yet. Upload your resume PDF in Settings -> Documents, then try Prepare again."
+)
+_UNREADABLE_BASE_RESUME = (
+    "Your base resume PDF could not be read. Upload a fresh copy in Settings -> Documents, then try Prepare again."
+)
 
 # Cap preview text so the drawer stays scannable (~6–8 KB).
 _PREVIEW_MAX_CHARS = 8000
@@ -259,11 +265,29 @@ def _spawn_tailor_run(
         raise HTTPException(400, _NO_DESCRIPTION)
 
     try:
-        from jobwright.resume import load_resume_text
+        from jobwright.resume import ResumeUnreadableError, load_resume_text
 
         load_resume_text()
+    except ResumeUnreadableError as e:
+        log.warning(
+            "Prepare refused: unreadable base resume for %s @ %s (%s) scope=%s: %s",
+            row["title"] or "?",
+            row["company"] or "?",
+            url,
+            scope,
+            e,
+        )
+        raise HTTPException(400, _UNREADABLE_BASE_RESUME) from e
     except FileNotFoundError as e:
-        raise HTTPException(400, str(e)) from e
+        log.warning(
+            "Prepare refused: no base resume for %s @ %s (%s) scope=%s: %s",
+            row["title"] or "?",
+            row["company"] or "?",
+            url,
+            scope,
+            e,
+        )
+        raise HTTPException(400, _NO_BASE_RESUME) from e
 
     body = body or TailorJobBody()
     if body.auto:
