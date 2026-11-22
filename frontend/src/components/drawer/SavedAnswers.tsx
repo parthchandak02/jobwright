@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button'
 import type { ApplicationAnswers } from '@/lib/api'
 import { writeClipboardText } from '@/lib/clipboard'
 import { cn } from '@/lib/utils'
-import { pickSavedAnswers, type SavedAnswerItem } from './savedAnswers'
+import { pickMissingAnswers, pickSavedAnswers, type SavedAnswerItem } from './savedAnswers'
 
 type Props = { jobKey: string; data: ApplicationAnswers | null | undefined }
 
@@ -18,6 +18,7 @@ export function SavedAnswers({ jobKey, data }: Props) {
   const timerRef = useRef<number | undefined>(undefined)
 
   const sections = useMemo(() => pickSavedAnswers(data), [data])
+  const missing = useMemo(() => pickMissingAnswers(data), [data])
 
   useEffect(() => {
     setOpen(false)
@@ -27,7 +28,7 @@ export function SavedAnswers({ jobKey, data }: Props) {
 
   useEffect(() => () => window.clearTimeout(timerRef.current), [])
 
-  if (!sections.length) return null
+  if (!sections.length && !missing.length) return null
 
   async function copyItem(item: SavedAnswerItem) {
     const ok = await writeClipboardText(item.value)
@@ -81,11 +82,24 @@ export function SavedAnswers({ jobKey, data }: Props) {
               </ul>
             </div>
           ))}
-          <div className="flex justify-end">
-            <Button asChild size="sm" variant="ghost" className="text-muted-foreground">
-              <Link to="/profile?tab=about#application-details">Change in Settings</Link>
-            </Button>
-          </div>
+          {missing.length ? (
+            <p className="text-caption text-muted-foreground">
+              Not saved yet: {missing.join(', ')} ·{' '}
+              <Link
+                to="/profile?tab=about#application-details"
+                className="relative touch-target whitespace-nowrap text-foreground underline decoration-border-strong underline-offset-4 hover:decoration-foreground"
+              >
+                Add in Settings
+              </Link>
+            </p>
+          ) : null}
+          {sections.length ? (
+            <div className="flex justify-end">
+              <Button asChild size="sm" variant="ghost" className="text-muted-foreground">
+                <Link to="/profile?tab=about#application-details">Change in Settings</Link>
+              </Button>
+            </div>
+          ) : null}
         </div>
       ) : null}
     </DrawerSection>

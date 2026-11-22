@@ -34,6 +34,22 @@ export function pickSavedAnswers(
   return result
 }
 
+/** Short labels of missing required answers in the drawer's four sections, in field order. */
+export function pickMissingAnswers(
+  data: Pick<ApplicationAnswers, 'missing' | 'fields'> | null | undefined,
+): string[] {
+  if (!data || typeof data !== 'object' || !Array.isArray(data.missing) || !data.missing.length) return []
+  const missing = new Set(data.missing)
+  const fields = Array.isArray(data.fields) ? data.fields : []
+  const labels: string[] = []
+  for (const field of fields) {
+    if (!ALLOWED_SECTIONS.has(field.section ?? 'other')) continue
+    if (!missing.has(field.key)) continue
+    labels.push(shortLabel(field))
+  }
+  return labels
+}
+
 /** True only for jobs before Applied (Backlog or Prepare). */
 export function shouldShowSavedAnswers(funnelStage: string | null | undefined): boolean {
   return funnelStage === 'backlog' || funnelStage === 'prepare'

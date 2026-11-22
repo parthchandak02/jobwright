@@ -51,6 +51,7 @@ apply), or fix a setting. Every screen should make its one job obvious.
 
 ## Lessons (newest first)
 
+- 2026-11-22: When any required common answer in education, eligibility, experience or pay_start is missing, "Your answers" still renders (folded by default) and shows one quiet "Not saved yet: ..." line with an Add in Settings link; contact, diversity and other keys stay omitted.
 - 2026-11-22: Saved application answers in the job drawer stay folded under "Your answers" only for jobs before Applied, show only education, eligibility, experience and pay_start under API section titles, leave out contact and diversity, and are read-only with a Change in Settings link.
 - 2026-11-20: After Open posting on a Backlog / Prepare job, coming back to the tab after 30s or more
   asks "Did you apply?" inline in the job panel (Yes, I applied / Not yet / Not for me), once per
