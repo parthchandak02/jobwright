@@ -540,3 +540,176 @@ def test_download_pdf_failure_returns_plain_error(api_client, monkeypatch):
 
     # Without download=1 the inline preview route is unchanged (only an existing PDF).
     assert client.get(f"/api/jobs/{_enc(url)}/materials/resume.pdf").status_code == 404
+
+
+def test_download_pdf_blocks_cross_user_access(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fake_pdf):
+    pytest.importorskip("fastapi")
+    jwt = pytest.importorskip("jwt")
+    import time
+
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    from fastapi.testclient import TestClient
+
+    import jobwright.config as cfg
+    import jobwright.users as users_mod
+    from jobwright.database import get_connection, init_db, job_id_for_url
+    from jobwright.web import auth as auth_mod
+    from jobwright.web import session as session_mod
+    from jobwright.web.app import app
+
+    users_root = tmp_path / "users"
+    users_root.mkdir()
+    (users_root / "users.yaml").write_text(
+        "users:\n"
+        "  - user_id: alice\n    name: Alice\n    emails: [alice@example.com]\n"
+        "  - user_id: bob\n    name: Bob\n    emails: [bob@example.com]\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(users_mod, "USERS_ROOT", users_root)
+    monkeypatch.setattr(users_mod, "REGISTRY_PATH", users_root / "users.yaml")
+    monkeypatch.setenv("JOBWRIGHT_AUTH_MODE", "cloudflare")
+    monkeypatch.setenv("JOBWRIGHT_CF_TEAM_DOMAIN", "t.cloudflareaccess.com")
+    monkeypatch.setenv("JOBWRIGHT_CF_AUD", "aud")
+
+    private = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    public = private.public_key()
+
+    class _Key:
+        key = public
+
+    monkeypatch.setattr(
+        auth_mod,
+        "_jwks_client",
+        lambda _team: type("J", (), {"get_signing_key_from_jwt": lambda _s, _t: _Key()})(),
+    )
+    session_mod.forget_initialized()
+
+    def _headers(email: str) -> dict[str, str]:
+        now = int(time.time())
+        tok = jwt.encode(
+            {"email": email, "aud": "aud", "iss": "https://t.cloudflareaccess.com", "iat": now, "exp": now + 600},
+            private,
+            algorithm="RS256",
+        )
+        return {"Cf-Access-Jwt-Assertion": tok}
+
+    alice_dir = users_root / "alice"
+    bob_dir = users_root / "bob"
+    alice_tailored = alice_dir / "tailored_resumes"
+    alice_cover = alice_dir / "cover_letters"
+    alice_tailored.mkdir(parents=True)
+    alice_cover.mkdir(parents=True)
+    alice_resume_md = alice_tailored / "alice_role.md"
+    alice_cover_md = alice_cover / "alice_role_CL.md"
+    alice_resume_md.write_text("# Alice\n\n## Summary\n- Private resume\n", encoding="utf-8")
+    alice_cover_md.write_text("Dear Hiring Team,\n\nPrivate cover letter.\n", encoding="utf-8")
+
+    alice_url = "https://example.com/jobs/alice-only"
+    with cfg.user_context("alice"):
+        cfg.ensure_dirs()
+        init_db()
+        insert_manual_job(alice_url, title="Ops Lead", company="TestCo", description="Desc", funnel_stage="prepare")
+        conn = get_connection()
+        conn.execute(
+            "UPDATE jobs SET tailored_resume_path = ?, cover_letter_path = ? WHERE url = ?",
+            (str(alice_resume_md), str(alice_cover_md), alice_url),
+        )
+        conn.commit()
+        alice_job_id = job_id_for_url(alice_url)
+    assert alice_job_id
+
+    with cfg.user_context("bob"):
+        cfg.ensure_dirs()
+        init_db()
+
+    bob_hdrs = _headers("bob@example.com")
+    alice_hdrs = _headers("alice@example.com")
+    try:
+        with TestClient(app) as client:
+            for key in (alice_job_id, _enc(alice_url)):
+                for kind in ("resume.pdf", "cover.pdf"):
+                    res = client.get(f"/api/jobs/{key}/materials/{kind}?download=1", headers=bob_hdrs)
+                    assert res.status_code in (403, 404)
+                    assert not res.content.startswith(b"%PDF")
+                    assert "content-disposition" not in res.headers
+
+            # Cookie spoofing to Alice's profile must also be ignored for Bob.
+            client.cookies.set("jobwright_user", "alice")
+            spoofed = client.get(
+                f"/api/jobs/{alice_job_id}/materials/resume.pdf?download=1",
+                headers=bob_hdrs,
+            )
+            client.cookies.clear()
+            assert spoofed.status_code in (403, 404)
+            assert not spoofed.content.startswith(b"%PDF")
+
+            assert fake_pdf == []
+            assert not alice_resume_md.with_suffix(".pdf").exists()
+            assert not alice_cover_md.with_suffix(".pdf").exists()
+            assert list(bob_dir.rglob("*.pdf")) == []
+
+            # Alice herself can still download her own job's PDF.
+            own = client.get(f"/api/jobs/{alice_job_id}/materials/resume.pdf?download=1", headers=alice_hdrs)
+            assert own.status_code == 200
+            assert own.content == b"%PDF-1.4 rendered"
+    finally:
+        session_mod.forget_initialized()
+        close_connection(alice_dir / "jobwright.db")
+        close_connection(bob_dir / "jobwright.db")
+
+
+def test_download_pdf_blocks_outside_material_paths(api_client, fake_pdf, tmp_path: Path):
+    import os
+
+    from jobwright.database import get_connection
+
+    client, data_dir = api_client
+    tailored_dir = data_dir / "tailored_resumes"
+    cover_dir = data_dir / "cover_letters"
+    tailored_dir.mkdir(parents=True, exist_ok=True)
+    cover_dir.mkdir(parents=True, exist_ok=True)
+
+    outside_md = tmp_path / "outside_secret.md"
+    outside_md.write_text("# Secret\n\nShould never render.\n", encoding="utf-8")
+    in_user_dir_md = data_dir / "secret_note.md"
+    in_user_dir_md.write_text("# Secret Note\n\nOutside tailored_resumes.\n", encoding="utf-8")
+
+    cases = [
+        ("abs", "resume.pdf", "tailored_resume_path", str(outside_md), outside_md.with_suffix(".pdf")),
+        (
+            "dotdot-resume",
+            "resume.pdf",
+            "tailored_resume_path",
+            str(tailored_dir / ".." / "secret_note.md"),
+            in_user_dir_md.with_suffix(".pdf"),
+        ),
+        (
+            "dotdot-cover",
+            "cover.pdf",
+            "cover_letter_path",
+            str(cover_dir / ".." / "secret_note.md"),
+            in_user_dir_md.with_suffix(".pdf"),
+        ),
+        (
+            "rel-traversal",
+            "resume.pdf",
+            "tailored_resume_path",
+            os.path.relpath(outside_md, Path.cwd()),
+            outside_md.with_suffix(".pdf"),
+        ),
+    ]
+
+    conn = get_connection()
+    for slug, kind, column, bad_path, forbidden_pdf in cases:
+        url = f"https://example.com/jobs/outside-{slug}"
+        insert_manual_job(url, title="Ops Lead", company="TestCo", description="Desc", funnel_stage="prepare")
+        conn.execute(f"UPDATE jobs SET {column} = ? WHERE url = ?", (bad_path, url))
+        conn.commit()
+
+        res = client.get(f"/api/jobs/{_enc(url)}/materials/{kind}?download=1")
+        assert res.status_code == 403, f"{slug}: expected 403, got {res.status_code} ({res.text})"
+        assert not res.content.startswith(b"%PDF")
+        assert not forbidden_pdf.exists()
+
+    assert fake_pdf == []
+
