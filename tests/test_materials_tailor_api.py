@@ -430,3 +430,113 @@ def test_download_serves_generated_materials_and_blocks_outside_paths(api_client
     for forbidden in (profile_json, data_dir / "jobwright.db", outside_pdf, traversal):
         assert client.get("/api/download", params={"path": str(forbidden)}).status_code == 403
 
+
+
+def _job_with_tailored_md(data_dir: Path, url: str) -> tuple[Path, Path]:
+    from jobwright.database import get_connection
+
+    tailored_dir = data_dir / "tailored_resumes"
+    cover_dir = data_dir / "cover_letters"
+    tailored_dir.mkdir(parents=True, exist_ok=True)
+    cover_dir.mkdir(parents=True, exist_ok=True)
+    resume_md = tailored_dir / "role.md"
+    cover_md = cover_dir / "role_CL.md"
+    resume_md.write_text("# Alex Rivera\n\n## Summary\n- Ops lead\n", encoding="utf-8")
+    cover_md.write_text("Dear Hiring Team,\n\nHello.\n", encoding="utf-8")
+    insert_manual_job(url, title="Ops Lead", company="TestCo", description="Desc", funnel_stage="prepare")
+    conn = get_connection()
+    conn.execute(
+        "UPDATE jobs SET tailored_resume_path = ?, cover_letter_path = ? WHERE url = ?",
+        (str(resume_md), str(cover_md), url),
+    )
+    conn.commit()
+    return resume_md, cover_md
+
+
+@pytest.fixture()
+def fake_pdf(monkeypatch: pytest.MonkeyPatch):
+    calls: list[Path] = []
+
+    def _convert(md: Path, out: Path | None = None, html_only: bool = False) -> Path:  # noqa: ARG001
+        target = Path(out or Path(md).with_suffix(".pdf"))
+        target.write_bytes(b"%PDF-1.4 rendered")
+        calls.append(target)
+        return target
+
+    monkeypatch.setattr("jobwright.scoring.pdf.convert_to_pdf", _convert)
+    monkeypatch.setattr(
+        "jobwright.config.load_profile",
+        lambda: {"personal": {"full_name": "Alexandra Rivera", "preferred_name": "Alex Rivera"}},
+    )
+    return calls
+
+
+def test_download_pdf_renders_when_missing_and_names_file(api_client, fake_pdf):
+    client, data_dir = api_client
+    url = "https://example.com/jobs/dl-1"
+    resume_md, cover_md = _job_with_tailored_md(data_dir, url)
+
+    res = client.get(f"/api/jobs/{_enc(url)}/materials/resume.pdf?download=1")
+    assert res.status_code == 200
+    assert res.content == b"%PDF-1.4 rendered"
+    from urllib.parse import unquote
+
+    disp = unquote(res.headers["content-disposition"])
+    assert disp.startswith("attachment")
+    assert "Alex Rivera - Resume.pdf" in disp
+    assert fake_pdf == [resume_md.with_suffix(".pdf")]
+
+    cover = client.get(f"/api/jobs/{_enc(url)}/materials/cover.pdf?download=1")
+    assert cover.status_code == 200
+    assert "Alex Rivera - Cover Letter.pdf" in unquote(cover.headers["content-disposition"])
+    assert fake_pdf[-1] == cover_md.with_suffix(".pdf")
+
+
+def test_download_pdf_reuses_fresh_and_rerenders_stale(api_client, fake_pdf):
+    import os
+
+    client, data_dir = api_client
+    url = "https://example.com/jobs/dl-2"
+    resume_md, _ = _job_with_tailored_md(data_dir, url)
+    pdf = resume_md.with_suffix(".pdf")
+    pdf.write_bytes(b"%PDF-1.4 existing")
+    md_time = resume_md.stat().st_mtime
+    os.utime(pdf, (md_time + 10, md_time + 10))
+
+    res = client.get(f"/api/jobs/{_enc(url)}/materials/resume.pdf?download=1")
+    assert res.status_code == 200
+    assert res.content == b"%PDF-1.4 existing"
+    assert fake_pdf == []
+
+    os.utime(resume_md, (md_time + 20, md_time + 20))
+    res = client.get(f"/api/jobs/{_enc(url)}/materials/resume.pdf?download=1")
+    assert res.content == b"%PDF-1.4 rendered"
+    assert fake_pdf == [pdf]
+
+
+def test_download_pdf_without_name_uses_plain_file_name(api_client, fake_pdf, monkeypatch):
+    client, data_dir = api_client
+    url = "https://example.com/jobs/dl-3"
+    _job_with_tailored_md(data_dir, url)
+    monkeypatch.setattr("jobwright.config.load_profile", lambda: {})
+
+    res = client.get(f"/api/jobs/{_enc(url)}/materials/resume.pdf?download=1")
+    assert res.status_code == 200
+    assert 'filename="Resume.pdf"' in res.headers["content-disposition"]
+
+
+def test_download_pdf_failure_returns_plain_error(api_client, monkeypatch):
+    client, data_dir = api_client
+    url = "https://example.com/jobs/dl-4"
+    _job_with_tailored_md(data_dir, url)
+
+    def _boom(*_a, **_k):  # noqa: ANN002, ANN003, ANN202
+        raise RuntimeError("Chromium missing")
+
+    monkeypatch.setattr("jobwright.scoring.pdf.convert_to_pdf", _boom)
+    res = client.get(f"/api/jobs/{_enc(url)}/materials/resume.pdf?download=1")
+    assert res.status_code == 503
+    assert res.json()["detail"] == "PDF not available, download Word instead"
+
+    # Without download=1 the inline preview route is unchanged (only an existing PDF).
+    assert client.get(f"/api/jobs/{_enc(url)}/materials/resume.pdf").status_code == 404

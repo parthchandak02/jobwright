@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import logging
+import re
+import unicodedata
 import uuid
 from pathlib import Path
 
@@ -199,13 +201,59 @@ def _inline_job_pdf(url: str, *, resume: bool) -> FileResponse:
     )
 
 
+_PDF_UNAVAILABLE = "PDF not available, download Word instead"
+
+
+def _person_name() -> str:
+    try:
+        personal = config.load_profile().get("personal") or {}
+    except Exception:  # noqa: BLE001 - no profile yet
+        return ""
+    name = str(personal.get("preferred_name") or personal.get("full_name") or "")
+    name = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode()
+    return " ".join(re.sub(r"[^A-Za-z0-9 .'_-]+", " ", name).split())[:60].strip(" .")
+
+
+def _download_job_pdf(url: str, *, resume: bool) -> FileResponse:
+    """Upload-ready PDF as an attachment, rendered from the tailored Markdown when missing or stale."""
+    url = resolve_job_key(url)
+    column = "tailored_resume_path" if resume else "cover_letter_path"
+    row = get_connection().execute(f"SELECT {column} FROM jobs WHERE url = ?", (url,)).fetchone()
+    if not row:
+        raise HTTPException(404, "Job not found")
+    md_path = resolve_material_path(row[0])
+    if not md_path:
+        raise HTTPException(404, "No tailored text yet")
+    md = _assert_allowed(md_path)
+    pdf = md.with_suffix(".pdf")
+    if not (pdf.is_file() and pdf.stat().st_mtime >= md.stat().st_mtime):
+        try:
+            from jobwright.scoring.pdf import convert_to_pdf
+
+            convert_to_pdf(md, pdf)
+        except Exception as exc:  # noqa: BLE001 - Chromium missing etc.
+            log.warning("PDF not made for %s: %s", md.name, exc)
+            raise HTTPException(503, _PDF_UNAVAILABLE) from exc
+    label = "Resume" if resume else "Cover Letter"
+    name = _person_name()
+    return FileResponse(
+        str(_assert_allowed(pdf)),
+        media_type="application/pdf",
+        filename=f"{name} - {label}.pdf" if name else f"{label}.pdf",
+    )
+
+
 @router.get("/jobs/{url:path}/materials/resume.pdf")
-def job_resume_pdf(url: str) -> FileResponse:
+def job_resume_pdf(url: str, download: bool = False) -> FileResponse:
+    if download:
+        return _download_job_pdf(url, resume=True)
     return _inline_job_pdf(url, resume=True)
 
 
 @router.get("/jobs/{url:path}/materials/cover.pdf")
-def job_cover_pdf(url: str) -> FileResponse:
+def job_cover_pdf(url: str, download: bool = False) -> FileResponse:
+    if download:
+        return _download_job_pdf(url, resume=False)
     return _inline_job_pdf(url, resume=False)
 
 

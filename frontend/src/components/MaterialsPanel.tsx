@@ -64,6 +64,7 @@ type MaterialSectionShellProps = {
   onViewKeyChange: (key: string) => void
   tailoredDocx?: string | null
   tailoredPdf?: string | null
+  pdfDownloadUrl?: string | null
   tailor: ReturnType<typeof useTailorMaterials>
   customOpen: boolean
   onCustomOpen: (open: boolean) => void
@@ -82,6 +83,7 @@ function MaterialSectionShell({
   onViewKeyChange,
   tailoredDocx,
   tailoredPdf,
+  pdfDownloadUrl,
   tailor,
   customOpen,
   onCustomOpen,
@@ -108,6 +110,7 @@ function MaterialSectionShell({
         onViewKeyChange={onViewKeyChange}
         tailoredDocx={tailoredDocx}
         tailoredPdf={tailoredPdf}
+        pdfDownloadUrl={pdfDownloadUrl}
         tailorActions={
           jobKey ? (
             <MaterialsTailorActions
@@ -187,11 +190,13 @@ export function JobResumeMaterials({
         pdfUrl: resumePdfUrl,
         markdown: materials?.resume_preview ?? '',
         pdfTitle: 'Tailored resume PDF',
-        emptyPdf: 'No tailored PDF yet. Run Auto Tailor.',
+        emptyPdf: materials?.resume_md
+          ? 'No PDF preview yet. Download PDF makes one.'
+          : 'No tailored PDF yet. Run Auto Tailor.',
         emptyMarkdown: 'Not generated yet. Run Auto Tailor.',
       },
     ]
-  }, [settings, baseResumePdf, resumePdfUrl, materials?.resume_preview])
+  }, [settings, baseResumePdf, resumePdfUrl, materials?.resume_preview, materials?.resume_md])
 
   if (!settings && !materials) return null
 
@@ -205,6 +210,11 @@ export function JobResumeMaterials({
           onViewKeyChange={setViewKey}
           tailoredDocx={materials?.resume_docx}
           tailoredPdf={materials?.resume_pdf}
+          pdfDownloadUrl={
+            jobKey && materials?.resume_md
+              ? `${API_BASE}${jobPath(jobKey)}/materials/resume.pdf?download=1`
+              : null
+          }
           tailor={tailor}
           customOpen={customOpen}
           onCustomOpen={setCustomOpen}
@@ -267,11 +277,13 @@ export function JobCoverMaterials({
         pdfUrl: coverPdfUrl,
         markdown: materials?.cover_preview ?? '',
         pdfTitle: 'Tailored cover letter PDF',
-        emptyPdf: 'No tailored PDF yet. Run Auto Tailor.',
+        emptyPdf: materials?.cover_md
+          ? 'No PDF preview yet. Download PDF makes one.'
+          : 'No tailored PDF yet. Run Auto Tailor.',
         emptyMarkdown: 'Not generated yet. Run Auto Tailor.',
       },
     ]
-  }, [examples, coverPdfUrl, materials?.cover_preview])
+  }, [examples, coverPdfUrl, materials?.cover_preview, materials?.cover_md])
 
   useEffect(() => {
     if (!views.length) return
@@ -291,6 +303,11 @@ export function JobCoverMaterials({
           onViewKeyChange={setViewKey}
           tailoredDocx={materials?.cover_docx}
           tailoredPdf={materials?.cover_pdf}
+          pdfDownloadUrl={
+            jobKey && materials?.cover_md
+              ? `${API_BASE}${jobPath(jobKey)}/materials/cover.pdf?download=1`
+              : null
+          }
           tailor={tailor}
           customOpen={customOpen}
           onCustomOpen={setCustomOpen}
