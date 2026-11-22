@@ -3,11 +3,14 @@ import { toast } from 'sonner'
 import type { ConnectionsData } from '@/components/ConnectionsPanel'
 import type { MaterialsData } from '@/components/MaterialsPanel'
 import { shouldShowContactDetails } from '@/components/drawer/contactDetails'
+import { shouldShowSavedAnswers } from '@/components/drawer/savedAnswers'
 import {
   apiFetch,
+  getApplicationAnswers,
   getBaseMaterials,
   getPersonalDetails,
   jobPath,
+  type ApplicationAnswers,
   type BaseMaterials,
   type JobCard,
 } from '@/lib/api'
@@ -27,6 +30,7 @@ export function useJobDrawerData(jobKey: string | null) {
   const [base, setBase] = useState<BaseMaterials | null>(null)
   const [connections, setConnections] = useState<ConnectionsData | null>(null)
   const [personal, setPersonal] = useState<Record<string, string> | null>(null)
+  const [answers, setAnswers] = useState<ApplicationAnswers | null>(null)
   const [ready, setReady] = useState(false)
   const loadSeq = useRef(0)
 
@@ -36,17 +40,19 @@ export function useJobDrawerData(jobKey: string | null) {
     const j = await apiFetch<JobCard>(jobPath(key))
     if (seq !== loadSeq.current) return
     setJob(j)
-    const [mRes, cRes, bRes, pRes] = await Promise.allSettled([
+    const [mRes, cRes, bRes, pRes, aRes] = await Promise.allSettled([
       apiFetch<MaterialsData>(`${jobPath(key)}/materials`),
       apiFetch<ConnectionsData>(`${jobPath(key)}/connections`),
       getBaseMaterials(),
       shouldShowContactDetails(j.funnel_stage) ? getPersonalDetails() : Promise.resolve(null),
+      shouldShowSavedAnswers(j.funnel_stage) ? getApplicationAnswers() : Promise.resolve(null),
     ])
     if (seq !== loadSeq.current) return
     setMaterials(mRes.status === 'fulfilled' ? mRes.value : null)
     setConnections(cRes.status === 'fulfilled' ? cRes.value : null)
     setBase(bRes.status === 'fulfilled' ? bRes.value : null)
     setPersonal(pRes.status === 'fulfilled' ? pRes.value : null)
+    setAnswers(aRes.status === 'fulfilled' ? aRes.value : null)
     setReady(true)
   }, [])
 
@@ -58,6 +64,7 @@ export function useJobDrawerData(jobKey: string | null) {
       setBase(null)
       setConnections(null)
       setPersonal(null)
+      setAnswers(null)
       setReady(false)
       return
     }
@@ -66,6 +73,7 @@ export function useJobDrawerData(jobKey: string | null) {
     setMaterials(null)
     setConnections(null)
     setPersonal(null)
+    setAnswers(null)
     setReady(false)
     void load(jobKey).catch((e) => toast.error(errorMessage(e)))
   }, [jobKey, load])
@@ -83,10 +91,23 @@ export function useJobDrawerData(jobKey: string | null) {
     }
   }, [jobKey, job, personal])
 
+  useEffect(() => {
+    if (!jobKey || !job || answers !== null || !shouldShowSavedAnswers(job.funnel_stage)) return
+    let cancelled = false
+    void getApplicationAnswers()
+      .then((a) => {
+        if (!cancelled) setAnswers(a)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [jobKey, job, answers])
+
   /** Refetch the open job (after a tailor run, a connection change…). */
   const reload = useCallback(() => {
     if (jobKey) void load(jobKey).catch((e) => toast.error(errorMessage(e)))
   }, [jobKey, load])
 
-  return { job, setJob, materials, base, connections, personal, ready, reload }
+  return { job, setJob, materials, base, connections, personal, answers, ready, reload }
 }
