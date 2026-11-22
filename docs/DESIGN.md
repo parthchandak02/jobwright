@@ -90,3 +90,7 @@ apply), or fix a setting. Every screen should make its one job obvious.
   stage, and the score is the only colour on a card.
 - 2026-11-08: Repeated per-row buttons are a smell (from Wedding Looks): a list of prompts gets icon
   Copy buttons, not a column of "Copy" pills.
+- 2026-11-22: A job opened from a recent daily list (same WhatsApp send, last 7 days) shows "2 of 5
+  on today's list" under its title, and Next (J, or the arrow in the phone header) steps to the next
+  open job on that list. After "Yes, I applied" one primary "Next on the list" button keeps her
+  moving; a quiet line says when the whole list is done. No job ever moves on its own.
