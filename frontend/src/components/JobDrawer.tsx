@@ -1,6 +1,6 @@
 import { ApplyPlanCallout } from '@/components/drawer/ApplyPlanCallout'
-import { useState, type ReactNode } from 'react'
-import { AlertCircle, ArrowLeft, BellRing, CheckCircle2, CircleHelp, ExternalLink, Loader2, Sparkles, XCircle } from 'lucide-react'
+import { useMemo, useState, type ReactNode } from 'react'
+import { AlertCircle, ArrowLeft, ArrowRight, BellRing, CheckCircle2, CircleHelp, ExternalLink, ListChecks, Loader2, Sparkles, XCircle } from 'lucide-react'
 import { toast } from 'sonner'
 import { ConnectionsPanel } from '@/components/ConnectionsPanel'
 import { DismissDialog, type DismissResult } from '@/components/DismissDialog'
@@ -24,6 +24,7 @@ import { MatchCard } from '@/components/drawer/MatchCard'
 import { useJobDrawerData } from '@/components/drawer/useJobDrawerData'
 import { useJobNotes } from '@/components/drawer/useJobNotes'
 import { useAppliedPrompt } from '@/components/drawer/useAppliedPrompt'
+import { dailyListFor, isRecentList, listDayLabel } from '@/components/drawer/dailyList'
 import { shouldAutoStartPrepare } from '@/components/drawer/prepareAutoStart'
 import { usePrepareMaterials } from '@/components/drawer/usePrepareMaterials'
 import { Button } from '@/components/ui/button'
@@ -42,6 +43,8 @@ type Props = {
   onOpenJob?: (jobId: string) => void
   /** The job's board card, if loaded: the panel header shows it while the job loads. */
   preview?: JobCard | null
+  /** Every job on the board: finds the daily WhatsApp list the open job came on. */
+  boardJobs?: JobCard[]
 }
 
 /** Sheet drawer only (below the docked-panel width): two columns from this width up. */
@@ -52,7 +55,7 @@ const WIDE_QUERY = '(min-width: 1440px)'
  * Desktop (DOCK_QUERY) renders it in a panel docked beside the board (`JobSidePanel`);
  * tablets and phones keep the sheet / full-screen drawer with the phone action bar.
  */
-export function JobDrawer({ jobKey, onClose, onChanged, onOpenJob, preview }: Props) {
+export function JobDrawer({ jobKey, onClose, onChanged, onOpenJob, preview, boardJobs }: Props) {
   const open = !!jobKey
   const docked = useMediaQuery(DOCK_QUERY)
   const wideScreen = useMediaQuery(WIDE_QUERY)
@@ -61,6 +64,13 @@ export function JobDrawer({ jobKey, onClose, onChanged, onOpenJob, preview }: Pr
   const [busy, setBusy] = useState(false)
   const [dismissOpen, setDismissOpen] = useState(false)
   const appliedPrompt = useAppliedPrompt(job?.job_id, job?.funnel_stage)
+  /** The job she just said Yes, I applied for: shows "Next on the list". */
+  const [appliedFromPrompt, setAppliedFromPrompt] = useState<string | null>(null)
+  const dailyList = useMemo(() => {
+    const list = dailyListFor(boardJobs ?? [], job?.job_id ?? jobKey)
+    return list && isRecentList(list.sentAt) ? list : null
+  }, [boardJobs, job?.job_id, jobKey])
+  const listLabel = dailyList ? `${dailyList.position} of ${dailyList.total} on ${listDayLabel(dailyList.sentAt)}` : null
 
   const materialsChanged = () => {
     onChanged()
@@ -248,6 +258,7 @@ export function JobDrawer({ jobKey, onClose, onChanged, onOpenJob, preview }: Pr
                     disabled={busy}
                     onClick={() => {
                       appliedPrompt.hide()
+                      setAppliedFromPrompt(job.job_id)
                       void doMove('applied')
                     }}
                   >
@@ -272,6 +283,26 @@ export function JobDrawer({ jobKey, onClose, onChanged, onOpenJob, preview }: Pr
             >
               Did you apply?
             </Callout>
+          ) : null}
+          {dailyList && appliedFromPrompt === job.job_id && job.funnel_stage === 'applied' ? (
+            dailyList.next ? (
+              <Callout
+                icon={ListChecks}
+                actions={
+                  onOpenJob ? (
+                    <Button size="sm" onClick={() => onOpenJob(dailyList.next!.job_id)}>
+                      Next on the list
+                      <ArrowRight />
+                    </Button>
+                  ) : null
+                }
+              >
+                Applied. Next: {dailyList.next.title || 'Untitled role'}
+                {dailyList.next.company ? ` at ${dailyList.next.company}` : ''}.
+              </Callout>
+            ) : (
+              <Callout icon={ListChecks}>That's the whole list done. Nice work.</Callout>
+            )
           ) : null}
           {job.job_id ? <ApplyPlanCallout jobId={job.job_id} /> : null}
           {beforeApplying && isLinkedInHref(href) ? (
@@ -390,6 +421,8 @@ export function JobDrawer({ jobKey, onClose, onChanged, onOpenJob, preview }: Pr
         subtitle={shown ? placeOf(shown) : undefined}
         onClose={onClose}
         onOpenJob={onOpenJob}
+        listLabel={listLabel}
+        listNextId={dailyList?.next?.job_id ?? null}
         dialogs={dismissDialog}
       >
         {renderBody}
@@ -420,7 +453,21 @@ export function JobDrawer({ jobKey, onClose, onChanged, onOpenJob, preview }: Pr
           <div className="min-w-0 flex-1 py-1 md:py-0.5">
             <h2 className="line-clamp-2 text-heading text-foreground">{job?.title || 'Loading…'}</h2>
             {job ? <p className="mt-0.5 truncate text-caption text-muted-foreground">{place}</p> : null}
+            {listLabel ? <p className="mt-0.5 text-caption tabular-nums text-muted-foreground">{listLabel}</p> : null}
           </div>
+          {dailyList?.next && onOpenJob ? (
+            <Button
+              type="button"
+              size="icon"
+              variant="ghost"
+              aria-label="Next on the list"
+              title="Next on the list"
+              onClick={() => onOpenJob(dailyList.next!.job_id)}
+              className="shrink-0"
+            >
+              <ArrowRight />
+            </Button>
+          ) : null}
         </header>
 
         {renderBody(wideScreen)}

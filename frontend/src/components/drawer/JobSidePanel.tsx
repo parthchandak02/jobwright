@@ -22,6 +22,10 @@ type Props = {
   onOpenJob?: (jobId: string) => void
   /** Panel body; `twoColumns` says whether it is wide enough for two columns. */
   children: (twoColumns: boolean) => ReactNode
+  /** "2 of 5 on today's list" when the job came on a recent daily WhatsApp list. */
+  listLabel?: string | null
+  /** Next open job on that list: Next (J) goes there instead of the next card in the lane. */
+  listNextId?: string | null
   /** Dialogs owned by the panel (rendered outside the scroll area). */
   dialogs?: ReactNode
 }
@@ -48,7 +52,7 @@ function shortcutLabel(label: string, key: string) {
  * double-click or Enter resets), remembered per browser. Escape closes; j / k (or Up / Down
  * on a focused card or row) go to the next / previous job in the lane or table.
  */
-export function JobSidePanel({ jobKey, title, subtitle, onClose, onOpenJob, children, dialogs }: Props) {
+export function JobSidePanel({ jobKey, title, subtitle, onClose, onOpenJob, listLabel, listNextId, children, dialogs }: Props) {
   const { width, min, max, setWidth, reset } = usePanelWidth()
   const panelRef = useRef<HTMLElement>(null)
   const titleRef = useRef<HTMLHeadingElement>(null)
@@ -58,6 +62,8 @@ export function JobSidePanel({ jobKey, title, subtitle, onClose, onOpenJob, chil
   const scrolledFor = useRef<string | null>(null)
   const lastKey = useRef(jobKey)
   lastKey.current = jobKey
+  const listNext = useRef(listNextId)
+  listNext.current = listNextId
 
   // Focus moves into the panel when it opens and back to the job's card or row when it closes.
   useEffect(() => {
@@ -135,7 +141,8 @@ export function JobSidePanel({ jobKey, title, subtitle, onClose, onOpenJob, chil
       else if (e.key === 'k' || (onListItem && e.key === 'ArrowUp')) step = -1
       if (!step) return
       const from = (e.key.startsWith('Arrow') && listItem?.getAttribute(JOB_KEY_ATTR)) || lastKey.current
-      const id = neighborJobId(from, step)
+      const onList = step === 1 && from === lastKey.current && listNext.current
+      const id = onList || neighborJobId(from, step)
       if (!id) return
       e.preventDefault()
       goRef.current(id, !inPanel)
@@ -238,6 +245,7 @@ export function JobSidePanel({ jobKey, title, subtitle, onClose, onOpenJob, chil
             {title}
           </h2>
           {subtitle ? <p className="mt-0.5 truncate text-caption text-muted-foreground">{subtitle}</p> : null}
+          {listLabel ? <p className="mt-0.5 text-caption tabular-nums text-muted-foreground">{listLabel}</p> : null}
         </div>
         {onOpenJob ? (
           <div className="flex shrink-0 items-center">
@@ -257,11 +265,11 @@ export function JobSidePanel({ jobKey, title, subtitle, onClose, onOpenJob, chil
               type="button"
               size="icon-sm"
               variant="ghost"
-              aria-label="Next job"
-              title={shortcutLabel('Next job', 'J')}
+              aria-label={listNextId ? 'Next on the list' : 'Next job'}
+              title={shortcutLabel(listNextId ? 'Next on the list' : 'Next job', 'J')}
               aria-keyshortcuts="j"
-              disabled={!nextId}
-              onClick={() => go(nextId, false)}
+              disabled={!(listNextId || nextId)}
+              onClick={() => go(listNextId || nextId, false)}
             >
               <ChevronDown />
             </Button>

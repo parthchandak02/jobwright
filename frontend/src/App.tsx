@@ -480,6 +480,7 @@ export default function App() {
           onChanged={() => void refresh()}
           onOpenJob={openJobId}
           preview={openPreview}
+          boardJobs={allJobs}
         />
         <DismissDialog
           open={!!closeTarget}
