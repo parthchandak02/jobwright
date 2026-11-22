@@ -38,7 +38,10 @@ const PERSONAL_DETAILS_WRITES = /^\/(settings|session|onboarding|answers)(\/|$|\
 function noteWrite(path: string, method: string | undefined) {
   if (!method || method.toUpperCase() === 'GET') return
   if (BASE_MATERIALS_WRITES.test(path)) invalidateBaseMaterials()
-  if (PERSONAL_DETAILS_WRITES.test(path)) invalidatePersonalDetails()
+  if (PERSONAL_DETAILS_WRITES.test(path)) {
+    invalidatePersonalDetails()
+    invalidateApplicationAnswers()
+  }
 }
 
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
@@ -272,6 +275,25 @@ export function getPersonalDetails(): Promise<Record<string, string>> {
 
 export function invalidatePersonalDetails() {
   personalCache = null
+}
+
+let answersCache: { at: number; promise: Promise<ApplicationAnswers> } | null = null
+
+/** Saved application answers from GET /api/answers, cached in memory for the session. */
+export function getApplicationAnswers(): Promise<ApplicationAnswers> {
+  const now = Date.now()
+  if (answersCache && now - answersCache.at < BASE_MATERIALS_TTL_MS) return answersCache.promise
+  const promise = getAnswers()
+  const entry = { at: now, promise }
+  answersCache = entry
+  promise.catch(() => {
+    if (answersCache === entry) answersCache = null
+  })
+  return promise
+}
+
+export function invalidateApplicationAnswers() {
+  answersCache = null
 }
 
 export const STAGE_LABELS: Record<string, string> = {

@@ -13,6 +13,8 @@ import { StagePicker } from '@/components/StagePicker'
 import { Callout } from '@/components/drawer/Callout'
 import { ContactDetails } from '@/components/drawer/ContactDetails'
 import { shouldShowContactDetails } from '@/components/drawer/contactDetails'
+import { SavedAnswers } from '@/components/drawer/SavedAnswers'
+import { shouldShowSavedAnswers } from '@/components/drawer/savedAnswers'
 import { EmployerLinkCallout } from '@/components/drawer/EmployerLinkCallout'
 import { DesktopActions, PhoneActionBar, type DrawerAction } from '@/components/drawer/DrawerActions'
 import { JobDescriptionPane } from '@/components/drawer/JobDescriptionPane'
@@ -59,7 +61,7 @@ export function JobDrawer({ jobKey, onClose, onChanged, onOpenJob, preview, boar
   const open = !!jobKey
   const docked = useMediaQuery(DOCK_QUERY)
   const wideScreen = useMediaQuery(WIDE_QUERY)
-  const { job, setJob, materials, base, connections, personal, ready, reload } = useJobDrawerData(jobKey)
+  const { job, setJob, materials, base, connections, personal, answers, ready, reload } = useJobDrawerData(jobKey)
   const notes = useJobNotes(job)
   const [busy, setBusy] = useState(false)
   const [dismissOpen, setDismissOpen] = useState(false)
@@ -329,6 +331,9 @@ export function JobDrawer({ jobKey, onClose, onChanged, onOpenJob, preview, boar
         />
       )
       const contactDetails = beforeApplying ? <ContactDetails jobKey={job.job_id} personal={personal} /> : null
+      const savedAnswers = shouldShowSavedAnswers(job.funnel_stage) ? (
+        <SavedAnswers jobKey={job.job_id} data={answers} />
+      ) : null
       const descriptionSection = (first?: boolean) =>
         description ? (
           <DrawerSection first={first} title="Job description">
@@ -372,6 +377,7 @@ export function JobDrawer({ jobKey, onClose, onChanged, onOpenJob, preview, boar
               {summary}
               {details}
               {contactDetails}
+              {savedAnswers}
               {people}
               {extras}
             </div>
@@ -389,6 +395,7 @@ export function JobDrawer({ jobKey, onClose, onChanged, onOpenJob, preview, boar
             {summary}
             {details}
             {contactDetails}
+            {savedAnswers}
             {descriptionSection()}
             {materialsSections()}
             {people}
