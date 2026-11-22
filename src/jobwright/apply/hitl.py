@@ -439,19 +439,17 @@ def notify_questions(rows: list[dict], user_id: str | None, *, title: str = "") 
         send_via_hermes(render_questions(rows, title=title), user.whatsapp_target)
     except SendUncertain as exc:
         log.warning(
-            "WhatsApp send uncertain for user %s pending questions (%s) to %s: %s; treating as sent",
+            "WhatsApp send uncertain for user %s pending questions (%s): %s; treating as sent",
             user_id,
             ids,
-            user.whatsapp_target,
             exc,
         )
     except Exception as exc:  # noqa: BLE001
         log.warning(
-            "Posting questions (%s) for user %s (%s) to %s failed (%s): %s",
+            "Posting questions (%s) for user %s (%s) failed (%s): %s",
             ids,
             user_id,
             title or "untitled",
-            user.whatsapp_target,
             type(exc).__name__,
             exc,
         )
@@ -493,21 +491,19 @@ def notify_handoff(job: dict, notes: str, user_id: str | None) -> bool:
         send_via_hermes(render_handoff(job, notes, base), user.whatsapp_target)
     except SendUncertain as exc:
         log.warning(
-            "WhatsApp hand-off send uncertain for user %s (job %s at %s) to %s: %s; treating as sent",
+            "WhatsApp hand-off send uncertain for user %s (job %s at %s): %s; treating as sent",
             user_id,
             job_ref,
             company,
-            user.whatsapp_target,
             exc,
         )
         return True
     except Exception as exc:  # noqa: BLE001
         log.warning(
-            "Posting hand-off for user %s (job %s at %s) to %s failed (%s): %s",
+            "Posting hand-off for user %s (job %s at %s) failed (%s): %s",
             user_id,
             job_ref,
             company,
-            user.whatsapp_target,
             type(exc).__name__,
             exc,
         )
@@ -521,41 +517,42 @@ def notify(row: dict, user_id: str | None, *, title: str = "") -> bool:
     from jobwright.users import get_user
 
     user = get_user(user_id) if user_id else None
-    targets = []
+    # (who, target): log lines name the role, never the number or group id.
+    targets: list[tuple[str, str]] = []
     if user and user.whatsapp_target:
-        targets.append(user.whatsapp_target)
+        targets.append(("person", user.whatsapp_target))
     if row["kind"] == "captcha":
         # Only the operator can reach the Mac mini's browser window.
         from jobwright.users import load_registry
 
         ops = str(load_registry().get("ops_target") or os.environ.get("JOBWRIGHT_OPS_TARGET") or "").strip()
-        if ops and ops not in targets:
-            targets.append(ops)
+        if ops and ops not in (t for _, t in targets):
+            targets.append(("ops", ops))
     if not targets:
         log.warning("No WhatsApp target for user %s; pending %s (%s) not posted", user_id, row["id"], row.get("kind"))
         return False
     text = render_message(row, title=title)
     sent = False
-    for target in targets:
+    for who, target in targets:
         try:
             send_via_hermes(text, target)
             sent = True
         except SendUncertain as exc:
             log.warning(
-                "WhatsApp send uncertain for pending %s (%s) to %s (user %s): %s; treating as sent",
+                "WhatsApp send uncertain for pending %s (%s) to %s chat (user %s): %s; treating as sent",
                 row["id"],
                 row.get("kind"),
-                target,
+                who,
                 user_id,
                 exc,
             )
             sent = True
         except Exception as exc:  # noqa: BLE001
             log.warning(
-                "Posting pending %s (%s) to %s for user %s failed (%s): %s",
+                "Posting pending %s (%s) to %s chat for user %s failed (%s): %s",
                 row["id"],
                 row.get("kind"),
-                target,
+                who,
                 user_id,
                 type(exc).__name__,
                 exc,

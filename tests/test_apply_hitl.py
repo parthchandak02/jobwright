@@ -272,6 +272,33 @@ def test_notify_and_notify_questions_log_uncertain_and_failures(env, monkeypatch
     )
 
 
+def test_notify_logs_never_include_whatsapp_target(env, monkeypatch, caplog):
+    """Failure and uncertain-send warnings name the user and ids, never the number or group id."""
+    from jobwright.notify import SendUncertain
+
+    person = "whatsapp:120363999999999901@g.us"
+    ops = "whatsapp:14155550100@s.whatsapp.net"
+    users_mod.update_user("alex", whatsapp_target=person)
+    monkeypatch.setenv("JOBWRIGHT_OPS_TARGET", ops)
+
+    for exc in (SendUncertain("slow"), ConnectionError("gateway refused")):
+        def send(_m, _t, exc=exc):
+            raise exc
+
+        monkeypatch.setattr("jobwright.notify.send_via_hermes", send)
+        q = hitl.create_pending("answer", "Salary range?", job=_job(url=f"https://jobs.example.com/q/{id(exc)}"))
+        c = hitl.create_pending("captcha", "CAPTCHA", job=_job(url=f"https://jobs.example.com/c/{id(exc)}"))
+        with caplog.at_level("DEBUG", logger="jobwright.apply.hitl"):
+            hitl.notify_questions([q], "alex", title="Analyst")
+            hitl.notify(c, "alex")
+            hitl.notify_handoff(_job(), "Need your click", "alex")
+
+    text = caplog.text
+    assert "alex" in text and "person chat" in text and "ops chat" in text
+    for secret in (person, ops, "120363999999999901", "14155550100"):
+        assert secret not in text
+
+
 def test_meta_and_wait_for_log_error_context(env, monkeypatch, caplog):
     row = hitl.create_pending("answer", "Notice period?", job=_job(url="https://jobs.example.com/j/9"))
     conn = get_connection()
