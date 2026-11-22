@@ -422,7 +422,7 @@ export function JobDrawer({ jobKey, onClose, onChanged, onOpenJob, preview, boar
         onClose={onClose}
         onOpenJob={onOpenJob}
         listLabel={listLabel}
-        listNextId={dailyList?.next?.job_id ?? null}
+        listNav={dailyList ? { prevId: dailyList.prev?.job_id ?? null, nextId: dailyList.next?.job_id ?? null } : null}
         dialogs={dismissDialog}
       >
         {renderBody}

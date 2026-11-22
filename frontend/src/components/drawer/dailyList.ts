@@ -11,6 +11,8 @@ export type DailyList<J extends ListJob = ListJob> = {
   /** 1-based place of the open job on the list. */
   position: number
   total: number
+  /** Previous job before the open one (in list order) that is not Applied or Closed; null when none. */
+  prev: J | null
   /** Next job after the open one (wrapping round) that is not Applied or Closed; null when none. */
   next: J | null
   /** Every job on the list is Applied (or later) or Closed. */
@@ -33,10 +35,15 @@ export function dailyListFor<J extends ListJob>(jobs: J[], jobId: string | null 
     .filter((j) => j.whatsapp_notified_at === sentAt)
     .sort((a, b) => (b.fit_score ?? -1) - (a.fit_score ?? -1) || a.job_id.localeCompare(b.job_id))
   const at = list.findIndex((j) => j.job_id === jobId)
+  const prev =
+    list
+      .slice(0, at)
+      .reverse()
+      .find((j) => OPEN_STAGES.has(j.funnel_stage)) ?? null
   const rest = [...list.slice(at + 1), ...list.slice(0, at)]
   const next = rest.find((j) => OPEN_STAGES.has(j.funnel_stage)) ?? null
   const done = list.every((j) => !OPEN_STAGES.has(j.funnel_stage))
-  return { sentAt, position: at + 1, total: list.length, next, done }
+  return { sentAt, position: at + 1, total: list.length, prev, next, done }
 }
 
 /** Whether a send is recent enough to step through (the last 7 days). */

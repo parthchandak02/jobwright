@@ -49,7 +49,19 @@ describe('dailyListFor', () => {
 
   it('says the list is done when every job is applied or closed', () => {
     const jobs = [job('a', SUN, 9, 'applied'), job('b', SUN, 8, 'closed'), job('c', SUN, 7, 'in_progress')]
-    expect(dailyListFor(jobs, 'a')).toMatchObject({ next: null, done: true })
+    expect(dailyListFor(jobs, 'a')).toMatchObject({ prev: null, next: null, done: true })
+  })
+
+  it('gives prev in list order, null at first of list, and skips applied or closed jobs', () => {
+    expect(dailyListFor(board, 'a')?.prev).toBeNull()
+    expect(dailyListFor(board, 'b')?.prev?.job_id).toBe('a')
+    expect(dailyListFor(board, 'c')?.prev?.job_id).toBe('b')
+
+    const withApplied = [job('a', SUN, 9), job('b', SUN, 8, 'applied'), job('c', SUN, 7, 'closed'), job('d', SUN, 6, 'prepare')]
+    expect(dailyListFor(withApplied, 'd')?.prev?.job_id).toBe('a')
+
+    const earlierApplied = [job('a', SUN, 9, 'applied'), job('b', SUN, 8, 'backlog'), job('c', SUN, 7, 'prepare')]
+    expect(dailyListFor(earlierApplied, 'b')?.prev).toBeNull()
   })
 })
 
