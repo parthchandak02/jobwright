@@ -37,6 +37,8 @@ type Props = {
   /** Tailored DOCX/PDF paths; download menu only when the active view key is `tailored`. */
   tailoredDocx?: string | null
   tailoredPdf?: string | null
+  /** Route that renders (if needed) and downloads the upload-ready tailored PDF. */
+  pdfDownloadUrl?: string | null
   tailorActions?: ReactNode
   className?: string
 }
@@ -49,6 +51,33 @@ function pdfViewerSrc(url: string): string {
 
 function download(path: string) {
   window.open(`/api/download?path=${encodeURIComponent(path)}`, '_blank')
+}
+
+export const PDF_UNAVAILABLE = 'PDF not available, download Word instead'
+
+export function fileNameFrom(disposition: string | null): string {
+  const star = disposition?.match(/filename\*=utf-8''([^;]+)/i)
+  if (star) return decodeURIComponent(star[1])
+  return disposition?.match(/filename="?([^";]+)"?/i)?.[1] ?? 'Resume.pdf'
+}
+
+/** Fetch first so a failed render shows our message instead of a raw error page. */
+export async function downloadPdf(url: string): Promise<boolean> {
+  try {
+    const res = await fetch(url, { credentials: 'same-origin' })
+    if (!res.ok) return false
+    const href = URL.createObjectURL(await res.blob())
+    const a = document.createElement('a')
+    a.href = href
+    a.download = fileNameFrom(res.headers.get('content-disposition'))
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    window.setTimeout(() => URL.revokeObjectURL(href), 10_000)
+    return true
+  } catch {
+    return false
+  }
 }
 
 function MaterialsCopyButton({ text }: { text: string }) {
@@ -91,9 +120,12 @@ export function JobMaterialsPreview({
   onViewKeyChange,
   tailoredDocx,
   tailoredPdf,
+  pdfDownloadUrl,
   tailorActions,
   className,
 }: Props) {
+  const [pdfBusy, setPdfBusy] = useState(false)
+  const [pdfError, setPdfError] = useState(false)
   const active = useMemo(
     () => views.find((v) => v.key === viewKey) ?? views[0],
     [views, viewKey],
@@ -115,7 +147,18 @@ export function JobMaterialsPreview({
   }
 
   const hasMarkdown = hasCopyableMarkdown(active.markdown)
-  const showDownload = viewKey === 'tailored' && (tailoredDocx || tailoredPdf)
+  const isTailored = viewKey === 'tailored'
+  const showPdfButton = isTailored && Boolean(pdfDownloadUrl)
+  const showDownload = isTailored && !pdfDownloadUrl && (tailoredDocx || tailoredPdf)
+
+  async function onDownloadPdf() {
+    if (!pdfDownloadUrl) return
+    setPdfBusy(true)
+    const ok = await downloadPdf(pdfDownloadUrl)
+    setPdfBusy(false)
+    setPdfError(!ok)
+    if (!ok) toast.error(PDF_UNAVAILABLE)
+  }
 
   return (
     <div className={cn('materials-preview-frame @container/preview', className)}>
@@ -151,6 +194,33 @@ export function JobMaterialsPreview({
 
           <MaterialsCopyButton text={active.markdown} />
 
+          {showPdfButton ? (
+            <>
+              <Button
+                type="button"
+                size="sm"
+                className="h-9 shrink-0 gap-1.5 px-2.5"
+                disabled={pdfBusy}
+                onClick={() => void onDownloadPdf()}
+              >
+                <Download className="size-3.5" />
+                {pdfBusy ? 'Making PDF…' : 'Download PDF'}
+              </Button>
+              {tailoredDocx ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  className="h-9 shrink-0 px-2.5"
+                  aria-label="Download Word file"
+                  onClick={() => download(tailoredDocx)}
+                >
+                  Word
+                </Button>
+              ) : null}
+            </>
+          ) : null}
+
           {showDownload ? (
             <Select
               onValueChange={(v) => {
@@ -172,6 +242,12 @@ export function JobMaterialsPreview({
             </Select>
           ) : null}
         </div>
+
+        {showPdfButton && pdfError ? (
+          <p role="status" className="basis-full text-caption text-muted-foreground">
+            {PDF_UNAVAILABLE}
+          </p>
+        ) : null}
 
         {tailorActions ? (
           <div className="flex flex-wrap items-center gap-2">{tailorActions}</div>
