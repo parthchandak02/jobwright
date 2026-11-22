@@ -13,7 +13,7 @@ vi.mock('sonner', () => ({ toast: { success: (...a: unknown[]) => toastSuccess(.
 import { ReviewCard } from '@/components/review/ReviewCard'
 import type { AnswerFieldSpec, ApplicationAnswers, JobCard } from '@/lib/api'
 import { SavedAnswers } from './SavedAnswers'
-import { pickSavedAnswers, SAVED_ANSWER_SECTIONS, shouldShowSavedAnswers } from './savedAnswers'
+import { pickMissingAnswers, pickSavedAnswers, SAVED_ANSWER_SECTIONS, shouldShowSavedAnswers } from './savedAnswers'
 
 const f = (key: string, label: string, section: AnswerFieldSpec['section'], attestation = false): AnswerFieldSpec => ({
   key, label, category: attestation ? 'attestation' : 'common', attestation, required: false, hint: '', choices: [], section,
@@ -90,6 +90,31 @@ describe('pickSavedAnswers and shouldShowSavedAnswers', () => {
   })
 })
 
+describe('pickMissingAnswers', () => {
+  it('returns empty when none are missing or data is absent', () => {
+    expect(pickMissingAnswers(null)).toEqual([])
+    expect(pickMissingAnswers(FAKE_ANSWERS)).toEqual([])
+  })
+
+  it('returns short labels in field order for allowed sections only', () => {
+    expect(
+      pickMissingAnswers({
+        ...FAKE_ANSWERS,
+        missing: ['start_date', 'relocation'],
+      }),
+    ).toEqual(['Will relocate', 'Earliest start'])
+  })
+
+  it('leaves out missing contact, diversity, other and unknown keys', () => {
+    expect(
+      pickMissingAnswers({
+        ...FAKE_ANSWERS,
+        missing: ['phone', 'eeo_gender', 'how_heard', 'not_a_real_key', 'start_date'],
+      }),
+    ).toEqual(['Earliest start'])
+  })
+})
+
 describe('SavedAnswers', () => {
   it('stays folded by default, hides diversity and contact answers, is read-only, and copies without logging or storing', async () => {
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
@@ -109,6 +134,7 @@ describe('SavedAnswers', () => {
     for (const hidden of ['Contact and address', 'Diversity questions (optional)', '555-0100', 'San Francisco', 'Woman', 'Decline to self-identify', 'Company website', 'Hold a CPA license?']) {
       expect(container.textContent).not.toContain(hidden)
     }
+    expect(screen.queryByText(/Not saved yet:/)).toBeNull()
     expect(screen.queryByRole('textbox')).toBeNull()
     expect(screen.queryByRole('button', { name: /save|undo/i })).toBeNull()
     expect(screen.getByRole('link', { name: 'Change in Settings' }).getAttribute('href')).toBe('/profile?tab=about#application-details')
@@ -125,8 +151,44 @@ describe('SavedAnswers', () => {
     expect(screen.getByRole('button', { name: 'Your answers' }).getAttribute('aria-expanded')).toBe('false')
   })
 
-  it('renders nothing when allowed answers are empty and never appears inside ReviewCard', () => {
-    const { container } = renderSaved('job-1', { ...FAKE_ANSWERS, answers: { phone: e('555-0100'), eeo_gender: e('Woman'), work_authorized: e('   ') } })
+  it('shows one quiet missing line with Add in Settings when expanded, and renders even if nothing is saved', () => {
+    renderSaved('job-1', {
+      ...FAKE_ANSWERS,
+      answers: { phone: e('555-0100'), eeo_gender: e('Woman') },
+      missing: ['phone', 'eeo_gender', 'start_date', 'work_authorized'],
+    })
+
+    const toggle = screen.getByRole('button', { name: 'Your answers' })
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    expect(screen.queryByText(/Not saved yet:/)).toBeNull()
+
+    fireEvent.click(toggle)
+    const line = screen.getByText(/Not saved yet: Can work in the job’s country, Earliest start/)
+    expect(line.textContent).not.toContain('Phone')
+    expect(line.textContent).not.toContain('Gender')
+    expect(screen.getByRole('link', { name: 'Add in Settings' }).getAttribute('href')).toBe('/profile?tab=about#application-details')
+    expect(screen.queryByRole('link', { name: 'Change in Settings' })).toBeNull()
+  })
+
+  it('shows both saved answers and the missing line when some answers are saved and others are missing', () => {
+    renderSaved('job-1', {
+      ...FAKE_ANSWERS,
+      missing: ['start_date', 'relocation'],
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Your answers' }))
+    expect(screen.getByText('$170,000 USD per year')).toBeTruthy()
+    expect(screen.getByText(/Not saved yet: Will relocate, Earliest start/)).toBeTruthy()
+    expect(screen.getByRole('link', { name: 'Add in Settings' }).getAttribute('href')).toBe('/profile?tab=about#application-details')
+    expect(screen.getByRole('link', { name: 'Change in Settings' }).getAttribute('href')).toBe('/profile?tab=about#application-details')
+  })
+
+  it('renders nothing when allowed answers and missing allowed answers are empty, and never appears inside ReviewCard', () => {
+    const { container } = renderSaved('job-1', {
+      ...FAKE_ANSWERS,
+      answers: { phone: e('555-0100'), eeo_gender: e('Woman'), work_authorized: e('   ') },
+      missing: ['phone', 'eeo_gender', 'how_heard'],
+    })
     expect(container.firstChild).toBeNull()
     window.matchMedia = vi.fn().mockReturnValue({ matches: false }) as typeof window.matchMedia
     vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
