@@ -531,6 +531,14 @@ def tailor_one_job(
             )
             report["status"] = "approved_with_judge_warning"
             return _persist_tailor_result(conn, job, tailored, report)
+        log.warning(
+            "Resume tailoring failed for %s @ %s (%s): status=%s attempts=%s",
+            job.get("title") or "?",
+            job.get("company") or "?",
+            url,
+            status,
+            report.get("attempts"),
+        )
         conn.execute(
             "UPDATE jobs SET tailor_attempts=COALESCE(tailor_attempts,0)+1 WHERE url=?",
             (url,),
@@ -553,7 +561,8 @@ def _resume_text_for_cover(job: dict) -> str:
     """Prefer tailored resume text for cover; fall back to base resume."""
     from jobwright.resume import load_resume_text
 
-    tailored_path = resolve_material_path(job.get("tailored_resume_path"))
+    raw_tailored = job.get("tailored_resume_path")
+    tailored_path = resolve_material_path(raw_tailored)
     if tailored_path and tailored_path.is_file():
         try:
             return tailored_path.read_text(encoding="utf-8")
@@ -566,6 +575,14 @@ def _resume_text_for_cover(job: dict) -> str:
                 job.get("url") or "?",
                 exc,
             )
+    elif raw_tailored:
+        log.warning(
+            "Tailored resume %s missing for %s @ %s (%s); falling back to base resume",
+            raw_tailored,
+            job.get("title") or "?",
+            job.get("company") or "?",
+            job.get("url") or "?",
+        )
     return load_resume_text()
 
 
