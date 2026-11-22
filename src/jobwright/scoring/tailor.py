@@ -555,7 +555,17 @@ def _resume_text_for_cover(job: dict) -> str:
 
     tailored_path = resolve_material_path(job.get("tailored_resume_path"))
     if tailored_path and tailored_path.is_file():
-        return tailored_path.read_text(encoding="utf-8")
+        try:
+            return tailored_path.read_text(encoding="utf-8")
+        except OSError as exc:
+            log.warning(
+                "Could not read tailored resume %s for %s @ %s (%s); falling back to base resume: %s",
+                tailored_path,
+                job.get("title") or "?",
+                job.get("company") or "?",
+                job.get("url") or "?",
+                exc,
+            )
     return load_resume_text()
 
 

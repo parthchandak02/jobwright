@@ -262,7 +262,7 @@ def test_tailor_cover_only_starts_logged_run(api_client):
     assert body["kind"] == "tailor_cover"
 
 
-def test_tailor_missing_base_resume_returns_400(api_client):
+def test_tailor_missing_base_resume_returns_400(api_client, caplog):
     client, data_dir = api_client
     for name in ("base.pdf", "base.md"):
         (data_dir / "resume" / name).unlink(missing_ok=True)
@@ -274,9 +274,49 @@ def test_tailor_missing_base_resume_returns_400(api_client):
         description="Analyze operations metrics.",
         funnel_stage="prepare",
     )
-    res = client.post(f"/api/jobs/{_enc(url)}/tailor")
+    with caplog.at_level("WARNING", logger="jobwright.web.routers.materials"):
+        res = client.post(f"/api/jobs/{_enc(url)}/tailor")
     assert res.status_code == 400
-    assert "resume" in res.json()["detail"].lower()
+    detail = res.json()["detail"]
+    assert "No base resume uploaded yet" in detail
+    assert "Settings -> Documents" in detail
+    assert "Prepare" in detail
+    assert str(data_dir) not in detail
+    assert any(
+        "no base resume" in r.message and "Analyst" in r.message and "TestCo" in r.message
+        for r in caplog.records
+    )
+
+
+def test_tailor_unreadable_base_resume_returns_400(api_client, caplog, monkeypatch):
+    from jobwright.resume import ResumeUnreadableError
+
+    client, data_dir = api_client
+    url = "https://example.com/unreadable-base-resume"
+    insert_manual_job(
+        url,
+        title="Strategist",
+        company="TestCo",
+        description="Lead strategic planning.",
+        funnel_stage="prepare",
+    )
+
+    def _bad_resume():
+        raise ResumeUnreadableError(f"The resume PDF at {data_dir / 'resume/base.pdf'} could not be read.")
+
+    monkeypatch.setattr("jobwright.resume.load_resume_text", _bad_resume)
+    with caplog.at_level("WARNING", logger="jobwright.web.routers.materials"):
+        res = client.post(f"/api/jobs/{_enc(url)}/tailor")
+    assert res.status_code == 400
+    detail = res.json()["detail"]
+    assert "Your base resume PDF could not be read" in detail
+    assert "Settings -> Documents" in detail
+    assert "Prepare" in detail
+    assert str(data_dir) not in detail
+    assert any(
+        "unreadable base resume" in r.message and "Strategist" in r.message and "TestCo" in r.message
+        for r in caplog.records
+    )
 
 
 def test_job_materials_populates_previews_manifest_and_cover_pdf(api_client):
