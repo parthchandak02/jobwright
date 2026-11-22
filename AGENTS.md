@@ -119,7 +119,7 @@ jobwright --user <id> rescore --scope active|labeled|all|since:<days> [--dry-run
 jobwright --user <id> ops brief-report [--status-file F] [--force]
 jobwright ops watchdog [--grace 120] [--no-retry-notify]
 jobwright ops set-target 'whatsapp:<jid>'            # '' clears
-jobwright ops backup [--dest DIR] [--keep 14] [--cleanup-days 30]
+jobwright ops backup [--dest DIR] [--keep 3] [--cleanup-days 30]
 jobwright ops restore --snapshot <name|latest> --user <id> [--to DIR] [--force] [--dest DIR]   # separate dir by default; --force moves a live dir aside
 jobwright --user <id> ops release-uncertain       # after a timed-out send that never arrived: unmark those jobs
 jobwright ops install-crons [--backup-dest DIR]   # upsert every jobwright Hermes cron (briefs, watchdog, backup, weekly summary); skips briefs for profiles that haven't finished setup (resume + profile)

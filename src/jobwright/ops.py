@@ -785,7 +785,7 @@ def _snapshots(dest_root: Path) -> list[Path]:
                   if p.is_dir() and not p.name.startswith(".") and p.name[:4].isdigit())
 
 
-def backup_users(dest_root: Path | None = None, keep_days: int = 14) -> dict:
+def backup_users(dest_root: Path | None = None, keep_days: int = 3) -> dict:
     """Snapshot every profile: consistent SQLite copies + hard-linked file tree.
 
     Layout: <dest>/<YYYY-mm-dd_HHMM>/{users.yaml, <user_id>/...}. Unchanged files
@@ -872,7 +872,7 @@ def backup_users(dest_root: Path | None = None, keep_days: int = 14) -> dict:
     return report
 
 
-def safe_backup(dest_root: Path | None = None, keep_days: int = 14) -> dict:
+def safe_backup(dest_root: Path | None = None, keep_days: int = 3) -> dict:
     """backup_users that never raises: a crash (unmounted SSD, full disk) becomes an error report."""
     try:
         return backup_users(dest_root, keep_days=keep_days)

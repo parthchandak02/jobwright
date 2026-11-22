@@ -94,7 +94,7 @@ def ops_release_uncertain() -> None:
 @ops_app.command("backup")
 def ops_backup(
     dest: Optional[str] = typer.Option(None, "--dest", help="Backup root (default JOBWRIGHT_BACKUP_DIR or ~/jobwright-backups)."),
-    keep: int = typer.Option(14, "--keep", help="Days of snapshots to keep (pruned only after a clean snapshot)."),
+    keep: int = typer.Option(3, "--keep", help="Days of snapshots to keep (pruned only after a clean snapshot). Off-site restic holds the long history."),
     cleanup_days: int = typer.Option(30, "--cleanup-days", help="Also delete brief status/PID files and brief logs older than this (0 = keep)."),
 ) -> None:
     """Snapshot every profile (consistent, integrity-checked DB copies + hard-linked files); alert on any error."""

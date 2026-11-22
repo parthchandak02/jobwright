@@ -330,7 +330,7 @@ All are created with `--no-agent --deliver local` by `jobwright ops install-cron
 |------|------|------|
 | `jobwright-brief-<user>` | The profile's send time (7:00 for new profiles) | `jobwright_brief.sh` → `run_daily_brief.sh`: preflight, default stages, `notify`, `ops brief-report` |
 | `jobwright-ops-watchdog` | Hourly at :30 | Alerts once a day on briefs that never started (30 min grace), are still running, timed out or never finished (120 min); re-runs a failed notify once the WhatsApp bridge is healthy (up to 3 times a day) |
-| `jobwright-backup` | 02:30 daily | `jobwright ops backup`: SQLite online backup (integrity-checked) + rsync snapshots, 14 days kept (nothing pruned after a bad night); removes brief status files and logs older than 30 days. Restore with `jobwright ops restore --snapshot latest --user <id>` (to a separate folder unless `--force`) |
+| `jobwright-backup` | 02:30 daily | `jobwright ops backup`: SQLite online backup (integrity-checked) + rsync snapshots, 3 days kept locally (nothing pruned after a bad night; the off-site backup holds the long history); removes brief status files and logs older than 30 days. Restore with `jobwright ops restore --snapshot latest --user <id>` (to a separate folder unless `--force`) |
 | `jobwright-weekly-eval` | Sunday 17:00 | `jobwright ops weekly-eval`: accuracy check for profiles with 20+ ratings |
 | `jobwright-weekly-summary` | Sunday 18:00 | `jobwright summary` for every profile (opt out with `weekly_summary: false`) |
 
