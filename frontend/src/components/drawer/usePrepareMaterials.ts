@@ -51,7 +51,7 @@ export function usePrepareMaterials(
   // Reset run state and inline errors only when switching jobs or unmounting
   // (not when reload() flips autoStart while staying on the same job).
   useEffect(() => {
-    const seq = ++opSeqRef.current
+    opSeqRef.current += 1
     checkedKeyRef.current = null
     inFlightRef.current = null
     reset()
@@ -60,8 +60,10 @@ export function usePrepareMaterials(
     if (!jobKey) {
       autoStartedKeyRef.current = null
     }
+    // Unconditional: the attach effect bumps the counter after this one runs,
+    // so an equality check would miss unmount and leave an in-flight op live.
     return () => {
-      if (opSeqRef.current === seq) opSeqRef.current += 1
+      opSeqRef.current += 1
     }
   }, [jobKey, reset])
 

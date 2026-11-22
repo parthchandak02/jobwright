@@ -241,4 +241,20 @@ describe('usePrepareMaterials autoStart', () => {
     expect(listRuns).not.toHaveBeenCalled()
     expect(startJobTailor).not.toHaveBeenCalled()
   })
+
+  it('does not attach or set an error after unmount while auto-start is pending', async () => {
+    let resolveStart: (h: typeof handle) => void = () => undefined
+    startJobTailor.mockReturnValue(new Promise((r) => (resolveStart = r)))
+    const { unmount } = renderHook(() => usePrepareMaterials('job-a', () => undefined, { autoStart: true }))
+    await waitFor(() => expect(startJobTailor).toHaveBeenCalledTimes(1))
+
+    unmount()
+    await act(async () => {
+      resolveStart(handle)
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(attach).not.toHaveBeenCalled()
+  })
 })
