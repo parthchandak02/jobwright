@@ -27,6 +27,9 @@ export function usePrepareMaterials(
   // start call returns (success, 409, or error) so StrictMode's remount can
   // still pick up a live run via listRuns. Never cleared on failure.
   const autoStartedKeyRef = useRef<string | null>(null)
+  const checkedKeyRef = useRef<string | null>(null)
+  const inFlightRef = useRef<{ key: string; auto: boolean } | null>(null)
+  const opSeqRef = useRef(0)
 
   const run = useRunTracker({
     fallbackStages: ['tailor', 'cover', 'docx'],
@@ -45,19 +48,41 @@ export function usePrepareMaterials(
   })
   const { attach, reset, state } = run
 
-  // Pick up a prepare run for this job that is still going (drawer reopened, page reloaded),
-  // or auto-start when the drawer opened a daily-list job that still needs materials.
+  // Reset run state and inline errors only when switching jobs or unmounting
+  // (not when reload() flips autoStart while staying on the same job).
   useEffect(() => {
+    opSeqRef.current += 1
+    checkedKeyRef.current = null
+    inFlightRef.current = null
     reset()
+    setStarting(false)
     setError(null)
     if (!jobKey) {
       autoStartedKeyRef.current = null
-      return
     }
-    let cancelled = false
+    // Unconditional: the attach effect bumps the counter after this one runs,
+    // so an equality check would miss unmount and leave an in-flight op live.
+    return () => {
+      opSeqRef.current += 1
+    }
+  }, [jobKey, reset])
+
+  // Pick up a prepare run for this job that is still going (drawer reopened, page reloaded),
+  // or auto-start when the drawer opened a daily-list job that still needs materials.
+  useEffect(() => {
+    if (!jobKey) return
+    const needAuto = autoStart && autoStartedKeyRef.current !== jobKey
+    if (checkedKeyRef.current === jobKey && !needAuto) return
+    if (inFlightRef.current?.key === jobKey && (inFlightRef.current.auto || !needAuto)) return
+
+    const seq = ++opSeqRef.current
+    const stale = () => opSeqRef.current !== seq
+    inFlightRef.current = { key: jobKey, auto: autoStart }
+
     listRuns()
       .then(async (runs) => {
-        if (cancelled) return
+        if (stale()) return
+        checkedKeyRef.current = jobKey
         const live = runs.find((r) => r.running && r.job_id === jobKey && r.kind === 'tailor')
         if (live) {
           attach(live, Date.parse(live.started_at) || Date.now())
@@ -69,29 +94,32 @@ export function usePrepareMaterials(
         try {
           const handle = await startJobTailor(jobKey, undefined, { auto: true })
           autoStartedKeyRef.current = jobKey
-          if (cancelled) return
+          if (stale()) return
           attach(handle, Date.now())
           toast.success('Preparing your resume and cover letter. This takes a few minutes.')
         } catch (e) {
           autoStartedKeyRef.current = jobKey
           // Already claimed today (refresh / StrictMode): attach a live run if any.
           if (e instanceof ApiError && e.status === 409 && e.code === 'prepare_auto_already') {
-            if (cancelled) return
+            if (stale()) return
             const again = await listRuns().catch(() => [] as Awaited<ReturnType<typeof listRuns>>)
+            if (stale()) return
             const live2 = again.find((r) => r.running && r.job_id === jobKey && r.kind === 'tailor')
             if (live2) attach(live2, Date.parse(live2.started_at) || Date.now())
             return
           }
-          if (!cancelled) setError(errorMessage(e))
+          if (!stale()) setError(errorMessage(e))
         } finally {
-          if (!cancelled) setStarting(false)
+          if (!stale()) setStarting(false)
         }
       })
       .catch(() => undefined)
-    return () => {
-      cancelled = true
-    }
-  }, [jobKey, attach, reset, autoStart])
+      .finally(() => {
+        if (!stale() && inFlightRef.current?.key === jobKey && inFlightRef.current.auto === autoStart) {
+          inFlightRef.current = null
+        }
+      })
+  }, [jobKey, attach, autoStart])
 
   // Lost the stream (API restart): stop showing "Preparing…" and refresh what is there.
   useEffect(() => {

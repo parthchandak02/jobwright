@@ -197,4 +197,64 @@ describe('usePrepareMaterials autoStart', () => {
     })
     expect(startJobTailor).not.toHaveBeenCalled()
   })
+
+  it('keeps the inline failure message when onDone reload flips autoStart to false', async () => {
+    const ref: { rerender?: (props: { key: string; auto: boolean }) => void } = {}
+    const { result, rerender } = renderHook(
+      ({ key, auto }: { key: string; auto: boolean }) =>
+        usePrepareMaterials(key, () => ref.rerender?.({ key, auto: false }), { autoStart: auto }),
+      { initialProps: { key: 'job-a', auto: true } },
+    )
+    ref.rerender = rerender
+    await waitFor(() => expect(startJobTailor).toHaveBeenCalledTimes(1))
+
+    act(() => {
+      onDoneCb?.({ failed: true, rc: 1 })
+    })
+
+    await waitFor(() => expect(result.current.error).toMatch(/failed/i))
+    expect(startJobTailor).toHaveBeenCalledTimes(1)
+
+    // Switching to another job clears the previous job's inline error.
+    rerender({ key: 'job-b', auto: false })
+    await waitFor(() => expect(result.current.error).toBeNull())
+  })
+
+  it('does not reset an active run when reload toggles autoStart off and back on', async () => {
+    const { rerender } = renderHook(
+      ({ auto }: { auto: boolean }) => usePrepareMaterials('job-a', () => undefined, { autoStart: auto }),
+      { initialProps: { auto: true } },
+    )
+    await waitFor(() => expect(attach).toHaveBeenCalledTimes(1))
+    reset.mockClear()
+    listRuns.mockClear()
+    startJobTailor.mockClear()
+
+    rerender({ auto: false })
+    rerender({ auto: true })
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(reset).not.toHaveBeenCalled()
+    expect(listRuns).not.toHaveBeenCalled()
+    expect(startJobTailor).not.toHaveBeenCalled()
+  })
+
+  it('does not attach or set an error after unmount while auto-start is pending', async () => {
+    let resolveStart: (h: typeof handle) => void = () => undefined
+    startJobTailor.mockReturnValue(new Promise((r) => (resolveStart = r)))
+    const { unmount } = renderHook(() => usePrepareMaterials('job-a', () => undefined, { autoStart: true }))
+    await waitFor(() => expect(startJobTailor).toHaveBeenCalledTimes(1))
+
+    unmount()
+    await act(async () => {
+      resolveStart(handle)
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(attach).not.toHaveBeenCalled()
+  })
 })
