@@ -484,6 +484,24 @@ def test_filler_needs_answer_skips_job(env, monkeypatch):
     assert answers_mod.load_answers().get("criminal_record") == "No"
 
 
+def test_filler_free_text_criminal_question_does_not_set_standard_key(env, monkeypatch):
+    from jobwright.apply.fill import FillResult, Need
+
+    question = "Have you been convicted of a felony in the last 7 years?"
+    filler = _FakeFiller(FillResult(needs=[Need("answer", f"question: {question}")]))
+    _with_filler(monkeypatch, filler)
+    with FakeATS() as ats:
+        res, client = run(add_job(ats.url("std")), [], dry_run=False)
+    assert res.outcome == "needs_answer" and res.questions == [question]
+    assert client.requests == []
+    pending = [p for p in hitl.list_pending() if p["kind"] == "answer"]
+    assert len(pending) == 1 and pending[0]["question_key"] is None
+    hitl.provide(pending[0]["id"], "No", by="whatsapp")
+    bank = answers_mod.load_answers()
+    assert bank.custom(question) == "No"
+    assert bank.get("criminal_record") is None
+
+
 def test_filler_trouble_falls_back_to_agent(env, monkeypatch):
     from jobwright.apply.fill import FillResult, Need
 
