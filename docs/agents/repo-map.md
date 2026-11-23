@@ -29,7 +29,7 @@ Detailed paths for agents. Summary: [../../AGENTS.md](../../AGENTS.md).
 | `src/jobwright/scoring/` | Scoring v2 (`matcher.py`, `pipeline_v2.py`, `criteria.py`, `examples.py`, `evaluate.py`, `criteria_miner.py`), `applied_similarity.py` (`rank_like_applied`: orders daily-list candidates before `brief_top_n` by TF-IDF similarity to 5+ past applications; called by `notify.py`, toggled by `JOBWRIGHT_RANK_LIKE_APPLIED`; `pytest tests/test_rank_like_applied.py -q`), legacy `scorer.py` (`JOBWRIGHT_SCORER=v1`), tailor, `tailor_instructions.py` (dashboard Auto/Custom prompts), `materials_format.py` (Markdown resume/cover assembly, `.md`/`.txt` path resolution, DOCX/PDF parser stripping, drawer preview formatting; used by `tailor-job`, `run tailor\|cover\|docx\|pdf`, `web/routers/{board,materials}.py`, `connector/materials.py`, and `apply/{launcher,runner}.py`; `pytest tests/test_materials_format.py -q`), cover letter, portfolio, PDF, DOCX, validator |
 | `src/jobwright/apply/` | Stage 6: launcher, Chrome workers, ATS helpers, providers |
 | `src/jobwright/apply/providers/` | `cursor-sdk` (default), `cursor-cli`, `claude` |
-| `src/jobwright/network/` | LinkedIn CSV ranking + per-job connect + Exa research |
+| `src/jobwright/network/` | LinkedIn CSV ranking (`rank.py`) + per-job connect (`per_job.py`) + Exa research (`research.py`) + per-job manual LinkedIn contacts (`manual_connections.py`: `manual_job_connections.json` CRUD via `get_manual_contacts`/`add_manual_contact`/`remove_manual_contact`/`normalize_linkedin_url` + `search_connections_csv`, backing `web/routers/connections.py` `/api/jobs/{url}/connections` & `/api/connections/search` in the job drawer; tests `pytest tests/test_manual_connections.py -q`) |
 | `src/jobwright/targets/` | Target company list builder |
 | `src/jobwright/config/*.yaml` | Shipped employers, sites, search templates; in `sites.yaml`, `blocked` = discovery (never surface), `apply_blocked` = LinkedIn (brief OK, never auto-apply) |
 | `bin/job-apply-pp-cli` | Agent-native JSON wrapper over `jobwright` |
@@ -91,6 +91,7 @@ Kanban hosting: [dashboard-hosting.md](dashboard-hosting.md) (`jobwright.parthch
 | `POST` / `GET` | `/api/notify`, `/api/notify/preview` | Send or preview WhatsApp list |
 | `GET` | `/api/jobs/by-id/{job_id}` | Resolve deep link |
 | `POST` | `/api/jobs/{url}/tailor`, `/tailor/resume`, `/tailor/cover` | Spawn `jobwright tailor-job` (SSE handle; optional custom instructions). `{url}` may be the `job_id` |
+| `GET` / `POST` / `DELETE` | `/api/jobs/{url}/connections`, `/api/connections/search` | Ranked CSV/web contacts + per-job manual LinkedIn contacts (`manual_connections.py`) and `connections.csv` autocomplete |
 | `GET` | `/api/tailor/defaults` | Default Auto Tailor instruction text |
 | `GET` | `/api/me` | Login email, `is_admin`, `auth_mode`, openable profiles, active profile |
 | `POST` | `/api/session` | Switch active profile (allowed ones only) |
