@@ -718,9 +718,10 @@ def test_request_tailoring_and_saved_materials_with_expiring_links(world, monkey
         for n in saved["notes"]
     )
     assert any(
-        "PDF not made for" in r.message and "RuntimeError: no chromium in tests" in r.message
+        r.message in ("PDF not made for a resume: RuntimeError", "PDF not made for a cover letter: RuntimeError")
         for r in caplog.records
     )
+    assert not any("Alex" in r.message or "no chromium" in r.message for r in caplog.records)
     row = job_row("alex", jid)
     assert row["tailored_resume_path"].endswith(".md") and row["tailored_resume_docx_path"].endswith(".docx")
     assert row["cover_letter_path"].endswith("_CL.md")
@@ -768,8 +769,10 @@ def test_render_materials_logs_warnings_and_omits_docx_ready_when_docx_fails(tmp
     ]
     assert not any("the DOCX is ready" in n for n in notes)
     messages = [r.message for r in caplog.records]
-    assert any("DOCX not made for sample.md: OSError: disk full" in m for m in messages)
-    assert any("PDF not made for sample.md: RuntimeError: browser crashed" in m for m in messages)
+    assert messages.count("DOCX not made for a resume: OSError") == 2
+    assert messages.count("PDF not made for a resume: RuntimeError") == 2
+    # Logs never carry the file name or the exception text (CodeQL py/clear-text-logging-sensitive-data).
+    assert not any("sample" in m or "disk full" in m or "browser crashed" in m for m in messages)
 
 
 def test_download_links_only_reach_generated_files(world):

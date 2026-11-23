@@ -75,6 +75,12 @@ def tailoring_brief(job: dict) -> dict:
     }
 
 
+def _kind(md_path: Path) -> str:
+    """What a material is, for logs. File names and exception text can carry the person's name or paths,
+    so logs name only the kind and the exception type."""
+    return "cover letter" if md_path.stem.endswith("_CL") else "resume"
+
+
 def _render(md_path: Path) -> tuple[Path | None, Path | None, list[str]]:
     from jobwright.scoring.docx_export import material_to_docx
 
@@ -83,14 +89,14 @@ def _render(md_path: Path) -> tuple[Path | None, Path | None, list[str]]:
     try:
         docx = material_to_docx(md_path)
     except Exception as exc:  # noqa: BLE001
-        log.warning("DOCX not made for %s: %s: %s", md_path.name, type(exc).__name__, exc)
+        log.warning("DOCX not made for a %s: %s", _kind(md_path), type(exc).__name__)
         notes.append(f"DOCX failed ({type(exc).__name__}: {exc})")
     try:
         from jobwright.scoring.pdf import convert_to_pdf
 
         pdf = convert_to_pdf(md_path)
     except Exception as exc:  # noqa: BLE001 - Chromium missing etc.
-        log.warning("PDF not made for %s: %s: %s", md_path.name, type(exc).__name__, exc)
+        log.warning("PDF not made for a %s: %s", _kind(md_path), type(exc).__name__)
         suffix = "; the DOCX is ready" if docx else ""
         notes.append(f"PDF not made ({type(exc).__name__}: {exc}){suffix}")
     return docx, pdf, notes
@@ -116,7 +122,7 @@ def ensure_pdf(md_path: Path | None, out: Path | None = None) -> Path | None:
 
         return convert_to_pdf(md_path, target)
     except Exception as exc:  # noqa: BLE001 - Chromium missing etc.
-        log.warning("PDF not made for %s: %s: %s", md_path.name, type(exc).__name__, exc)
+        log.warning("PDF not made for a %s: %s", _kind(md_path), type(exc).__name__)
         return None
 
 
@@ -131,7 +137,7 @@ def ensure_docx(md_path: Path | None, out: Path | None = None) -> Path | None:
 
         return material_to_docx(md_path, target)
     except Exception as exc:  # noqa: BLE001
-        log.warning("DOCX not made for %s: %s: %s", md_path.name, type(exc).__name__, exc)
+        log.warning("DOCX not made for a %s: %s", _kind(md_path), type(exc).__name__)
         return None
 
 
