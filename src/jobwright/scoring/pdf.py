@@ -5,12 +5,33 @@ and exports to PDF using headless Chromium via Playwright.
 """
 
 import logging
+from html import escape
 from pathlib import Path
 
 import jobwright.config as config
 from jobwright.scoring.materials_format import normalize_for_structured_parse, resolve_material_path
 
 log = logging.getLogger(__name__)
+
+_KNOWN_SECTIONS = frozenset({
+    "SUMMARY", "PROFESSIONAL SUMMARY", "EXECUTIVE SUMMARY", "PROFILE", "OBJECTIVE",
+    "TECHNICAL SKILLS", "SKILLS", "CORE COMPETENCIES", "EXPERIENCE",
+    "WORK EXPERIENCE", "PROFESSIONAL EXPERIENCE", "PROJECTS", "SELECTED PROJECTS",
+    "EDUCATION", "CERTIFICATIONS", "AWARDS", "PUBLICATIONS", "LEADERSHIP",
+})
+
+
+def _is_section_header(stripped: str) -> bool:
+    """True for ALL-CAPS resume section headers, never date ranges or bullets."""
+    return (
+        len(stripped) > 3
+        and stripped == stripped.upper()
+        and any(c.isalpha() for c in stripped)
+        and not any(c.isdigit() for c in stripped)
+        and not stripped.startswith(("-", "*", "\u2022"))
+        and ":" not in stripped
+        and "|" not in stripped
+    )
 
 
 # ── Resume Parser ────────────────────────────────────────────────────────
@@ -29,15 +50,21 @@ def parse_resume(text: str) -> dict:
     """
     lines = [line.rstrip() for line in text.strip().split("\n")]
 
-    # Header: first few lines before SUMMARY
+    # Header: first few lines before the first section header
     header_lines: list[str] = []
-    body_start = 0
+    body_start = len(lines)
+    saw_blank = False
     for i, line in enumerate(lines):
-        if line.strip().upper() == "SUMMARY":
+        stripped = line.strip()
+        if not stripped:
+            saw_blank = True
+            continue
+        if i > 0 and _is_section_header(stripped) and (
+            stripped in _KNOWN_SECTIONS or (saw_blank and "," not in stripped and "@" not in stripped)
+        ):
             body_start = i
             break
-        if line.strip():
-            header_lines.append(line.strip())
+        header_lines.append(stripped)
 
     name = header_lines[0] if len(header_lines) > 0 else ""
     title = header_lines[1] if len(header_lines) > 1 else ""
@@ -61,14 +88,7 @@ def parse_resume(text: str) -> dict:
 
     for line in lines[body_start:]:
         stripped = line.strip()
-        # Detect section headers (all caps, no leading dash/bullet, longer than 3 chars)
-        if (
-            stripped
-            and stripped == stripped.upper()
-            and not stripped.startswith("-")
-            and len(stripped) > 3
-            and not stripped.startswith("\u2022")
-        ):
+        if _is_section_header(stripped):
             if current_section:
                 sections[current_section] = "\n".join(current_lines).strip()
             current_section = stripped
@@ -123,12 +143,11 @@ def parse_entries(text: str) -> list[dict]:
         stripped = line.strip()
         if not stripped:
             continue
-        if stripped.startswith("- ") or stripped.startswith("\u2022 "):
+        if stripped.startswith(("- ", "* ", "\u2022 ")):
             if current:
                 current["bullets"].append(stripped[2:].strip())
         elif current is None or (
-            not stripped.startswith("-")
-            and not stripped.startswith("\u2022")
+            not stripped.startswith(("-", "*", "\u2022"))
             and len(current.get("bullets", [])) > 0
         ):
             # New entry
@@ -149,6 +168,22 @@ def parse_entries(text: str) -> list[dict]:
 
 # ── HTML Template ────────────────────────────────────────────────────────
 
+def _escape_lines(text: str) -> str:
+    return "<br>".join(escape(line.strip()) for line in text.strip().splitlines() if line.strip())
+
+
+def _entries_html(body: str) -> str:
+    items = ""
+    for e in parse_entries(body):
+        bullets = "".join(f"<li>{escape(b)}</li>" for b in e["bullets"])
+        subtitle = f'<div class="entry-subtitle">{escape(e["subtitle"])}</div>' if e["subtitle"] else ""
+        items += (
+            f'<div class="entry"><div class="entry-title">{escape(e["title"])}</div>'
+            f"{subtitle}<ul>{bullets}</ul></div>"
+        )
+    return items
+
+
 def build_html(resume: dict) -> str:
     """Build professional resume HTML from parsed data.
 
@@ -160,55 +195,52 @@ def build_html(resume: dict) -> str:
     """
     sections = resume["sections"]
 
-    # Skills
-    skills_html = ""
-    if "TECHNICAL SKILLS" in sections:
-        skills = parse_skills(sections["TECHNICAL SKILLS"])
-        rows = ""
-        for cat, val in skills:
-            rows += f'<div class="skill-row"><span class="skill-cat">{cat}:</span> {val}</div>\n'
-        skills_html = f'<div class="section"><div class="section-title">Technical Skills</div>{rows}</div>'
+    section_blocks: list[str] = []
+    for heading, body in sections.items():
+        upper = heading.upper()
+        title_html = escape(heading.title())
+        if "SKILL" in upper or upper == "CORE COMPETENCIES":
+            skills = parse_skills(body)
+            if skills:
+                rows = "".join(
+                    f'<div class="skill-row"><span class="skill-cat">{escape(cat)}:</span> {escape(val)}</div>\n'
+                    for cat, val in skills
+                )
+                content = rows
+            else:
+                content = f'<div class="summary">{_escape_lines(body)}</div>'
+        elif upper in (
+            "EXPERIENCE",
+            "WORK EXPERIENCE",
+            "PROFESSIONAL EXPERIENCE",
+            "PROJECTS",
+            "SELECTED PROJECTS",
+        ):
+            content = _entries_html(body)
+        elif upper == "EDUCATION":
+            content = f'<div class="edu">{_escape_lines(body)}</div>'
+        else:
+            body_lines = [line.strip() for line in body.strip().splitlines() if line.strip()]
+            bullet_prefixes = ("- ", "* ", "\u2022 ")
+            if body_lines and any(line.startswith(bullet_prefixes) for line in body_lines):
+                bullets = "".join(
+                    f"<li>{escape(line[2:].strip() if line.startswith(bullet_prefixes) else line)}</li>"
+                    for line in body_lines
+                )
+                content = f"<ul>{bullets}</ul>"
+            else:
+                content = f'<div class="summary">{_escape_lines(body)}</div>'
+        section_blocks.append(f'<div class="section"><div class="section-title">{title_html}</div>{content}</div>')
 
-    # Experience
-    exp_html = ""
-    if "EXPERIENCE" in sections:
-        entries = parse_entries(sections["EXPERIENCE"])
-        items = ""
-        for e in entries:
-            bullets = "".join(f"<li>{b}</li>" for b in e["bullets"])
-            subtitle = f'<div class="entry-subtitle">{e["subtitle"]}</div>' if e["subtitle"] else ""
-            items += f'<div class="entry"><div class="entry-title">{e["title"]}</div>{subtitle}<ul>{bullets}</ul></div>'
-        exp_html = f'<div class="section"><div class="section-title">Experience</div>{items}</div>'
-
-    # Projects
-    proj_html = ""
-    if "PROJECTS" in sections:
-        entries = parse_entries(sections["PROJECTS"])
-        items = ""
-        for e in entries:
-            bullets = "".join(f"<li>{b}</li>" for b in e["bullets"])
-            subtitle = f'<div class="entry-subtitle">{e["subtitle"]}</div>' if e["subtitle"] else ""
-            items += f'<div class="entry"><div class="entry-title">{e["title"]}</div>{subtitle}<ul>{bullets}</ul></div>'
-        proj_html = f'<div class="section"><div class="section-title">Projects</div>{items}</div>'
-
-    # Education
-    edu_html = ""
-    if "EDUCATION" in sections:
-        edu_text = sections["EDUCATION"].strip()
-        edu_html = f'<div class="section"><div class="section-title">Education</div><div class="edu">{edu_text}</div></div>'
-
-    # Summary
-    summary_html = ""
-    if "SUMMARY" in sections:
-        summary_html = f'<div class="section"><div class="section-title">Summary</div><div class="summary">{sections["SUMMARY"].strip()}</div></div>'
+    sections_html = "\n".join(section_blocks)
 
     # Contact line parsing
     contact = resume["contact"]
     contact_parts = [p.strip() for p in contact.split("|")] if contact else []
-    contact_html = " &nbsp;|&nbsp; ".join(contact_parts)
+    contact_html = " &nbsp;|&nbsp; ".join(escape(p) for p in contact_parts)
 
     # Location line (may be empty)
-    location_html = f'<div class="location">{resume["location"]}</div>' if resume["location"] else ""
+    location_html = f'<div class="location">{escape(resume["location"])}</div>' if resume["location"] else ""
 
     return f"""<!DOCTYPE html>
 <html>
@@ -318,16 +350,12 @@ li {{
 </head>
 <body>
 <div class="header">
-    <div class="name">{resume['name']}</div>
-    <div class="title">{resume['title']}</div>
+    <div class="name">{escape(resume['name'])}</div>
+    <div class="title">{escape(resume['title'])}</div>
     {location_html}
     <div class="contact">{contact_html}</div>
 </div>
-{summary_html}
-{skills_html}
-{exp_html}
-{proj_html}
-{edu_html}
+{sections_html}
 </body>
 </html>"""
 
@@ -396,8 +424,6 @@ def render_pdf(html: str, output_path: str) -> None:
 
 def build_cover_letter_html(text: str) -> str:
     """Build clean paragraph HTML for an unstructured cover letter."""
-    from html import escape
-
     paragraphs: list[str] = []
     for raw_para in text.strip().split("\n\n"):
         cleaned = raw_para.strip()
