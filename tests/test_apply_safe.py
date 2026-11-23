@@ -215,9 +215,11 @@ def test_unknown_attestation_stops_and_asks(env):
     pending = [p for p in hitl.list_pending() if p["kind"] == "answer"]
     assert len(pending) == 1 and "felony" in pending[0]["prompt"]
     assert any("I need your answer" in t and pending[0]["id"] in t for _, t in env["sent"])
-    # The person's reply saves the answer for that question and re-opens the job.
+    # The person's reply saves the answer for that question and the standard key, and re-opens the job.
     hitl.provide(pending[0]["id"], "No", by="whatsapp")
-    assert answers_mod.load_answers().custom("Have you ever been convicted of a felony?") == "No"
+    bank = answers_mod.load_answers()
+    assert bank.custom("Have you ever been convicted of a felony?") == "No"
+    assert bank.get("criminal_record") == "No"
     assert job_row(job["url"])["apply_status"] is None
 
 
@@ -476,6 +478,28 @@ def test_filler_needs_answer_skips_job(env, monkeypatch):
         res, client = run(add_job(ats.url("std")), [], dry_run=False)
     assert res.outcome == "needs_answer" and res.questions == ["Have you ever been convicted?"]
     assert client.requests == []
+    pending = [p for p in hitl.list_pending() if p["kind"] == "answer"]
+    assert len(pending) == 1 and pending[0]["question_key"] == "criminal_record"
+    hitl.provide(pending[0]["id"], "No", by="whatsapp")
+    assert answers_mod.load_answers().get("criminal_record") == "No"
+
+
+def test_filler_free_text_criminal_question_does_not_set_standard_key(env, monkeypatch):
+    from jobwright.apply.fill import FillResult, Need
+
+    question = "Have you been convicted of a felony in the last 7 years?"
+    filler = _FakeFiller(FillResult(needs=[Need("answer", f"question: {question}")]))
+    _with_filler(monkeypatch, filler)
+    with FakeATS() as ats:
+        res, client = run(add_job(ats.url("std")), [], dry_run=False)
+    assert res.outcome == "needs_answer" and res.questions == [question]
+    assert client.requests == []
+    pending = [p for p in hitl.list_pending() if p["kind"] == "answer"]
+    assert len(pending) == 1 and pending[0]["question_key"] is None
+    hitl.provide(pending[0]["id"], "No", by="whatsapp")
+    bank = answers_mod.load_answers()
+    assert bank.custom(question) == "No"
+    assert bank.get("criminal_record") is None
 
 
 def test_filler_trouble_falls_back_to_agent(env, monkeypatch):
