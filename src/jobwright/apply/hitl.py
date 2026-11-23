@@ -149,9 +149,17 @@ def get_pending(pending_id: str, conn=None) -> dict | None:
 def _meta(row: dict) -> dict:
     try:
         meta = json.loads(row.get("meta_json") or "{}")
-    except ValueError:
-        meta = {}
-    return meta if isinstance(meta, dict) else {}
+    except ValueError as exc:
+        log.warning("Invalid meta_json for pending request %s (%s): %s", row.get("id"), type(exc).__name__, exc)
+        return {}
+    if not isinstance(meta, dict):
+        log.warning(
+            "Unexpected meta_json type %s for pending request %s; ignoring",
+            type(meta).__name__,
+            row.get("id"),
+        )
+        return {}
+    return meta
 
 
 def _public(row: dict) -> dict:
@@ -206,10 +214,13 @@ def provide(pending_id: str, value: str, *, by: str = "cli", conn=None) -> dict:
     if kind == "captcha":
         value = value or "solved"
     if not value:
-        raise ProvideError("Empty value")
+        raise ProvideError(f"Empty value for {kind} request {pending_id}")
     if kind == "email_code":
         if len(value) > 64:
-            raise ProvideError("That does not look like a verification code")
+            raise ProvideError(
+                f"That does not look like a verification code for request {pending_id} "
+                f"(got {len(value)} chars, max 64)"
+            )
         path = inbox_dir() / pending_id
         fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
@@ -316,6 +327,7 @@ def wait_for(
     while True:
         row = conn.execute("SELECT status, kind FROM pending_inputs WHERE id = ?", (pending_id,)).fetchone()
         if row is None:
+            log.warning("Pending request %s disappeared while waiting", pending_id)
             return None
         if row["status"] == "resolved":
             if row["kind"] == "email_code":
@@ -325,23 +337,31 @@ def wait_for(
                 finally:
                     try:
                         path.unlink()
-                    except OSError:
-                        pass
+                    except OSError as exc:
+                        log.warning(
+                            "Failed to delete consumed email_code file %s for pending %s (%s): %s",
+                            path,
+                            pending_id,
+                            type(exc).__name__,
+                            exc,
+                        )
                 return value
             got = conn.execute("SELECT resolved_value FROM pending_inputs WHERE id = ?", (pending_id,)).fetchone()
             return (got["resolved_value"] if got and got["resolved_value"] else "solved")
         if row["status"] != "open":
+            log.info("Pending request %s (%s) ended with status %s while waiting", pending_id, row["kind"], row["status"])
             return None
         if time.monotonic() >= deadline:
             conn.execute("UPDATE pending_inputs SET status = 'expired' WHERE id = ? AND status = 'open'",
                          (pending_id,))
             conn.commit()
+            log.warning("Pending request %s (%s) timed out waiting; marked expired", pending_id, row["kind"])
             return None
         if on_tick:
             try:
                 on_tick()
-            except Exception:  # noqa: BLE001 - a screenshot failure must not end the wait
-                log.debug("pending tick failed", exc_info=True)
+            except Exception as exc:  # noqa: BLE001 - a screenshot failure must not end the wait
+                log.debug("Pending %s tick failed (%s): %s", pending_id, type(exc).__name__, exc, exc_info=True)
         sleep(poll_s)
         # A fresh read each loop: provide() runs in another process.
         if conn.in_transaction:
@@ -408,15 +428,31 @@ def notify_questions(rows: list[dict], user_id: str | None, *, title: str = "") 
     from jobwright.users import get_user
 
     rows = [r for r in rows if r.get("id") and not r.get("notified_at")]
+    if not rows:
+        return False
+    ids = ", ".join(r["id"] for r in rows)
     user = get_user(user_id) if user_id else None
-    if not rows or not (user and user.whatsapp_target):
+    if not (user and user.whatsapp_target):
+        log.warning("No WhatsApp target for user %s; pending questions (%s) not posted", user_id, ids)
         return False
     try:
         send_via_hermes(render_questions(rows, title=title), user.whatsapp_target)
-    except SendUncertain:
-        pass
+    except SendUncertain as exc:
+        log.warning(
+            "WhatsApp send uncertain for user %s pending questions (%s): %s; treating as sent",
+            user_id,
+            ids,
+            exc,
+        )
     except Exception as exc:  # noqa: BLE001
-        log.warning("Posting questions failed: %s", exc)
+        log.warning(
+            "Posting questions (%s) for user %s (%s) failed (%s): %s",
+            ids,
+            user_id,
+            title or "untitled",
+            type(exc).__name__,
+            exc,
+        )
         return False
     conn = get_connection()
     for r in rows:
@@ -444,16 +480,33 @@ def notify_handoff(job: dict, notes: str, user_id: str | None) -> bool:
     from jobwright.notify import SendUncertain, send_via_hermes
     from jobwright.users import get_user
 
+    job_ref = job.get("job_id") or job.get("url") or "unknown"
+    company = job.get("company") or "unknown company"
     user = get_user(user_id) if user_id else None
     if not (user and user.whatsapp_target):
+        log.warning("No WhatsApp target for user %s; hand-off for job %s (%s) not posted", user_id, job_ref, company)
         return False
     base = os.environ.get("JOBWRIGHT_PUBLIC_BASE_URL", "https://jobwright.parthchandak.info")
     try:
         send_via_hermes(render_handoff(job, notes, base), user.whatsapp_target)
-    except SendUncertain:
+    except SendUncertain as exc:
+        log.warning(
+            "WhatsApp hand-off send uncertain for user %s (job %s at %s): %s; treating as sent",
+            user_id,
+            job_ref,
+            company,
+            exc,
+        )
         return True
     except Exception as exc:  # noqa: BLE001
-        log.warning("Posting hand-off failed: %s", exc)
+        log.warning(
+            "Posting hand-off for user %s (job %s at %s) failed (%s): %s",
+            user_id,
+            job_ref,
+            company,
+            type(exc).__name__,
+            exc,
+        )
         return False
     return True
 
@@ -464,29 +517,46 @@ def notify(row: dict, user_id: str | None, *, title: str = "") -> bool:
     from jobwright.users import get_user
 
     user = get_user(user_id) if user_id else None
-    targets = []
+    # (who, target): log lines name the role, never the number or group id.
+    targets: list[tuple[str, str]] = []
     if user and user.whatsapp_target:
-        targets.append(user.whatsapp_target)
+        targets.append(("person", user.whatsapp_target))
     if row["kind"] == "captcha":
         # Only the operator can reach the Mac mini's browser window.
         from jobwright.users import load_registry
 
         ops = str(load_registry().get("ops_target") or os.environ.get("JOBWRIGHT_OPS_TARGET") or "").strip()
-        if ops and ops not in targets:
-            targets.append(ops)
+        if ops and ops not in (t for _, t in targets):
+            targets.append(("ops", ops))
     if not targets:
-        log.warning("No WhatsApp target for %s; pending %s not posted", user_id, row["id"])
+        log.warning("No WhatsApp target for user %s; pending %s (%s) not posted", user_id, row["id"], row.get("kind"))
         return False
     text = render_message(row, title=title)
     sent = False
-    for target in targets:
+    for who, target in targets:
         try:
             send_via_hermes(text, target)
             sent = True
-        except SendUncertain:
+        except SendUncertain as exc:
+            log.warning(
+                "WhatsApp send uncertain for pending %s (%s) to %s chat (user %s): %s; treating as sent",
+                row["id"],
+                row.get("kind"),
+                who,
+                user_id,
+                exc,
+            )
             sent = True
         except Exception as exc:  # noqa: BLE001
-            log.warning("Posting pending %s failed: %s", row["id"], exc)
+            log.warning(
+                "Posting pending %s (%s) to %s chat for user %s failed (%s): %s",
+                row["id"],
+                row.get("kind"),
+                who,
+                user_id,
+                type(exc).__name__,
+                exc,
+            )
     if sent:
         conn = get_connection()
         conn.execute("UPDATE pending_inputs SET notified_at = ? WHERE id = ?", (_iso(_now()), row["id"]))
