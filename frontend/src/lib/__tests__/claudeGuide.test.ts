@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   addMinutes,
+  buildApplyPrompt,
   clockTime,
   currentStep,
   durationWords,
@@ -74,5 +75,17 @@ describe('THINGS_TO_ASK', () => {
       expect(p.length).toBeLessThan(110)
       expect(p).not.toMatch(/MCP|OAuth|scope|_id/i)
     }
+  })
+})
+
+describe('buildApplyPrompt', () => {
+  it('names the job title, company, job_id, and start_application tool, with fallbacks when missing', () => {
+    const prompt = buildApplyPrompt({ job_id: 'abc123def456', title: 'Senior Product Designer', company: 'Northwind Labs' })
+    for (const part of ['Senior Product Designer', 'Northwind Labs', 'abc123def456', 'start_application("abc123def456")']) {
+      expect(prompt).toContain(part)
+    }
+    const fallback = buildApplyPrompt({ job_id: 'abc123def456', title: null, company: null })
+    expect(fallback).toContain('this role')
+    expect(fallback).not.toContain(' at ')
   })
 })
