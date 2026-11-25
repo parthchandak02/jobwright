@@ -286,3 +286,61 @@ def test_batch_convert_skips_covers_sidecars_and_existing_pdfs(monkeypatch, tmp_
     assert seen == ["a_role.md", "bad.md", "legacy.txt"]
     assert pdf_mod.batch_convert(limit=1) == 1
     assert seen[-1] == "a_role.md"
+
+
+def test_numeric_date_range_subtitle_keeps_experience_bullets_and_later_roles():
+    text = (
+        "# Alex Rivera\nProduct Manager\nalex@example.com\n\n"
+        "## SUMMARY\nOperator shipping data products.\n\n"
+        "## EXPERIENCE\n"
+        "Example Org, Senior PM\n2019 - 2024\n- Launched billing platform\n\n"
+        "Earlier Org, PM\n2017 - 2019\n- Grew retention by 15%\n"
+    )
+    parsed = parse_resume(normalize_for_structured_parse(text))
+    assert list(parsed["sections"]) == ["SUMMARY", "EXPERIENCE"]
+    assert parse_entries(parsed["sections"]["EXPERIENCE"]) == [
+        {"title": "Example Org, Senior PM", "subtitle": "2019 - 2024", "bullets": ["Launched billing platform"]},
+        {"title": "Earlier Org, PM", "subtitle": "2017 - 2019", "bullets": ["Grew retention by 15%"]},
+    ]
+    html = build_html(parsed)
+    assert "Launched billing platform" in html
+    assert "Earlier Org, PM" in html
+
+
+def test_resume_without_summary_does_not_leak_sections_into_header():
+    text = "# Alex Rivera\nProduct Manager\n\n## EXPERIENCE\nExample Org\n2020 - Present\n- Built core workflows\n"
+    parsed = parse_resume(normalize_for_structured_parse(text))
+    assert parsed["name"] == "Alex Rivera"
+    assert parsed["title"] == "Product Manager"
+    assert parsed["location"] == ""
+    assert parsed["contact"] == ""
+    assert "EXPERIENCE" in parsed["sections"]
+
+
+def test_build_html_and_mupdf_escape_angle_brackets_and_ampersands(tmp_path: Path):
+    import pymupdf
+
+    src = tmp_path / "special_chars.md"
+    src.write_text(
+        "# Alex Rivera\nR&D Lead\nalex@example.com\n\n"
+        "## SUMMARY\nBuilt <internal> analytics and P&L tools.\n\n"
+        "## TECHNICAL SKILLS\nCloud: AWS & GCP\n\n"
+        "## EXPERIENCE\nAT&T, Senior Engineer\n2020 - 2024\n"
+        "- Reduced p99 latency <50ms with >99.9% uptime\n"
+        "- Shipped migration in <a week for core billing\n",
+        encoding="utf-8",
+    )
+    html = pdf_mod.convert_to_pdf(src, html_only=True).read_text(encoding="utf-8")
+    assert "&lt;internal&gt;" in html
+    assert "&lt;50ms" in html
+    assert "&lt;a week" in html
+    assert "AT&amp;T" in html
+
+    pdf_out = tmp_path / "special_chars.pdf"
+    pdf_mod._render_mupdf(html, str(pdf_out))
+    rendered = "\n".join(page.get_text() for page in pymupdf.open(str(pdf_out)))
+    assert "<internal>" in rendered
+    assert "<50ms" in rendered
+    assert "Shipped migration in <a week for core billing" in rendered
+    assert "AT&T, Senior Engineer" in rendered
+
