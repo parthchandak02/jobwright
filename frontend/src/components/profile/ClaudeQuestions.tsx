@@ -9,7 +9,8 @@ import { providePending, type PendingInput } from '@/lib/api'
 import { answerControl, questionGroups } from '@/lib/claudeQuestions'
 import { errorMessage } from '@/lib/utils'
 
-function QuestionRow({ q, onAnswered }: { q: PendingInput; onAnswered: (id: string) => void }) {
+/** One question with the right control for its choices (Settings and the job drawer). */
+export function QuestionRow({ q, onAnswered }: { q: PendingInput; onAnswered: (id: string) => void }) {
   const [value, setValue] = useState('')
   const [saving, setSaving] = useState(false)
   const choices = (q.choices ?? []).filter((c) => c.trim())

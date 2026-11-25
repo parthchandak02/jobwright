@@ -1152,8 +1152,11 @@ export const revokeConnectedClaude = (id: string) =>
 export const putConnectorSettings = (body: { apply_via?: ApplyVia; apply_enabled?: boolean }) =>
   apiFetch<ConnectorStatus>('/connector/settings', { method: 'PUT', body: JSON.stringify(body) })
 export const putApplyVia = (apply_via: ApplyVia) => putConnectorSettings({ apply_via })
-export const listPending = (status: 'open' | 'resolved' = 'open') =>
-  apiFetch<{ pending: PendingInput[] }>(`/apply/pending?status=${status}`)
+/** Open (or resolved) requests; `kind` keeps only that kind (filtered here, the endpoint returns every kind). */
+export const listPending = async (status: 'open' | 'resolved' = 'open', kind?: PendingInput['kind']) => {
+  const r = await apiFetch<{ pending: PendingInput[] }>(`/apply/pending?status=${status}`)
+  return kind ? { ...r, pending: r.pending.filter((p) => p.kind === kind) } : r
+}
 export const getPending = (id: string) => apiFetch<PendingInput>(`/apply/pending/${encodeURIComponent(id)}`)
 export const providePending = (id: string, value: string) =>
   apiFetch<PendingInput>(`/apply/pending/${encodeURIComponent(id)}/provide`, {

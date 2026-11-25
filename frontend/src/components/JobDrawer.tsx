@@ -23,6 +23,7 @@ import { JobDetails } from '@/components/drawer/JobDetails'
 import { JobSidePanel } from '@/components/drawer/JobSidePanel'
 import { JobHistory } from '@/components/drawer/JobHistory'
 import { JobNotes } from '@/components/drawer/JobNotes'
+import { JobQuestions } from '@/components/drawer/JobQuestions'
 import { MatchCard } from '@/components/drawer/MatchCard'
 import { useJobDrawerData } from '@/components/drawer/useJobDrawerData'
 import { useJobNotes } from '@/components/drawer/useJobNotes'
@@ -308,6 +309,7 @@ export function JobDrawer({ jobKey, onClose, onChanged, onOpenJob, preview, boar
             )
           ) : null}
           {job.job_id ? <ApplyPlanCallout jobId={job.job_id} /> : null}
+          {job.job_id ? <JobQuestions jobId={job.job_id} onAnswered={reload} /> : null}
           {beforeApplying && isLinkedInHref(href) ? (
             <EmployerLinkCallout
               job={job}
