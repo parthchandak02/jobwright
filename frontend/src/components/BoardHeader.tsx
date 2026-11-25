@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Layers, Plus, Search } from 'lucide-react'
+import { CalendarCheck, Layers, Plus, Search } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -81,6 +81,8 @@ type Props = {
   onRunDone: () => void
   /** Unrated Backlog jobs; shows a "Review N" link to /review when above 0. */
   reviewCount?: number
+  /** The newest WhatsApp send, when recent: a toggle that narrows the board to its jobs (?list=today). */
+  dailyList?: { label: string; active: boolean; onToggle: () => void } | null
 }
 
 /** Sticky board header: title + count, view tabs, search, Auto Search, WhatsApp and Add job. */
@@ -96,6 +98,7 @@ export function BoardHeader({
   onAddJob,
   onRunDone,
   reviewCount = 0,
+  dailyList = null,
 }: Props) {
   // Phone: search opens over the header. Starts open when a shared link carries a search.
   const [searchOpen, setSearchOpen] = useState(() => Boolean(search))
@@ -145,6 +148,21 @@ export function BoardHeader({
           >
             <Search />
           </Button>
+
+          {dailyList ? (
+            <Button
+              type="button"
+              size="sm"
+              variant={dailyList.active ? 'ai' : 'ghost'}
+              className="max-md:size-8 max-md:px-0"
+              onClick={dailyList.onToggle}
+              aria-pressed={dailyList.active}
+              aria-label={`Show only ${dailyList.label} from WhatsApp`}
+              title={dailyList.active ? 'Showing the latest WhatsApp list. Tap to show all jobs.' : 'Show only the latest WhatsApp list'}
+            >
+              <CalendarCheck /> <span className="board-head-label max-md:hidden">{dailyList.label}</span>
+            </Button>
+          ) : null}
 
           {/* Phones reach Review from the tab bar (it carries the count), so only desktop shows it here. */}
           {reviewCount > 0 ? (

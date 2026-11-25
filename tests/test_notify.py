@@ -65,6 +65,9 @@ def test_build_notification_includes_deep_link():
     assert "\n\U0001f4cd Remote\n" in msg
     assert "\n\U0001f4c5 Posted Sep 28\n" in msg
     assert f"\n\U0001f517 https://jobwright.parthchandak.info/jobs/{job_id_for_url(url)}" in msg
+    assert msg.splitlines()[1] == (
+        "\U0001f4cb Open today's list: https://jobwright.parthchandak.info/?view=list&list=today"
+    )
 
 
 def test_bold_keeps_whatsapp_markers_valid():
@@ -212,6 +215,7 @@ def test_build_review_notification_format():
     assert "*1 new job for your review*" in msg
     assert f"https://jobwright.parthchandak.info/jobs/{job_id_for_url(url)}" in msg
     assert "after you approve a job" in msg
+    assert "https://jobwright.parthchandak.info/?view=list&list=today" in msg
 
 
 def test_run_notify_gate_caps_records_and_marks_only_shown(

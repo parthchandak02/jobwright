@@ -52,6 +52,26 @@ export function isRecentList(sentAt: string, now: Date = new Date()): boolean {
   return Number.isFinite(t) && now.getTime() - t <= DAILY_LIST_MAX_AGE_MS
 }
 
+/**
+ * The newest WhatsApp send on the board (its ``whatsapp_notified_at``) when it is recent enough
+ * to work through, else null. The board's "Today's list" filter (``?list=today``) shows its jobs.
+ */
+export function latestRecentList(
+  jobs: Pick<JobCard, 'whatsapp_notified_at'>[],
+  now: Date = new Date(),
+): string | null {
+  let latest: string | null = null
+  let latestAt = -Infinity
+  for (const j of jobs) {
+    const t = j.whatsapp_notified_at ? new Date(j.whatsapp_notified_at).getTime() : NaN
+    if (t > latestAt) {
+      latest = j.whatsapp_notified_at
+      latestAt = t
+    }
+  }
+  return latest && isRecentList(latest, now) ? latest : null
+}
+
 /** "today's list", "yesterday's list", else the weekday, e.g. "Tue's list". */
 export function listDayLabel(sentAt: string, now: Date = new Date()): string {
   const sent = new Date(sentAt)
