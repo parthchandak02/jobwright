@@ -1,4 +1,5 @@
 import { ApplyPlanCallout } from '@/components/drawer/ApplyPlanCallout'
+import { ApplyWithClaude } from '@/components/drawer/ApplyWithClaude'
 import { useMemo, useState, type ReactNode } from 'react'
 import { AlertCircle, ArrowLeft, ArrowRight, BellRing, CheckCircle2, CircleHelp, ExternalLink, ListChecks, Loader2, Sparkles, XCircle } from 'lucide-react'
 import { toast } from 'sonner'
@@ -330,6 +331,7 @@ export function JobDrawer({ jobKey, onClose, onChanged, onOpenJob, preview, boar
           stage={<StagePicker stage={job.funnel_stage} disabled={busy} onMove={requestMove} />}
         />
       )
+      const applyWithClaude = beforeApplying ? <ApplyWithClaude job={job} /> : null
       const contactDetails = beforeApplying ? <ContactDetails jobKey={job.job_id} personal={personal} /> : null
       const savedAnswers = shouldShowSavedAnswers(job.funnel_stage) ? (
         <SavedAnswers jobKey={job.job_id} data={answers} />
@@ -376,6 +378,7 @@ export function JobDrawer({ jobKey, onClose, onChanged, onOpenJob, preview, boar
             <div className="min-w-0 px-6 pb-10">
               {summary}
               {details}
+              {applyWithClaude}
               {contactDetails}
               {savedAnswers}
               {people}
@@ -394,6 +397,7 @@ export function JobDrawer({ jobKey, onClose, onChanged, onOpenJob, preview, boar
           <div className="mx-auto min-w-0 max-w-[46rem] px-4 pb-10 md:px-6">
             {summary}
             {details}
+            {applyWithClaude}
             {contactDetails}
             {savedAnswers}
             {descriptionSection()}

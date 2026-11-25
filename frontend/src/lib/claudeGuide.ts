@@ -78,6 +78,16 @@ export const THINGS_TO_ASK = [
 
 export const CHROME_WEB_STORE_URL = 'https://chromewebstore.google.com/detail/claude/fcoeoabgfenejglbffodgkkbkcdhcgfn'
 
+export const CLAUDE_NEW_CHAT_URL = 'https://claude.ai/new'
+
+/** Copy-ready prompt instructing a connected Claude to start_application for one job from the drawer. */
+export function buildApplyPrompt(job: { job_id: string; title?: string | null; company?: string | null }): string {
+  const title = job.title?.trim() || 'this role'
+  const company = job.company?.trim()
+  const role = company ? `${title} at ${company}` : title
+  return `Apply to ${role} (job_id: ${job.job_id}) in jobwright: call start_application("${job.job_id}") and fill the application with Claude in Chrome.`
+}
+
 const flagKey = (userId: string, flag: keyof GuideFlags) => `jobwright-claude-guide:${userId}:${flag}`
 
 export function readGuideFlags(userId: string | null | undefined): GuideFlags {
