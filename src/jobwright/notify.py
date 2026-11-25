@@ -220,10 +220,15 @@ def _header(count: int, what: str) -> str:
     return "\u2728 " + bold(f"{count} new job{'s' if count != 1 else ''} {what}")
 
 
+def _list_line(base_url: str) -> str:
+    """Link to the dashboard narrowed to this send's jobs (the board's Today's list filter)."""
+    return f"\U0001f4cb Open today's list: {base_url}/?view=list&list=today"
+
+
 def build_notification(jobs: list[dict], base_url: str) -> str:
     """WhatsApp message (native *bold* / _italic_, one emoji per field) listing prepared jobs."""
     base_url = base_url.rstrip("/")
-    lines = [_header(len(jobs), "ready to review")]
+    lines = [_header(len(jobs), "ready to review"), _list_line(base_url)]
     for n, job in enumerate(jobs, 1):
         lines += _job_lines(n, job, base_url)
     return "\n".join(lines)
@@ -236,7 +241,7 @@ def build_review_notification(jobs: list[dict], base_url: str) -> str:
     review before any materials exist.
     """
     base_url = base_url.rstrip("/")
-    lines = [_header(len(jobs), "for your review")]
+    lines = [_header(len(jobs), "for your review"), _list_line(base_url)]
     for n, job in enumerate(jobs, 1):
         lines += _job_lines(n, job, base_url)
     lines.append("")

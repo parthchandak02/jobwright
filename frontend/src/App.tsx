@@ -14,6 +14,7 @@ import { BoardHeader } from '@/components/BoardHeader'
 import { Chip } from '@/components/Chip'
 import { DailyBriefDialog } from '@/components/DailyBriefDialog'
 import { DismissDialog, type DismissResult } from '@/components/DismissDialog'
+import { latestRecentList, listDayLabel } from '@/components/drawer/dailyList'
 import { EmptyState } from '@/components/EmptyState'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { GlobalSearch } from '@/components/GlobalSearch'
@@ -53,6 +54,10 @@ function jobMatchesQuery(job: JobCard, q: string): boolean {
 function isWorthALook(job: JobCard): boolean {
   const s = job.fit_score
   return job.funnel_stage === 'backlog' && s != null && s >= 5 && s <= 6 && !(job.dealbreakers || []).length
+}
+
+function capitalize(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1)
 }
 
 const NO_JOBS: JobCard[] = []
@@ -95,6 +100,9 @@ export default function App() {
   const [showSchedule, setShowSchedule] = useState(false)
   const [closeTarget, setCloseTarget] = useState<CloseTarget | null>(null)
   const worthOnly = params.get('worth') === '1'
+  const viewParam = params.get('view')
+  // "Today's list" (?list=today, linked from the WhatsApp brief): only the newest recent send's jobs.
+  const listParam = params.get('list') === 'today'
 
   // Stage filter and search live in the URL (?stage=prepare&q=design) so reload and shared links keep them.
   const stageParam = params.get('stage')
@@ -143,8 +151,9 @@ export default function App() {
   }
 
   useEffect(() => {
-    if (worthOnly) setViewState('table')
-  }, [worthOnly])
+    // "Worth a look" and WhatsApp links (?view=list) open as the list.
+    if (worthOnly || viewParam === 'list') setViewState('table')
+  }, [worthOnly, viewParam])
 
   function selectStage(stage: string | 'all') {
     const value = stage === 'all' ? null : stage
@@ -157,6 +166,8 @@ export default function App() {
 
   const allJobs = useMemo(() => (board ? board.stages.flatMap((s) => board.columns[s] || []) : []), [board])
   const ratedOnBoard = useMemo(() => allJobs.filter((j) => j.user_fit_score != null).length, [allJobs])
+  const recentList = useMemo(() => latestRecentList(allJobs), [allJobs])
+  const listOnly = listParam && recentList != null
 
   // Desktop: the job opens in a panel beside the board, so the board stays usable.
   const docked = useMediaQuery(DOCK_QUERY)
@@ -183,10 +194,13 @@ export default function App() {
     navigate(params.get('from') === 'review' ? '/review' : `/${location.search}`)
   }
 
-  // One predicate for both views: search plus "worth a look".
+  // One predicate for both views: search, "worth a look" and Today's list.
   const visible = useCallback(
-    (j: JobCard) => jobMatchesQuery(j, search) && (!worthOnly || isWorthALook(j)),
-    [search, worthOnly],
+    (j: JobCard) =>
+      jobMatchesQuery(j, search) &&
+      (!worthOnly || isWorthALook(j)) &&
+      (!listOnly || j.whatsapp_notified_at === recentList),
+    [search, worthOnly, listOnly, recentList],
   )
 
   // Per lane, reuse the last filtered list while that lane and the filter are unchanged, so a
@@ -235,14 +249,14 @@ export default function App() {
   const stageCounts = useMemo(() => {
     const counts: Record<string, number> = {}
     if (!board) return counts
-    const narrowed = !!search || worthOnly
+    const narrowed = !!search || worthOnly || listOnly
     for (const s of board.stages) {
       const shown = (filteredColumns[s] || []).length
       counts[s] = narrowed ? shown : (board.stage_counts?.[s] ?? profile?.stage_counts?.[s] ?? shown)
     }
     return counts
-  }, [board, filteredColumns, profile, search, worthOnly])
-  const allCount = board ? (search || worthOnly ? allVisibleCount(filteredColumns) : board.total) : 0
+  }, [board, filteredColumns, profile, search, worthOnly, listOnly])
+  const allCount = board ? (search || worthOnly || listOnly ? allVisibleCount(filteredColumns) : board.total) : 0
 
   function onBoardMove(job: JobCard, toStage: string, position: number, revert: BoardResponse | null) {
     if (toStage === 'closed') {
@@ -285,8 +299,9 @@ export default function App() {
   const showsTable = !(view === 'board' && !worthOnly)
   const openPreview = useMemo(() => (jobId ? allJobs.find((j) => j.job_id === jobId) ?? null : null), [allJobs, jobId])
   const pageTitle = filterStage === 'all' ? 'All jobs' : STAGE_LABELS[filterStage] || filterStage
+  const listLabel = recentList ? capitalize(listDayLabel(recentList)) : null
   // Phone: the stage strip names the stage, so the header just says Jobs (board count = every lane).
-  const headerTitle = isPhone ? 'Jobs' : pageTitle
+  const headerTitle = listOnly && listLabel ? listLabel : isPhone ? 'Jobs' : pageTitle
   const headerCount = !board ? null : phoneBoard ? allVisibleCount(filteredColumns) : tableJobs.length
   const showTabBar = !drawerOpen
 
@@ -365,6 +380,11 @@ export default function App() {
                 onAddJob={() => setShowAdd(true)}
                 onRunDone={() => void refresh({ profile: true, notify: true })}
                 reviewCount={reviewCount(board)}
+                dailyList={
+                  listLabel
+                    ? { label: listLabel, active: listOnly, onToggle: () => setQueryParam('list', listOnly ? null : 'today') }
+                    : null
+                }
               />
 
               <main

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { dailyListFor, isRecentList, listDayLabel } from './dailyList'
+import { dailyListFor, isRecentList, latestRecentList, listDayLabel } from './dailyList'
 
 const MON = '2026-11-16T15:00:00.000000+00:00'
 const SUN = '2026-11-22T15:00:00.000000+00:00'
@@ -80,5 +80,27 @@ describe('isRecentList / listDayLabel', () => {
     expect(listDayLabel(new Date(2026, 10, 22, 8, 0).toISOString(), local)).toBe("today's list")
     expect(listDayLabel(new Date(2026, 10, 21, 23, 0).toISOString(), local)).toBe("yesterday's list")
     expect(listDayLabel(new Date(2026, 10, 19, 9, 0).toISOString(), local)).toBe(`${new Date(2026, 10, 19).toLocaleDateString(undefined, { weekday: 'short' })}'s list`)
+  })
+})
+
+describe('latestRecentList (Today\'s list filter)', () => {
+  const now = new Date('2026-11-23T09:00:00Z')
+
+  it('picks the newest send and the filter keeps only its jobs', () => {
+    const board = [job('a', MON, 9), job('b', SUN, 8), job('c', null, 9), job('d', SUN, 6, 'applied')]
+    const latest = latestRecentList(board, now)
+    expect(latest).toBe(SUN)
+    expect(board.filter((j) => j.whatsapp_notified_at === latest).map((j) => j.job_id)).toEqual(['b', 'd'])
+  })
+
+  it('compares times, not strings', () => {
+    const later = '2026-11-22T16:00:00Z'
+    expect(latestRecentList([job('a', later, 9), job('b', SUN, 8)], now)).toBe(later)
+  })
+
+  it('is null when the newest send is older than a week or nothing was sent', () => {
+    expect(latestRecentList([job('a', MON, 9)], new Date('2026-11-30T09:00:00Z'))).toBeNull()
+    expect(latestRecentList([job('a', null, 9), job('b', 'not a date', 8)], now)).toBeNull()
+    expect(latestRecentList([], now)).toBeNull()
   })
 })
