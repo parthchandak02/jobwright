@@ -51,6 +51,7 @@ apply), or fix a setting. Every screen should make its one job obvious.
 
 ## Lessons (newest first)
 
+- 2026-11-26: "Next on the list" shows after any finish on a daily list job, not only the post-tab prompt: the I applied button says "Applied. Next: ..." and Not for me says "Skipped. Next: ..."; Undo or opening another job hides it.
 - 2026-11-25: Open questions her Claude asked about a job show in that job's drawer, right under the match card, with the same controls as Settings (two or three choices as buttons, more as a list, none as a text box); a saved answer disappears with a toast and the drawer reloads so Your answers shows it.
 - 2026-11-22: When any required common answer in education, eligibility, experience or pay_start is missing, "Your answers" still renders (folded by default) and shows one quiet "Not saved yet: ..." line with an Add in Settings link; contact, diversity and other keys stay omitted.
 - 2026-11-22: Tailored resume and cover letter offer one solid "Download PDF" (made on demand, named for her) with a secondary "Word" beside it; when the PDF cannot be made, say "PDF not available, download Word instead" inline and in a toast, and keep Word.
