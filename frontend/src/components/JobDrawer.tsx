@@ -1,6 +1,6 @@
 import { ApplyPlanCallout } from '@/components/drawer/ApplyPlanCallout'
 import { ApplyWithClaude } from '@/components/drawer/ApplyWithClaude'
-import { useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { AlertCircle, ArrowLeft, ArrowRight, BellRing, CheckCircle2, CircleHelp, ExternalLink, ListChecks, Loader2, Sparkles, XCircle } from 'lucide-react'
 import { toast } from 'sonner'
 import { ConnectionsPanel } from '@/components/ConnectionsPanel'
@@ -68,8 +68,9 @@ export function JobDrawer({ jobKey, onClose, onChanged, onOpenJob, preview, boar
   const [busy, setBusy] = useState(false)
   const [dismissOpen, setDismissOpen] = useState(false)
   const appliedPrompt = useAppliedPrompt(job?.job_id, job?.funnel_stage)
-  /** The job she just said Yes, I applied for: shows "Next on the list". */
-  const [appliedFromPrompt, setAppliedFromPrompt] = useState<string | null>(null)
+  /** The job she just marked applied or Not for me (and the lane it went to): shows "Next on the list". */
+  const [stepNext, setStepNext] = useState<{ jobId: string; stage: 'applied' | 'closed' } | null>(null)
+  useEffect(() => setStepNext(null), [jobKey])
   const dailyList = useMemo(() => {
     const list = dailyListFor(boardJobs ?? [], job?.job_id ?? jobKey)
     return list && isRecentList(list.sentAt) ? list : null
@@ -111,6 +112,7 @@ export function JobDrawer({ jobKey, onClose, onChanged, onOpenJob, preview, boar
             ? {
                 label: 'Undo',
                 onClick: () => {
+                  setStepNext(null)
                   void moveJob(res.job, fromStage)
                     .then((r) => {
                       setJob(r.job)
@@ -149,6 +151,7 @@ export function JobDrawer({ jobKey, onClose, onChanged, onOpenJob, preview, boar
 
   function onDismiss(result: DismissResult) {
     setDismissOpen(false)
+    if (job && beforeApplying) setStepNext({ jobId: job.job_id, stage: 'closed' })
     void doMove('closed', { outcome: result.outcome, reasons: result.reasons, close_reason: result.note || undefined })
   }
 
@@ -191,7 +194,10 @@ export function JobDrawer({ jobKey, onClose, onChanged, onOpenJob, preview, boar
         icon: CheckCircle2,
         variant: 'secondary',
         disabled: busy,
-        onClick: () => void doMove('applied'),
+        onClick: () => {
+          setStepNext({ jobId: job.job_id, stage: 'applied' })
+          void doMove('applied')
+        },
       })
     }
     if (!closed) {
@@ -262,7 +268,7 @@ export function JobDrawer({ jobKey, onClose, onChanged, onOpenJob, preview, boar
                     disabled={busy}
                     onClick={() => {
                       appliedPrompt.hide()
-                      setAppliedFromPrompt(job.job_id)
+                      setStepNext({ jobId: job.job_id, stage: 'applied' })
                       void doMove('applied')
                     }}
                   >
@@ -288,7 +294,7 @@ export function JobDrawer({ jobKey, onClose, onChanged, onOpenJob, preview, boar
               Did you apply?
             </Callout>
           ) : null}
-          {dailyList && appliedFromPrompt === job.job_id && job.funnel_stage === 'applied' ? (
+          {dailyList && stepNext?.jobId === job.job_id && job.funnel_stage === stepNext.stage ? (
             dailyList.next ? (
               <Callout
                 icon={ListChecks}
@@ -301,7 +307,7 @@ export function JobDrawer({ jobKey, onClose, onChanged, onOpenJob, preview, boar
                   ) : null
                 }
               >
-                Applied. Next: {dailyList.next.title || 'Untitled role'}
+                {stepNext.stage === 'applied' ? 'Applied' : 'Skipped'}. Next: {dailyList.next.title || 'Untitled role'}
                 {dailyList.next.company ? ` at ${dailyList.next.company}` : ''}.
               </Callout>
             ) : (
