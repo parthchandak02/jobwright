@@ -29,3 +29,9 @@ export function answerControl(choices: string[] | undefined): 'buttons' | 'selec
   if (!n) return 'text'
   return n <= 3 ? 'buttons' : 'select'
 }
+
+/** Open questions from the person's Claude about one job (the job drawer). */
+export function questionsForJob(pending: PendingInput[], jobId: string | null | undefined): PendingInput[] {
+  if (!jobId) return []
+  return pending.filter((p) => p.kind === 'answer' && p.status === 'open' && p.job_id === jobId)
+}
